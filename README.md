@@ -1,4 +1,4 @@
-# VaultHub 蜀鼠之家 v0.5.0：离线升级版
+# VaultHub 蜀鼠之家 v0.5.0
 
 本版本为正式版前离线迭代包，解压后可直接 Compose 构建，不访问 Docker Hub。
 
