@@ -1,0 +1,2605 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VaultHub 蜀鼠之家 · 预览版</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --bg2: #161b22;
+    --card: #1c2128;
+    --card2: #21262d;
+    --border: #30363d;
+    --track: #30363d;
+    --text: #e6edf3;
+    --text2: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --yellow: #d29922;
+    --red: #f85149;
+    --purple: #bc8cff;
+    --cyan: #39c5cf;
+    --radius: 10px;
+    --shadow: 0 2px 8px rgba(0,0,0,.35);
+  }
+  body[data-theme="light"] {
+    --bg: #f6f8fa;
+    --bg2: #ffffff;
+    --card: #ffffff;
+    --card2: #f0f3f6;
+    --border: #d8dee4;
+    --track: #d8dee4;
+    --text: #1f2328;
+    --text2: #656d76;
+    --shadow: 0 2px 8px rgba(0,0,0,.08);
+  }
+  body.custom-bg::before {
+    content: ""; position: fixed; inset: 0; z-index: -2;
+    background: var(--bgImg, none) center/cover no-repeat fixed;
+  }
+  body.custom-bg::after {
+    content: ""; position: fixed; inset: 0; z-index: -1;
+    background: rgba(13,17,23,.72);
+  }
+  body.custom-bg[data-theme="light"]::after { background: rgba(246,248,250,.78); }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "PingFang SC","Microsoft YaHei","Noto Sans SC",system-ui,-apple-system,sans-serif;
+    background: var(--bg); color: var(--text); min-height: 100vh;
+    display: flex;
+  }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+
+  /* ===== 侧边栏 ===== */
+  .sidebar {
+    width: 220px; background: var(--bg2); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; position: fixed; top: 0; bottom: 0; left: 0; z-index: 50;
+    transition: transform .18s ease, width .18s ease;
+  }
+  .logo {
+    display: flex; align-items: center; gap: 10px; padding: 18px 16px;
+    border-bottom: 1px solid var(--border); font-weight: 700; font-size: 16px;
+  }
+  .logo-icon {
+    width: 34px; height: 34px; border-radius: 8px;
+    background: linear-gradient(135deg, #f2cc72, #8b5a2b);
+    display: flex; align-items: center; justify-content: center; color: #fff; font-size: 18px;
+    flex-shrink: 0; overflow: hidden;
+  }
+  .mouse-logo { width: 29px; height: 29px; animation: mouse-breathe 2.6s ease-in-out infinite; transform-origin: center bottom; }
+  .mouse-logo .tail { animation: mouse-tail 1.8s ease-in-out infinite; transform-origin: 22px 21px; }
+  .mouse-logo .whisker { animation: mouse-whisker 2.2s ease-in-out infinite; }
+  @keyframes mouse-breathe { 0%,100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-1px) scale(1.04); } }
+  @keyframes mouse-tail { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(7deg); } }
+  @keyframes mouse-whisker { 0%,100% { opacity: .78; } 50% { opacity: 1; } }
+  .logo small { display: block; font-size: 10px; color: var(--text2); font-weight: 400; margin-top: 1px; }
+  .nav { flex: 1; padding: 12px 8px; overflow-y: auto; }
+  .nav-group { font-size: 11px; color: var(--text2); padding: 10px 10px 4px; letter-spacing: .5px; }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px; padding: 10px 12px; margin: 2px 0;
+    border-radius: 8px; cursor: pointer; color: var(--text2); font-size: 14px; user-select: none;
+    transition: background .15s, color .15s; position: relative;
+  }
+  .nav-item .txt { flex: 1; }
+  .nav-tools { margin-left: auto; display: none; gap: 4px; }
+  .nav-item.active[data-view="comic"] .nav-tools,
+
+  .nav-item.active[data-view="movie"] .nav-tools,
+  .nav-item.active[data-view="audio"] .nav-tools { display: flex; }
+  .icon-btn {
+    width: 24px; height: 24px; border-radius: 6px; border: 1px solid var(--border); background: var(--card2);
+    color: var(--text2); display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+    font-size: 12px; padding: 0; line-height: 1; transition: all .15s;
+  }
+  .icon-btn:hover { color: var(--accent); border-color: var(--accent); }
+  .nav-item:hover { background: var(--card); color: var(--text); }
+  .nav-item.active { background: rgba(88,166,255,.12); color: var(--accent); font-weight: 600; }
+  .nav-item .ic { width: 18px; text-align: center; font-size: 15px; }
+  .nav-item .del {
+    margin-left: auto; opacity: 0; font-size: 12px; color: var(--red);
+    background: none; border: none; cursor: pointer; padding: 0 2px;
+  }
+  .nav-item:hover .del { opacity: .8; }
+  .nav-item .del:hover { opacity: 1; }
+  .sidebar-foot { padding: 10px 12px; border-top: 1px solid var(--border); font-size: 11px; color: var(--text2); }
+  .add-board-btn {
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    margin: 8px 8px 10px; padding: 9px; border: 1px dashed var(--border); border-radius: 8px;
+    color: var(--text2); font-size: 13px; cursor: pointer; background: none; transition: all .15s;
+  }
+  .add-board-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ===== 主区域 ===== */
+  .main { flex: 1; margin-left: 220px; min-height: 100vh; display: flex; flex-direction: column; transition: margin-left .18s ease; }
+  body.sidebar-hidden .sidebar { width: 60px; transform: none; }
+  body.sidebar-hidden .main { margin-left: 60px; }
+  body.sidebar-hidden .logo { justify-content: center; padding: 12px 8px; }
+  body.sidebar-hidden .logo > div:not(.logo-icon),
+  body.sidebar-hidden .nav-group,
+  body.sidebar-hidden .nav-item .txt,
+  body.sidebar-hidden .sidebar-foot,
+  body.sidebar-hidden .add-board-btn span { display: none; }
+  body.sidebar-hidden .nav { padding: 8px 6px; overflow: visible; }
+  body.sidebar-hidden .nav-item { justify-content: center; padding: 10px 8px; }
+  body.sidebar-hidden .nav-item .ic { width: 24px; }
+  /* 边栏收起时，媒体操作按钮必须一并缩回，避免悬浮在 iframe 上方 */
+  body.sidebar-hidden .nav-tools { display: none !important; }
+  body.sidebar-hidden .add-board-btn { margin: 8px 6px 10px; padding: 9px 0; border: none; }
+  body.topbar-hidden .topbar { height: 0; padding-top: 0; padding-bottom: 0; overflow: hidden; border-bottom: 0; transform: translateY(-56px); }
+  body.topbar-hidden .content { padding-top: 12px; --media-chrome-offset: 36px; }
+  .chrome-controls {
+    display: grid; grid-template-columns: 1fr; gap: 6px; padding: 8px; border-bottom: 1px solid var(--border);
+  }
+  body.sidebar-hidden .chrome-controls { padding: 6px; }
+  .chrome-toggle { width: 100%; height: 32px; padding: 0; justify-content: center; }
+  .chrome-toggle .toggle-label { margin-left: 6px; }
+  body.sidebar-hidden .chrome-toggle .toggle-label { display: none; }
+  .topbar {
+    height: 56px; background: var(--bg2); border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between; padding: 0 24px;
+    position: sticky; top: 0; z-index: 40;
+  }
+  .topbar .title-area { display: flex; align-items: center; gap: 10px; }
+  .topbar h1 { font-size: 17px; font-weight: 600; }
+  .topbar .actions { display: flex; align-items: center; gap: 8px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px;
+    background: var(--card2); border: 1px solid var(--border); color: var(--text);
+    border-radius: 8px; cursor: pointer; font-size: 13px; transition: all .15s;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-primary { background: #238636; border-color: #2ea043; color: #fff; }
+  .btn-primary:hover { background: #2ea043; color: #fff; }
+  .btn-danger { color: var(--red); }
+  .btn-danger:hover { border-color: var(--red); color: var(--red); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .content { padding: 24px; flex: 1; --media-chrome-offset: 104px; }
+
+  /* ===== 板块 ===== */
+  .view { display: none; animation: fadeIn .25s ease; }
+  .view.active { display: block; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(6px);} to { opacity: 1; transform: none;} }
+
+  .section-title { font-size: 14px; font-weight: 600; margin: 22px 0 12px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .section-title:first-child { margin-top: 0; }
+  .section-title .badge { font-size: 11px; color: var(--text2); font-weight: 400; background: var(--card2); border: 1px solid var(--border); padding: 2px 8px; border-radius: 20px; }
+  .section-title .badge.red { color: var(--red); border-color: var(--red); }
+  .section-title .badge.green { color: var(--green); border-color: var(--green); }
+  .grid { display: grid; gap: 14px; }
+  .g-4 { grid-template-columns: repeat(4, 1fr); }
+  .g-3 { grid-template-columns: repeat(3, 1fr); }
+  .g-2 { grid-template-columns: repeat(2, 1fr); }
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 16px; box-shadow: var(--shadow);
+  }
+  .card-h { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .card-h .t { font-size: 13px; font-weight: 600; color: var(--text2); }
+  .card-h .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .dot.red { background: var(--red); box-shadow: 0 0 6px var(--red); }
+  .dot.yellow { background: var(--yellow); box-shadow: 0 0 6px var(--yellow); }
+
+  /* 仪表 */
+  .gauge-wrap { display: flex; align-items: center; gap: 14px; }
+  .gauge { position: relative; width: 76px; height: 76px; flex-shrink: 0; }
+  .gauge svg { transform: rotate(-90deg); }
+  .gauge .val { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .gauge .val b { font-size: 16px; }
+  .gauge .val span { font-size: 10px; color: var(--text2); }
+  .gauge-info { flex: 1; }
+  .gauge-info .row { display: flex; justify-content: space-between; font-size: 12px; color: var(--text2); padding: 2px 0; }
+  .gauge-info .row b { color: var(--text); font-weight: 500; }
+
+  /* 网络 */
+  .net-num { font-size: 20px; font-weight: 700; }
+  .net-sub { font-size: 11px; color: var(--text2); margin-top: 2px; }
+  .spark { display: flex; align-items: flex-end; gap: 3px; height: 34px; margin-top: 10px; }
+  .spark i { flex: 1; background: var(--accent); border-radius: 2px; opacity: .75; }
+  .spark i:nth-child(2n) { background: var(--green); }
+
+  /* 磁盘条 */
+  .disk-row { margin-bottom: 10px; }
+  .disk-row:last-child { margin-bottom: 0; }
+  .disk-top { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; }
+  .disk-top .name { color: var(--text2); }
+  .bar { height: 8px; background: var(--bg2); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+  .bar i { display: block; height: 100%; border-radius: 4px; background: linear-gradient(90deg, var(--accent), var(--green)); transition: width 1s ease; }
+  .bar i.warn { background: linear-gradient(90deg, var(--yellow), var(--red)); }
+
+  /* 温度 */
+  .temp { font-size: 26px; font-weight: 700; }
+  .temp small { font-size: 13px; color: var(--text2); font-weight: 400; }
+  .temp-list { margin-top: 10px; display: grid; gap: 6px; }
+  .temp-item { display: flex; justify-content: space-between; font-size: 12px; color: var(--text2); gap: 8px; }
+  .temp-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .temp-item b { color: var(--text); flex-shrink: 0; }
+
+  /* 表格 */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--text2); font-weight: 500; padding: 8px 10px; border-bottom: 1px solid var(--border); font-size: 12px; }
+  td { padding: 9px 10px; border-bottom: 1px solid var(--border); }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,.02); }
+  .status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
+  .status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+  .status.stopped::before { background: var(--red); }
+  .status.restarting::before { background: var(--yellow); }
+  .mono { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 12px; color: var(--text2); }
+  .search {
+    width: 100%; background: var(--bg2); border: 1px solid var(--border); color: var(--text);
+    border-radius: 8px; padding: 9px 14px; font-size: 13px; outline: none; margin-bottom: 12px;
+  }
+  .search:focus { border-color: var(--accent); }
+
+  /* Docker 图形化 */
+  .docker-servers { display: grid; gap: 16px; }
+  .server-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); }
+  .server-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; background: var(--bg2); border-bottom:1px solid var(--border); }
+  .server-title { display:flex; align-items:center; gap:10px; font-weight:700; }
+  .server-ip { font-family: ui-monospace, Consolas, monospace; color: var(--cyan); border:1px solid var(--border); background: var(--card2); border-radius: 20px; padding: 4px 10px; font-size: 12px; }
+  .server-meta { display:flex; align-items:center; gap:8px; flex-wrap:wrap; color:var(--text2); font-size:12px; }
+  .container-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap:12px; padding:14px; }
+  .container-card { border:1px solid var(--border); background:var(--card2); border-radius:8px; padding:12px; min-height:118px; display:flex; flex-direction:column; gap:8px; }
+  .container-card.up { border-left:3px solid var(--green); }
+  .container-card.stopped { border-left:3px solid var(--red); opacity:.82; }
+  .container-card.restarting { border-left:3px solid var(--yellow); }
+  .container-top { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .container-name { font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .container-icon { width:28px; height:28px; border-radius:7px; background:rgba(88,166,255,.14); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .container-image { font-family:ui-monospace, Consolas, monospace; color:var(--text2); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .container-foot { margin-top:auto; display:flex; justify-content:space-between; gap:8px; align-items:center; font-size:11px; color:var(--text2); }
+  .port-pill { font-family:ui-monospace, Consolas, monospace; background:var(--bg2); border:1px solid var(--border); border-radius:20px; padding:3px 8px; color:var(--cyan); }
+
+  /* PT 站点 */
+  .pt-card { padding: 14px; }
+  .pt-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .pt-name { font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+  .pt-ico { width: 28px; height: 28px; border-radius: 7px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800; color: #fff; }
+  .pt-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; font-size: 12px; }
+  .pt-stats div { display: flex; justify-content: space-between; color: var(--text2); padding: 3px 0; border-bottom: 1px dashed var(--border); }
+  .pt-stats b { color: var(--text); font-weight: 500; }
+  .pt-seed { display: inline-block; margin-top: 8px; font-size: 11px; background: var(--bg2); border: 1px solid var(--border); padding: 3px 8px; border-radius: 20px; color: var(--text2); }
+  .pt-tabs { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+  .pt-tab {
+    padding: 8px 16px; background: var(--card2); border: 1px solid var(--border); border-radius: 8px;
+    cursor: pointer; font-size: 13px; color: var(--text2); transition: all .15s; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .pt-tab:hover { color: var(--text); }
+  .pt-tab.active { background: rgba(88,166,255,.14); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .pt-tab .del { color: var(--red); font-size: 12px; background: none; border: none; cursor: pointer; padding: 0; }
+  .alert-bar {
+    display: flex; align-items: flex-start; gap: 8px; padding: 10px 14px; border-radius: 8px;
+    font-size: 13px; margin-bottom: 10px; border: 1px solid var(--border); background: var(--card2);
+  }
+  .alert-bar.critical { border-color: var(--red); color: var(--red); background: rgba(248,81,73,.08); }
+  .alert-bar.success { border-color: var(--green); color: var(--green); background: rgba(63,185,80,.08); }
+  .alert-bar.info { border-color: var(--accent); color: var(--accent); background: rgba(88,166,255,.08); }
+  .alert-bar.error { border-color: var(--yellow); color: var(--yellow); background: rgba(210,153,34,.08); }
+
+  /* 板块配置 */
+  .cfg-wrap { max-width: 640px; }
+  .cfg-field { margin-bottom: 16px; }
+  .cfg-field label { display: block; font-size: 12px; color: var(--text2); margin-bottom: 6px; }
+  .cfg-field input, .cfg-field select {
+    width: 100%; background: var(--bg2); border: 1px solid var(--border); color: var(--text);
+    border-radius: 8px; padding: 10px 12px; font-size: 13px; outline: none;
+  }
+  .cfg-field input:focus, .cfg-field select:focus { border-color: var(--accent); }
+  .cfg-field select option { background: var(--bg2); color: var(--text); }
+  .switch-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 16px; }
+  .switch-row .lbl { font-size: 13px; }
+  .switch-row .lbl small { display: block; color: var(--text2); font-size: 11px; margin-top: 2px; }
+  .switch { position: relative; width: 42px; height: 22px; background: var(--border); border-radius: 20px; cursor: pointer; transition: background .2s; flex-shrink: 0; }
+  .switch.on { background: #238636; }
+  .switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; background: #fff; border-radius: 50%; transition: left .2s; }
+  .switch.on::after { left: 23px; }
+  .addr-box {
+    background: var(--bg2); border: 1px dashed var(--border); border-radius: 8px;
+    padding: 12px 14px; font-size: 13px; margin-bottom: 16px;
+  }
+  .addr-box .label { font-size: 11px; color: var(--text2); margin-bottom: 4px; }
+  .addr-box .val { font-family: ui-monospace, Consolas, monospace; color: var(--cyan); word-break: break-all; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 18px; flex-wrap: wrap; }
+  .tab {
+    padding: 8px 18px; background: var(--card2); border: 1px solid var(--border); border-radius: 8px;
+    cursor: pointer; font-size: 13px; color: var(--text2); transition: all .15s;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active { background: rgba(88,166,255,.14); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; animation: fadeIn .2s ease; }
+
+  /* iframe 板块 */
+  .frame-box { width: 100%; height: calc(100vh - 210px); min-height: 480px; border: 1px solid var(--border); border-radius: var(--radius); background: #fff; overflow: hidden; }
+  .frame-box iframe { width: 100%; height: 100%; border: none; }
+  .media-session { margin-top: 16px; display: none; }
+  .media-session.show { display: block; }
+  .media-wide-host { margin-top: 0; width: 100%; display: none; }
+  .media-wide-host.show { display: block; }
+  #view-comic > .section-title,
+  #view-movie > .section-title,
+  #view-audio > .section-title { display: none; }
+  #view-comic .media-wide-host,
+  #view-movie .media-wide-host,
+  #view-audio .media-wide-host { margin-top: 0; }
+  .media-empty {
+    min-height: calc(100vh - var(--media-chrome-offset)); border: 1px dashed var(--border); border-radius: var(--radius);
+    background: var(--card); display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; padding: 36px; color: var(--text2);
+  }
+  .media-empty .big { font-size: 34px; margin-bottom: 12px; }
+  .media-empty h3 { color: var(--text); font-size: 18px; margin-bottom: 8px; }
+  .media-empty p { max-width: 520px; line-height: 1.7; margin-bottom: 16px; }
+  .media-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+  .media-toolbar .url { color: var(--cyan); font-family: ui-monospace, Consolas, monospace; word-break: break-all; font-size: 12px; }
+  .media-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .media-login-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+  .media-login-note { color: var(--text2); font-size: 11px; line-height: 1.6; margin-top: 8px; }
+  .media-frame { width: 100%; height: calc(100vh - var(--media-chrome-offset)); min-height: 520px; border: 1px solid var(--border); border-radius: var(--radius); background: #fff; overflow: hidden; position: relative; }
+  .media-frame iframe { width: 100%; height: 100%; border: none; }
+  .media-frame-tools { position: absolute; top: 10px; right: 10px; z-index: 2; display: flex; gap: 6px; }
+  .media-frame-tools .icon-btn { background: rgba(22,27,34,.86); color: #fff; border-color: rgba(255,255,255,.18); backdrop-filter: blur(6px); }
+  body[data-theme="light"] .media-frame-tools .icon-btn { background: rgba(255,255,255,.9); color: #1f2328; border-color: rgba(31,35,40,.16); }
+  @media (max-width: 768px) { .media-login-grid { grid-template-columns: 1fr; } }
+  /* PT 子页 */
+  .ptsub-panel { display: none; }
+  .ptsub-panel.active { display: block; animation: fadeIn .2s ease; }
+
+  /* 弹窗 */
+  .modal-mask {
+    position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 100;
+    display: none; align-items: center; justify-content: center; backdrop-filter: blur(2px);
+  }
+  .modal-mask.show { display: flex; }
+  .modal {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 12px;
+    width: 440px; max-width: 92vw; max-height: 88vh; overflow-y: auto; padding: 22px; box-shadow: 0 12px 40px rgba(0,0,0,.5);
+  }
+  .modal.wide { width: 620px; }
+  .modal h3 { font-size: 15px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; }
+  .modal .close { cursor: pointer; color: var(--text2); font-size: 18px; background: none; border: none; }
+  .modal .close:hover { color: var(--text); }
+  .modal-sec { font-size: 12px; color: var(--text2); margin: 18px 0 10px; font-weight: 600; }
+  .lang-opt, .theme-opt {
+    display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid var(--border);
+    border-radius: 8px; cursor: pointer; margin-bottom: 8px; font-size: 13px; transition: all .15s;
+  }
+  .lang-opt:hover, .theme-opt:hover { border-color: var(--accent); }
+  .lang-opt.on, .theme-opt.on { border-color: var(--accent); background: rgba(88,166,255,.1); color: var(--accent); font-weight: 600; }
+  .lang-opt .radio, .theme-opt .radio { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--border); flex-shrink: 0; }
+  .lang-opt.on .radio, .theme-opt.on .radio { border-color: var(--accent); background: radial-gradient(circle, var(--accent) 40%, transparent 42%); }
+  .about-row { display: flex; justify-content: space-between; font-size: 13px; padding: 9px 0; border-bottom: 1px dashed var(--border); }
+  .about-row:last-child { border-bottom: none; }
+  .about-row span { color: var(--text2); }
+  .about-row b { font-weight: 500; }
+
+  .hint { font-size: 11px; color: var(--text2); margin-top: 8px; line-height: 1.6; }
+  .toast {
+    position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(80px);
+    background: var(--card2); border: 1px solid var(--border); color: var(--text);
+    padding: 10px 22px; border-radius: 8px; font-size: 13px; z-index: 200;
+    transition: transform .3s ease; box-shadow: var(--shadow); max-width: 90vw;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+
+  /* 模块管理列表 */
+  .board-item {
+    display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border);
+    border-radius: 8px; margin-bottom: 8px; font-size: 13px; background: var(--card);
+  }
+  .board-item .b-ic { font-size: 16px; }
+  .board-item .b-name { font-weight: 600; }
+  .board-item .b-type { font-size: 11px; color: var(--text2); margin-left: 6px; }
+  .board-item .b-url { font-size: 11px; color: var(--text2); font-family: ui-monospace, monospace; margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 160px; }
+  .board-item .b-del { color: var(--red); cursor: pointer; background: none; border: none; font-size: 14px; flex-shrink: 0; }
+  .board-item .b-toggle { flex-shrink: 0; border: 1px solid var(--border); background: var(--card2); color: var(--text2); border-radius: 6px; padding: 3px 9px; font-size: 11px; cursor: pointer; }
+  .board-item .b-toggle:hover { color: var(--accent); border-color: var(--accent); }
+  .board-item.hidden-mod { opacity: .55; }
+  .form-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+  .empty-tip { text-align: center; color: var(--text2); font-size: 12px; padding: 16px 0; }
+
+  @media (max-width: 1100px) { .g-4 { grid-template-columns: repeat(2, 1fr); } .g-3 { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 768px) {
+    .sidebar { width: 60px; }
+    .sidebar .logo span.txt, .sidebar .nav-item span.txt, .sidebar .nav-group, .sidebar-foot, .add-board-btn span { display: none; }
+    .add-board-btn { border: none; }
+    .main { margin-left: 60px; }
+    .nav-item { justify-content: center; }
+    .nav-item .del { display: none; }
+    .g-4, .g-3, .g-2 { grid-template-columns: 1fr; }
+    .content { padding: 14px; }
+    .form-2col { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body data-theme="dark">
+
+<!-- ===== 侧边栏 ===== -->
+<aside class="sidebar">
+  <div class="logo">
+    <div class="logo-icon" aria-label="中华鼠图标">
+      <svg class="mouse-logo" viewBox="0 0 32 32" role="img" aria-hidden="true">
+        <path class="tail" d="M22 21c5 1 7-2 5-5" fill="none" stroke="#6b3e20" stroke-width="2" stroke-linecap="round"/>
+        <circle cx="10" cy="10" r="4" fill="#8a5a35"/>
+        <circle cx="20" cy="10" r="4" fill="#8a5a35"/>
+        <ellipse cx="16" cy="18" rx="10" ry="9" fill="#c78b4d"/>
+        <ellipse cx="16" cy="20" rx="6" ry="5" fill="#f0c98a"/>
+        <circle cx="12" cy="17" r="1.4" fill="#1f130b"/>
+        <circle cx="20" cy="17" r="1.4" fill="#1f130b"/>
+        <path d="M15 20l1.1 1 1.1-1" fill="none" stroke="#5a3218" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+        <path class="whisker" d="M9 20H3m20 0h6M10 22l-5 2m17-2 5 2" fill="none" stroke="#5a3218" stroke-width="1" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div>
+      <span data-i18n="appName">蜀鼠之家</span>
+      <small data-i18n="appSub">VaultHub · 家庭 NAS 控制台 · 预览版</small>
+    </div>
+  </div>
+  <nav class="nav" id="mainNav">
+    <div class="chrome-controls">
+      <button class="btn chrome-toggle" onclick="toggleBars()" title="边栏隐藏/显示" aria-label="边栏隐藏/显示"><span>☰</span><span class="toggle-label">边栏隐藏/显示</span></button>
+    </div>
+    <div class="nav-group" data-nav-group="main" data-i18n="navGroupMain">主导航</div>
+    <div class="nav-item active" data-view="home" data-module="home"><span class="ic">🏠</span><span class="txt" data-i18n="navHome">首页</span></div>
+    <div class="nav-item" data-view="pt" data-module="pt"><span class="ic">🌊</span><span class="txt" data-i18n="navPt">PT 管理</span></div>
+    <div class="nav-group" data-nav-group="media" data-i18n="navGroupMedia">媒体</div>
+    <div class="nav-item" data-view="comic" data-module="comic"><span class="ic">📚</span><span class="txt" data-i18n="navComic">超漫画</span><span class="nav-tools"><button class="icon-btn" title="配置服务器" onclick="event.stopPropagation(); showMediaConfig('comic')">⚙</button><button class="icon-btn" title="新窗口打开" onclick="event.stopPropagation(); openActiveMediaExternal('comic')">↗</button></span></div>
+    <div class="nav-item" data-view="movie" data-module="movie"><span class="ic">🎬</span><span class="txt" data-i18n="navMovie">影视</span><span class="nav-tools"><button class="icon-btn" title="配置服务器" onclick="event.stopPropagation(); showMediaConfig('movie')">⚙</button><button class="icon-btn" title="新窗口打开" onclick="event.stopPropagation(); openActiveMediaExternal('movie')">↗</button></span></div>
+    <div class="nav-item" data-view="audio" data-module="audio"><span class="ic">🎵</span><span class="txt" data-i18n="navAudio">音频</span><span class="nav-tools"><button class="icon-btn" title="配置服务器" onclick="event.stopPropagation(); showMediaConfig('audio')">⚙</button><button class="icon-btn" title="新窗口打开" onclick="event.stopPropagation(); openActiveMediaExternal('audio')">↗</button></span></div>
+    <div class="nav-group" data-nav-group="sys" data-i18n="navGroupSys">系统</div>
+    <div class="nav-item" data-view="docker" data-module="docker"><span class="ic">🐳</span><span class="txt" data-i18n="navDocker">容器管理</span></div>
+    <div class="nav-group" data-nav-group="custom" data-i18n="navGroupCustom">自定义</div>
+    <div id="customNav"></div>
+  </nav>
+  <div class="add-board-btn" onclick="openModuleModal()">
+    <span>＋</span><span data-i18n="addBoardNav">添加模块</span>
+  </div>
+  <div class="sidebar-foot">v0.5.0 · Offline Preview</div>
+</aside>
+
+<!-- ===== 主区域 ===== -->
+<div class="main">
+  <div class="topbar">
+    <div class="title-area">
+      <h1 id="pageTitle">首页</h1>
+    </div>
+    <div class="actions">
+      <button class="btn" onclick="openModal('settingsModal')">⚙️ <span data-i18n="settings">系统设置</span></button>
+      <button class="btn" onclick="openCaddyModal()">🔀 <span data-i18n="caddySettings">Caddy 配置</span></button>
+      <button class="btn" onclick="openModal('aboutModal')">ℹ️ <span data-i18n="about">关于</span></button>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- ============ 首页：NAS 监控 + 硬盘 ============ -->
+    <section class="view active" id="view-home">
+      <div class="section-title">
+        <span data-i18n="secNas">NAS 监控</span>
+        <span class="badge" id="nasBadge">Glances · 每 2s 刷新</span>
+      </div>
+      <div class="grid g-4">
+        <div class="card">
+          <div class="card-h"><span class="t" data-i18n="cpu">CPU</span><span class="dot" id="cpuDot"></span></div>
+          <div class="gauge-wrap">
+            <div class="gauge">
+              <svg width="76" height="76">
+                <circle cx="38" cy="38" r="32" stroke="var(--track)" stroke-width="8" fill="none"/>
+                <circle id="cpuArc" cx="38" cy="38" r="32" stroke="var(--accent)" stroke-width="8" fill="none" stroke-linecap="round" stroke-dasharray="201" stroke-dashoffset="60" />
+              </svg>
+              <div class="val"><b id="cpuVal">--</b><span data-i18n="used">使用率</span></div>
+            </div>
+            <div class="gauge-info">
+              <div class="row"><span data-i18n="cores">核心数</span><b id="cpuCores">--</b></div>
+              <div class="row"><span data-i18n="load">负载</span><b id="cpuLoad">--</b></div>
+              <div class="row"><span data-i18n="temp">温度</span><b id="cpuTemp">--</b></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-h"><span class="t" data-i18n="memory">内存</span><span class="dot"></span></div>
+          <div class="gauge-wrap">
+            <div class="gauge">
+              <svg width="76" height="76">
+                <circle cx="38" cy="38" r="32" stroke="var(--track)" stroke-width="8" fill="none"/>
+                <circle id="memArc" cx="38" cy="38" r="32" stroke="var(--green)" stroke-width="8" fill="none" stroke-linecap="round" stroke-dasharray="201" stroke-dashoffset="80" />
+              </svg>
+              <div class="val"><b id="memVal">--</b><span data-i18n="used">使用率</span></div>
+            </div>
+            <div class="gauge-info">
+              <div class="row"><span data-i18n="memUsed">已用</span><b id="memUsed">--</b></div>
+              <div class="row"><span data-i18n="memTotal">总计</span><b id="memTotal">--</b></div>
+              <div class="row"><span data-i18n="swap">交换</span><b id="memSwap">--</b></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-h"><span class="t" data-i18n="network">网络</span><span class="dot"></span></div>
+          <div class="net-num"><span id="netDown">--</span> <small style="color:var(--text2);font-size:12px;font-weight:400;">MB/s</small></div>
+          <div class="net-sub" data-i18n="netDownLbl">↓ 下行</div>
+          <div class="net-num" style="color:var(--green);margin-top:8px;"><span id="netUp">--</span> <small style="color:var(--text2);font-size:12px;font-weight:400;">MB/s</small></div>
+          <div class="net-sub" data-i18n="netUpLbl">↑ 上行</div>
+          <div class="spark" id="netSpark"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-h"><span class="t" data-i18n="diskTemp">硬盘温度</span><span class="dot"></span></div>
+          <div class="temp"><span id="tempMain">--</span><small>°C</small></div>
+          <div class="temp-list" id="tempList"></div>
+        </div>
+      </div>
+
+      <div class="section-title"><span data-i18n="secDisk">硬盘容量</span><span class="badge" id="diskSource">Glances · /api/4/fs</span></div>
+      <div class="card" id="diskCard"></div>
+    </section>
+
+    <!-- ============ PT 管理（主导航） ============ -->
+    <section class="view" id="view-pt">
+      <div class="section-title">
+        <span data-i18n="secPt">PT 管理</span>
+        <span class="badge" id="ptSourceBadge">未登录</span>
+        <div style="margin-left:auto;display:flex;gap:8px;">
+          <button class="btn" style="padding:5px 12px;" onclick="openModal('mpModal')">⚙️ <span data-i18n="mpSettings">设置</span></button>
+          <button class="btn" style="padding:5px 12px;" onclick="refreshPt(true)">🔄 <span data-i18n="ptRefresh">刷新</span></button>
+        </div>
+      </div>
+
+      <!-- 子页面横排 tabs -->
+      <div class="tabs" id="ptTabs">
+        <div class="tab active" data-ptsub="sites" onclick="switchPtSub('sites')">📋 <span data-i18n="ptSiteList">已添加站点</span></div>
+        <div class="tab" data-ptsub="data" onclick="switchPtSub('data')">📊 <span data-i18n="ptSiteData">站点数据</span></div>
+        <div class="tab" data-ptsub="guard" onclick="switchPtSub('guard')">🩺 <span data-i18n="ptSubGuard">PT 监护室</span></div>
+      </div>
+
+      <div>
+
+        <!-- 子页1：已添加站点 -->
+        <div class="ptsub-panel active" id="ptsub-sites">
+          <div id="ptAlerts" style="display:none;"></div>
+          <div class="card" style="margin-bottom:14px;">
+            <div class="card-h"><span class="t" data-i18n="ptSiteList">已添加站点</span><span class="badge" id="ptSiteCount"></span></div>
+            <table>
+              <thead>
+                <tr>
+                  <th data-i18n="colSite">站点</th>
+                  <th data-i18n="colDomain">域名</th>
+                  <th data-i18n="colCookie">Cookie</th>
+                  <th data-i18n="colStatus">状态</th>
+                  <th data-i18n="colPri">优先级</th>
+                </tr>
+              </thead>
+              <tbody id="ptSiteBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 子页2：站点数据 -->
+        <div class="ptsub-panel" id="ptsub-data">
+          <div class="section-title"><span data-i18n="ptSiteData">站点数据</span></div>
+          <div class="grid g-4" id="ptGrid"></div>
+        </div>
+
+        <!-- 子页3：PT 监护室（Savept 插件信息） -->
+        <div class="ptsub-panel" id="ptsub-guard">
+          <div class="grid g-3" style="margin-bottom:14px;">
+            <div class="card">
+              <div class="card-h"><span class="t" data-i18n="guardPlugin">插件状态</span><span class="dot" id="guardDot"></span></div>
+              <div class="gauge-info">
+                <div class="row"><span data-i18n="guardInstalled">是否安装</span><b id="guardInstalled">--</b></div>
+                <div class="row"><span data-i18n="guardEnabled">是否启用</span><b id="guardEnabled">--</b></div>
+                <div class="row"><span data-i18n="guardVersion">版本</span><b id="guardVersion">--</b></div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-h"><span class="t" data-i18n="guardWork">工作状态</span><span class="dot"></span></div>
+              <div class="gauge-info">
+                <div class="row"><span data-i18n="guardFetch">数据源</span><b id="guardSource">--</b></div>
+                <div class="row"><span data-i18n="guardFetched">上次获取</span><b id="guardFetched">--</b></div>
+                <div class="row"><span data-i18n="guardCron">定时推送</span><b id="guardCron">--</b></div>
+                <div class="row"><span data-i18n="guardNotify">公告通知</span><b id="guardNotify">--</b></div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-h"><span class="t" data-i18n="guardSummary">快照统计</span><span class="dot"></span></div>
+              <div class="gauge-info">
+                <div class="row"><span data-i18n="guardTotal">站点总数</span><b id="guardTotal">--</b></div>
+                <div class="row"><span data-i18n="guardHealthy">正常</span><b id="guardHealthy" style="color:var(--green)">--</b></div>
+                <div class="row"><span data-i18n="guardCritical">病危</span><b id="guardCritical" style="color:var(--red)">--</b></div>
+                <div class="row"><span data-i18n="guardClosed">已关站</span><b id="guardClosed">--</b></div>
+                <div class="row"><span data-i18n="guardOwned">已接入 MP</span><b id="guardOwned">--</b></div>
+              </div>
+            </div>
+          </div>
+          <div id="guardAlerts"></div>
+          <div class="card">
+            <div class="card-h"><span class="t" data-i18n="guardSiteSync">站点获取状态同步</span><span class="badge" id="guardSyncBadge"></span></div>
+            <table>
+              <thead>
+                <tr>
+                  <th data-i18n="colSite">站点</th>
+                  <th data-i18n="colDomain">域名</th>
+                  <th data-i18n="colStatus">获取状态</th>
+                  <th data-i18n="colYear">成立年份</th>
+                  <th data-i18n="colAnniv">站庆</th>
+                  <th data-i18n="colMp">MP 同步</th>
+                </tr>
+              </thead>
+              <tbody id="guardSiteBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 超漫画 ============ -->
+    <section class="view" id="view-comic">
+      <div class="section-title"><span data-i18n="secComic">超漫画</span></div>
+      <div class="cfg-wrap">
+        <div class="card">
+          <div class="card-h"><span class="t" data-i18n="superComicTitle">Komga / Kavita / Calibre-Web · 统一书库</span><span class="dot"></span></div>
+          <div class="tabs">
+            <div class="tab active" data-tab="comic-1">Komga</div>
+            <div class="tab" data-tab="comic-2">Kavita</div>
+            <div class="tab" data-tab="comic-3">Calibre-Web</div>
+          </div>
+          <div class="tab-panel active" id="comic-1">
+            <div class="cfg-field">
+              <label data-i18n="lblLan">内网 IP 地址</label>
+              <input id="comicLan" type="text" value="http://192.168.112.3:25600" data-lan-input="comic">
+            </div>
+            <div class="cfg-field">
+              <label data-i18n="lblProxy">反代 / 代理域名</label>
+              <input id="comicProxy" type="text" value="https://kom.enged.top" data-proxy-input="comic">
+            </div>
+            <div class="switch-row">
+              <div class="lbl" data-i18n="lblAutoSwitch">访问地址自动切换<small data-i18n="lblAutoSwitchSub">内网自动走内网 IP，外网自动走反代域名</small></div>
+              <div class="switch on" data-switch="comic"></div>
+            </div>
+            <div class="addr-box">
+              <div class="label" data-i18n="curAddr">当前访问地址</div>
+              <div class="val" id="comicAddr">https://kom.enged.top</div>
+            </div>
+            <button class="btn btn-primary" onclick="toast(t('testOk'))">🔌 <span data-i18n="btnTest">测试连接</span></button>
+            <button class="btn" style="margin-left:8px" onclick="toast(t('saved'))">💾 <span data-i18n="btnSave">保存</span></button>
+            <div class="hint" data-i18n="comicHint">提示：Komga 适合漫画与合集管理。</div>
+          </div>
+          <div class="tab-panel" id="comic-2">
+            <div class="cfg-field">
+              <label data-i18n="lblLan">内网 IP 地址</label>
+              <input type="text" value="http://192.168.112.3:8085" data-lan-input="comic">
+            </div>
+            <div class="cfg-field">
+              <label data-i18n="lblProxy">反代 / 代理域名</label>
+              <input type="text" value="https://kavita.enged.top" data-proxy-input="comic">
+            </div>
+            <div class="switch-row">
+              <div class="lbl" data-i18n="lblAutoSwitch">访问地址自动切换<small data-i18n="lblAutoSwitchSub">内网自动走内网 IP，外网自动走反代域名</small></div>
+              <div class="switch on" data-switch="comic"></div>
+            </div>
+            <div class="addr-box">
+              <div class="label" data-i18n="curAddr">当前访问地址</div>
+              <div class="val" id="comicAddr2">https://kavita.enged.top</div>
+            </div>
+            <button class="btn btn-primary" onclick="toast(t('testOk'))">🔌 <span data-i18n="btnTest">测试连接</span></button>
+            <div class="hint" data-i18n="kavitaHint">提示：Kavita 内建阅读器，支持书架管理。</div>
+          </div>
+          <div class="tab-panel" id="comic-3">
+            <div class="cfg-field">
+              <label data-i18n="lblLan">内网 IP 地址</label>
+              <input type="text" value="http://192.168.112.3:8083" data-lan-input="comic">
+            </div>
+            <div class="cfg-field">
+              <label data-i18n="lblProxy">反代 / 代理域名</label>
+              <input type="text" value="https://book.enged.top" data-proxy-input="comic">
+            </div>
+            <div class="switch-row">
+              <div class="lbl" data-i18n="lblAutoSwitch">访问地址自动切换<small data-i18n="lblAutoSwitchSub">内网自动走内网 IP，外网自动走反代域名</small></div>
+              <div class="switch on" data-switch="comic"></div>
+            </div>
+            <div class="addr-box">
+              <div class="label" data-i18n="curAddr">当前访问地址</div>
+              <div class="val" id="ebookAddr">https://book.enged.top</div>
+            </div>
+            <button class="btn btn-primary" onclick="toast(t('testOk'))">🔌 <span data-i18n="btnTest">测试连接</span></button>
+            <button class="btn" style="margin-left:8px" onclick="toast(t('saved'))">💾 <span data-i18n="btnSave">保存</span></button>
+            <div class="hint" data-i18n="ebookHint">提示：可搭配 Calibre-Web Automated 实现 PT 下载后自动刮削入库。</div>
+          </div>
+        </div>
+      </div>
+      <div class="media-wide-host" id="media-wide-comic"></div>
+    </section>
+
+    <!-- ============ 影视 ============ -->
+    <section class="view" id="view-movie">
+      <div class="section-title"><span data-i18n="secMovie">影视服务器</span></div>
+      <div class="cfg-wrap">
+        <div class="card">
+          <div class="card-h"><span class="t" data-i18n="movieSupport">支持 Plex / Emby / Jellyfin</span><span class="dot"></span></div>
+          <div class="tabs">
+            <div class="tab" data-tab="movie-plex">Plex</div>
+            <div class="tab active" data-tab="movie-emby">Emby</div>
+            <div class="tab" data-tab="movie-jellyfin">Jellyfin</div>
+          </div>
+          <div class="tab-panel" id="movie-plex">
+            <div class="cfg-field">
+              <label data-i18n="lblLan">内网 IP 地址</label>
+              <input type="text" value="http://192.168.112.3:32400" data-lan-input="movie">
+            </div>
+            <div class="cfg-field">
+              <label data-i18n="lblProxy">反代 / 代理域名</label>
+              <input type="text" value="https://plex.enged.top" data-proxy-input="movie">
+            </div>
+            <div class="switch-row">
+              <div class="lbl" data-i18n="lblAutoSwitch">访问地址自动切换<small data-i18n="lblAutoSwitchSub">内网自动走内网 IP，外网自动走反代域名</small></div>
+              <div class="switch on" data-switch="movie"></div>
+            </div>
+            <div class="addr-box">
+              <div class="label" data-i18n="curAddr">当前访问地址</div>
+              <div class="val" id="movieAddrPlex">https://plex.enged.top</div>
+            </div>
+            <button class="btn btn-primary" onclick="toast(t('testOk'))">🔌 <span data-i18n="btnTest">测试连接</span></button>
+            <div class="hint" data-i18n="plexHint">提示：Plex 需关闭「要求安全连接」或配置自定义域名访问。</div>
+          </div>
+          <div class="tab-panel active" id="movie-emby">
+            <div class="cfg-field">
+              <label data-i18n="lblLan">内网 IP 地址</label>
+              <input type="text" value="http://192.168.112.3:8096" data-lan-input="movie">
+            </div>
+            <div class="cfg-field">
+              <label data-i18n="lblProxy">反代 / 代理域名</label>
+              <input type="text" value="https://emby.enged.top" data-proxy-input="movie">
+            </div>
+            <div class="switch-row">
+              <div class="lbl" data-i18n="lblAutoSwitch">访问地址自动切换<small data-i18n="lblAutoSwitchSub">内网自动走内网 IP，外网自动走反代域名</small></div>
+              <div class="switch on" data-switch="movie"></div>
+            </div>
+            <div class="addr-box">
+              <div class="label" data-i18n="curAddr">当前访问地址</div>
+              <div class="val" id="movieAddrEmby">https://emby.enged.top</div>
+            </div>
+            <button class="btn btn-primary" onclick="toast(t('testOk'))">🔌 <span data-i18n="btnTest">测试连接</span></button>
+            <div class="hint" data-i18n="embyHint">提示：Emby 回调 MP 时填写 https://mp.enged.top/api/v1/webhook?token=…</div>
+          </div>
+          <div class="tab-panel" id="movie-jellyfin">
+            <div class="cfg-field">
+              <label data-i18n="lblLan">内网 IP 地址</label>
+              <input type="text" value="http://192.168.112.3:8096" data-lan-input="movie">
+            </div>
+            <div class="cfg-field">
+              <label data-i18n="lblProxy">反代 / 代理域名</label>
+              <input type="text" value="https://jellyfin.enged.top" data-proxy-input="movie">
+            </div>
+            <div class="switch-row">
+              <div class="lbl" data-i18n="lblAutoSwitch">访问地址自动切换<small data-i18n="lblAutoSwitchSub">内网自动走内网 IP，外网自动走反代域名</small></div>
+              <div class="switch on" data-switch="movie"></div>
+            </div>
+            <div class="addr-box">
+              <div class="label" data-i18n="curAddr">当前访问地址</div>
+              <div class="val" id="movieAddrJellyfin">https://jellyfin.enged.top</div>
+            </div>
+            <button class="btn btn-primary" onclick="toast(t('testOk'))">🔌 <span data-i18n="btnTest">测试连接</span></button>
+            <div class="hint" data-i18n="jellyfinHint">提示：Jellyfin 开源免费，无数量限制。</div>
+          </div>
+        </div>
+      </div>
+      <div class="media-wide-host" id="media-wide-movie"></div>
+    </section>
+
+    <!-- ============ 音频 ============ -->
+    <section class="view" id="view-audio">
+      <div class="section-title"><span data-i18n="secAudio">音频服务器</span></div>
+      <div class="cfg-wrap">
+        <div class="card">
+          <div class="card-h"><span class="t" data-i18n="audioSupport">支持 道理鱼 / Navidrome</span><span class="dot"></span></div>
+          <div class="tabs">
+            <div class="tab active" data-tab="audio-navidrome">Navidrome</div>
+            <div class="tab" data-tab="audio-dly">道理鱼</div>
+          </div>
+          <div class="tab-panel active" id="audio-navidrome">
+            <div class="cfg-field">
+              <label data-i18n="lblLan">内网 IP 地址</label>
+              <input type="text" value="http://192.168.112.3:4533" data-lan-input="audio">
+            </div>
+            <div class="cfg-field">
+              <label data-i18n="lblProxy">反代 / 代理域名</label>
+              <input type="text" value="https://yy.enged.top/app/" data-proxy-input="audio">
+            </div>
+            <div class="switch-row">
+              <div class="lbl" data-i18n="lblAutoSwitch">访问地址自动切换<small data-i18n="lblAutoSwitchSub">内网自动走内网 IP，外网自动走反代域名</small></div>
+              <div class="switch on" data-switch="audio"></div>
+            </div>
+            <div class="addr-box">
+              <div class="label" data-i18n="curAddr">当前访问地址</div>
+              <div class="val" id="audioAddrNd">https://yy.enged.top/app/</div>
+            </div>
+            <button class="btn btn-primary" onclick="toast(t('testOk'))">🔌 <span data-i18n="btnTest">测试连接</span></button>
+            <div class="hint" data-i18n="ndHint">提示：Navidrome 走 Cloudflare Tunnel 若播放卡顿，关闭 HTTP/3 并强制 cloudflared http2。</div>
+          </div>
+          <div class="tab-panel" id="audio-dly">
+            <div class="cfg-field">
+              <label data-i18n="lblLan">内网 IP 地址</label>
+              <input type="text" value="http://192.168.112.3:4000" data-lan-input="audio">
+            </div>
+            <div class="cfg-field">
+              <label data-i18n="lblProxy">反代 / 代理域名</label>
+              <input type="text" value="https://music.enged.top" data-proxy-input="audio">
+            </div>
+            <div class="switch-row">
+              <div class="lbl" data-i18n="lblAutoSwitch">访问地址自动切换<small data-i18n="lblAutoSwitchSub">内网自动走内网 IP，外网自动走反代域名</small></div>
+              <div class="switch on" data-switch="audio"></div>
+            </div>
+            <div class="addr-box">
+              <div class="label" data-i18n="curAddr">当前访问地址</div>
+              <div class="val" id="audioAddrDly">https://music.enged.top</div>
+            </div>
+            <button class="btn btn-primary" onclick="toast(t('testOk'))">🔌 <span data-i18n="btnTest">测试连接</span></button>
+            <div class="hint" data-i18n="dlyHint">提示：道理鱼为本地音乐服务，反代域名需在 DNS 解析至 Tunnel。</div>
+          </div>
+        </div>
+      </div>
+      <div class="media-wide-host" id="media-wide-audio"></div>
+    </section>
+
+    <!-- ============ 容器管理 ============ -->
+    <section class="view" id="view-docker">
+      <div class="section-title"><span data-i18n="secDocker">Docker 容器</span> <span class="badge" id="containerCount">共 24 个</span></div>
+      <input class="search" id="dockerSearch" type="text" placeholder="🔍 搜索容器名称 / 镜像 / 状态…" data-i18n-ph="searchPh">
+      <div id="dockerGraphic" class="docker-servers"></div>
+    </section>
+
+    <!-- ============ 动态自定义模块（JS 注入） ============ -->
+    <div id="customViews"></div>
+
+  </div>
+</div>
+
+<!-- ===== 系统设置弹窗 ===== -->
+<div class="modal-mask" id="settingsModal">
+  <div class="modal">
+    <h3><span data-i18n="settingsTitle">系统设置</span><button class="close" onclick="closeModal('settingsModal')">✕</button></h3>
+
+    <div class="modal-sec" data-i18n="langLbl">界面语言</div>
+    <div class="lang-opt on" data-lang="zh-CN" onclick="setLang('zh-CN')">
+      <span class="radio"></span>简体中文
+    </div>
+    <div class="lang-opt" data-lang="zh-TW" onclick="setLang('zh-TW')">
+      <span class="radio"></span>繁體中文
+    </div>
+    <div class="lang-opt" data-lang="en" onclick="setLang('en')">
+      <span class="radio"></span>English
+    </div>
+
+    <div class="modal-sec" data-i18n="themeLbl">主题</div>
+    <div class="theme-opt" data-theme-opt="dark" onclick="setTheme('dark')">
+      <span class="radio"></span><span data-i18n="themeDark">晚上（暗色）</span>
+    </div>
+    <div class="theme-opt" data-theme-opt="light" onclick="setTheme('light')">
+      <span class="radio"></span><span data-i18n="themeLight">白天（亮色）</span>
+    </div>
+    <div class="theme-opt" data-theme-opt="custom" onclick="setTheme('custom')">
+      <span class="radio"></span><span data-i18n="themeCustom">自定义（上传背景图片）</span>
+    </div>
+    <div id="customBgWrap" style="display:none;">
+      <div class="cfg-field">
+        <label data-i18n="bgUpload">上传背景图片</label>
+        <input id="bgFile" type="file" accept="image/*" onchange="uploadBg(this)">
+      </div>
+      <button class="btn btn-danger" onclick="clearBg()" style="margin-bottom:8px;">🗑 <span data-i18n="bgClear">清除自定义背景</span></button>
+      <div class="hint" data-i18n="bgHint">提示：图片仅保存在本浏览器 localStorage，不经过服务器。</div>
+    </div>
+
+    <div class="modal-sec" data-i18n="glancesLbl">NAS 监控（Glances 直连）</div>
+    <div class="cfg-field">
+      <label data-i18n="glancesAddr">Glances API 地址</label>
+      <input id="glancesUrl" type="text" placeholder="/api/glances（容器代理）">
+    </div>
+    <button class="btn btn-primary" onclick="saveGlances()">💾 <span data-i18n="btnSave">保存</span></button>
+    <div class="hint" data-i18n="glancesHint">提示：Glances 容器需以只读方式挂载磁盘路径（/dev、/sys、/proc 等加 :ro）才能读到硬盘温度与使用率，示例见交付说明。</div>
+  </div>
+</div>
+
+<!-- ===== 模块设置弹窗 ===== -->
+<div class="modal-mask" id="boardModal">
+  <div class="modal wide">
+    <h3><span data-i18n="boardTitle">模块设置</span><button class="close" onclick="closeModal('boardModal')">✕</button></h3>
+
+    <div class="modal-sec" data-i18n="boardExisting">已有模块</div>
+    <div id="boardList"></div>
+
+    <div class="modal-sec" data-i18n="boardAddNew">手动添加模块</div>
+    <div class="card">
+      <div class="form-2col">
+        <div class="cfg-field">
+          <label data-i18n="boardName">模块名称</label>
+          <input id="nbName" type="text" placeholder="例如：相册 / 网盘 / 下载机">
+        </div>
+        <div class="cfg-field">
+          <label data-i18n="boardIcon">图标（emoji）</label>
+          <input id="nbIcon" type="text" value="🌐" maxlength="4">
+        </div>
+      </div>
+      <div class="form-2col">
+        <div class="cfg-field">
+          <label data-i18n="boardType">功能类型</label>
+          <select id="nbType" onchange="boardTypeChanged()">
+            <option value="web" data-i18n="btWeb">通用网页</option>
+            <option value="comic" data-i18n="btComic">漫画</option>
+                        <option value="movie" data-i18n="btMovie">影视</option>
+            <option value="audio" data-i18n="btAudio">音频</option>
+          </select>
+        </div>
+        <div class="cfg-field">
+          <label data-i18n="boardAddr">服务器 IP 或域名</label>
+          <input id="nbAddr" type="text" placeholder="192.168.112.3 或 nas.enged.top">
+        </div>
+      </div>
+      <div class="form-2col">
+        <div class="cfg-field">
+          <label data-i18n="boardPort">端口（可选）</label>
+          <input id="nbPort" type="text" placeholder="8080">
+        </div>
+        <div class="cfg-field">
+          <label data-i18n="boardProto">协议</label>
+          <select id="nbProto">
+            <option value="http">http</option>
+            <option value="https">https</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-2col" id="ptExtra">
+        <div class="cfg-field">
+          <label data-i18n="boardUser">账号（可选）</label>
+          <input id="nbUser" type="text" placeholder="admin">
+        </div>
+        <div class="cfg-field">
+          <label data-i18n="boardPass">密码（可选）</label>
+          <input id="nbPass" type="password" placeholder="••••••••">
+        </div>
+      </div>
+      <div class="cfg-field" id="ptTokenField" style="display:none;">
+        <label data-i18n="mpToken">MoviePilot API Token</label>
+        <input id="nbToken" type="password" placeholder="Bearer API_TOKEN（16+ 位）">
+      </div>
+      <button class="btn btn-primary" id="btnVerify" onclick="verifyAndAdd()">🔌 <span data-i18n="btnVerify">验证并添加</span></button>
+      <button class="btn" style="margin-left:8px" onclick="addBoard(false)">➕ <span data-i18n="btnAddDirect">直接添加</span></button>
+      <div class="hint" data-i18n="boardHint">提示：验证会尝试访问该服务器（跨域或内网不可达时验证会失败，可改用「直接添加」）。媒体类型（漫画/电子书/影视/音频）添加后自动跳转到对应的内置功能页面；通用网页类型打开内嵌页面。</div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== PT 设置弹窗（MoviePilot 服务器配置） ===== -->
+<div class="modal-mask" id="mpModal">
+  <div class="modal">
+    <h3><span data-i18n="mpConn">MoviePilot 登录</span><span class="dot" id="mpDot"></span><button class="close" onclick="closeModal('mpModal')">✕</button></h3>
+    <div class="cfg-field">
+      <label data-i18n="mpAddr">MoviePilot 访问地址</label>
+      <input id="mpUrl" type="text" placeholder="/api/mp（容器代理）或 MoviePilot 地址">
+    </div>
+    <div class="cfg-field">
+      <label data-i18n="mpUser">登录账号</label>
+      <input id="mpUser" type="text" placeholder="admin" autocomplete="username">
+    </div>
+    <div class="cfg-field">
+      <label data-i18n="mpPass">登录密码</label>
+      <input id="mpPass" type="password" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <button class="btn btn-primary" style="width:100%;" id="btnMpLogin" onclick="loginMp()">🔑 <span data-i18n="btnLogin">登录并获取数据</span></button>
+    <button class="btn" style="width:100%;margin-top:8px;" onclick="mpLogout()">🚪 <span data-i18n="btnLogout">退出</span></button>
+    <div class="hint" data-i18n="mpHint">提示：使用 MoviePilot 网页登录的账号密码（POST /api/v1/login/access-token），登录后自动获取站点管理与 PT 监护室数据，Token 仅保存在本浏览器。</div>
+  </div>
+</div>
+
+<!-- ===== Caddy 配置弹窗 ===== -->
+<div class="modal-mask" id="caddyModal">
+  <div class="modal wide">
+    <h3><span data-i18n="caddySettings">Caddy 配置</span><button class="close" onclick="closeModal('caddyModal')">✕</button></h3>
+    <div class="cfg-field">
+      <label data-i18n="caddyOrigin">WebUI 外部域名</label>
+      <input id="caddyOrigin" type="text" placeholder="https://home.enged.top">
+    </div>
+    <div class="cfg-field">
+      <label data-i18n="caddyAdminToken">管理令牌</label>
+      <input id="caddyToken" type="password" placeholder="可留空，留空表示无鉴权">
+    </div>
+    <div class="cfg-field">
+      <label data-i18n="caddyFile">Caddyfile</label>
+      <textarea id="caddyFile" style="width:100%;min-height:300px;border:1px solid var(--border);border-radius:8px;background:var(--card2);color:var(--text);padding:10px;font:12px/1.6 ui-monospace, monospace;"></textarea>
+    </div>
+    <button class="btn btn-primary" onclick="saveCaddyConfig()">💾 <span data-i18n="caddySave">保存并应用</span></button>
+    <button class="btn" onclick="loadCaddyConfig()">🔄 <span data-i18n="caddyReload">重新载入</span></button>
+    <div class="hint" data-i18n="caddyHint">保存后会校验并热加载容器内的 Caddy 配置；失败时会回滚。</div>
+  </div>
+</div>
+
+<!-- ===== 关于弹窗 ===== -->
+<div class="modal-mask" id="aboutModal">
+  <div class="modal">
+    <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
+    <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
+    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.5.0 · Offline</b></div>
+    <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>HTML / CSS / JS · 单文件</b></div>
+    <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>Glances REST API (61208)</b></div>
+    <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>
+    <div class="about-row"><span data-i18n="aboutAuthor">生成</span><b>Hermes Agent</b></div>
+    <div style="margin-top:14px;font-size:11px;color:var(--text2);line-height:1.7;" data-i18n="aboutNote">
+      预览版仅展示 UI 结构与交互逻辑，真实接口不可达时自动回退模拟数据。实际部署时将对接 Glances API、MoviePilot 插件接口与各服务 API。
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+
+function openCaddyModal() {
+  loadCaddyConfig();
+  openModal('caddyModal');
+}
+function caddyApiHeaders() {
+  const tok = (document.getElementById('caddyToken')?.value || '').trim();
+  return tok ? { 'X-VaultHub-Token': tok } : {};
+}
+async function loadCaddyConfig() {
+  const res = await fetch('/api/admin/caddyfile', { cache: 'no-store' });
+  const data = await res.json();
+  if (data.ok) document.getElementById('caddyFile').value = data.caddyfile || '';
+}
+async function saveCaddyConfig() {
+  const caddyfile = document.getElementById('caddyFile').value;
+  const res = await fetch('/api/admin/caddyfile', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...caddyApiHeaders() },
+    body: JSON.stringify({ caddyfile })
+  });
+  const data = await res.json();
+  if (data.ok) toast('✅ Caddy 配置已保存并应用');
+  else toast('⚠️ ' + (data.error || '保存失败'));
+}
+/* ================= i18n ================= */
+const I18N = {
+  "zh-CN": {
+    caddySettings: "Caddy 配置", caddyOrigin: "WebUI 外部域名", caddyAdminToken: "管理令牌", caddyFile: "Caddyfile", caddySave: "保存并应用", caddyReload: "重新载入", caddyHint: "保存后会校验并热加载容器内的 Caddy 配置；失败时会回滚。", superComicTitle: "Komga / Kavita / Calibre-Web · 统一书库", appName: "蜀鼠之家", appSub: "VaultHub · 家庭 NAS 控制台 · 预览版",
+    navGroupMain: "主导航", navHome: "首页", navPt: "PT 管理",
+    navGroupMedia: "媒体", navComic: "超漫画", navMovie: "影视", navAudio: "音频",
+    navGroupSys: "系统", navDocker: "容器管理",
+    navGroupCustom: "自定义", addBoardNav: "添加模块",
+    settings: "系统设置", about: "关于",
+    secNas: "NAS 监控", cpu: "CPU", memory: "内存", network: "网络", diskTemp: "硬盘温度",
+    used: "使用率", cores: "核心数", load: "负载", temp: "温度",
+    memUsed: "已用", memTotal: "总计", swap: "交换",
+    netDownLbl: "↓ 下行", netUpLbl: "↑ 上行",
+    secDisk: "硬盘容量",
+    secPt: "PT 管理", ptRefresh: "刷新", mpConn: "MoviePilot 登录", mpSettings: "设置",
+    mpAddr: "MoviePilot 访问地址", mpUser: "登录账号", mpPass: "登录密码",
+    btnLogin: "登录并获取数据", btnLogout: "退出",
+    ptNotLoggedIn: "未登录",
+    mpHint: "提示：域名请带 https://（如 https://mp.enged.top），否则 Cloudflare 的 http 301 跳转会被浏览器拦截；内网可用 http://192.168.112.3:3000 直连。登录走 POST /api/v1/login/access-token，Token 仅保存在本浏览器。",
+    ptSubNav: "子页面", ptSubSites: "站点管理", ptSubGuard: "PT 监护室",
+    ptSiteList: "已添加站点", colCookie: "Cookie", colPri: "优先级",
+    colSite: "站点", colDomain: "域名", colStatus: "状态",
+    colYear: "成立年份", colAnniv: "站庆", colMp: "MP 同步", ptSiteData: "站点数据",
+    guardPlugin: "插件状态", guardInstalled: "是否安装", guardEnabled: "是否启用", guardVersion: "版本",
+    guardWork: "工作状态", guardFetch: "数据源", guardFetched: "上次获取", guardCron: "定时推送", guardNotify: "公告通知",
+    guardSummary: "快照统计", guardTotal: "站点总数", guardHealthy: "正常", guardCritical: "病危", guardClosed: "已关站", guardOwned: "已接入 MP",
+    guardSiteSync: "站点获取状态同步", guardSyncBadge: "同步",
+    guardPluginMissing: "Savept 插件接口不可用 — 请在 MoviePilot 插件市场安装「Vue-PT监护室 (Savept)」",
+    ptUp: "上传", ptDown: "下载", ptRatio: "分享率", ptSeed: "做种", ptMagic: "魔力", ptLevel: "等级",
+    ptOk: "✅ 已连接 · 自动辅种中", ptErr: "⚠️ Cookie 失效 · 需重新签到",
+    stHealthy: "运行中", stCritical: "病危", stClosed: "已关站", stUnknown: "未知",
+    mpOwned: "已接入", mpAvailable: "可接入", mpUnsupported: "不支持",
+    alertTitle: "公告",
+    secComic: "超漫画", secMovie: "影视服务器", secAudio: "音频服务器",
+    movieSupport: "支持 Plex / Emby / Jellyfin", audioSupport: "支持 道理鱼 / Navidrome",
+    lblLan: "内网 IP 地址", lblProxy: "反代 / 代理域名",
+    lblAutoSwitch: "访问地址自动切换", lblAutoSwitchSub: "内网自动走内网 IP，外网自动走反代域名",
+    curAddr: "当前访问地址", btnTest: "测试连接", btnSave: "保存",
+    mediaUser: "服务账号", mediaPass: "服务密码", btnMediaLogin: "进入媒体服务", btnOpenExternal: "新窗口打开", mediaAccess: "服务访问",
+    mediaLoginNote: "填写或选择上方访问地址后，点击「进入媒体服务」会在当前栏目内打开对应服务登录页；账号密码在媒体服务页面里手动填写。",
+    mediaEmptyTitle: "暂无资源", mediaEmptyDesc: "当前栏目还没有配置媒体服务器。请先配置服务器访问地址，保存后这里会作为资源访问页展示。", mediaCfgBtn: "配置服务器", mediaHideCfg: "收起配置", mediaConfigured: "已配置",
+    testOk: "✅ 连接成功 · 服务可达", saved: "💾 配置已保存",
+    comicHint: "提示：Kavita 中文阅读体验更佳；Komga 刮削能力更强（Comic Vine）。",
+    kavitaHint: "提示：Kavita 内建阅读器，支持书架管理。",
+    ebookHint: "提示：可搭配 Calibre-Web Automated 实现 PT 下载后自动刮削入库。",
+    plexHint: "提示：Plex 需关闭「要求安全连接」或配置自定义域名访问。",
+    embyHint: "提示：Emby 回调 MP 时填写 https://mp.enged.top/api/v1/webhook?token=…",
+    jellyfinHint: "提示：Jellyfin 开源免费，无数量限制。",
+    ndHint: "提示：Navidrome 走 Cloudflare Tunnel 若播放卡顿，关闭 HTTP/3 并强制 cloudflared http2。",
+    dlyHint: "提示：道理鱼为本地音乐服务，反代域名需在 DNS 解析至 Tunnel。",
+    secDocker: "Docker 容器", searchPh: "🔍 搜索容器名称 / 镜像 / 状态…",
+    colName: "名称", colImage: "镜像", colStatus: "状态", colPorts: "端口", colHealth: "健康",
+    settingsTitle: "系统设置", langLbl: "界面语言",
+    themeLbl: "主题", themeDark: "晚上（暗色）", themeLight: "白天（亮色）", themeCustom: "自定义（上传背景图片）",
+    bgUpload: "上传背景图片", bgClear: "清除自定义背景", bgHint: "提示：图片仅保存在本浏览器 localStorage，不经过服务器。",
+    glancesLbl: "NAS 监控（Glances 直连）", glancesAddr: "Glances API 地址",
+    glancesHint: "提示：Glances 容器需以只读方式挂载磁盘路径（/dev、/sys、/proc 等加 :ro）才能读到硬盘温度与使用率，示例见交付说明。",
+    nasOnline: "Glances · 每 2s 刷新", nasOffline: "Glances 离线 · 模拟数据",
+    diskSourceReal: "Glances · /api/4/fs", diskSourceMock: "模拟数据（Glances 不可达）",
+    boardTitle: "模块设置", boardExisting: "已有模块", boardAddNew: "手动添加模块",
+    boardName: "模块名称", boardIcon: "图标（emoji）", boardType: "功能类型",
+    boardAddr: "服务器 IP 或域名", boardPort: "端口（可选）", boardProto: "协议",
+    boardUser: "账号（可选）", boardPass: "密码（可选）",
+    btWeb: "通用网页", btComic: "漫画", btEbook: "电子书", btMovie: "影视", btAudio: "音频", btPt: "PT 管理（MoviePilot）",
+    btnVerify: "验证并添加", btnAddDirect: "直接添加",
+    boardHint: "提示：验证会尝试访问该服务器（跨域或内网不可达时验证会失败，可改用「直接添加」）。媒体类型（漫画/电子书/影视/音频）添加后自动跳转到对应的内置功能页面；通用网页类型打开内嵌页面。",
+    verifyOk: "✅ 验证通过 · 服务可达", verifyFail: "⚠️ 无法从浏览器直连（跨域或不可达），可点「直接添加」",
+    boardAdded: "✅ 模块已添加并切换到新页面", boardDeleted: "🗑 模块已删除",
+    boardEmpty: "暂无自定义模块，点击下方「手动添加模块」",
+    builtinBoard: "内置", customBoard: "自定义", ptInstance: "PT 实例",
+    openNew: "在新窗口打开", saveFirst: "请先填写模块名称与地址",
+    moduleHide: "隐藏", moduleShow: "显示",
+    aboutTitle: "关于", aboutName: "应用名称", aboutVer: "版本", aboutStack: "技术栈",
+    aboutMon: "监控组件", aboutPt: "PT 插件", aboutAuthor: "生成",
+    aboutNote: "预览版仅展示 UI 结构与交互逻辑，真实接口不可达时自动回退模拟数据。实际部署时将对接 Glances API、MoviePilot 插件接口与各服务 API。",
+    up: "运行中", stopped: "已停止", restarting: "重启中",
+    healthy: "healthy", unhealthy: "unhealthy",
+    ptConnSaved: "✅ MoviePilot 连接已保存", ptReal: "MoviePilot API", ptMock: "模拟数据（API 不可达）",
+    testConnecting: "⏳ 正在验证…"
+  },
+  "zh-TW": {
+    caddySettings: "Caddy 設定", caddyOrigin: "WebUI 外部網域", caddyAdminToken: "管理權杖", caddyFile: "Caddyfile", caddySave: "儲存並套用", caddyReload: "重新載入", caddyHint: "儲存後會驗證並熱載入容器內的 Caddy 設定；失敗時會回滾。", superComicTitle: "Komga / Kavita / Calibre-Web · 統一書庫", appName: "蜀鼠之家", appSub: "VaultHub · 家庭 NAS 控制台 · 預覽版",
+    navGroupMain: "主導覽", navHome: "首頁", navPt: "PT 管理",
+    navGroupMedia: "媒體", navComic: "超漫畫", navMovie: "影視", navAudio: "音訊",
+    navGroupSys: "系統", navDocker: "容器管理",
+    navGroupCustom: "自訂", addBoardNav: "新增模組",
+    settings: "系統設定", about: "關於",
+    secNas: "NAS 監控", cpu: "CPU", memory: "記憶體", network: "網路", diskTemp: "硬碟溫度",
+    used: "使用率", cores: "核心數", load: "負載", temp: "溫度",
+    memUsed: "已用", memTotal: "總計", swap: "交換",
+    netDownLbl: "↓ 下行", netUpLbl: "↑ 上行",
+    secDisk: "硬碟容量",
+    secPt: "PT 管理", ptRefresh: "重新整理", mpConn: "MoviePilot 登入", mpSettings: "設定",
+    mpAddr: "MoviePilot 存取位址", mpUser: "登入帳號", mpPass: "登入密碼",
+    btnLogin: "登入並取得資料", btnLogout: "登出",
+    ptNotLoggedIn: "未登入",
+    mpHint: "提示：使用 MoviePilot 網頁登入的帳號密碼（POST /api/v1/login/access-token），登入後自動取得站點管理與 PT 監護室資料，Token 僅保存在本瀏覽器。",
+    ptSubNav: "子頁面", ptSubSites: "站點管理", ptSubGuard: "PT 監護室",
+    ptSiteList: "已新增站點", colCookie: "Cookie", colPri: "優先順序",
+    colSite: "站點", colDomain: "網域", colStatus: "狀態",
+    colYear: "成立年份", colAnniv: "站慶", colMp: "MP 同步", ptSiteData: "站點資料",
+    guardPlugin: "外掛狀態", guardInstalled: "是否安裝", guardEnabled: "是否啟用", guardVersion: "版本",
+    guardWork: "工作狀態", guardFetch: "資料源", guardFetched: "上次取得", guardCron: "定時推送", guardNotify: "公告通知",
+    guardSummary: "快照統計", guardTotal: "站點總數", guardHealthy: "正常", guardCritical: "病危", guardClosed: "已關站", guardOwned: "已接入 MP",
+    guardSiteSync: "站點取得狀態同步", guardSyncBadge: "同步",
+    guardPluginMissing: "Savept 外掛介面不可用 — 請在 MoviePilot 外掛市場安裝「Vue-PT監護室 (Savept)」",
+    ptUp: "上傳", ptDown: "下載", ptRatio: "分享率", ptSeed: "做種", ptMagic: "魔力", ptLevel: "等級",
+    ptOk: "✅ 已連線 · 自動輔種中", ptErr: "⚠️ Cookie 失效 · 需重新簽到",
+    stHealthy: "運行中", stCritical: "病危", stClosed: "已關站", stUnknown: "未知",
+    mpOwned: "已接入", mpAvailable: "可接入", mpUnsupported: "不支援",
+    alertTitle: "公告",
+    secComic: "超漫畫", secMovie: "影視伺服器", secAudio: "音訊伺服器",
+    movieSupport: "支援 Plex / Emby / Jellyfin", audioSupport: "支援 道理魚 / Navidrome",
+    lblLan: "內網 IP 位址", lblProxy: "反向代理 / 代理網域",
+    lblAutoSwitch: "存取位址自動切換", lblAutoSwitchSub: "內網自動走內網 IP，外網自動走代理網域",
+    curAddr: "目前存取位址", btnTest: "測試連線", btnSave: "儲存",
+    mediaUser: "服務帳號", mediaPass: "服務密碼", btnMediaLogin: "進入媒體服務", btnOpenExternal: "新視窗開啟", mediaAccess: "服務訪問",
+    mediaLoginNote: "填寫或選擇上方存取位址後，點擊「進入媒體服務」會在目前欄目內打開對應服務登入頁；帳號密碼在媒體服務頁面裡手動填寫。",
+    mediaEmptyTitle: "暫無資源", mediaEmptyDesc: "目前欄目還沒有設定媒體伺服器。請先設定伺服器存取位址，儲存後這裡會作為資源訪問頁展示。", mediaCfgBtn: "設定伺服器", mediaHideCfg: "收起設定", mediaConfigured: "已設定",
+    testOk: "✅ 連線成功 · 服務可達", saved: "💾 設定已儲存",
+    comicHint: "提示：Kavita 中文閱讀體驗更佳；Komga 刮削能力更強（Comic Vine）。",
+    kavitaHint: "提示：Kavita 內建閱讀器，支援書架管理。",
+    ebookHint: "提示：可搭配 Calibre-Web Automated 實現 PT 下載後自動刮削入庫。",
+    plexHint: "提示：Plex 需關閉「要求安全連線」或設定自訂網域存取。",
+    embyHint: "提示：Emby 回呼 MP 時填寫 https://mp.enged.top/api/v1/webhook?token=…",
+    jellyfinHint: "提示：Jellyfin 開源免費，無數量限制。",
+    ndHint: "提示：Navidrome 走 Cloudflare Tunnel 若播放卡頓，關閉 HTTP/3 並強制 cloudflared http2。",
+    dlyHint: "提示：道理魚為本地音樂服務，代理網域需在 DNS 解析至 Tunnel。",
+    secDocker: "Docker 容器", searchPh: "🔍 搜尋容器名稱 / 映像 / 狀態…",
+    colName: "名稱", colImage: "映像", colStatus: "狀態", colPorts: "連接埠", colHealth: "健康",
+    settingsTitle: "系統設定", langLbl: "介面語言",
+    themeLbl: "主題", themeDark: "晚上（暗色）", themeLight: "白天（亮色）", themeCustom: "自訂（上傳背景圖片）",
+    bgUpload: "上傳背景圖片", bgClear: "清除自訂背景", bgHint: "提示：圖片僅保存在本瀏覽器 localStorage，不經過伺服器。",
+    glancesLbl: "NAS 監控（Glances 直連）", glancesAddr: "Glances API 位址",
+    glancesHint: "提示：Glances 容器需以唯讀方式掛載磁碟路徑（/dev、/sys、/proc 等加 :ro）才能讀到硬碟溫度與使用率，範例見交付說明。",
+    nasOnline: "Glances · 每 2s 重新整理", nasOffline: "Glances 離線 · 模擬資料",
+    diskSourceReal: "Glances · /api/4/fs", diskSourceMock: "模擬資料（Glances 不可達）",
+    boardTitle: "模組設定", boardExisting: "既有模組", boardAddNew: "手動新增模組",
+    boardName: "模組名稱", boardIcon: "圖示（emoji）", boardType: "功能類型",
+    boardAddr: "伺服器 IP 或網域", boardPort: "連接埠（選填）", boardProto: "協定",
+    boardUser: "帳號（選填）", boardPass: "密碼（選填）",
+    btWeb: "通用網頁", btComic: "漫畫", btEbook: "電子書", btMovie: "影視", btAudio: "音訊", btPt: "PT 管理（MoviePilot）",
+    btnVerify: "驗證並新增", btnAddDirect: "直接新增",
+    boardHint: "提示：驗證會嘗試存取該伺服器（跨域或內網不可達時驗證會失敗，可改用「直接新增」）。媒體類型（漫畫/電子書/影視/音訊）新增後自動跳轉到對應的內建功能頁面；通用網頁類型開啟內嵌頁面。",
+    verifyOk: "✅ 驗證通過 · 服務可達", verifyFail: "⚠️ 無法從瀏覽器直連（跨域或不可達），可點「直接新增」",
+    boardAdded: "✅ 模組已新增並切換到新頁面", boardDeleted: "🗑 模組已刪除",
+    boardEmpty: "暫無自訂模組，點擊下方「手動新增模組」",
+    builtinBoard: "內建", customBoard: "自訂", ptInstance: "PT 實例",
+    openNew: "在新視窗開啟", saveFirst: "請先填寫模組名稱與位址",
+    moduleHide: "隱藏", moduleShow: "顯示",
+    aboutTitle: "關於", aboutName: "應用名稱", aboutVer: "版本", aboutStack: "技術棧",
+    aboutMon: "監控元件", aboutPt: "PT 外掛", aboutAuthor: "產生",
+    aboutNote: "預覽版僅展示 UI 結構與互動邏輯，真實介面不可達時自動回退模擬資料。實際部署時將對接 Glances API、MoviePilot 外掛介面與各服務 API。",
+    up: "運行中", stopped: "已停止", restarting: "重啟中",
+    healthy: "healthy", unhealthy: "unhealthy",
+    ptConnSaved: "✅ MoviePilot 連線已儲存", ptReal: "MoviePilot API", ptMock: "模擬資料（API 不可達）",
+    testConnecting: "⏳ 正在驗證…"
+  },
+  "en": {
+    caddySettings: "Caddy Config", caddyOrigin: "WebUI public domain", caddyAdminToken: "Admin token", caddyFile: "Caddyfile", caddySave: "Save & apply", caddyReload: "Reload", caddyHint: "Save will validate and hot-reload the container Caddy config; failures roll back.", superComicTitle: "Komga / Kavita / Calibre-Web · Unified Library", appName: "VaultHub", appSub: "VaultHub · Home NAS console · Preview",
+    navGroupMain: "Main", navHome: "Home", navPt: "PT Manager",
+    navGroupMedia: "Media", navComic: "Super Comics", navMovie: "Movies", navAudio: "Audio",
+    navGroupSys: "System", navDocker: "Containers",
+    navGroupCustom: "Custom", addBoardNav: "Add Module",
+    settings: "Settings", about: "About",
+    secNas: "NAS Monitor", cpu: "CPU", memory: "Memory", network: "Network", diskTemp: "Disk Temp",
+    used: "used", cores: "Cores", load: "Load", temp: "Temp",
+    memUsed: "Used", memTotal: "Total", swap: "Swap",
+    netDownLbl: "↓ Down", netUpLbl: "↑ Up",
+    secDisk: "Disk Usage",
+    secPt: "PT Manager", ptRefresh: "Refresh", mpConn: "MoviePilot Login", mpSettings: "Settings",
+    mpAddr: "MoviePilot URL", mpUser: "Username", mpPass: "Password",
+    btnLogin: "Login & fetch data", btnLogout: "Logout",
+    ptNotLoggedIn: "Not logged in",
+    mpHint: "Use the same account/password as the MoviePilot web UI (POST /api/v1/login/access-token). After login, site manager and PT guard data load automatically; token stays in this browser only.",
+    ptSubNav: "Sections", ptSubSites: "Site Manager", ptSubGuard: "PT Guard",
+    ptSiteList: "Added Sites", colCookie: "Cookie", colPri: "Priority",
+    colSite: "Site", colDomain: "Domain", colStatus: "Status",
+    colYear: "Founded", colAnniv: "Anniv.", colMp: "MP Sync", ptSiteData: "Site Data",
+    guardPlugin: "Plugin Status", guardInstalled: "Installed", guardEnabled: "Enabled", guardVersion: "Version",
+    guardWork: "Work Status", guardFetch: "Source", guardFetched: "Last fetch", guardCron: "Cron push", guardNotify: "Notices",
+    guardSummary: "Snapshot Stats", guardTotal: "Total sites", guardHealthy: "Healthy", guardCritical: "Critical", guardClosed: "Closed", guardOwned: "Linked MP",
+    guardSiteSync: "Site Fetch Sync", guardSyncBadge: "sync",
+    guardPluginMissing: "Savept plugin API unavailable — install 'Vue-PT监护室 (Savept)' from MoviePilot plugin market",
+    ptUp: "Upload", ptDown: "Download", ptRatio: "Ratio", ptSeed: "Seeding", ptMagic: "Magic", ptLevel: "Level",
+    ptOk: "✅ Connected · Auto-seeding", ptErr: "⚠️ Cookie expired · Re-checkin",
+    stHealthy: "Healthy", stCritical: "Critical", stClosed: "Closed", stUnknown: "Unknown",
+    mpOwned: "Linked", mpAvailable: "Available", mpUnsupported: "N/A",
+    alertTitle: "Notices",
+    secComic: "Super Comics", secMovie: "Media Server", secAudio: "Audio Server",
+    movieSupport: "Plex / Emby / Jellyfin", audioSupport: "DLY / Navidrome",
+    lblLan: "LAN IP Address", lblProxy: "Reverse Proxy / Domain",
+    lblAutoSwitch: "Auto-switch access URL", lblAutoSwitchSub: "LAN uses LAN IP, external uses proxy domain",
+    curAddr: "Current address", btnTest: "Test connection", btnSave: "Save",
+    mediaUser: "Service username", mediaPass: "Service password", btnMediaLogin: "Enter media service", btnOpenExternal: "Open in new window", mediaAccess: "Service access",
+    mediaLoginNote: "Fill or select the access URL above, then enter the media service to open its login page inside this section. Type the username and password on that service page.",
+    mediaEmptyTitle: "No resources", mediaEmptyDesc: "No media server is configured for this section yet. Configure the service address first; after saving, this area becomes the resource access page.", mediaCfgBtn: "Configure server", mediaHideCfg: "Hide config", mediaConfigured: "Configured",
+    testOk: "✅ Connected · Service reachable", saved: "💾 Config saved",
+    comicHint: "Tip: Kavita better for Chinese reading; Komga stronger scraping (Comic Vine).",
+    kavitaHint: "Tip: Kavita has built-in reader with bookshelf support.",
+    ebookHint: "Tip: Pair with Calibre-Web Automated for auto-scrape after PT download.",
+    plexHint: "Tip: Plex: disable 'Secure connections required' or set custom domain.",
+    embyHint: "Tip: Emby webhook to MP: https://mp.enged.top/api/v1/webhook?token=…",
+    jellyfinHint: "Tip: Jellyfin is open-source and unlimited.",
+    ndHint: "Tip: If Navidrome stutters via Cloudflare Tunnel, disable HTTP/3 and force cloudflared http2.",
+    dlyHint: "Tip: DLY is a local music service; proxy domain must resolve to Tunnel.",
+    secDocker: "Docker Containers", searchPh: "🔍 Search name / image / status…",
+    colName: "Name", colImage: "Image", colStatus: "Status", colPorts: "Ports", colHealth: "Health",
+    settingsTitle: "Settings", langLbl: "Language",
+    themeLbl: "Theme", themeDark: "Night (dark)", themeLight: "Day (light)", themeCustom: "Custom (upload background)",
+    bgUpload: "Upload background image", bgClear: "Clear custom background", bgHint: "Tip: image stays in this browser's localStorage, never sent to a server.",
+    glancesLbl: "NAS Monitor (Glances direct)", glancesAddr: "Glances API URL",
+    glancesHint: "Tip: mount disk paths read-only (:ro) into the Glances container (/dev, /sys, /proc) to read disk temp & usage. Example in delivery notes.",
+    nasOnline: "Glances · refresh 2s", nasOffline: "Glances offline · mock data",
+    diskSourceReal: "Glances · /api/4/fs", diskSourceMock: "Mock (Glances unreachable)",
+    boardTitle: "Module Settings", boardExisting: "Existing Modules", boardAddNew: "Add Module Manually",
+    boardName: "Module name", boardIcon: "Icon (emoji)", boardType: "Type",
+    boardAddr: "Server IP or domain", boardPort: "Port (optional)", boardProto: "Protocol",
+    boardUser: "Username (optional)", boardPass: "Password (optional)",
+    btWeb: "Generic web", btComic: "Comics", btEbook: "E-books", btMovie: "Movies", btAudio: "Audio", btPt: "PT Manager (MoviePilot)",
+    btnVerify: "Verify & add", btnAddDirect: "Add directly",
+    boardHint: "Verify probes the server (CORS/LAN unreachable may fail; use 'Add directly' then). Media types (comic/ebook/movie/audio) jump to the built-in feature page on add; generic web opens an embedded page.",
+    verifyOk: "✅ Verified · Service reachable", verifyFail: "⚠️ Cannot reach from browser (CORS or unreachable) — use 'Add directly'",
+    boardAdded: "✅ Module added, switching to its page", boardDeleted: "🗑 Module deleted",
+    boardEmpty: "No custom modules yet — use 'Add Module Manually' below",
+    builtinBoard: "Built-in", customBoard: "Custom", ptInstance: "PT instance",
+    openNew: "Open in new window", saveFirst: "Fill in name and address first",
+    moduleHide: "Hide", moduleShow: "Show",
+    aboutTitle: "About", aboutName: "App name", aboutVer: "Version", aboutStack: "Stack",
+    aboutMon: "Monitor", aboutPt: "PT plugin", aboutAuthor: "Generated by",
+    aboutNote: "Preview shows UI structure & interactions; falls back to mock data when real APIs are unreachable. Production build will connect to Glances API, MoviePilot plugin endpoints and service APIs.",
+    up: "running", stopped: "stopped", restarting: "restarting",
+    healthy: "healthy", unhealthy: "unhealthy",
+    ptConnSaved: "✅ MoviePilot connection saved", ptReal: "MoviePilot API", ptMock: "Mock (API unreachable)",
+    testConnecting: "⏳ Verifying…"
+  }
+};
+
+let curLang = "zh-CN";
+const t = k => (I18N[curLang] && I18N[curLang][k]) || I18N["zh-CN"][k] || k;
+
+function applyI18n() {
+  document.querySelectorAll("[data-i18n]").forEach(el => { el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll("[data-i18n-ph]").forEach(el => { el.placeholder = t(el.dataset.i18nPh); });
+  document.querySelectorAll(".lang-opt").forEach(el => {
+    el.classList.toggle("on", el.dataset.lang === curLang);
+  });
+  document.querySelectorAll("[data-i18n-ph]").forEach(el => { el.placeholder = t(el.dataset.i18nPh); });
+}
+function toggleBars() {
+  const willHide = !document.body.classList.contains("sidebar-hidden");
+  document.body.classList.toggle("sidebar-hidden", willHide);
+  document.body.classList.toggle("topbar-hidden", willHide);
+  const btn = document.querySelector(".chrome-toggle");
+  if (btn) {
+    btn.title = willHide ? "边栏显示" : "边栏隐藏";
+    btn.setAttribute("aria-label", btn.title);
+  }
+}
+
+/* ================= 状态持久化 ================= */
+const LS_SETTINGS = "dwu_settings";
+const LS_BOARDS = "dwu_boards";
+const LS_BG = "dwu_bgimg";
+
+let settings = {
+  theme: "dark",
+  /* 容器版默认经同源 Caddy 代理；外部浏览器无需直连 192.168.x.x */
+  glancesUrl: "/api/glances",
+  mp: { mpUrl: "/api/mp", username: "", password: "", token: "", tokenUser: "" }
+};
+
+function preferContainerProxy(url, proxyPath) {
+  const raw = String(url || "").trim();
+  if (!raw || raw === proxyPath) return proxyPath;
+  /* 只迁移本项目历史默认内网地址；用户主动填写的域名或其他地址保持不变 */
+  if (/^https?:\/\/192\.168\.112\.3(?::(?:61208|3000))?\/?$/i.test(raw)) return proxyPath;
+  return raw;
+}
+
+function loadSettings() {
+  try {
+    const s = JSON.parse(localStorage.getItem(LS_SETTINGS) || "{}");
+    if (s.theme) settings.theme = s.theme;
+    if (s.glancesUrl) settings.glancesUrl = preferContainerProxy(s.glancesUrl, "/api/glances");
+    if (s.mp && typeof s.mp === "object") Object.assign(settings.mp, s.mp);
+    settings.mp.mpUrl = preferContainerProxy(settings.mp.mpUrl, "/api/mp");
+    /* 兼容旧版本 mpInstances 数组 */
+    if (Array.isArray(s.mpInstances) && s.mpInstances.length && !s.mp) {
+      const first = s.mpInstances[0] || {};
+      settings.mp = { mpUrl: preferContainerProxy(first.mpUrl || "", "/api/mp"), username: "", password: "", token: first.apiToken || "", tokenUser: "" };
+    }
+  } catch (e) {}
+}
+function saveSettings() {
+  try { localStorage.setItem(LS_SETTINGS, JSON.stringify(settings)); } catch (e) {}
+}
+
+let customBoards = [];
+function loadBoards() {
+  try { customBoards = JSON.parse(localStorage.getItem(LS_BOARDS) || "[]") || []; } catch (e) { customBoards = []; }
+}
+function saveBoards() {
+  try { localStorage.setItem(LS_BOARDS, JSON.stringify(customBoards)); } catch (e) {}
+}
+
+let hiddenModules = [];
+const LS_HIDDEN_MODULES = "dwu_hidden_modules";
+function loadHiddenModules() {
+  try { hiddenModules = JSON.parse(localStorage.getItem(LS_HIDDEN_MODULES) || "[]") || []; } catch (e) { hiddenModules = []; }
+}
+function saveHiddenModules() {
+  try { localStorage.setItem(LS_HIDDEN_MODULES, JSON.stringify(hiddenModules)); } catch (e) {}
+}
+
+/* ================= 主题 ================= */
+function setTheme(th) {
+  settings.theme = th;
+  saveSettings();
+  document.body.dataset.theme = (th === "light") ? "light" : "dark";
+  document.body.classList.toggle("custom-bg", th === "custom");
+  document.getElementById("customBgWrap").style.display = th === "custom" ? "block" : "none";
+  document.querySelectorAll(".theme-opt").forEach(el => el.classList.toggle("on", el.dataset.themeOpt === th));
+  if (th === "custom") applyBgImage();
+}
+function applyBgImage() {
+  const img = localStorage.getItem(LS_BG);
+  if (img) document.body.style.setProperty("--bgImg", `url(${img})`);
+  else document.body.style.removeProperty("--bgImg");
+}
+function uploadBg(input) {
+  const f = input.files && input.files[0];
+  if (!f) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      localStorage.setItem(LS_BG, e.target.result);
+      applyBgImage();
+      toast("✅ " + (curLang === "en" ? "Background saved" : "背景已保存"));
+    } catch (err) {
+      toast("⚠️ " + (curLang === "en" ? "Image too large for localStorage" : "图片过大，无法保存到 localStorage"));
+    }
+  };
+  reader.readAsDataURL(f);
+}
+function clearBg() {
+  localStorage.removeItem(LS_BG);
+  applyBgImage();
+  toast("🗑 " + (curLang === "en" ? "Background cleared" : "背景已清除"));
+}
+
+/* ================= 导航 ================= */
+const titleMap = { home: "navHome", pt: "navPt", comic: "navComic", movie: "navMovie", audio: "navAudio", docker: "navDocker" };
+
+function switchView(v) {
+  document.querySelectorAll(".nav-item[data-view]").forEach(n => n.classList.remove("active"));
+  const navItem = document.querySelector(`.nav-item[data-view="${v}"]`);
+  if (navItem) navItem.classList.add("active");
+  document.querySelectorAll(".view").forEach(s => s.classList.remove("active"));
+  const view = document.getElementById("view-" + v);
+  if (view) view.classList.add("active");
+  document.getElementById("pageTitle").textContent = t(titleMap[v] || "navHome");
+  window.scrollTo(0, 0);
+}
+
+document.querySelectorAll(".nav-item[data-view]").forEach(item => {
+  item.addEventListener("click", () => {
+    const v = item.dataset.view;
+    if (v.startsWith("custom-")) { openCustomBoard(v); return; }
+    switchView(v);
+  });
+});
+
+/* ================= Tabs ================= */
+document.querySelectorAll(".tab[data-tab]").forEach(tab => {
+  tab.addEventListener("click", () => {
+    const group = tab.dataset.tab.split("-")[0];
+    document.querySelectorAll(`.tab[data-tab^="${group}-"]`).forEach(x => x.classList.remove("active"));
+    tab.classList.add("active");
+    document.querySelectorAll(`.tab-panel`).forEach(p => p.classList.remove("active"));
+    document.getElementById(tab.dataset.tab).classList.add("active");
+  });
+});
+
+/* ================= 内网/反代自动切换 ================= */
+function bindSwitches() {
+  document.querySelectorAll("[data-switch]").forEach(sw => {
+    sw.addEventListener("click", () => {
+      sw.classList.toggle("on");
+      updateAddr(sw.dataset.switch);
+    });
+  });
+  document.querySelectorAll("[data-lan-input], [data-proxy-input]").forEach(inp => {
+    inp.addEventListener("input", () => updateAddr(inp.dataset.lanInput || inp.dataset.proxyInput));
+  });
+}
+function updateAddr(group) {
+  const panels = document.querySelectorAll(`#view-comic .tab-panel.active, #view-movie .tab-panel.active, #view-audio .tab-panel.active`);
+  panels.forEach(p => {
+    const sw = p.querySelector(`[data-switch="${group}"]`);
+    const lan = p.querySelector(`[data-lan-input="${group}"]`);
+    const proxy = p.querySelector(`[data-proxy-input="${group}"]`);
+    const addrEl = p.querySelector(".addr-box .val");
+    if (sw && lan && proxy && addrEl) {
+      addrEl.textContent = sw.classList.contains("on") ? proxy.value : lan.value;
+      const launcher = p.querySelector("[data-media-launch]");
+      const host = mediaWideHostForPanel(p);
+      if (launcher) launcher.dataset.lastUrl = addrEl.textContent;
+      if (launcher && host?.classList.contains("show")) openMediaFrame(launcher.dataset.mediaLaunch, false);
+    }
+  });
+}
+
+/* ================= 媒体服务设置 / 资源页 ================= */
+const MEDIA_VIEWS = ["comic", "movie", "audio"];
+function initMediaLogin() {
+  document.querySelectorAll("#view-comic .tab-panel, #view-movie .tab-panel, #view-audio .tab-panel").forEach((panel, idx) => {
+    if (panel.dataset.mediaLoginReady) return;
+    const group = panel.querySelector("[data-lan-input]")?.dataset.lanInput;
+    if (!group) return;
+    const id = panel.id || `${group}-single-${idx}`;
+    panel.dataset.mediaLoginReady = "1";
+    panel.insertAdjacentHTML("beforeend", `
+      <div class="media-login" data-media-launch="${esc(id)}">
+        <div class="media-actions">
+          <button class="btn btn-primary" onclick="mediaLogin('${esc(id)}')">↗ <span data-i18n="btnMediaLogin">进入媒体服务</span></button>
+          <button class="btn" onclick="openMediaExternal('${esc(id)}')">⊞ <span data-i18n="btnOpenExternal">新窗口打开</span></button>
+          <button class="btn" onclick="hideMediaConfig('${esc(group)}')">⌃ <span data-i18n="mediaHideCfg">收起配置</span></button>
+        </div>
+        <div class="media-login-note" data-i18n="mediaLoginNote">填写或选择上方访问地址后，点击进入会在当前栏目内打开媒体服务登录页，账号密码在媒体服务页面里手动填写。</div>
+      </div>`);
+  });
+  MEDIA_VIEWS.forEach(v => {
+    const wrap = document.querySelector(`#view-${v} .cfg-wrap`);
+    if (wrap) wrap.style.display = "none";
+    renderMediaHome(v);
+  });
+  applyI18n();
+}
+
+function mediaPanel(id) {
+  return document.querySelector(`[data-media-launch="${CSS.escape(id)}"]`)?.closest(".tab-panel, .card");
+}
+function mediaWideHostForPanel(panel) {
+  const view = panel?.closest(".view");
+  if (!view) return null;
+  const group = view.id.replace("view-", "");
+  return document.getElementById("media-wide-" + group);
+}
+function isPrivateHostname(hostname) {
+  const host = String(hostname || "").toLowerCase();
+  return host === "localhost" || host === "127.0.0.1" || host === "::1" ||
+    /^10\./.test(host) || /^192\.168\./.test(host) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(host);
+}
+function isPrivateServiceUrl(url) {
+  try { return isPrivateHostname(new URL(normalizeMediaUrl(url)).hostname); }
+  catch (e) { return false; }
+}
+function serviceAccessUrl(panel, selectedUrl, pageHostname = location.hostname) {
+  let url = normalizeMediaUrl(selectedUrl);
+  if (!panel || !url) return url;
+
+  /* 外网浏览器无法直连 192.168.x.x：自动改走同容器的公网 Host 入口。 */
+  if (!isPrivateHostname(pageHostname) && isPrivateServiceUrl(url)) {
+    const proxy = panel.querySelector("[data-proxy-input]")?.value.trim();
+    if (proxy) url = normalizeMediaUrl(proxy);
+  }
+
+  /* 飞牛 FPK 版 Navidrome 无 BaseURL 开关，公网 Host 直接使用其真实 /app/ 入口。 */
+  if (panel.id === "audio-navidrome") {
+    try {
+      const parsed = new URL(url);
+      if (parsed.pathname === "/") parsed.pathname = "/app/";
+      url = parsed.toString();
+    } catch (e) {}
+  }
+  return url;
+}
+function mediaCurrentUrl(id) {
+  const panel = mediaPanel(id);
+  const addr = panel?.querySelector(".addr-box .val")?.textContent.trim();
+  return serviceAccessUrl(panel, addr || "");
+}
+function normalizeMediaUrl(url) {
+  const raw = String(url || "").trim();
+  if (!raw) return "";
+  if (/^https?:\/\//i.test(raw)) return raw;
+  return "http://" + raw;
+}
+function rememberMediaUrl(id, url) {
+  try { localStorage.setItem("dwu_media_url_" + id, url); } catch (e) {}
+}
+function activeMediaPanel(group) {
+  const view = document.getElementById("view-" + group);
+  return view?.querySelector(".tab-panel.active") || view?.querySelector(".card");
+}
+function activeMediaId(group) {
+  const panel = activeMediaPanel(group);
+  return panel?.querySelector("[data-media-launch]")?.dataset.mediaLaunch || null;
+}
+function mediaStoreKey(group) { return "dwu_media_configured_" + group; }
+function setMediaConfigured(group, configured) {
+  try { localStorage.setItem(mediaStoreKey(group), configured ? "1" : "0"); } catch (e) {}
+}
+function isMediaConfigured(group) {
+  try { return localStorage.getItem(mediaStoreKey(group)) === "1"; } catch (e) { return false; }
+}
+function showMediaConfig(group) {
+  const wrap = document.querySelector(`#view-${group} .cfg-wrap`);
+  if (wrap) wrap.style.display = "block";
+  const host = document.getElementById("media-wide-" + group);
+  if (host) host.classList.remove("show");
+}
+function hideMediaConfig(group) {
+  const wrap = document.querySelector(`#view-${group} .cfg-wrap`);
+  if (wrap) wrap.style.display = "none";
+  renderMediaHome(group);
+}
+function renderMediaHome(group) {
+  const host = document.getElementById("media-wide-" + group);
+  if (!host) return;
+  const configured = isMediaConfigured(group);
+  host.classList.add("show");
+  if (!configured) {
+    host.innerHTML = `
+      <div class="media-empty">
+        <div class="big">📭</div>
+        <h3 data-i18n="mediaEmptyTitle">暂无资源</h3>
+        <p data-i18n="mediaEmptyDesc">当前栏目还没有配置媒体服务器。请先配置服务器访问地址，保存后这里会作为资源访问页展示。</p>
+        <button class="btn btn-primary" onclick="showMediaConfig('${esc(group)}')">⚙️ <span data-i18n="mediaCfgBtn">配置服务器</span></button>
+      </div>`;
+    applyI18n();
+    return;
+  }
+  const id = activeMediaId(group);
+  if (id) openMediaFrame(id, false);
+}
+function openMediaFrame(id, showToast) {
+  const panel = mediaPanel(id);
+  const url = mediaCurrentUrl(id);
+  const host = mediaWideHostForPanel(panel);
+  const group = panel?.closest(".view")?.id.replace("view-", "");
+  if (!panel || !host || !url || !group) {
+    if (!url) toast("⚠️ " + (curLang === "en" ? "Missing service address" : "缺少服务地址"));
+    return;
+  }
+  setMediaConfigured(group, true);
+  rememberMediaUrl(id, url);
+  const wrap = document.querySelector(`#view-${group} .cfg-wrap`);
+  if (wrap) wrap.style.display = "none";
+  host.classList.add("show");
+  host.innerHTML = `
+    <div class="media-frame">
+      <iframe src="${esc(url)}" loading="lazy" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
+    </div>`;
+  applyI18n();
+  if (showToast) toast("✅ " + (curLang === "en" ? "Opened service page" : "已在当前栏目打开服务页"));
+}
+function mediaLogin(id) {
+  openMediaFrame(id, true);
+}
+function openMediaExternal(id) {
+  const url = mediaCurrentUrl(id);
+  if (!url) { toast("⚠️ " + (curLang === "en" ? "Missing service address" : "缺少服务地址")); return; }
+  rememberMediaUrl(id, url);
+  window.open(url, "_blank", "noopener");
+}
+function openActiveMediaExternal(group) {
+  const id = activeMediaId(group);
+  if (id) openMediaExternal(id);
+}
+
+/* ================= Docker 模拟数据 ================= */
+const containers = [
+  { name: "glances", image: "nicolargo/glances:latest-full", status: "up", ports: "61208", health: "healthy" },
+  { name: "moviepilot", image: "jxxghp/moviepilot:latest", status: "up", ports: "3000, 3001", health: "healthy" },
+  { name: "navidrome", image: "deluan/navidrome:latest", status: "up", ports: "4533", health: "healthy" },
+  { name: "emby", image: "emby/embyserver:latest", status: "up", ports: "8096", health: "healthy" },
+  { name: "plex", image: "plexinc/pms-docker:latest", status: "up", ports: "32400", health: "healthy" },
+  { name: "jellyfin", image: "lscr.io/linuxserver/jellyfin:latest", status: "up", ports: "8096", health: "healthy" },
+  { name: "transmission", image: "lscr.io/linuxserver/transmission:latest", status: "up", ports: "9091", health: "healthy" },
+  { name: "komga", image: "gotson/komga:latest", status: "up", ports: "25600", health: "healthy" },
+  { name: "kavita", image: "kavitarepo/kavita:latest", status: "stopped", ports: "8085", health: "unhealthy" },
+  { name: "calibre-web", image: "lscr.io/linuxserver/calibre-web:latest", status: "up", ports: "8083", health: "healthy" },
+  { name: "cwa", image: "ghcr.io/crowbarz/docker-calibre-web-automated:latest", status: "up", ports: "8084", health: "healthy" },
+  { name: "cloudflared", image: "cloudflare/cloudflared:latest", status: "up", ports: "-", health: "healthy" },
+  { name: "lucky", image: "gdy666/lucky:latest", status: "up", ports: "16601", health: "healthy" },
+  { name: "halo", image: "halohub/halo:latest", status: "up", ports: "8090", health: "healthy" },
+  { name: "siyuan", image: "b3log/siyuan:latest", status: "up", ports: "6806", health: "healthy" },
+  { name: "homepage", image: "ghcr.io/gethomepage/homepage:latest", status: "up", ports: "3100", health: "healthy" },
+  { name: "nginx-proxy-manager", image: "jc21/nginx-proxy-manager:latest", status: "up", ports: "80, 81, 443", health: "healthy" },
+  { name: "hermes-agent", image: "hermes-agent:latest", status: "up", ports: "8642", health: "healthy" },
+  { name: "hermes-webui", image: "ekkoye8888/hermes-web-ui:latest", status: "up", ports: "6060", health: "healthy" },
+  { name: "astrbot", image: "soulter/astrbot:latest", status: "up", ports: "6185", health: "healthy" },
+  { name: "lsky", image: "lsky-org/lsky-pro:latest", status: "up", ports: "40027", health: "healthy" },
+  { name: "readarr", image: "lscr.io/linuxserver/readarr:develop", status: "stopped", ports: "8787", health: "unhealthy" },
+  { name: "bitwarden", image: "vaultwarden/server:latest", status: "up", ports: "80", health: "healthy" },
+  { name: "drawio", image: "jgraph/drawio:latest", status: "up", ports: "8080", health: "healthy" }
+];
+
+const SERVER_META = {
+  "192.168.112.3": { name: "飞牛 NAS · 主机", note: "媒体 / PT / 下载 / Hermes", icon: "🖥️" },
+  "192.168.112.2": { name: "服务节点 · 反代", note: "网关 / 博客 / 思源", icon: "🌐" },
+  "cloudflare": { name: "Cloudflare Tunnel", note: "外网入口", icon: "☁️" }
+};
+function inferServerIp(c) {
+  const n = c.name.toLowerCase();
+  if (["siyuan", "homepage", "halo", "lsky", "lucky", "nginx-proxy-manager"].some(x => n.includes(x))) return "192.168.112.2";
+  if (n.includes("cloudflared")) return "cloudflare";
+  return "192.168.112.3";
+}
+function containerIcon(c) {
+  const n = c.name.toLowerCase();
+  if (n.includes("moviepilot")) return "🎞️";
+  if (n.includes("navidrome") || n.includes("audio")) return "🎵";
+  if (n.includes("emby") || n.includes("plex") || n.includes("jellyfin")) return "🎬";
+  if (n.includes("transmission")) return "⬇️";
+  if (n.includes("komga") || n.includes("kavita") || n.includes("calibre")) return "📚";
+  if (n.includes("cloudflared")) return "☁️";
+  if (n.includes("nginx") || n.includes("lucky")) return "🔀";
+  if (n.includes("hermes") || n.includes("astrbot")) return "🤖";
+  if (n.includes("glances")) return "📈";
+  return "🐳";
+}
+
+function renderDocker() {
+  const q = (document.getElementById("dockerSearch").value || "").toLowerCase();
+  const list = containers.map(c => ({ ...c, serverIp: c.serverIp || inferServerIp(c) })).filter(c =>
+    c.name.toLowerCase().includes(q) ||
+    c.image.toLowerCase().includes(q) ||
+    c.status.toLowerCase().includes(q) ||
+    c.serverIp.toLowerCase().includes(q)
+  );
+  document.getElementById("containerCount").textContent = curLang === "en" ? `Total ${containers.length}` : `共 ${containers.length} 个`;
+  const grouped = list.reduce((acc, c) => {
+    (acc[c.serverIp] ||= []).push(c);
+    return acc;
+  }, {});
+  const host = document.getElementById("dockerGraphic");
+  host.innerHTML = Object.entries(grouped).map(([ip, items]) => {
+    const meta = SERVER_META[ip] || { name: ip, note: "Docker Host", icon: "🖥️" };
+    const running = items.filter(x => x.status === "up").length;
+    const stopped = items.filter(x => x.status !== "up").length;
+    return `<div class="server-card">
+      <div class="server-head">
+        <div class="server-title"><span style="font-size:22px;">${meta.icon}</span><div>${esc(meta.name)}<div class="hint" style="margin-top:2px;">${esc(meta.note)}</div></div></div>
+        <div class="server-meta">
+          <span class="server-ip">${esc(ip)}</span>
+          <span>${running} ${curLang === "en" ? "running" : "运行"}</span>
+          <span>${stopped} ${curLang === "en" ? "stopped" : "停止"}</span>
+        </div>
+      </div>
+      <div class="container-grid">
+        ${items.map(c => {
+          const st = c.status === "up" ? t("up") : c.status === "stopped" ? t("stopped") : t("restarting");
+          const cls = c.status === "up" ? "up" : c.status === "stopped" ? "stopped" : "restarting";
+          const hc = c.health === "healthy" ? `<span style="color:var(--green)">${t("healthy")}</span>` : `<span style="color:var(--red)">${t("unhealthy")}</span>`;
+          return `<div class="container-card ${cls}">
+            <div class="container-top"><span class="container-icon">${containerIcon(c)}</span><span class="container-name">${esc(c.name)}</span><span class="status ${cls === "up" ? "" : cls}">${st}</span></div>
+            <div class="container-image">${esc(c.image)}</div>
+            <div class="container-foot"><span class="port-pill">:${esc(c.ports)}</span><span>${hc}</span></div>
+          </div>`;
+        }).join("")}
+      </div>
+    </div>`;
+  }).join("") || `<div class="empty-tip">${curLang === "en" ? "No containers matched" : "没有匹配的容器"}</div>`;
+}
+document.getElementById("dockerSearch").addEventListener("input", renderDocker);
+
+/* ================= Glances 直连 ================= */
+let glancesOnline = false;
+
+async function fetchJson(url, timeout = 4000, headers = {}) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeout);
+  try {
+    const res = await fetch(url, { signal: ctrl.signal, cache: "no-store", headers });
+    clearTimeout(timer);
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    return await res.json();
+  } catch (e) {
+    clearTimeout(timer);
+    throw e;
+  }
+}
+
+async function tickMetrics() {
+  const base = (settings.glancesUrl || "").replace(/\/+$/, "");
+  let ok = true;
+  try {
+    const [cpu, mem, net, fs, sens] = await Promise.all([
+      fetchJson(base + "/api/4/cpu"),
+      fetchJson(base + "/api/4/mem"),
+      fetchJson(base + "/api/4/network"),
+      fetchJson(base + "/api/4/fs"),
+      fetchJson(base + "/api/4/sensors")
+    ]);
+    /* CPU */
+    const cpuPct = Math.round((cpu.total || 0) * 100) / 100;
+    const cores = (cpu.cpucore || cpu.cores) ? `${cpu.cpucore || cpu.cores}C` : "--";
+    const load = (cpu.load && cpu.load[0] != null) ? cpu.load[0].toFixed(2) : "--";
+
+    /* 温度：sensors 为数组，temperature_core=CPU，hdd=硬盘 */
+    let coreTemps = [], hddTemps = [];
+    if (Array.isArray(sens)) {
+      sens.forEach(s => {
+        if (!s || s.value == null) return;
+        if (String(s.type || "").toLowerCase().includes("hdd")) hddTemps.push(s);
+        else if (String(s.type || "").includes("temperature_core")) coreTemps.push(s);
+      });
+    }
+    const pkg = coreTemps.find(s => /package/i.test(s.label || ""));
+    const cpuTempTxt = pkg ? Math.round(pkg.value) + "°C"
+      : coreTemps.length ? Math.round(Math.max(...coreTemps.map(s => s.value))) + "°C"
+      : "--";
+    setCpu(cpuPct, cores, load, cpuTempTxt);
+
+    /* 内存 */
+    const memPct = mem ? Math.round(mem.percent || 0) : 0;
+    const usedG = mem ? (mem.used / 1073741824).toFixed(1) : "--";
+    const totalG = mem ? (mem.total / 1073741824).toFixed(1) : "--";
+    const swapG = mem && mem.swap_total ? (mem.swap_used / 1073741824).toFixed(1) : "0.0";
+    setMem(memPct, usedG, totalG, swapG);
+
+    /* 网络：数组，取非 lo 主接口速率 bytes/s → MB/s */
+    let down = 0, up = 0;
+    if (Array.isArray(net)) {
+      const iface = net.find(i => i && i.interface_name && i.interface_name !== "lo" && i.bytes_recv_rate_per_sec != null)
+        || net.find(i => i && i.interface_name && i.interface_name !== "lo");
+      if (iface) {
+        down = (iface.bytes_recv_rate_per_sec != null ? iface.bytes_recv_rate_per_sec : iface.bytes_recv / Math.max(iface.time_since_update, 1)) / 1048576;
+        up = (iface.bytes_sent_rate_per_sec != null ? iface.bytes_sent_rate_per_sec : iface.bytes_sent / Math.max(iface.time_since_update, 1)) / 1048576;
+      }
+    } else if (net && typeof net === "object") {
+      const iface = Object.values(net).find(i => i && i.interface_name && i.interface_name !== "lo");
+      if (iface) { down = (iface.rx || 0) / 1048576; up = (iface.tx || 0) / 1048576; }
+    }
+    setNet(down, up);
+
+    /* 磁盘 */
+    const disks = (fs || []).filter(d => d.mnt_point && (d.mnt_point.startsWith("/vol") || d.mnt_point === "/"));
+    if (disks.length) {
+      document.getElementById("diskCard").innerHTML = disks.slice(0, 8).map(d => {
+        const pct = Math.round(d.percent || 0);
+        const used = fmtSize(d.used), total = fmtSize(d.size);
+        return `<div class="disk-row">
+          <div class="disk-top"><span class="name">${esc(d.mnt_point)}</span><span>${used} / ${total} · ${pct}%</span></div>
+          <div class="bar"><i class="${pct > 80 ? "warn" : ""}" style="width:${Math.min(pct,100)}%"></i></div>
+        </div>`;
+      }).join("");
+      document.getElementById("diskSource").textContent = t("diskSourceReal");
+    }
+
+    /* 温度卡片：优先硬盘温度，无则显示 CPU 核心温度 */
+    if (hddTemps.length) {
+      document.getElementById("tempMain").textContent = Math.round(Math.max(...hddTemps.map(s => s.value)));
+      document.getElementById("tempList").innerHTML = hddTemps.slice(0, 5).map(s =>
+        `<div class="temp-item"><span>${esc(s.label)}</span><b>${Math.round(s.value)}°C</b></div>`).join("");
+    } else if (coreTemps.length) {
+      document.getElementById("tempMain").textContent = cpuTempTxt.replace("°C", "");
+      document.getElementById("tempList").innerHTML = coreTemps.slice(0, 5).map(s =>
+        `<div class="temp-item"><span>${esc(s.label)}</span><b>${Math.round(s.value)}°C</b></div>`).join("");
+    }
+  } catch (e) {
+    ok = false;
+  }
+  setNasBadge(ok);
+  if (!ok) mockTick();
+}
+
+function fmtSize(bytes) {
+  if (!bytes && bytes !== 0) return "--";
+  const g = bytes / 1073741824;
+  if (g >= 1024) return (g / 1024).toFixed(2) + " TB";
+  return g.toFixed(1) + " GB";
+}
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function setCpu(pct, cores, load, temp) {
+  document.getElementById("cpuVal").textContent = Math.round(pct) + "%";
+  document.getElementById("cpuArc").style.strokeDashoffset = 201 - (201 * Math.min(pct, 100) / 100);
+  document.getElementById("cpuCores").textContent = cores;
+  document.getElementById("cpuLoad").textContent = load;
+  document.getElementById("cpuTemp").textContent = temp;
+}
+function setMem(pct, used, total, swap) {
+  document.getElementById("memVal").textContent = pct + "%";
+  document.getElementById("memArc").style.strokeDashoffset = 201 - (201 * Math.min(pct, 100) / 100);
+  document.getElementById("memUsed").textContent = used + " GB";
+  document.getElementById("memTotal").textContent = total + " GB";
+  document.getElementById("memSwap").textContent = swap + " GB";
+}
+function setNet(down, up) {
+  document.getElementById("netDown").textContent = down.toFixed(1);
+  document.getElementById("netUp").textContent = up.toFixed(1);
+  const spark = document.getElementById("netSpark");
+  if (spark.children.length > 16) spark.removeChild(spark.firstChild);
+  const b = document.createElement("i");
+  b.style.height = Math.min(100, 15 + down / 2) + "%";
+  spark.appendChild(b);
+}
+function setNasBadge(online) {
+  glancesOnline = online;
+  const badge = document.getElementById("nasBadge");
+  badge.textContent = online ? t("nasOnline") : t("nasOffline");
+  badge.className = "badge" + (online ? " green" : " red");
+}
+
+/* 模拟数据回退 */
+function mockTick() {
+  const cpu = Math.floor(20 + Math.random() * 45);
+  setCpu(cpu, "4C", (0.8 + Math.random() * 1.5).toFixed(2), (48 + Math.random() * 8).toFixed(0) + "°C");
+  const mem = Math.floor(38 + Math.random() * 15);
+  setMem(mem, (5 + Math.random() * 3).toFixed(1), "16", (0.1 + Math.random() * 0.4).toFixed(1));
+  setNet(30 + Math.random() * 90, 2 + Math.random() * 23);
+  if (!document.getElementById("tempList").children.length) {
+    document.getElementById("tempMain").textContent = "42";
+    document.getElementById("tempList").innerHTML = `
+      <div class="temp-item"><span>nvme0n1 (系统)</span><b>38°C</b></div>
+      <div class="temp-item"><span>sda (数据卷1)</span><b>42°C</b></div>
+      <div class="temp-item"><span>sdb (数据卷2)</span><b>45°C</b></div>
+      <div class="temp-item"><span>sdc (数据卷3)</span><b>41°C</b></div>`;
+  }
+  if (!document.getElementById("diskCard").innerHTML) {
+    document.getElementById("diskCard").innerHTML = `
+      <div class="disk-row"><div class="disk-top"><span class="name">/vol1</span><span>1.2 TB / 4.0 TB · 30%</span></div><div class="bar"><i style="width:30%"></i></div></div>
+      <div class="disk-row"><div class="disk-top"><span class="name">/vol2</span><span>2.8 TB / 4.0 TB · 70%</span></div><div class="bar"><i style="width:70%"></i></div></div>
+      <div class="disk-row"><div class="disk-top"><span class="name">/vol3</span><span>3.6 TB / 4.0 TB · 90%</span></div><div class="bar"><i class="warn" style="width:90%"></i></div></div>
+      <div class="disk-row"><div class="disk-top"><span class="name">/vol4</span><span>880 GB / 4.0 TB · 22%</span></div><div class="bar"><i style="width:22%"></i></div></div>`;
+    document.getElementById("diskSource").textContent = t("diskSourceMock");
+  }
+}
+
+function saveGlances() {
+  settings.glancesUrl = document.getElementById("glancesUrl").value.trim() || "http://192.168.112.3:61208";
+  saveSettings();
+  toast(t("saved"));
+  tickMetrics();
+}
+
+/* ================= PT 管理（登录 + 站点管理 + PT 监护室） ================= */
+const MOCK_MP_SITES = [
+  { name: "馒头", domain: "m-team.cc", cookie: "*****", is_active: true, pri: 0, success: 3, fail: 0 },
+  { name: "堡", domain: "pthome.net", cookie: "*****", is_active: true, pri: 0, success: 3, fail: 0 },
+  { name: "天空", domain: "hdsky.me", cookie: "*****", is_active: true, pri: 0, success: 3, fail: 0 },
+  { name: "套娃", domain: "hdchina.org", cookie: "*****", is_active: false, pri: 0, success: 0, fail: 3 }
+];
+
+const MOCK_PT_SITES = {
+  summary: { total: 200, healthy: 190, critical: 2, closed: 3, mp_owned: 4 },
+  fetched_at: "2026-08-12 09:30:00",
+  alerts: [
+    { level: "critical", text: "病危通知：某站（示例）已连续 7 天无法访问，请尽快备份数据。" },
+    { level: "info", text: "站庆预告：馒头站将于本周六迎来站庆，双倍魔力活动。" }
+  ],
+  sites: [
+    { name: "馒头", domain: "m-team.cc", status: "healthy", year: "2010", anniversary_text: "站庆还有 3 天", mp_status: "owned" },
+    { name: "堡", domain: "pthome.net", status: "healthy", year: "2014", anniversary_text: "", mp_status: "owned" },
+    { name: "天空", domain: "hdsky.me", status: "healthy", year: "2011", anniversary_text: "今天站庆 🎉", mp_status: "owned" },
+    { name: "套娃", domain: "hdchina.org", status: "critical", year: "2009", anniversary_text: "", mp_status: "owned" },
+    { name: "NexusHD", domain: "nexushd.org", status: "healthy", year: "2016", anniversary_text: "", mp_status: "available" }
+  ]
+};
+
+const MOCK_PT_USERDATA = [
+  { domain: "m-team.cc", site: "馒头", upload: "2.4 TB", download: "860 GB", ratio: 2.79, seeding: 327, bonus: 18640, user_level: "Power User", ok: true },
+  { domain: "pthome.net", site: "堡", upload: "1.1 TB", download: "620 GB", ratio: 1.77, seeding: 198, bonus: 9320, user_level: "User", ok: true },
+  { domain: "hdsky.me", site: "天空", upload: "3.2 TB", download: "1.4 TB", ratio: 2.28, seeding: 412, bonus: 25110, user_level: "Power User", ok: true },
+  { domain: "hdchina.org", site: "套娃", upload: "240 GB", download: "180 GB", ratio: 1.33, seeding: 56, bonus: 3040, user_level: "User", ok: false }
+];
+
+const PT_ICONS = { "馒头": ["馒", "#3b82f6"], "堡": ["堡", "#ef4444"], "天空": ["天", "#8b5cf6"], "套娃": ["套", "#f59e0b"] };
+
+function mpBase() { return (settings.mp.mpUrl || "").replace(/\/+$/, ""); }
+function mpHeaders() {
+  const h = { "Content-Type": "application/json" };
+  if (settings.mp.token) h["Authorization"] = "Bearer " + settings.mp.token;
+  return h;
+}
+
+/* MP 专用 fetch：http 失败自动升级 https 重试（Cloudflare 域名 http 会被 301 拦截且无 CORS 头） */
+async function mpFetch(url, options = {}, timeout = 6000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeout);
+  try {
+    return await fetch(url, { ...options, signal: ctrl.signal });
+  } catch (e) {
+    if (url.startsWith("http://")) {
+      const ctrl2 = new AbortController();
+      const timer2 = setTimeout(() => ctrl2.abort(), timeout);
+      try {
+        return await fetch("https://" + url.slice(7), { ...options, signal: ctrl2.signal });
+      } finally { clearTimeout(timer2); }
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function mpFetchJson(url, timeout = 6000) {
+  const res = await mpFetch(url, { headers: mpHeaders() }, timeout);
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  return await res.json();
+}
+
+/* 多层容错提取数组：兼容 {data:[...]} / {data:{list:[...]}} / 纯数组 */
+function extractList(res) {
+  if (Array.isArray(res)) return res;
+  if (res && typeof res === "object") {
+    for (const k of ["data", "list", "items", "result", "records"]) {
+      if (Array.isArray(res[k])) return res[k];
+    }
+    if (res.data && typeof res.data === "object") {
+      for (const k of ["list", "items", "result", "sites", "records"]) {
+        if (Array.isArray(res.data[k])) return res.data[k];
+      }
+    }
+  }
+  return [];
+}
+
+/* 诊断条：显示各接口返回结构摘要，便于定位问题 */
+let diag = {};
+function setDiag(key, info) {
+  diag[key] = info;
+  const el = document.getElementById("ptDiag");
+  if (!el) return;
+  const parts = Object.entries(diag).map(([k, v]) => `${k}: ${v}`);
+  el.textContent = parts.join(" · ");
+  el.style.display = parts.length ? "block" : "none";
+}
+
+function fmtBytes(b) {
+  if (b == null) return "--";
+  const g = b / 1073741824;
+  if (g >= 1024) return (g / 1024).toFixed(2) + " TB";
+  return g.toFixed(1) + " GB";
+}
+
+async function loginMp() {
+  const url = mpBase();
+  const user = document.getElementById("mpUser").value.trim();
+  const pass = document.getElementById("mpPass").value;
+  if (!url || !user || !pass) { toast("⚠️ " + (curLang === "en" ? "Fill address, account and password" : "请填写地址、账号和密码")); return; }
+  const btn = document.getElementById("btnMpLogin");
+  btn.disabled = true;
+  toast(t("testConnecting"));
+  try {
+    const body = new URLSearchParams();
+    body.append("username", user);
+    body.append("password", pass);
+    const res = await mpFetch(url + "/api/v1/login/access-token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: body.toString()
+    }, 8000);
+    if (res.status === 401 && res.headers.get("X-MFA-Required")) {
+      toast("⚠️ " + (curLang === "en" ? "MFA 2FA required — not supported in preview" : "账号开启了二次验证(MFA)，预览版暂不支持"));
+      return;
+    }
+    if (!res.ok) { toast("❌ " + (curLang === "en" ? "Login failed (HTTP " + res.status + ")" : "登录失败（HTTP " + res.status + "）")); return; }
+    const data = await res.json();
+    if (!data.access_token) { toast("❌ " + (curLang === "en" ? "No token returned" : "未获取到 Token")); return; }
+    settings.mp.mpUrl = url;
+    settings.mp.username = user;
+    settings.mp.password = pass;
+    settings.mp.token = data.access_token;
+    settings.mp.tokenUser = data.user_name || user;
+    saveSettings();
+    toast("✅ " + (curLang === "en" ? "Logged in as " : "登录成功：") + (data.user_name || user));
+    renderPtLoginState();
+    closeModal("mpModal");
+    loadPtAll();
+  } catch (e) {
+    toast("❌ " + (curLang === "en" ? "Cannot reach MoviePilot — use https:// for domains or the LAN IP" : "无法连接 MoviePilot — 域名请带 https://，或改用内网 IP 直连"));
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function mpLogout() {
+  settings.mp.token = "";
+  settings.mp.tokenUser = "";
+  saveSettings();
+  renderPtLoginState();
+  switchPtSub("sites");
+  renderPtMock();
+  toast("🚪 " + (curLang === "en" ? "Logged out" : "已退出登录"));
+}
+
+function renderPtLoginState() {
+  const dot = document.getElementById("mpDot");
+  const badge = document.getElementById("ptSourceBadge");
+  if (settings.mp.token) {
+    dot.classList.remove("red");
+    badge.textContent = "✅ " + (settings.mp.tokenUser || settings.mp.username || "已登录");
+    badge.className = "badge green";
+  } else {
+    dot.classList.add("red");
+    badge.textContent = t("ptNotLoggedIn");
+    badge.className = "badge red";
+  }
+}
+
+function switchPtSub(sub) {
+  document.querySelectorAll(".tab[data-ptsub]").forEach(x => x.classList.toggle("active", x.dataset.ptsub === sub));
+  document.querySelectorAll(".ptsub-panel").forEach(p => p.classList.toggle("active", p.id === "ptsub-" + sub));
+}
+
+async function refreshPt(force = false) {
+  if (!settings.mp.token) { renderPtMock(); return; }
+  await loadPtAll();
+}
+
+async function loadPtAll() {
+  if (!settings.mp.token) { renderPtMock(); return; }
+  const results = await Promise.allSettled([loadMpSites(), loadMpUserdata(), loadGuard()]);
+  const failed = results.filter(r => r.status === "rejected");
+  if (failed.length) {
+    toast("⚠️ " + (curLang === "en" ? `Loaded ${3 - failed.length}/3, ${failed.length} API failed — see diagnostic bar` : `已加载 ${3 - failed.length}/3，${failed.length} 个接口失败 — 见顶部诊断条`));
+  }
+}
+
+async function loadMpSites() {
+  try {
+    const res = await mpFetchJson(mpBase() + "/api/v1/site", 6000);
+    const list = extractList(res);
+    setDiag("site", `array[${list.length}] keys:${list.length ? Object.keys(list[0] || {}).join(",") : "empty"}`);
+    const body = document.getElementById("ptSiteBody");
+    document.getElementById("ptSiteCount").textContent = `${list.length} 站`;
+    body.innerHTML = list.map(s => {
+      const active = s.is_active !== false;
+      return `<tr>
+        <td><b>${esc(s.name || "--")}</b></td>
+        <td class="mono">${esc(s.domain || s.url || "")}</td>
+        <td>${s.cookie ? "🟢 " + (curLang === "en" ? "has cookie" : "已配置") : "🔴 " + (curLang === "en" ? "no cookie" : "无 Cookie")}</td>
+        <td><span style="color:${active ? "var(--green)" : "var(--red)"}">${active ? (curLang === "en" ? "Enabled" : "启用") : (curLang === "en" ? "Disabled" : "停用")}</span></td>
+        <td class="mono">${s.pri != null ? s.pri : 0}</td>
+      </tr>`;
+    }).join("");
+    if (!list.length) body.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--text2);padding:20px;">${curLang === "en" ? "No sites in MoviePilot yet" : "MoviePilot 中暂无站点"}</td></tr>`;
+  } catch (e) {
+    setDiag("site", "FAIL " + e.message);
+    throw e;
+  }
+}
+
+async function loadMpUserdata() {
+  try {
+    const res = await mpFetchJson(mpBase() + "/api/v1/site/userdata/latest", 6000);
+    const list = extractList(res);
+    setDiag("userdata", `array[${list.length}] keys:${list.length ? Object.keys(list[0] || {}).join(",") : "empty"}`);
+    const grid = document.getElementById("ptGrid");
+    if (!list.length) {
+      grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;color:var(--text2);font-size:13px;padding:24px;">${curLang === "en" ? "No site data — refresh userdata in MoviePilot" : "暂无站点数据，请在 MoviePilot 中刷新站点数据"}</div>`;
+      return;
+    }
+    grid.innerHTML = list.map(d => {
+      const siteName = d.site || d.domain || "--";
+      const icon = PT_ICONS[siteName] || [String(siteName).slice(0, 1), "#64748b"];
+      const ratio = d.ratio || 0;
+      const ratioColor = ratio >= 1.5 ? "var(--green)" : ratio >= 1 ? "var(--yellow)" : "var(--red)";
+      const ok = d.upload != null || d.ratio != null;
+      return `<div class="card pt-card">
+        <div class="pt-head">
+          <span class="pt-name"><span class="pt-ico" style="background:${icon[1]};">${icon[0]}</span>${esc(siteName)}</span>
+          <span class="status" style="color:${ok ? "var(--green)" : "var(--red)"};">${ok ? "✓" : "✕"}</span>
+        </div>
+        <div class="pt-stats">
+          <div><span>${t("ptUp")}</span><b>${fmtBytes(d.upload)}</b></div>
+          <div><span>${t("ptDown")}</span><b>${fmtBytes(d.download)}</b></div>
+          <div><span>${t("ptRatio")}</span><b style="color:${ratioColor}">${(ratio != null && ratio.toFixed) ? ratio.toFixed(2) : (ratio ?? "--")}</b></div>
+          <div><span>${t("ptSeed")}</span><b>${d.seeding != null ? d.seeding : "--"}</b></div>
+          <div><span>${t("ptMagic")}</span><b>${d.bonus != null ? Number(d.bonus).toLocaleString() : "--"}</b></div>
+          <div><span>${t("ptLevel")}</span><b>${esc(d.user_level || "--")}</b></div>
+        </div>
+        <span class="pt-seed" style="${ok ? "" : "color:var(--red);"}">${ok ? t("ptOk") : t("ptErr")}</span>
+      </div>`;
+    }).join("");
+  } catch (e) {
+    setDiag("userdata", "FAIL " + e.message);
+    throw e;
+  }
+}
+
+/* PT 监护室：插件状态 + 工作状态 + 快照 */
+async function loadGuard() {
+  const base = mpBase();
+  const pluginPaths = [
+    "/api/v1/plugin/sites",
+    "/api/v1/plugin/summary",
+    "/api/v1/plugin/Savept/sites",
+    "/api/v1/plugin/savept/sites",
+    "/api/v2/plugin/Savept/sites",
+    "/api/v2/plugin/savept/sites"
+  ];
+  const configPaths = [
+    "/api/v1/plugin/config",
+    "/api/v1/plugin/Savept/config",
+    "/api/v1/plugin/savept/config",
+    "/api/v2/plugin/Savept/config",
+    "/api/v2/plugin/savept/config"
+  ];
+  /* 1. 插件安装/启用状态 */
+  let installed = false, enabled = false, version = "--";
+  try {
+    const plugins = await mpFetchJson(base + "/api/v1/plugin?state=installed", 6000);
+    const list = extractList(plugins);
+    setDiag("plugin", `array[${list.length}]`);
+    const sp = list.find(p => (p.id || "").toLowerCase().includes("savept") || (p.plugin_id || "").toLowerCase().includes("savept") || (p.name || "").toLowerCase().includes("pt监护") || (p.plugin_name || "").toLowerCase().includes("pt监护") || (p.name || "").toLowerCase().includes("savept"));
+    if (sp) {
+      installed = true;
+      enabled = sp.installed !== false && sp.is_active !== false && sp.enabled !== false;
+      version = sp.version || sp.local_version || sp.plugin_version || "--";
+      setDiag("saveptPlugin", `FOUND keys:${Object.keys(sp).join(",")}`);
+    } else {
+      setDiag("saveptPlugin", "NOT_FOUND in plugin list");
+    }
+  } catch (e) {
+    setDiag("plugin", "FAIL " + e.message);
+  }
+  document.getElementById("guardInstalled").textContent = installed ? (curLang === "en" ? "✅ Installed" : "✅ 已安装") : (curLang === "en" ? "❌ Not installed" : "❌ 未安装");
+  document.getElementById("guardEnabled").textContent = installed ? (enabled ? (curLang === "en" ? "✅ Enabled" : "✅ 已启用") : (curLang === "en" ? "⏸ Disabled" : "⏸ 未启用")) : "--";
+  document.getElementById("guardVersion").textContent = version;
+  const gDot = document.getElementById("guardDot");
+  gDot.classList.remove("red", "yellow");
+  if (!installed) gDot.classList.add("red");
+  else if (!enabled) gDot.classList.add("yellow");
+
+  /* 2. 工作状态（插件配置） */
+  let cfgHit = "--";
+  for (const path of configPaths) {
+    try {
+      const cfg = await mpFetchJson(base + path, 5000);
+      const c = cfg && cfg.data ? cfg.data : cfg;
+      cfgHit = path;
+      document.getElementById("guardSource").textContent = c.source_url || "--";
+      document.getElementById("guardCron").textContent = c.cron || "--";
+      document.getElementById("guardNotify").textContent = c.notify ? (curLang === "en" ? "✅ On" : "✅ 开启") : (curLang === "en" ? "Off" : "关闭");
+      setDiag("saveptConfig", path);
+      break;
+    } catch (e) {
+      setDiag("saveptConfig", "probing...");
+    }
+  }
+  if (cfgHit === "--") {
+    document.getElementById("guardSource").textContent = "--";
+    document.getElementById("guardCron").textContent = "--";
+    document.getElementById("guardNotify").textContent = "--";
+    setDiag("saveptConfig", "NO_MATCH");
+  }
+
+  /* 3. 快照（站点状态 + 公告） */
+  let snap = null, snapHit = "";
+  for (const path of pluginPaths.filter(p => p.endsWith("/sites"))) {
+    try {
+      const raw = await mpFetchJson(base + path, 6000);
+      const data = raw && raw.data ? raw.data : raw;
+      if (data && (data.sites || data.summary || data.alerts)) {
+        snap = data;
+        snapHit = path;
+        setDiag("saveptSites", `${path} keys:${Object.keys(data).join(",")}`);
+        break;
+      }
+    } catch (e) {
+      setDiag("saveptSites", `try ${path}: ${e.message}`);
+    }
+  }
+  if (!snap) {
+    document.getElementById("guardAlerts").innerHTML = `<div class="alert-bar critical">⚠️ ${t("guardPluginMissing")}<br><span class="mono">${curLang === "en" ? "Tried" : "已尝试"}: ${pluginPaths.filter(p => p.endsWith("/sites")).join(" · ")}</span></div>`;
+    document.getElementById("guardSiteBody").innerHTML = "";
+    document.getElementById("guardSyncBadge").textContent = "--";
+    return;
+  }
+  const s = snap.summary || {};
+  document.getElementById("guardTotal").textContent = s.total || (snap.sites || []).length || 0;
+  document.getElementById("guardHealthy").textContent = s.healthy || 0;
+  document.getElementById("guardCritical").textContent = s.critical || 0;
+  document.getElementById("guardClosed").textContent = s.closed || 0;
+  document.getElementById("guardOwned").textContent = s.mp_owned || 0;
+  document.getElementById("guardFetched").textContent = snap.fetched_at || "--";
+  document.getElementById("guardSyncBadge").textContent = `${(snap.sites || []).length} 站同步 · ${snapHit}`;
+  document.getElementById("guardAlerts").innerHTML = (snap.alerts || []).map(a =>
+    `<div class="alert-bar ${esc(a.level)}">${esc(a.text)}</div>`).join("");
+  const body = document.getElementById("guardSiteBody");
+  body.innerHTML = (snap.sites || []).slice(0, 40).map(site => {
+    const stKey = { healthy: "stHealthy", critical: "stCritical", closed: "stClosed" }[site.status] || "stUnknown";
+    const stColor = site.status === "healthy" ? "var(--green)" : site.status === "critical" ? "var(--red)" : "var(--text2)";
+    const mpKey = { owned: "mpOwned", available: "mpAvailable", unsupported: "mpUnsupported" }[site.mp_status] || "--";
+    const anniv = site.anniversary_text ? (site.anniversary_text.includes("今天") ? `<span style="color:var(--yellow)">🎉 ${esc(site.anniversary_text)}</span>` : esc(site.anniversary_text)) : "--";
+    return `<tr>
+      <td><b>${esc(site.name)}</b></td>
+      <td class="mono">${esc(site.domain || site.url || "")}</td>
+      <td><span style="color:${stColor}">● ${t(stKey)}</span></td>
+      <td>${esc(site.year || "--")}</td>
+      <td>${anniv}</td>
+      <td>${t(mpKey)}</td>
+    </tr>`;
+  }).join("");
+  if (!(snap.sites || []).length) body.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text2);padding:20px;">${curLang === "en" ? "No snapshot — install & enable Savept plugin" : "无快照数据 — 请先安装并启用 Savept(Vue-PT监护室) 插件"}</td></tr>`;
+}
+
+function renderPtMock() {
+  renderPtLoginState();
+  switchPtSub(document.querySelector(".tab[data-ptsub].active")?.dataset.ptsub || "sites");
+  /* 站点管理 mock */
+  const body = document.getElementById("ptSiteBody");
+  document.getElementById("ptSiteCount").textContent = `${MOCK_MP_SITES.length} 站`;
+  body.innerHTML = MOCK_MP_SITES.map(s => `
+    <tr>
+      <td><b>${esc(s.name)}</b></td>
+      <td class="mono">${esc(s.domain)}</td>
+      <td>🟢 ${curLang === "en" ? "has cookie" : "已配置"}</td>
+      <td><span style="color:${s.is_active ? "var(--green)" : "var(--red)"}">${s.is_active ? (curLang === "en" ? "Enabled" : "启用") : (curLang === "en" ? "Disabled" : "停用")}</span></td>
+      <td class="mono">${s.pri}</td>
+    </tr>`).join("");
+  document.getElementById("ptGrid").innerHTML = MOCK_PT_USERDATA.map(d => {
+    const icon = PT_ICONS[d.site] || [d.site.slice(0, 1), "#64748b"];
+    const ratioColor = d.ratio >= 1.5 ? "var(--green)" : d.ratio >= 1 ? "var(--yellow)" : "var(--red)";
+    return `<div class="card pt-card">
+      <div class="pt-head">
+        <span class="pt-name"><span class="pt-ico" style="background:${icon[1]};">${icon[0]}</span>${esc(d.site)}</span>
+        <span class="status" style="color:${d.ok ? "var(--green)" : "var(--red)"};">${d.ok ? "✓" : "✕"}</span>
+      </div>
+      <div class="pt-stats">
+        <div><span>${t("ptUp")}</span><b>${esc(d.upload)}</b></div>
+        <div><span>${t("ptDown")}</span><b>${esc(d.download)}</b></div>
+        <div><span>${t("ptRatio")}</span><b style="color:${ratioColor}">${d.ratio}</b></div>
+        <div><span>${t("ptSeed")}</span><b>${d.seeding}</b></div>
+        <div><span>${t("ptMagic")}</span><b>${esc(d.magic)}</b></div>
+        <div><span>${t("ptLevel")}</span><b>${esc(d.level)}</b></div>
+      </div>
+      <span class="pt-seed" style="${d.ok ? "" : "color:var(--red);"}">${d.ok ? t("ptOk") : t("ptErr")}</span>
+    </div>`;
+  }).join("");
+  /* 监护室 mock */
+  const s = MOCK_PT_SITES.summary;
+  document.getElementById("guardInstalled").textContent = "✅ " + (curLang === "en" ? "Installed" : "已安装");
+  document.getElementById("guardEnabled").textContent = "✅ " + (curLang === "en" ? "Enabled" : "已启用");
+  document.getElementById("guardVersion").textContent = "v1.1.1";
+  document.getElementById("guardSource").textContent = "https://savept.icu/";
+  document.getElementById("guardFetched").textContent = MOCK_PT_SITES.fetched_at;
+  document.getElementById("guardCron").textContent = "0 9 * * *";
+  document.getElementById("guardNotify").textContent = curLang === "en" ? "✅ On" : "✅ 开启";
+  document.getElementById("guardTotal").textContent = s.total;
+  document.getElementById("guardHealthy").textContent = s.healthy;
+  document.getElementById("guardCritical").textContent = s.critical;
+  document.getElementById("guardClosed").textContent = s.closed;
+  document.getElementById("guardOwned").textContent = s.mp_owned;
+  document.getElementById("guardSyncBadge").textContent = `${MOCK_PT_SITES.sites.length} 站同步`;
+  document.getElementById("guardDot").classList.remove("red", "yellow");
+  document.getElementById("guardAlerts").innerHTML = MOCK_PT_SITES.alerts.map(a =>
+    `<div class="alert-bar ${esc(a.level)}">${esc(a.text)}</div>`).join("");
+  document.getElementById("guardSiteBody").innerHTML = MOCK_PT_SITES.sites.map(site => {
+    const stKey = { healthy: "stHealthy", critical: "stCritical", closed: "stClosed" }[site.status] || "stUnknown";
+    const stColor = site.status === "healthy" ? "var(--green)" : site.status === "critical" ? "var(--red)" : "var(--text2)";
+    const mpKey = { owned: "mpOwned", available: "mpAvailable", unsupported: "mpUnsupported" }[site.mp_status] || "--";
+    const anniv = site.anniversary_text ? (site.anniversary_text.includes("今天") ? `<span style="color:var(--yellow)">🎉 ${esc(site.anniversary_text)}</span>` : esc(site.anniversary_text)) : "--";
+    return `<tr>
+      <td><b>${esc(site.name)}</b></td>
+      <td class="mono">${esc(site.domain)}</td>
+      <td><span style="color:${stColor}">● ${t(stKey)}</span></td>
+      <td>${esc(site.year || "--")}</td>
+      <td>${anniv}</td>
+      <td>${t(mpKey)}</td>
+    </tr>`;
+  }).join("");
+}
+
+/* ================= 模块管理 ================= */
+const BOARD_TYPE_VIEW = { comic: "view-comic", movie: "view-movie", audio: "view-audio" };
+const BOARD_TYPE_NAV = { comic: "navComic", movie: "navMovie", audio: "navAudio" };
+const BUILTIN_MODULES = [
+  { id: "home", icon: "🏠", type: "web", nameKey: "navHome" },
+  { id: "pt", icon: "🌊", type: "pt", nameKey: "navPt" },
+  { id: "comic", icon: "📚", type: "comic", nameKey: "navComic" },
+
+  { id: "movie", icon: "🎬", type: "movie", nameKey: "navMovie" },
+  { id: "audio", icon: "🎵", type: "audio", nameKey: "navAudio" },
+  { id: "docker", icon: "🐳", type: "web", nameKey: "navDocker" }
+];
+const MODULE_GROUP = { home: "main", pt: "main", comic: "media", movie: "media", audio: "media", docker: "sys" };
+
+function openModuleModal(preType) {
+  renderBoardList();
+  openModal("boardModal");
+}
+
+function renderBoardList() {
+  const wrap = document.getElementById("boardList");
+  const typeLabel = b => b.type === "web" ? t("btWeb") : b.type === "comic" ? t("btComic") : b.type === "movie" ? t("btMovie") : b.type === "audio" ? t("btAudio") : t("btPt");
+  const items = customBoards.map(b => `
+    <div class="board-item">
+      <span class="b-ic">${esc(b.icon)}</span>
+      <span class="b-name">${esc(b.name)}</span>
+      <span class="b-type">${t("customBoard")} · ${typeLabel(b)}</span>
+      <span class="b-url">${esc(b.baseUrl || b.addr)}</span>
+      <button class="b-del" onclick="deleteBoard('${b.id}')">🗑</button>
+    </div>`).join("");
+  const builtinHtml = BUILTIN_MODULES.map(b => {
+    const hidden = hiddenModules.includes(b.id);
+    return `
+    <div class="board-item${hidden ? " hidden-mod" : ""}">
+      <span class="b-ic">${b.icon}</span>
+      <span class="b-name">${esc(t(b.nameKey))}</span>
+      <span class="b-type">${t("builtinBoard")} · ${typeLabel(b)}</span>
+      <button class="b-toggle" onclick="toggleModule('${b.id}')">${hidden ? t("moduleShow") : t("moduleHide")}</button>
+    </div>`;
+  }).join("");
+  wrap.innerHTML = builtinHtml + items;
+  if (!customBoards.length) wrap.innerHTML += `<div class="empty-tip">${t("boardEmpty")}</div>`;
+}
+
+/* 切换内置模块显示/隐藏 */
+function toggleModule(id) {
+  const idx = hiddenModules.indexOf(id);
+  const hiding = idx < 0;
+  if (hiding) hiddenModules.push(id); else hiddenModules.splice(idx, 1);
+  saveHiddenModules();
+  applyModuleVisibility();
+  renderBoardList();
+  if (hiding) {
+    const active = document.querySelector(".nav-item.active[data-view]");
+    if (active && active.dataset.module === id) switchView("home");
+  }
+}
+
+/* 根据隐藏模块列表应用侧边栏可见性 */
+function applyModuleVisibility() {
+  document.querySelectorAll(".nav-item[data-module]").forEach(item => {
+    item.style.display = hiddenModules.includes(item.dataset.module) ? "none" : "";
+  });
+  ["main", "media", "sys"].forEach(g => {
+    const ids = Object.keys(MODULE_GROUP).filter(k => MODULE_GROUP[k] === g);
+    const allHidden = ids.length && ids.every(id => hiddenModules.includes(id));
+    const header = document.querySelector(`.nav-group[data-nav-group="${g}"]`);
+    if (header) header.style.display = allHidden ? "none" : "";
+  });
+  const customHeader = document.querySelector(`.nav-group[data-nav-group="custom"]`);
+  if (customHeader) customHeader.style.display = customBoards.length ? "" : "none";
+}
+
+function boardTypeChanged() {
+  /* 媒体类型添加时提示将映射到内置功能页面 */
+}
+
+function buildBoard() {
+  const name = document.getElementById("nbName").value.trim();
+  const addr = document.getElementById("nbAddr").value.trim();
+  if (!name || !addr) { toast("⚠️ " + t("saveFirst")); return null; }
+  const icon = document.getElementById("nbIcon").value.trim() || "🌐";
+  const type = document.getElementById("nbType").value;
+  const proto = document.getElementById("nbProto").value;
+  const port = document.getElementById("nbPort").value.trim();
+  let baseUrl = addr;
+  if (!/^https?:\/\//i.test(baseUrl)) {
+    baseUrl = proto + "://" + baseUrl;
+    if (port) baseUrl += ":" + port;
+  }
+  return {
+    id: "custom-" + Date.now().toString(36),
+    name, icon, type, addr, port, proto, baseUrl,
+    username: document.getElementById("nbUser").value.trim(),
+    password: document.getElementById("nbPass").value,
+    createdAt: Date.now()
+  };
+}
+
+async function verifyAndAdd() {
+  const b = buildBoard();
+  if (!b) return;
+  document.getElementById("btnVerify").disabled = true;
+  toast(t("testConnecting"));
+  let ok = false;
+  try {
+    const probePath = { web: "/", comic: "/api/v1/libraries", movie: "/System/Info/Public", audio: "/ping" }[b.type] || "/";
+    const res = await fetch(b.baseUrl + probePath, { signal: AbortSignal.timeout(5000) });
+    ok = res.ok || res.status < 400;
+  } catch (e) { ok = false; }
+  document.getElementById("btnVerify").disabled = false;
+  if (ok) {
+    toast(t("verifyOk"));
+    addBoard(true, b);
+  } else {
+    toast(t("verifyFail"));
+  }
+}
+
+function addBoard(skipBuild, board) {
+  const b = board || buildBoard();
+  if (!b) return;
+  /* 媒体类型：保存配置并跳转到对应内置功能页面 */
+  if (BOARD_TYPE_VIEW[b.type]) {
+    customBoards.push(b);
+    saveBoards();
+    renderCustomNav();
+    closeModal("boardModal");
+    applyBoardToView(b);
+    toast(t("boardAdded"));
+    return;
+  }
+  /* 通用网页：iframe 自定义页面 */
+  customBoards.push(b);
+  saveBoards();
+  renderCustomNav();
+  closeModal("boardModal");
+  openCustomBoard(b.id);
+  toast(t("boardAdded"));
+}
+
+/* 将自定义媒体模块的服务器地址应用到内置功能页面并跳转 */
+function applyBoardToView(b) {
+  const viewId = BOARD_TYPE_VIEW[b.type];
+  const panel = document.querySelector(`#${viewId} .tab-panel.active`);
+  if (panel) {
+    const lan = panel.querySelector("[data-lan-input]");
+    if (lan) lan.value = b.baseUrl;
+    const sw = panel.querySelector("[data-switch]");
+    if (sw) sw.classList.add("on");
+    const addrEl = panel.querySelector(".addr-box .val");
+    if (addrEl) addrEl.textContent = b.baseUrl;
+  } else {
+    const lan = document.querySelector(`#${viewId} [data-lan-input]`);
+    if (lan) lan.value = b.baseUrl;
+  }
+  updateAddr(b.type);
+  switchView(b.type);
+}
+
+function deleteBoard(id) {
+  customBoards = customBoards.filter(b => b.id !== id);
+  saveBoards();
+  renderCustomNav();
+  renderBoardList();
+  const view = document.getElementById("view-" + id);
+  if (view) view.remove();
+  toast(t("boardDeleted"));
+}
+
+/* 自定义模块导航渲染 */
+function renderCustomNav() {
+  const wrap = document.getElementById("customNav");
+  wrap.innerHTML = customBoards.map(b => `
+    <div class="nav-item" data-view="${b.id}" onclick="openCustomBoard('${b.id}')">
+      <span class="ic">${esc(b.icon)}</span><span class="txt">${esc(b.name)}</span>
+      <button class="del" onclick="event.stopPropagation();deleteBoard('${b.id}')">🗑</button>
+    </div>`).join("");
+  applyModuleVisibility();
+}
+
+/* 自定义模块页面：媒体类型 → 内置功能页；通用 → iframe */
+function openCustomBoard(id) {
+  const b = customBoards.find(x => x.id === id);
+  if (!b) return;
+  if (BOARD_TYPE_VIEW[b.type]) {
+    applyBoardToView(b);
+    return;
+  }
+  document.querySelectorAll(".nav-item[data-view]").forEach(n => n.classList.remove("active"));
+  const navItem = document.querySelector(`.nav-item[data-view="${id}"]`);
+  if (navItem) navItem.classList.add("active");
+  document.querySelectorAll(".view").forEach(s => s.classList.remove("active"));
+  let view = document.getElementById("view-" + id);
+  if (!view) {
+    view = document.createElement("section");
+    view.className = "view";
+    view.id = "view-" + id;
+    document.getElementById("customViews").appendChild(view);
+  }
+  view.classList.add("active");
+  document.getElementById("pageTitle").textContent = b.name;
+  view.innerHTML = `
+    <div class="section-title">
+      <span>${esc(b.icon)} ${esc(b.name)}</span>
+      <span class="badge">${t("customBoard")}</span>
+      <button class="btn" style="margin-left:auto;padding:5px 12px;" onclick="window.open('${esc(b.baseUrl)}','_blank')">↗ ${t("openNew")}</button>
+    </div>
+    <div class="addr-box" style="max-width:640px;">
+      <div class="label">${t("curAddr")}</div>
+      <div class="val">${esc(b.baseUrl)}${b.username ? " · " + esc(b.username) + " / ••••" : ""}</div>
+    </div>
+    <div class="frame-box"><iframe src="${esc(b.baseUrl)}" sandbox="allow-scripts allow-same-origin allow-forms allow-popups" loading="lazy"></iframe></div>`;
+  window.scrollTo(0, 0);
+}
+
+/* ================= 弹窗 / Toast ================= */
+function openModal(id) { document.getElementById(id).classList.add("show"); }
+function closeModal(id) { document.getElementById(id).classList.remove("show"); }
+document.querySelectorAll(".modal-mask").forEach(m => m.addEventListener("click", e => { if (e.target === m) m.classList.remove("show"); }));
+
+let toastTimer;
+function toast(msg) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 2400);
+}
+
+function setLang(l) {
+  curLang = l;
+  applyI18n();
+  document.getElementById("pageTitle").textContent = t(titleMap[document.querySelector(".nav-item.active[data-view]")?.dataset.view] || "navHome");
+  renderDocker();
+  renderBoardList();
+  renderCustomNav();
+  if (settings.mp.token) loadPtAll(); else renderPtMock();
+  saveSettings();
+}
+
+/* ================= 初始化 ================= */
+loadSettings();
+loadBoards();
+loadHiddenModules();
+
+document.body.dataset.theme = settings.theme === "light" ? "light" : "dark";
+document.body.classList.toggle("custom-bg", settings.theme === "custom");
+document.getElementById("customBgWrap").style.display = settings.theme === "custom" ? "block" : "none";
+applyBgImage();
+document.querySelectorAll(".theme-opt").forEach(el => el.classList.toggle("on", el.dataset.themeOpt === settings.theme));
+
+document.getElementById("glancesUrl").value = settings.glancesUrl;
+document.getElementById("mpUrl").value = settings.mp.mpUrl || "";
+document.getElementById("mpUser").value = settings.mp.username || "";
+document.getElementById("mpPass").value = settings.mp.password || "";
+
+applyI18n();
+bindSwitches();
+updateAddr("comic"); updateAddr("movie"); updateAddr("audio");
+renderDocker();
+renderCustomNav();
+initMediaLogin();
+renderPtLoginState();
+renderPtMock();
+tickMetrics();
+setInterval(tickMetrics, 2000);
+</script>
+</body>
+</html>

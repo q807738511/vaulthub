@@ -1,0 +1,104 @@
+# 单入口：Cloudflare Tunnel 的所有主机名均指向 http://192.168.112.3:8088
+:8088 {
+	encode zstd gzip
+
+	@health path /healthz
+	handle @health {
+		respond "ok" 200
+	}
+
+	# VaultHub 配置管理 API，仅由同容器内的管理进程处理。
+	handle /api/admin/* {
+		reverse_proxy http://127.0.0.1:9099
+	}
+
+	# WebUI 同源 API。handle_path 会剥掉 /api/glances 和 /api/mp 前缀。
+	handle_path /api/glances/* {
+		reverse_proxy http://{$NAS_IP:192.168.112.3}:61208
+	}
+
+	handle_path /api/mp/* {
+		reverse_proxy http://{$NAS_IP:192.168.112.3}:3000 {
+			# MoviePilot 部分无尾斜杠接口返回绝对 Location，改回同源代理路径。
+			header_down Location ^https?://[^/]+(/.*)$ /api/mp$1
+		}
+	}
+
+	# 媒体服务继续使用独立子域名，避免应用不支持 base path。
+	@comic host comic.enged.top kom.enged.top
+	handle @comic {
+		reverse_proxy http://{$NAS_IP:192.168.112.3}:25600 {
+			header_up X-Forwarded-Proto https
+			header_up X-Forwarded-Host {host}
+			header_down -X-Frame-Options
+			header_down Content-Security-Policy "frame-ancestors {$DASHBOARD_ORIGIN:https://home.enged.top}"
+		}
+	}
+
+	@kavita host kavita.enged.top
+	handle @kavita {
+		reverse_proxy http://{$NAS_IP:192.168.112.3}:8085 {
+			header_down -X-Frame-Options
+			header_down Content-Security-Policy "frame-ancestors {$DASHBOARD_ORIGIN:https://home.enged.top}"
+		}
+	}
+
+	@book host book.enged.top
+	handle @book {
+		reverse_proxy http://{$NAS_IP:192.168.112.3}:8083 {
+			header_down -X-Frame-Options
+			header_down Content-Security-Policy "frame-ancestors {$DASHBOARD_ORIGIN:https://home.enged.top}"
+		}
+	}
+
+	@plex host plex.enged.top
+	handle @plex {
+		reverse_proxy http://{$NAS_IP:192.168.112.3}:32400 {
+			header_down -X-Frame-Options
+			header_down Content-Security-Policy "frame-ancestors {$DASHBOARD_ORIGIN:https://home.enged.top}"
+		}
+	}
+
+	@emby host emby.enged.top
+	handle @emby {
+		reverse_proxy http://{$NAS_IP:192.168.112.3}:8096 {
+			header_down -X-Frame-Options
+			header_down Content-Security-Policy "frame-ancestors {$DASHBOARD_ORIGIN:https://home.enged.top}"
+		}
+	}
+
+	@jellyfin host jellyfin.enged.top
+	handle @jellyfin {
+		reverse_proxy http://{$NAS_IP:192.168.112.3}:8096 {
+			header_down -X-Frame-Options
+			header_down Content-Security-Policy "frame-ancestors {$DASHBOARD_ORIGIN:https://home.enged.top}"
+		}
+	}
+
+	@navidrome host yy.enged.top
+	handle @navidrome {
+		reverse_proxy http://{$NAS_IP:192.168.112.3}:4533 {
+			header_down -X-Frame-Options
+			header_down Content-Security-Policy "frame-ancestors {$DASHBOARD_ORIGIN:https://home.enged.top}"
+		}
+	}
+
+	@daoliyu host music.enged.top
+	handle @daoliyu {
+		reverse_proxy http://{$NAS_IP:192.168.112.3}:4000 {
+			header_down -X-Frame-Options
+			header_down Content-Security-Policy "frame-ancestors {$DASHBOARD_ORIGIN:https://home.enged.top}"
+		}
+	}
+
+	# 未命中媒体域名时返回 WebUI 静态页面。
+	handle {
+		root * {$WEB_ROOT:/srv}
+		try_files {path} /index.html
+		file_server
+		header {
+			X-Content-Type-Options nosniff
+			Referrer-Policy same-origin
+		}
+	}
+}
