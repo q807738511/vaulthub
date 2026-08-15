@@ -1,0 +1,23 @@
+# Runtime configuration and persistent state
+.env
+data/*
+!data/.gitkeep
+
+# Build and release artifacts
+*.tar.gz
+*.zip
+*.log
+SHA256SUMS
+backup-*
+*.backup-*
+
+# Editor / OS files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# Temporary test files
+.tmp/
+tmp/
