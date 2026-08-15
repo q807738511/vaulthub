@@ -146,6 +146,71 @@ curl -sI https://kom.enged.top/ | grep -i content-security-policy
 
 当前环境已使用 Tunnel，继续使用方案一最省事。方案二适合作为不依赖 cloudflared 的备用接入方式，两种方案不建议让同一域名同时生效，以免 DNS 流量指向不一致。
 
+## 自动更新容器
+
+项目包含 `.github/workflows/publish-image.yml` 和 `docker-compose.autoupdate.yml`：
+
+```text
+GitHub Desktop 推送 main
+  -> GitHub Actions 构建 linux/amd64 镜像
+  -> 发布 ghcr.io/<用户名>/vaulthub:latest
+  -> NAS Watchtower 每 5 分钟检查
+  -> 自动拉取并重启 VaultHub
+```
+
+### 第一次配置
+
+1. 推送仓库，等待 GitHub `Actions` 中的 `Build and publish container` 完成。
+2. 打开仓库右侧 `Packages` → `vaulthub` → Package settings，将镜像设为 **Public**。公开镜像无需在 NAS 保存 GitHub Token。
+3. 编辑 `docker-compose.autoupdate.yml`，把 `<github用户名>` 换成你的小写 GitHub 用户名。
+4. 复制并编辑配置：
+
+```bash
+cp .env.example .env
+```
+
+5. 在 NAS 首次切换到自动更新版：
+
+```bash
+cd /vol1/1000/Docker/vaulthub
+docker compose down || true
+docker rm -f VaultHub VaultHub-Watchtower 2>/dev/null || true
+docker compose -f docker-compose.autoupdate.yml up -d
+```
+
+如果 GHCR 包保持 Private，先使用至少有 `read:packages` 权限的只读 PAT 登录：
+
+```bash
+echo '<GitHub只读PAT>' | docker login ghcr.io -u <GitHub用户名> --password-stdin
+docker compose -f docker-compose.autoupdate.yml up -d
+```
+
+不要把 PAT 写进 Compose 或提交到 GitHub。
+
+### 日常更新与验证
+
+以后只需在 GitHub Desktop 提交并点击 `Push origin`。Actions 发布后，Watchtower 最多等待 5 分钟更新容器；更新时会短暂重启，`.env` 和 `./data/Caddyfile` 不会被覆盖。
+
+```bash
+docker ps --filter name=VaultHub --filter name=Watchtower
+docker logs VaultHub-Watchtower --tail 50
+docker image ls ghcr.io/<github用户名>/vaulthub
+```
+
+### 回滚
+
+每次 Actions 构建还会生成 `sha-xxxxxxx` 标签。需要回滚时，把 Compose 镜像改为对应 SHA 标签：
+
+```yaml
+image: ghcr.io/<github用户名>/vaulthub:sha-0123456
+```
+
+然后重新执行：
+
+```bash
+docker compose -f docker-compose.autoupdate.yml up -d
+```
+
 ## 构建验证
 
 ```bash
