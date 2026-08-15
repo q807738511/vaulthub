@@ -1,4 +1,4 @@
-# VaultHub 蜀鼠之家 v0.5.0
+# VaultHub 蜀鼠之家 v0.5.0：离线升级版
 
 本版本为正式版前离线迭代包，解压后可直接 Compose 构建，不访问 Docker Hub。
 
@@ -19,7 +19,7 @@
 ```env
 WEBUI_PORT=8088
 NAS_IP=192.168.112.3
-DASHBOARD_ORIGIN=https://home.example.top
+DASHBOARD_ORIGIN=https://home.enged.top
 ADMIN_TOKEN=
 ```
 
@@ -39,9 +39,9 @@ VaultHub 支持两种公网接入方式：
 在 Cloudflare Zero Trust → Networks → Tunnels → Public Hostnames 添加：
 
 ```text
-home.example.top  -> HTTP -> 192.168.112.3:8088   # VaultHub 主页
-kom.example.top   -> HTTP -> 192.168.112.3:8088   # Caddy 再转 Komga :25600
-yy.example.top    -> HTTP -> 192.168.112.3:8088   # Caddy 再转 Navidrome :4533
+home.enged.top  -> HTTP -> 192.168.112.3:8088   # VaultHub 主页
+kom.enged.top   -> HTTP -> 192.168.112.3:8088   # Caddy 再转 Komga :25600
+yy.enged.top    -> HTTP -> 192.168.112.3:8088   # Caddy 再转 Navidrome :4533
 ```
 
 Cloudflare 提供公网 HTTPS，Tunnel 到 NAS 使用内网 HTTP。三条记录应属于同一个在线 Tunnel，DNS CNAME 应指向同一个 `<tunnel-id>.cfargotunnel.com`。
@@ -49,13 +49,13 @@ Cloudflare 提供公网 HTTPS，Tunnel 到 NAS 使用内网 HTTP。三条记录�
 验证：
 
 ```bash
-curl -I https://home.example.top/
-curl -I https://kom.example.top/
-curl -I https://yy.example.top/app/
-curl -sI https://kom.example.top/ | grep -i content-security-policy
+curl -I https://home.enged.top/
+curl -I https://kom.enged.top/
+curl -I https://yy.enged.top/app/
+curl -sI https://kom.enged.top/ | grep -i content-security-policy
 ```
 
-最后一条应包含 `frame-ancestors https://home.example.top`。若返回 522，先检查该域名的 Public Hostname 是否指向 `192.168.112.3:8088`，再确认 DNS 没有指向旧 Tunnel。
+最后一条应包含 `frame-ancestors https://home.enged.top`。若返回 522，先检查该域名的 Public Hostname 是否指向 `192.168.112.3:8088`，再确认 DNS 没有指向旧 Tunnel。
 
 ### 方案二：公网 DNS + Lucky/NPM 传统反向代理
 
@@ -95,12 +95,12 @@ A     yy    -> 家庭公网 IPv4
 
 #### 3. Lucky 配置
 
-创建 HTTPS Web 服务监听（通常为 443），申请 `home.example.top`、`kom.example.top`、`yy.example.top` 证书，并建立三个按主机名匹配的子规则：
+创建 HTTPS Web 服务监听（通常为 443），申请 `home.enged.top`、`kom.enged.top`、`yy.enged.top` 证书，并建立三个按主机名匹配的子规则：
 
 ```text
-前端域名 home.example.top -> 后端 http://192.168.112.3:8088
-前端域名 kom.example.top  -> 后端 http://192.168.112.3:8088
-前端域名 yy.example.top   -> 后端 http://192.168.112.3:8088
+前端域名 home.enged.top -> 后端 http://192.168.112.3:8088
+前端域名 kom.enged.top  -> 后端 http://192.168.112.3:8088
+前端域名 yy.enged.top   -> 后端 http://192.168.112.3:8088
 ```
 
 启用 WebSocket，保留原始 `Host` 请求头，并设置 `X-Forwarded-Proto: https`。不要使用 Lucky 管理端口 `16601` 作为反代入口。
@@ -110,7 +110,7 @@ A     yy    -> 家庭公网 IPv4
 分别新建三个 Proxy Host：
 
 ```text
-Domain Names: home.example.top / kom.example.top / yy.example.top
+Domain Names: home.enged.top / kom.enged.top / yy.enged.top
 Scheme:       http
 Forward Host: 192.168.112.3
 Forward Port: 8088
@@ -127,10 +127,10 @@ NPM 默认会转发原始 Host；不要在 Advanced 中覆盖成 `Host 192.168.1
 - `DASHBOARD_ORIGIN` 必须保持 `https://home.enged.top`。
 
 ```bash
-curl -I https://home.example.top/
-curl -I https://kom.example.top/
-curl -I https://yy.example.top/app/
-curl -sI https://kom.example.top/ | grep -i content-security-policy
+curl -I https://home.enged.top/
+curl -I https://kom.enged.top/
+curl -I https://yy.enged.top/app/
+curl -sI https://kom.enged.top/ | grep -i content-security-policy
 ```
 
 ### 两种方案对比
@@ -145,6 +145,71 @@ curl -sI https://kom.example.top/ | grep -i content-security-policy
 | VaultHub/Caddy 配置 | 相同 | 相同 |
 
 当前环境已使用 Tunnel，继续使用方案一最省事。方案二适合作为不依赖 cloudflared 的备用接入方式，两种方案不建议让同一域名同时生效，以免 DNS 流量指向不一致。
+
+## 自动更新容器
+
+项目包含 `.github/workflows/publish-image.yml` 和 `docker-compose.autoupdate.yml`：
+
+```text
+GitHub Desktop 推送 main
+  -> GitHub Actions 构建 linux/amd64 镜像
+  -> 发布 ghcr.io/<用户名>/vaulthub:latest
+  -> NAS Watchtower 每 5 分钟检查
+  -> 自动拉取并重启 VaultHub
+```
+
+### 第一次配置
+
+1. 推送仓库，等待 GitHub `Actions` 中的 `Build and publish container` 完成。
+2. 打开仓库右侧 `Packages` → `vaulthub` → Package settings，将镜像设为 **Public**。公开镜像无需在 NAS 保存 GitHub Token。
+3. 编辑 `docker-compose.autoupdate.yml`，把 `<github用户名>` 换成你的小写 GitHub 用户名。
+4. 复制并编辑配置：
+
+```bash
+cp .env.example .env
+```
+
+5. 在 NAS 首次切换到自动更新版：
+
+```bash
+cd /vol1/1000/Docker/vaulthub
+docker compose down || true
+docker rm -f VaultHub VaultHub-Watchtower 2>/dev/null || true
+docker compose -f docker-compose.autoupdate.yml up -d
+```
+
+如果 GHCR 包保持 Private，先使用至少有 `read:packages` 权限的只读 PAT 登录：
+
+```bash
+echo '<GitHub只读PAT>' | docker login ghcr.io -u <GitHub用户名> --password-stdin
+docker compose -f docker-compose.autoupdate.yml up -d
+```
+
+不要把 PAT 写进 Compose 或提交到 GitHub。
+
+### 日常更新与验证
+
+以后只需在 GitHub Desktop 提交并点击 `Push origin`。Actions 发布后，Watchtower 最多等待 5 分钟更新容器；更新时会短暂重启，`.env` 和 `./data/Caddyfile` 不会被覆盖。
+
+```bash
+docker ps --filter name=VaultHub --filter name=Watchtower
+docker logs VaultHub-Watchtower --tail 50
+docker image ls ghcr.io/<github用户名>/vaulthub
+```
+
+### 回滚
+
+每次 Actions 构建还会生成 `sha-xxxxxxx` 标签。需要回滚时，把 Compose 镜像改为对应 SHA 标签：
+
+```yaml
+image: ghcr.io/<github用户名>/vaulthub:sha-0123456
+```
+
+然后重新执行：
+
+```bash
+docker compose -f docker-compose.autoupdate.yml up -d
+```
 
 ## 构建验证
 
