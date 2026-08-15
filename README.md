@@ -19,7 +19,7 @@
 ```env
 WEBUI_PORT=8088
 NAS_IP=192.168.112.3
-DASHBOARD_ORIGIN=https://home.enged.top
+DASHBOARD_ORIGIN=https://home.example.top
 ADMIN_TOKEN=
 ```
 
@@ -39,9 +39,9 @@ VaultHub 支持两种公网接入方式：
 在 Cloudflare Zero Trust → Networks → Tunnels → Public Hostnames 添加：
 
 ```text
-home.enged.top  -> HTTP -> 192.168.112.3:8088   # VaultHub 主页
-kom.enged.top   -> HTTP -> 192.168.112.3:8088   # Caddy 再转 Komga :25600
-yy.enged.top    -> HTTP -> 192.168.112.3:8088   # Caddy 再转 Navidrome :4533
+home.example.top  -> HTTP -> 192.168.112.3:8088   # VaultHub 主页
+kom.example.top   -> HTTP -> 192.168.112.3:8088   # Caddy 再转 Komga :25600
+yy.example.top    -> HTTP -> 192.168.112.3:8088   # Caddy 再转 Navidrome :4533
 ```
 
 Cloudflare 提供公网 HTTPS，Tunnel 到 NAS 使用内网 HTTP。三条记录应属于同一个在线 Tunnel，DNS CNAME 应指向同一个 `<tunnel-id>.cfargotunnel.com`。
@@ -49,13 +49,13 @@ Cloudflare 提供公网 HTTPS，Tunnel 到 NAS 使用内网 HTTP。三条记录�
 验证：
 
 ```bash
-curl -I https://home.enged.top/
-curl -I https://kom.enged.top/
-curl -I https://yy.enged.top/app/
-curl -sI https://kom.enged.top/ | grep -i content-security-policy
+curl -I https://home.example.top/
+curl -I https://kom.example.top/
+curl -I https://yy.example.top/app/
+curl -sI https://kom.example.top/ | grep -i content-security-policy
 ```
 
-最后一条应包含 `frame-ancestors https://home.enged.top`。若返回 522，先检查该域名的 Public Hostname 是否指向 `192.168.112.3:8088`，再确认 DNS 没有指向旧 Tunnel。
+最后一条应包含 `frame-ancestors https://home.example.top`。若返回 522，先检查该域名的 Public Hostname 是否指向 `192.168.112.3:8088`，再确认 DNS 没有指向旧 Tunnel。
 
 ### 方案二：公网 DNS + Lucky/NPM 传统反向代理
 
@@ -95,12 +95,12 @@ A     yy    -> 家庭公网 IPv4
 
 #### 3. Lucky 配置
 
-创建 HTTPS Web 服务监听（通常为 443），申请 `home.enged.top`、`kom.enged.top`、`yy.enged.top` 证书，并建立三个按主机名匹配的子规则：
+创建 HTTPS Web 服务监听（通常为 443），申请 `home.example.top`、`kom.example.top`、`yy.example.top` 证书，并建立三个按主机名匹配的子规则：
 
 ```text
-前端域名 home.enged.top -> 后端 http://192.168.112.3:8088
-前端域名 kom.enged.top  -> 后端 http://192.168.112.3:8088
-前端域名 yy.enged.top   -> 后端 http://192.168.112.3:8088
+前端域名 home.example.top -> 后端 http://192.168.112.3:8088
+前端域名 kom.example.top  -> 后端 http://192.168.112.3:8088
+前端域名 yy.example.top   -> 后端 http://192.168.112.3:8088
 ```
 
 启用 WebSocket，保留原始 `Host` 请求头，并设置 `X-Forwarded-Proto: https`。不要使用 Lucky 管理端口 `16601` 作为反代入口。
@@ -110,7 +110,7 @@ A     yy    -> 家庭公网 IPv4
 分别新建三个 Proxy Host：
 
 ```text
-Domain Names: home.enged.top / kom.enged.top / yy.enged.top
+Domain Names: home.example.top / kom.example.top / yy.example.top
 Scheme:       http
 Forward Host: 192.168.112.3
 Forward Port: 8088
@@ -127,10 +127,10 @@ NPM 默认会转发原始 Host；不要在 Advanced 中覆盖成 `Host 192.168.1
 - `DASHBOARD_ORIGIN` 必须保持 `https://home.enged.top`。
 
 ```bash
-curl -I https://home.enged.top/
-curl -I https://kom.enged.top/
-curl -I https://yy.enged.top/app/
-curl -sI https://kom.enged.top/ | grep -i content-security-policy
+curl -I https://home.example.top/
+curl -I https://kom.example.top/
+curl -I https://yy.example.top/app/
+curl -sI https://kom.example.top/ | grep -i content-security-policy
 ```
 
 ### 两种方案对比
