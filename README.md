@@ -1,17 +1,18 @@
-# VaultHub 蜀鼠之家 v0.6.0：本地媒体库
+# VaultHub 蜀鼠之家 v0.6.2：本地媒体库
 
-v0.6.0 在保留 Komga、Kavita、Calibre-Web、Navidrome 等外连服务的同时，新增由 VaultHub 直接读取 NAS 文件的本地音乐、漫画和电子书媒体库。
+v0.6.x 在保留 Komga、Kavita、Calibre-Web、Navidrome 等外连服务的同时，新增由 VaultHub 直接读取 NAS 文件的本地音乐、漫画和电子书媒体库。v0.6.1-v0.6.2 修复了重复添加和部分路径保存后无法继续添加的问题。
 
 ## 变更
 
 - 新增本地媒体库设置：名称、类型和多个容器目录路径。
 - 媒体源可在“本地媒体库”和原有“外连服务”之间切换。
 - 本地音乐支持浏览器原生播放，本地图片/TXT/PDF 支持直接预览，其他电子书和压缩漫画可下载或由浏览器支持能力打开。
-- 本地媒体文件通过 `home.enged.top/api/media/*` 同源访问，浏览器不会连接 NAS 内网 IP。
+- 本地媒体文件通过 `home.examples.top/api/media/*` 同源访问，浏览器不会连接 NAS 内网 IP。
 - 媒体目录以只读方式挂载，VaultHub 不修改、不移动源文件。
 
 - 项目名称改为 `VaultHub 蜀鼠之家`。
-- Compose 服务名为 `vaulthub`，容器名为 `VaultHub`，本地镜像名为 `vaulthub:0.6.0-local`。
+- Compose 服务名为 `vaulthub`，容器名为 `VaultHub`。
+- ~~本地镜像名为 `vaulthub:0.6.0-local`。~~（旧的本地构建方式，保留兼容；当前推荐直接使用 `ghcr.io/q807738511/vaulthub:latest` 或固定版本标签。）
 - 左上角页面名改为 `蜀鼠之家`，图标改为动画中华鼠图标。
 - 电子书和漫画合并为 `超漫画`，统一包含 Komga / Kavita / Calibre-Web。
 - 新增 WebUI 的 `Caddy 配置` 页面，可读取、保存并热加载容器内 Caddyfile。
@@ -20,36 +21,46 @@ v0.6.0 在保留 Komga、Kavita、Calibre-Web、Navidrome 等外连服务的同�
 
 ## 首次配置
 
-`.env` 示例：
+旧的变量化 `.env` 写法仍兼容，但当前家庭 NAS 固定部署不再要求使用：
 
-```env
-WEBUI_PORT=8088
-NAS_IP=192.168.112.3
-DASHBOARD_ORIGIN=https://home.enged.top
-ADMIN_TOKEN=
-```
+- ~~`WEBUI_PORT=8088`~~
+- ~~`NAS_IP=192.168.112.3`~~
+- ~~`DASHBOARD_ORIGIN=https://home.examples.top`~~
+- `ADMIN_TOKEN=`（建议保留并设置长随机值）
+
+端口和媒体卷可以直接写在 Compose 中。`NAS_IP`、`DASHBOARD_ORIGIN`、`WEB_ROOT`、`XDG_CONFIG_HOME`、`XDG_DATA_HOME` 已有镜像默认值；当前环境不变时无需重复声明。`ADMIN_TOKEN` 建议保留，用于保护 Caddy 和媒体库管理接口。
 
 `ADMIN_TOKEN` 留空表示管理配置不鉴权。公网环境建议填写一串长随机密码，WebUI 保存 Caddy 或媒体库配置时输入同一个令牌。
 
 ## 本地媒体目录
 
-先在 `.env` 中填写 NAS 的宿主机目录：
+~~先在 `.env` 中填写 NAS 的宿主机目录：~~（旧的变量化媒体路径方式，仍兼容但不再推荐。）
 
-```env
-MUSIC_PATH=/vol2/link/音乐
-COMIC_PATH=/vol3/漫画
-BOOK_PATH=/vol4/电子书
+- ~~`MUSIC_PATH=/vol2/link/音乐`~~
+- ~~`COMIC_PATH=/vol3/漫画`~~
+- ~~`BOOK_PATH=/vol4/电子书`~~
+
+~~Compose 会把它们只读映射为 `/media/music`、`/media/comics`、`/media/books`。~~
+
+当前推荐直接在 Compose 中配置只读卷。可以映射一个公共媒体根目录：
+
+```yaml
+volumes:
+  - ./data:/data
+  - /media:/media:ro
 ```
 
-Compose 会把它们只读映射为：
+也可以只映射需要的具体目录：
 
-```text
-MUSIC_PATH -> /media/music
-COMIC_PATH -> /media/comics
-BOOK_PATH  -> /media/books
+```yaml
+volumes:
+  - ./data:/data
+  - /vol2/link/音乐:/media/music:ro
+  - /vol3/漫画:/media/comics:ro
+  - /vol3/1000/komga/书画:/media/books:ro
 ```
 
-因此 WebUI 的媒体库路径应填写容器路径，例如：
+宿主机路径写在冒号左边，容器路径写在右边，`:ro` 表示只读。WebUI 只填写容器路径：
 
 ```text
 /media/music
@@ -79,9 +90,9 @@ VaultHub 支持两种公网接入方式：
 在 Cloudflare Zero Trust → Networks → Tunnels → Public Hostnames 添加：
 
 ```text
-home.enged.top  -> HTTP -> 192.168.112.3:8088   # VaultHub 主页
-kom.enged.top   -> HTTP -> 192.168.112.3:8088   # Caddy 再转 Komga :25600
-yy.enged.top    -> HTTP -> 192.168.112.3:8088   # Caddy 再转 Navidrome :4533
+home.examples.top  -> HTTP -> 192.168.112.3:8088   # VaultHub 主页
+kom.examples.top   -> HTTP -> 192.168.112.3:8088   # Caddy 再转 Komga :25600
+yy.examples.top    -> HTTP -> 192.168.112.3:8088   # Caddy 再转 Navidrome :4533
 ```
 
 Cloudflare 提供公网 HTTPS，Tunnel 到 NAS 使用内网 HTTP。三条记录应属于同一个在线 Tunnel，DNS CNAME 应指向同一个 `<tunnel-id>.cfargotunnel.com`。
@@ -89,13 +100,13 @@ Cloudflare 提供公网 HTTPS，Tunnel 到 NAS 使用内网 HTTP。三条记录�
 验证：
 
 ```bash
-curl -I https://home.enged.top/
-curl -I https://kom.enged.top/
-curl -I https://yy.enged.top/app/
-curl -sI https://kom.enged.top/ | grep -i content-security-policy
+curl -I https://home.examples.top/
+curl -I https://kom.examples.top/
+curl -I https://yy.examples.top/app/
+curl -sI https://kom.examples.top/ | grep -i content-security-policy
 ```
 
-最后一条应包含 `frame-ancestors https://home.enged.top`。若返回 522，先检查该域名的 Public Hostname 是否指向 `192.168.112.3:8088`，再确认 DNS 没有指向旧 Tunnel。
+最后一条应包含 `frame-ancestors https://home.examples.top`。若返回 522，先检查该域名的 Public Hostname 是否指向 `192.168.112.3:8088`，再确认 DNS 没有指向旧 Tunnel。
 
 ### 方案二：公网 DNS + Lucky/NPM 传统反向代理
 
@@ -135,12 +146,12 @@ A     yy    -> 家庭公网 IPv4
 
 #### 3. Lucky 配置
 
-创建 HTTPS Web 服务监听（通常为 443），申请 `home.enged.top`、`kom.enged.top`、`yy.enged.top` 证书，并建立三个按主机名匹配的子规则：
+创建 HTTPS Web 服务监听（通常为 443），申请 `home.examples.top`、`kom.examples.top`、`yy.examples.top` 证书，并建立三个按主机名匹配的子规则：
 
 ```text
-前端域名 home.enged.top -> 后端 http://192.168.112.3:8088
-前端域名 kom.enged.top  -> 后端 http://192.168.112.3:8088
-前端域名 yy.enged.top   -> 后端 http://192.168.112.3:8088
+前端域名 home.examples.top -> 后端 http://192.168.112.3:8088
+前端域名 kom.examples.top  -> 后端 http://192.168.112.3:8088
+前端域名 yy.examples.top   -> 后端 http://192.168.112.3:8088
 ```
 
 启用 WebSocket，保留原始 `Host` 请求头，并设置 `X-Forwarded-Proto: https`。不要使用 Lucky 管理端口 `16601` 作为反代入口。
@@ -150,7 +161,7 @@ A     yy    -> 家庭公网 IPv4
 分别新建三个 Proxy Host：
 
 ```text
-Domain Names: home.enged.top / kom.enged.top / yy.enged.top
+Domain Names: home.examples.top / kom.examples.top / yy.examples.top
 Scheme:       http
 Forward Host: 192.168.112.3
 Forward Port: 8088
@@ -163,14 +174,14 @@ NPM 默认会转发原始 Host；不要在 Advanced 中覆盖成 `Host 192.168.1
 #### 5. 安全与验证
 
 - 路由器只开放反向代理的 80/443，不开放 `8088`、`4533`、`25600`、`61208` 或 `9099`。
-- 建议在 `home.enged.top` 前增加认证；VaultHub 的 `ADMIN_TOKEN` 必须设置长随机值。
-- `DASHBOARD_ORIGIN` 必须保持 `https://home.enged.top`。
+- 建议在 `home.examples.top` 前增加认证；VaultHub 的 `ADMIN_TOKEN` 必须设置长随机值。
+- `DASHBOARD_ORIGIN` 必须保持 `https://home.examples.top`。
 
 ```bash
-curl -I https://home.enged.top/
-curl -I https://kom.enged.top/
-curl -I https://yy.enged.top/app/
-curl -sI https://kom.enged.top/ | grep -i content-security-policy
+curl -I https://home.examples.top/
+curl -I https://kom.examples.top/
+curl -I https://yy.examples.top/app/
+curl -sI https://kom.examples.top/ | grep -i content-security-policy
 ```
 
 ### 两种方案对比
@@ -191,9 +202,11 @@ curl -sI https://kom.enged.top/ | grep -i content-security-policy
 项目包含 `.github/workflows/publish-image.yml` 和 `docker-compose.autoupdate.yml`：
 
 ```text
-GitHub Desktop 推送 main
+GitHub 推送 main 或发布版本标签
   -> GitHub Actions 构建 linux/amd64 镜像
-  -> 发布 ghcr.io/<用户名>/vaulthub:latest
+  -> 发布 ghcr.io/q807738511/vaulthub:latest
+  -> 版本标签同时发布 ghcr.io/q807738511/vaulthub:0.6.2
+  -> 自动创建对应 GitHub Release
   -> NAS Watchtower 每 5 分钟检查
   -> 自动拉取并重启 VaultHub
 ```
@@ -202,8 +215,8 @@ GitHub Desktop 推送 main
 
 1. 推送仓库，等待 GitHub `Actions` 中的 `Build and publish container` 完成。
 2. 打开仓库右侧 `Packages` → `vaulthub` → Package settings，将镜像设为 **Public**。公开镜像无需在 NAS 保存 GitHub Token。
-3. 编辑 `docker-compose.autoupdate.yml`，把 `<github用户名>` 换成你的小写 GitHub 用户名。
-4. 复制并编辑配置：
+3. ~~编辑 `docker-compose.autoupdate.yml`，把 `<github用户名>` 换成你的小写 GitHub 用户名。~~（已废弃，仓库镜像地址已固定为 `ghcr.io/q807738511/vaulthub`。）
+4. 如需变量化配置，可复制 `.env.example`；固定部署可直接在 Compose 中写端口和卷映射：
 
 ```bash
 cp .env.example .env
@@ -234,7 +247,7 @@ docker compose -f docker-compose.autoupdate.yml up -d
 ```bash
 docker ps --filter name=VaultHub --filter name=Watchtower
 docker logs VaultHub-Watchtower --tail 50
-docker image ls ghcr.io/<github用户名>/vaulthub
+docker image ls ghcr.io/q807738511/vaulthub
 ```
 
 ### 回滚
@@ -242,7 +255,7 @@ docker image ls ghcr.io/<github用户名>/vaulthub
 每次 Actions 构建还会生成 `sha-xxxxxxx` 标签。需要回滚时，把 Compose 镜像改为对应 SHA 标签：
 
 ```yaml
-image: ghcr.io/<github用户名>/vaulthub:sha-0123456
+image: ghcr.io/q807738511/vaulthub:sha-0123456
 ```
 
 然后重新执行：
@@ -257,7 +270,7 @@ docker compose -f docker-compose.autoupdate.yml up -d
 docker compose ps
 curl http://127.0.0.1:8088/healthz
 curl http://127.0.0.1:8088/api/admin/caddyfile
-curl -H "Host: kom.enged.top" http://127.0.0.1:8088/api/v1/libraries
+curl -H "Host: kom.examples.top" http://127.0.0.1:8088/api/v1/libraries
 ```
 
 `/api/v1/libraries` 未登录时返回 Komga 认证错误是正常的；不应返回 `<title>VaultHub` 或 WebUI HTML。
