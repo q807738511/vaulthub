@@ -180,8 +180,17 @@ static void add_library(int fd, const char *body, const char *request) {
   char canonical[MAX_PATH_LEN]; struct stat st;
   if (!realpath(lib.path,canonical)||!path_is_under(canonical,media_root)||stat(canonical,&st)||!S_ISDIR(st.st_mode)) { json_error(fd,400,"path must be an existing directory under /media"); return; }
   snprintf(lib.path,sizeof(lib.path),"%s",canonical);
-  struct library libs[MAX_LIBS]; int count=0; if (load_libraries(libs,&count)||count>=MAX_LIBS) { json_error(fd,500,"configuration unavailable"); return; }
-  for (int i=0;i<count;i++) if (!strcmp(libs[i].id,lib.id)) { json_error(fd,400,"id already exists"); return; }
+  struct library libs[MAX_LIBS]; int count=0;
+  if (load_libraries(libs,&count)) { json_error(fd,500,"configuration unavailable"); return; }
+  for (int i=0;i<count;i++) if (!strcmp(libs[i].id,lib.id)) {
+    if (!strcmp(libs[i].name,lib.name) && !strcmp(libs[i].type,lib.type) && !strcmp(libs[i].path,lib.path)) {
+      response(fd,200,"application/json","{\"ok\":true,\"existing\":true}");
+    } else {
+      json_error(fd,409,"id already exists with different library data");
+    }
+    return;
+  }
+  if (count>=MAX_LIBS) { json_error(fd,500,"configuration unavailable"); return; }
   libs[count++]=lib; if (save_libraries(libs,count)) { json_error(fd,500,"configuration write failed"); return; }
   response(fd,201,"application/json","{\"ok\":true}");
 }
