@@ -1,29 +1,17 @@
 services:
   vaulthub:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      pull: false
-    image: vaulthub:0.6.0-local
+    image: ghcr.io/q807738511/vaulthub:latest
     container_name: VaultHub
+    pull_policy: always
     ports:
-      - "${WEBUI_PORT:-8088}:8088"
+      - "8088:8088"
     environment:
-      NAS_IP: "${NAS_IP:-192.168.112.3}"
-      DASHBOARD_ORIGIN: "${DASHBOARD_ORIGIN:-https://home.enged.top}"
-      ADMIN_TOKEN: "${ADMIN_TOKEN:-}"
-      WEB_ROOT: /srv
-      XDG_CONFIG_HOME: /tmp/caddy/config
-      XDG_DATA_HOME: /tmp/caddy/data
-    tmpfs:
-      - /tmp:size=32m,mode=1777
+      ADMIN_TOKEN: "请设置管理令牌"
     volumes:
       - ./data:/data
-      # 将实际媒体目录映射到 /media 下；WebUI 中填写容器路径。
-      - ${MUSIC_PATH:-./media/music}:/media/music:ro
-      - ${COMIC_PATH:-./media/comics}:/media/comics:ro
-      - ${BOOK_PATH:-./media/books}:/media/books:ro
-    read_only: false
+      - /media:/media:ro
+    tmpfs:
+      - /tmp:size=32m,mode=1777
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
