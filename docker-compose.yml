@@ -6,7 +6,8 @@ services:
     ports:
       - "8088:8088"
     environment:
-      ADMIN_TOKEN: "请设置管理令牌"
+      # 公网部署建议改为长随机令牌；留空表示不启用管理接口鉴权。
+      ADMIN_TOKEN: ""
     volumes:
       - ./data:/data
       - /media:/media:ro
