@@ -1892,16 +1892,26 @@ async function saveMediaLibraries() {
   if (paths.some(path => path !== "/media" && !path.startsWith("/media/"))) { toast("⚠️ 路径必须位于 /media 下"); return; }
   try { localStorage.setItem("dwu_media_admin_token", token); } catch (e) {}
   try {
+    let saved = 0;
+    let skipped = 0;
     for (let i = 0; i < paths.length; i++) {
       const body = { id: libraryId(name, type, paths[i], i), name: paths.length > 1 ? `${name} ${i + 1}` : name, type, path: paths[i] };
       const res = await fetch("/api/media/libraries", { method: "POST", headers: { "Content-Type": "application/json", ...mediaAdminHeaders() }, body: JSON.stringify(body) });
-      if (!res.ok) { let detail = ""; try { detail = (await res.json()).error || ""; } catch (e) {} throw new Error(detail || `HTTP ${res.status}`); }
+      if (!res.ok) {
+        let detail = "";
+        try { detail = (await res.json()).error || ""; } catch (e) {}
+        if (/id already exists/i.test(detail)) { skipped++; continue; }
+        throw new Error(detail || `HTTP ${res.status}`);
+      }
+      saved++;
     }
     document.getElementById("mediaLibName").value = "";
     document.getElementById("mediaLibPaths").innerHTML = "";
     addMediaPath();
     await refreshMediaLibraries(false);
-    toast("✅ 本地媒体库已保存");
+    if (saved && skipped) toast(`✅ 已保存 ${saved} 个路径，跳过 ${skipped} 个已存在路径`);
+    else if (skipped && !saved) toast("✅ 这些媒体路径已经添加，无需重复保存");
+    else toast("✅ 本地媒体库已保存");
   } catch (err) { toast("⚠️ 保存失败：" + err.message); }
 }
 function renderMediaLibraryConfigList() {
