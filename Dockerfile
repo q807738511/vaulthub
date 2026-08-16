@@ -1,7 +1,9 @@
+# syntax=docker/dockerfile:1
+
 FROM scratch
 
-COPY caddy /usr/bin/caddy
-COPY vaulthub-manager /usr/bin/vaulthub-manager
+COPY --chmod=755 caddy /usr/bin/caddy
+COPY --chmod=755 vaulthub-manager /usr/bin/vaulthub-manager
 COPY Caddyfile /etc/caddy/Caddyfile
 COPY index.html /srv/index.html
 
