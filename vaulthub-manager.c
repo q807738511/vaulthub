@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include <arpa/inet.h>
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
@@ -22,6 +23,7 @@ static const char *data_config = "/data/Caddyfile";
 static const char *default_config = "/etc/caddy/Caddyfile";
 static const char *token_env = "ADMIN_TOKEN";
 static pid_t caddy_pid = -1;
+static pid_t media_pid = -1;
 
 static const char *caddy_bin(void) {
   const char *p = getenv("CADDY_BIN");
@@ -84,6 +86,30 @@ static void ensure_data_config(void) {
       exit(1);
     }
   }
+  size_t len = 0;
+  char *cfg = read_file(data_config, &len);
+  const char *marker = "handle /api/media/*";
+  const char *admin = "\thandle /api/admin/* {";
+  if (cfg && !strstr(cfg, marker)) {
+    char *pos = strstr(cfg, admin);
+    if (pos) {
+      const char *media_block = "\n\t# 本地媒体库 API，仅由同容器内绑定回环地址的进程处理。\n\thandle /api/media/* {\n\t\treverse_proxy http://127.0.0.1:9100\n\t}\n";
+      size_t prefix = (size_t)(pos - cfg);
+      size_t out_len = len + strlen(media_block);
+      char *out = malloc(out_len + 1);
+      if (!out) { free(cfg); logmsg("failed to allocate caddy migration buffer"); exit(1); }
+      memcpy(out, cfg, prefix);
+      memcpy(out + prefix, media_block, strlen(media_block));
+      memcpy(out + prefix + strlen(media_block), cfg + prefix, len - prefix);
+      out[out_len] = 0;
+      if (write_file_atomic(data_config, out, out_len) != 0) {
+        logmsg("failed to migrate %s for media API: %s", data_config, strerror(errno));
+        free(out); free(cfg); exit(1);
+      }
+      free(out);
+    }
+  }
+  free(cfg);
 }
 
 static int run_cmd(char *const argv[]) {
@@ -111,9 +137,25 @@ static void start_caddy(void) {
   }
 }
 
+static void start_media_api(void) {
+  media_pid = fork();
+  if (media_pid < 0) {
+    logmsg("failed to fork media API: %s", strerror(errno));
+    exit(1);
+  }
+  if (media_pid == 0) {
+    const char *bin = getenv("MEDIA_API_BIN");
+    if (!bin || !*bin) bin = "/usr/bin/media-api";
+    char *argv[] = {(char*)bin, NULL};
+    execv(argv[0], argv);
+    _exit(127);
+  }
+}
+
 static void stop_caddy(int sig) {
   (void)sig;
   if (caddy_pid > 0) kill(caddy_pid, SIGTERM);
+  if (media_pid > 0) kill(media_pid, SIGTERM);
 }
 
 static void send_resp(int fd, int code, const char *ctype, const char *body) {
@@ -238,6 +280,7 @@ static void handle_client(int fd) {
 int main(void) {
   signal(SIGTERM, stop_caddy);
   ensure_data_config();
+  start_media_api();
   start_caddy();
   int s = socket(AF_INET, SOCK_STREAM, 0);
   int yes = 1; setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));

@@ -1,11 +1,17 @@
-# VaultHub 蜀鼠之家 v0.5.0：离线升级版
+# VaultHub 蜀鼠之家 v0.6.0：本地媒体库
 
-本版本为正式版前离线迭代包，解压后可直接 Compose 构建，不访问 Docker Hub。
+v0.6.0 在保留 Komga、Kavita、Calibre-Web、Navidrome 等外连服务的同时，新增由 VaultHub 直接读取 NAS 文件的本地音乐、漫画和电子书媒体库。
 
 ## 变更
 
+- 新增本地媒体库设置：名称、类型和多个容器目录路径。
+- 媒体源可在“本地媒体库”和原有“外连服务”之间切换。
+- 本地音乐支持浏览器原生播放，本地图片/TXT/PDF 支持直接预览，其他电子书和压缩漫画可下载或由浏览器支持能力打开。
+- 本地媒体文件通过 `home.enged.top/api/media/*` 同源访问，浏览器不会连接 NAS 内网 IP。
+- 媒体目录以只读方式挂载，VaultHub 不修改、不移动源文件。
+
 - 项目名称改为 `VaultHub 蜀鼠之家`。
-- Compose 服务名改为 `vaulthub`，容器名改为 `VaultHub`，镜像名改为 `vaulthub:0.5.0-local`。
+- Compose 服务名为 `vaulthub`，容器名为 `VaultHub`，本地镜像名为 `vaulthub:0.6.0-local`。
 - 左上角页面名改为 `蜀鼠之家`，图标改为动画中华鼠图标。
 - 电子书和漫画合并为 `超漫画`，统一包含 Komga / Kavita / Calibre-Web。
 - 新增 WebUI 的 `Caddy 配置` 页面，可读取、保存并热加载容器内 Caddyfile。
@@ -23,7 +29,41 @@ DASHBOARD_ORIGIN=https://home.enged.top
 ADMIN_TOKEN=
 ```
 
-`ADMIN_TOKEN` 留空表示 Caddy 配置页面不鉴权。公网环境建议填写一串长随机密码，WebUI 保存配置时在弹窗中输入同一个令牌。
+`ADMIN_TOKEN` 留空表示管理配置不鉴权。公网环境建议填写一串长随机密码，WebUI 保存 Caddy 或媒体库配置时输入同一个令牌。
+
+## 本地媒体目录
+
+先在 `.env` 中填写 NAS 的宿主机目录：
+
+```env
+MUSIC_PATH=/vol2/link/音乐
+COMIC_PATH=/vol3/漫画
+BOOK_PATH=/vol4/电子书
+```
+
+Compose 会把它们只读映射为：
+
+```text
+MUSIC_PATH -> /media/music
+COMIC_PATH -> /media/comics
+BOOK_PATH  -> /media/books
+```
+
+因此 WebUI 的媒体库路径应填写容器路径，例如：
+
+```text
+/media/music
+/media/comics
+/media/books
+```
+
+同一媒体库可添加多个路径。跨卷时可在 Compose 的 `volumes` 中继续增加只读映射，例如：
+
+```yaml
+- /vol5/音乐:/media/music-vol5:ro
+```
+
+然后在同一个音乐库中添加 `/media/music-vol5`。为避免泄露容器文件，媒体 API 只接受 `/media` 下的路径。
 
 ## 公网接入方案
 

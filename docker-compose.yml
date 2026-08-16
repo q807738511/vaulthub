@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile
       pull: false
-    image: vaulthub:0.5.0-local
+    image: vaulthub:0.6.0-local
     container_name: VaultHub
     ports:
       - "${WEBUI_PORT:-8088}:8088"
@@ -19,6 +19,10 @@ services:
       - /tmp:size=32m,mode=1777
     volumes:
       - ./data:/data
+      # 将实际媒体目录映射到 /media 下；WebUI 中填写容器路径。
+      - ${MUSIC_PATH:-./media/music}:/media/music:ro
+      - ${COMIC_PATH:-./media/comics}:/media/comics:ro
+      - ${BOOK_PATH:-./media/books}:/media/books:ro
     read_only: false
     security_opt:
       - no-new-privileges:true

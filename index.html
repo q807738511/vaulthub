@@ -343,7 +343,38 @@
   .media-frame-tools { position: absolute; top: 10px; right: 10px; z-index: 2; display: flex; gap: 6px; }
   .media-frame-tools .icon-btn { background: rgba(22,27,34,.86); color: #fff; border-color: rgba(255,255,255,.18); backdrop-filter: blur(6px); }
   body[data-theme="light"] .media-frame-tools .icon-btn { background: rgba(255,255,255,.9); color: #1f2328; border-color: rgba(31,35,40,.16); }
-  @media (max-width: 768px) { .media-login-grid { grid-template-columns: 1fr; } }
+  .media-modebar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+  .media-modes { display: inline-flex; padding: 3px; border: 1px solid var(--border); border-radius: 8px; background: var(--card2); }
+  .media-mode { border: 0; background: transparent; color: var(--text2); padding: 7px 14px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+  .media-mode.active { background: var(--accent); color: #fff; font-weight: 600; }
+  .local-media { min-height: calc(100vh - var(--media-chrome-offset)); }
+  .library-strip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 10px; }
+  .library-chip { flex: 0 0 auto; border: 1px solid var(--border); background: var(--card); color: var(--text2); border-radius: 8px; padding: 8px 12px; cursor: pointer; text-align: left; }
+  .library-chip.active { border-color: var(--accent); color: var(--accent); background: rgba(88,166,255,.1); }
+  .library-chip small { display: block; margin-top: 2px; color: var(--text2); }
+  .media-file-list { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--card); }
+  .media-file-row { display: grid; grid-template-columns: minmax(0,1fr) auto auto; align-items: center; gap: 10px; min-height: 48px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  .media-file-row:last-child { border-bottom: 0; }
+  .media-file-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .media-file-meta { color: var(--text2); font-size: 11px; white-space: nowrap; }
+  .media-viewer { margin-top: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); overflow: hidden; }
+  .media-viewer-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 12px; border-bottom: 1px solid var(--border); }
+  .media-viewer-body { padding: 12px; max-height: 72vh; overflow: auto; }
+  .media-viewer img { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+  .media-viewer audio { width: 100%; }
+  .media-viewer iframe { display: block; width: 100%; height: 68vh; border: 0; background: #fff; }
+  .media-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 14px/1.7 ui-monospace, Consolas, monospace; }
+  .media-path-row { display: grid; grid-template-columns: minmax(0,1fr) 34px; gap: 8px; margin-bottom: 8px; }
+  .media-path-row .icon-btn { width: 34px; height: 34px; }
+  .media-error { color: var(--red); padding: 12px; border: 1px solid rgba(248,81,73,.35); border-radius: 8px; background: rgba(248,81,73,.08); }
+  @media (max-width: 768px) {
+    .media-login-grid { grid-template-columns: 1fr; }
+    .media-modebar { align-items: stretch; flex-direction: column; }
+    .media-modes { width: 100%; }
+    .media-mode { flex: 1; }
+    .media-file-row { grid-template-columns: minmax(0,1fr) auto; }
+    .media-file-meta { display: none; }
+  }
   /* PT 子页 */
   .ptsub-panel { display: none; }
   .ptsub-panel.active { display: block; animation: fadeIn .2s ease; }
@@ -457,7 +488,7 @@
   <div class="add-board-btn" onclick="openModuleModal()">
     <span>＋</span><span data-i18n="addBoardNav">添加模块</span>
   </div>
-  <div class="sidebar-foot">v0.5.0 · Offline Preview</div>
+  <div class="sidebar-foot">v0.6.0 · Local Media</div>
 </aside>
 
 <!-- ===== 主区域 ===== -->
@@ -858,6 +889,24 @@
   </div>
 </div>
 
+<!-- ===== 本地媒体库设置弹窗 ===== -->
+<div class="modal-mask" id="mediaLibraryModal">
+  <div class="modal wide">
+    <h3><span>本地媒体库设置</span><button class="close" onclick="closeModal('mediaLibraryModal')">✕</button></h3>
+    <div id="mediaLibraryConfigList"></div>
+    <div class="modal-sec">添加媒体库</div>
+    <div class="form-2col">
+      <div class="cfg-field"><label>库名称</label><input id="mediaLibName" type="text" placeholder="例如：家庭音乐"></div>
+      <div class="cfg-field"><label>媒体类型</label><select id="mediaLibType"><option value="audio">音乐</option><option value="comic">漫画</option><option value="book">电子书</option></select></div>
+    </div>
+    <div class="cfg-field"><label>容器路径</label><div id="mediaLibPaths"></div><button class="btn" type="button" onclick="addMediaPath()">＋ 添加路径</button></div>
+    <div class="cfg-field"><label>管理令牌（如后端启用）</label><input id="mediaAdminToken" type="password" placeholder="X-VaultHub-Token" autocomplete="off"></div>
+    <button class="btn btn-primary" type="button" onclick="saveMediaLibraries()">💾 保存</button>
+    <button class="btn" type="button" onclick="refreshMediaLibraries(true)">↻ 刷新</button>
+    <div class="hint">每个路径会保存为一个本地库，必须是容器内已挂载且存在的 /media/... 目录。</div>
+  </div>
+</div>
+
 <!-- ===== 系统设置弹窗 ===== -->
 <div class="modal-mask" id="settingsModal">
   <div class="modal">
@@ -1021,7 +1070,7 @@
   <div class="modal">
     <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
     <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
-    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.5.0 · Offline</b></div>
+    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.6.0 · Local Media</b></div>
     <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>HTML / CSS / JS · 单文件</b></div>
     <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>Glances REST API (61208)</b></div>
     <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>
@@ -1497,6 +1546,8 @@ function initMediaLogin() {
     if (wrap) wrap.style.display = "none";
     renderMediaHome(v);
   });
+  addMediaPath();
+  refreshMediaLibraries(false);
   applyI18n();
 }
 
@@ -1562,6 +1613,25 @@ function activeMediaId(group) {
   return panel?.querySelector("[data-media-launch]")?.dataset.mediaLaunch || null;
 }
 function mediaStoreKey(group) { return "dwu_media_configured_" + group; }
+function mediaMode(group) {
+  if (group === "movie") return "external";
+  try { return localStorage.getItem("dwu_media_mode_" + group) || "local"; } catch (e) { return "local"; }
+}
+function setMediaMode(group, mode) {
+  if (group === "movie") mode = "external";
+  try { localStorage.setItem("dwu_media_mode_" + group, mode); } catch (e) {}
+  const wrap = document.querySelector(`#view-${group} .cfg-wrap`);
+  if (wrap) wrap.style.display = "none";
+  renderMediaHome(group);
+}
+function mediaModeBar(group) {
+  if (group === "movie") return "";
+  const mode = mediaMode(group);
+  return `<div class="media-modebar"><div class="media-modes" role="tablist" aria-label="媒体来源">
+    <button class="media-mode ${mode === "local" ? "active" : ""}" type="button" onclick="setMediaMode('${esc(group)}','local')">本地媒体库</button>
+    <button class="media-mode ${mode === "external" ? "active" : ""}" type="button" onclick="setMediaMode('${esc(group)}','external')">外连服务</button>
+  </div><button class="btn" type="button" onclick="showMediaConfig('${esc(group)}')">⚙ 设置</button></div>`;
+}
 function setMediaConfigured(group, configured) {
   try { localStorage.setItem(mediaStoreKey(group), configured ? "1" : "0"); } catch (e) {}
 }
@@ -1569,6 +1639,10 @@ function isMediaConfigured(group) {
   try { return localStorage.getItem(mediaStoreKey(group)) === "1"; } catch (e) { return false; }
 }
 function showMediaConfig(group) {
+  if (mediaMode(group) === "local") {
+    showMediaLibraryConfig(group);
+    return;
+  }
   const wrap = document.querySelector(`#view-${group} .cfg-wrap`);
   if (wrap) wrap.style.display = "block";
   const host = document.getElementById("media-wide-" + group);
@@ -1582,10 +1656,14 @@ function hideMediaConfig(group) {
 function renderMediaHome(group) {
   const host = document.getElementById("media-wide-" + group);
   if (!host) return;
-  const configured = isMediaConfigured(group);
   host.classList.add("show");
+  if (mediaMode(group) === "local") {
+    renderLocalMedia(group);
+    return;
+  }
+  const configured = isMediaConfigured(group);
   if (!configured) {
-    host.innerHTML = `
+    host.innerHTML = `${mediaModeBar(group)}
       <div class="media-empty">
         <div class="big">📭</div>
         <h3 data-i18n="mediaEmptyTitle">暂无资源</h3>
@@ -1612,7 +1690,7 @@ function openMediaFrame(id, showToast) {
   const wrap = document.querySelector(`#view-${group} .cfg-wrap`);
   if (wrap) wrap.style.display = "none";
   host.classList.add("show");
-  host.innerHTML = `
+  host.innerHTML = `${mediaModeBar(group)}
     <div class="media-frame">
       <iframe src="${esc(url)}" loading="lazy" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
     </div>`;
@@ -1629,8 +1707,217 @@ function openMediaExternal(id) {
   window.open(url, "_blank", "noopener");
 }
 function openActiveMediaExternal(group) {
+  if (mediaMode(group) === "local") {
+    showMediaLibraryConfig(group);
+    return;
+  }
   const id = activeMediaId(group);
   if (id) openMediaExternal(id);
+}
+
+/* ================= 本地媒体库 ================= */
+let localMediaLibraries = [];
+const localMediaSelection = {};
+function mediaTypeForGroup(group) { return group === "audio" ? "audio" : "comic"; }
+function mediaTypeName(type) { return ({ audio: "音乐", comic: "漫画", book: "电子书" })[type] || type; }
+function mediaAdminHeaders() {
+  let token = "";
+  try { token = localStorage.getItem("dwu_media_admin_token") || ""; } catch (e) {}
+  return token ? { "X-VaultHub-Token": token } : {};
+}
+function mediaFileUrl(lib, path) {
+  return mediaLegacyFileUrl(lib, path);
+}
+function mediaLegacyFileUrl(lib, path) {
+  return `/api/media/file/${encodeURIComponent(lib.id)}/${String(path).split("/").map(encodeURIComponent).join("/")}`;
+}
+function normalizeLibraryPayload(data) {
+  const libs = Array.isArray(data) ? data : (data?.libraries || data?.items || []);
+  return libs.map((lib, idx) => ({
+    id: String(lib.id || `library-${idx + 1}`),
+    name: String(lib.name || lib.id || `媒体库 ${idx + 1}`),
+    type: String(lib.type || "audio"),
+    path: String(lib.path || ""),
+    paths: Array.isArray(lib.paths) ? lib.paths.map(String) : (lib.path ? [String(lib.path)] : []),
+    files: Array.isArray(lib.files) ? lib.files : null
+  }));
+}
+async function refreshMediaLibraries(notify) {
+  try {
+    const res = await fetch("/api/media/libraries", { headers: mediaAdminHeaders(), cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    localMediaLibraries = normalizeLibraryPayload(await res.json());
+    renderMediaLibraryConfigList();
+    ["comic", "audio"].forEach(group => { if (mediaMode(group) === "local") renderLocalMedia(group); });
+    if (notify) toast("✅ 本地媒体库已刷新");
+  } catch (err) {
+    ["comic", "audio"].forEach(group => {
+      if (mediaMode(group) !== "local") return;
+      const host = document.getElementById("media-wide-" + group);
+      if (host) host.innerHTML = `${mediaModeBar(group)}<div class="media-error">无法读取本地媒体库：${esc(err.message)}</div>`;
+    });
+    if (notify) toast("⚠️ 无法读取媒体库配置");
+  }
+}
+function librariesForGroup(group) {
+  return localMediaLibraries.filter(lib => group === "audio" ? lib.type === "audio" : (lib.type === "comic" || lib.type === "book"));
+}
+function renderLocalMedia(group) {
+  const host = document.getElementById("media-wide-" + group);
+  if (!host) return;
+  const libs = librariesForGroup(group);
+  if (!libs.length) {
+    host.innerHTML = `${mediaModeBar(group)}<div class="media-empty"><div class="big">▤</div><h3>暂无本地媒体库</h3><p>添加容器内的 /media/... 路径后，即可浏览音乐、漫画或电子书。</p><button class="btn btn-primary" onclick="showMediaLibraryConfig('${esc(group)}')">⚙ 配置媒体库</button></div>`;
+    return;
+  }
+  let selected = libs.find(lib => lib.id === localMediaSelection[group]) || libs[0];
+  localMediaSelection[group] = selected.id;
+  host.innerHTML = `${mediaModeBar(group)}<div class="local-media">
+    <div class="library-strip">${libs.map(lib => `<button class="library-chip ${lib.id === selected.id ? "active" : ""}" onclick="selectLocalLibrary('${esc(group)}','${esc(lib.id)}')">${esc(lib.name)}<small>${esc(mediaTypeName(lib.type))}</small></button>`).join("")}</div>
+    <div id="local-media-content-${esc(group)}"><div class="empty-tip">正在读取文件...</div></div>
+    <div id="local-media-viewer-${esc(group)}"></div>
+  </div>`;
+  loadLocalFiles(group, selected);
+}
+function selectLocalLibrary(group, id) {
+  localMediaSelection[group] = id;
+  renderLocalMedia(group);
+}
+function normalizeFilePayload(data) {
+  const files = Array.isArray(data) ? data : (data?.files || data?.items || []);
+  return files.map(item => typeof item === "string" ? { path: item } : item).filter(item => item?.path);
+}
+async function loadLocalFiles(group, lib) {
+  const target = document.getElementById("local-media-content-" + group);
+  if (!target) return;
+  try {
+    let files = lib.files;
+    if (!Array.isArray(files)) {
+      const res = await fetch("/api/media/libraries", { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const all = normalizeLibraryPayload(await res.json());
+      files = all.find(item => item.id === lib.id)?.files || [];
+    }
+    files = normalizeFilePayload(files).sort((a, b) => String(a.path).localeCompare(String(b.path), "zh-CN"));
+    if (!files.length) { target.innerHTML = '<div class="empty-tip">该媒体库中暂无支持的文件</div>'; return; }
+    target.innerHTML = `<div class="media-file-list">${files.map(file => renderLocalFileRow(group, lib, file)).join("")}</div>`;
+  } catch (err) {
+    target.innerHTML = `<div class="media-error">文件列表读取失败：${esc(err.message)}</div>`;
+  }
+}
+function fileExt(path) { const match = String(path).toLowerCase().match(/\.([^.\/]+)$/); return match ? match[1] : ""; }
+function formatFileSize(size) {
+  const n = Number(size);
+  if (!Number.isFinite(n) || n < 0) return "--";
+  if (n < 1024) return `${n} B`;
+  if (n < 1048576) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1048576).toFixed(1)} MB`;
+}
+function renderLocalFileRow(group, lib, file) {
+  const path = String(file.path);
+  const ext = fileExt(path);
+  const viewable = ["mp3","flac","m4a","ogg","wav","jpg","jpeg","png","webp","gif","txt","pdf"].includes(ext);
+  const action = viewable ? "查看" : (["cbz","zip","cbr","epub"].includes(ext) ? "打开" : "下载");
+  return `<div class="media-file-row"><div class="media-file-name" title="${esc(path)}">${esc(path)}</div><span class="media-file-meta">${esc(ext.toUpperCase() || "FILE")} · ${formatFileSize(file.size)}</span><button class="btn" data-media-group="${esc(group)}" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openLocalMediaButton(this)">${action}</button></div>`;
+}
+function openLocalMediaButton(button) {
+  openLocalMedia(button.dataset.mediaGroup, button.dataset.mediaLibrary, button.dataset.mediaPath);
+}
+function findMediaLibrary(id) { return localMediaLibraries.find(lib => lib.id === id); }
+function viewerShell(group, path, body, url) {
+  const download = `${url}${url.includes("?") ? "&" : "?"}download=1`;
+  return `<div class="media-viewer"><div class="media-viewer-head"><strong title="${esc(path)}">${esc(path)}</strong><div class="media-actions"><a class="btn" href="${esc(url)}" target="_blank" rel="noopener">↗ 打开</a><a class="btn" href="${esc(download)}" download>↓ 下载</a><button class="icon-btn" title="关闭" onclick="closeLocalViewer('${esc(group)}')">✕</button></div></div>${body}</div>`;
+}
+async function openLocalMedia(group, libId, path) {
+  const lib = findMediaLibrary(libId);
+  const viewer = document.getElementById("local-media-viewer-" + group);
+  if (!lib || !viewer) return;
+  const ext = fileExt(path);
+  const url = mediaFileUrl(lib, path);
+  let body = "";
+  if (["mp3","flac","m4a","ogg","wav"].includes(ext)) body = `<div class="media-viewer-body"><audio controls autoplay preload="metadata" src="${esc(url)}"></audio></div>`;
+  else if (["jpg","jpeg","png","webp","gif"].includes(ext)) body = `<div class="media-viewer-body"><img src="${esc(url)}" alt="${esc(path)}"></div>`;
+  else if (ext === "pdf") body = `<iframe src="${esc(url)}" title="${esc(path)}"></iframe>`;
+  else if (ext === "txt") {
+    viewer.innerHTML = viewerShell(group, path, '<div class="media-viewer-body"><div class="empty-tip">正在读取文本...</div></div>', url);
+    try {
+      let res = await fetch(url, { cache: "no-store" });
+      if (res.status === 404) res = await fetch(mediaLegacyFileUrl(lib, path), { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      body = `<div class="media-viewer-body"><pre class="media-text">${esc(await res.text())}</pre></div>`;
+    } catch (err) { body = `<div class="media-error">文本读取失败：${esc(err.message)}</div>`; }
+  } else {
+    const note = ["cbz","zip","cbr"].includes(ext) ? "压缩漫画可在新窗口打开或下载后使用漫画阅读器查看。" : ext === "epub" ? "EPUB 可下载后使用电子书阅读器打开。" : "该格式可下载或交给浏览器打开。";
+    body = `<div class="media-viewer-body"><div class="empty-tip">${note}</div></div>`;
+  }
+  viewer.innerHTML = viewerShell(group, path, body, url);
+  viewer.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+function closeLocalViewer(group) { const el = document.getElementById("local-media-viewer-" + group); if (el) el.innerHTML = ""; }
+function showMediaLibraryConfig(group) {
+  const modal = document.getElementById("mediaLibraryModal");
+  const type = document.getElementById("mediaLibType");
+  if (type) type.value = mediaTypeForGroup(group);
+  const token = document.getElementById("mediaAdminToken");
+  try { if (token) token.value = localStorage.getItem("dwu_media_admin_token") || ""; } catch (e) {}
+  renderMediaLibraryConfigList();
+  modal?.classList.add("show");
+}
+function addMediaPath(value = "") {
+  const host = document.getElementById("mediaLibPaths");
+  if (!host) return;
+  const row = document.createElement("div");
+  row.className = "media-path-row";
+  row.innerHTML = `<input type="text" class="media-lib-path" placeholder="/media/music" value="${esc(value)}"><button class="icon-btn" type="button" title="删除路径" onclick="removeMediaPath(this)">✕</button>`;
+  host.appendChild(row);
+}
+function removeMediaPath(button) {
+  const host = document.getElementById("mediaLibPaths");
+  button.closest(".media-path-row")?.remove();
+  if (host && !host.children.length) addMediaPath();
+}
+function libraryId(name, type, path, index) {
+  const raw = `${type}-${name}-${path}-${index}`.toLowerCase();
+  let hash = 2166136261;
+  for (let i = 0; i < raw.length; i++) { hash ^= raw.charCodeAt(i); hash = Math.imul(hash, 16777619); }
+  const slug = String(name || type).toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 28) || type;
+  return `${slug}-${(hash >>> 0).toString(36)}`;
+}
+async function saveMediaLibraries() {
+  const name = document.getElementById("mediaLibName")?.value.trim();
+  const type = document.getElementById("mediaLibType")?.value;
+  const paths = [...document.querySelectorAll(".media-lib-path")].map(el => el.value.trim().replace(/\/$/, "")).filter(Boolean);
+  const token = document.getElementById("mediaAdminToken")?.value.trim() || "";
+  if (!name || !type || !paths.length) { toast("⚠️ 请填写库名称、类型和至少一个路径"); return; }
+  if (paths.some(path => path !== "/media" && !path.startsWith("/media/"))) { toast("⚠️ 路径必须位于 /media 下"); return; }
+  try { localStorage.setItem("dwu_media_admin_token", token); } catch (e) {}
+  try {
+    for (let i = 0; i < paths.length; i++) {
+      const body = { id: libraryId(name, type, paths[i], i), name: paths.length > 1 ? `${name} ${i + 1}` : name, type, path: paths[i] };
+      const res = await fetch("/api/media/libraries", { method: "POST", headers: { "Content-Type": "application/json", ...mediaAdminHeaders() }, body: JSON.stringify(body) });
+      if (!res.ok) { let detail = ""; try { detail = (await res.json()).error || ""; } catch (e) {} throw new Error(detail || `HTTP ${res.status}`); }
+    }
+    document.getElementById("mediaLibName").value = "";
+    document.getElementById("mediaLibPaths").innerHTML = "";
+    addMediaPath();
+    await refreshMediaLibraries(false);
+    toast("✅ 本地媒体库已保存");
+  } catch (err) { toast("⚠️ 保存失败：" + err.message); }
+}
+function renderMediaLibraryConfigList() {
+  const host = document.getElementById("mediaLibraryConfigList");
+  if (!host) return;
+  if (!localMediaLibraries.length) { host.innerHTML = '<div class="empty-tip">尚未配置本地媒体库</div>'; return; }
+  host.innerHTML = `<div class="media-file-list">${localMediaLibraries.map(lib => `<div class="media-file-row"><div class="media-file-name"><strong>${esc(lib.name)}</strong><div class="hint">${esc((lib.paths || []).join(" · ") || lib.path)}</div></div><span class="badge">${esc(mediaTypeName(lib.type))}</span><button class="btn btn-danger" onclick="deleteMediaLibrary('${esc(lib.id)}')">删除</button></div>`).join("")}</div>`;
+}
+async function deleteMediaLibrary(id) {
+  if (!confirm("确定删除这个本地媒体库配置？媒体文件不会被删除。")) return;
+  try {
+    const res = await fetch(`/api/media/libraries?id=${encodeURIComponent(id)}`, { method: "DELETE", headers: mediaAdminHeaders() });
+    if (!res.ok) { let detail = ""; try { detail = (await res.json()).error || ""; } catch (e) {} throw new Error(detail || `HTTP ${res.status}`); }
+    await refreshMediaLibraries(false);
+    toast("✅ 媒体库配置已删除");
+  } catch (err) { toast("⚠️ 删除失败：" + err.message); }
 }
 
 /* ================= Docker 模拟数据 ================= */

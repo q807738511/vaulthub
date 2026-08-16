@@ -20,7 +20,9 @@ jobs:
           sh -n scripts/rollback.sh
 
       - name: Check manager source
-        run: gcc -Wall -Wextra -fsyntax-only vaulthub-manager.c
+        run: |
+          gcc -Wall -Wextra -Werror -fsyntax-only vaulthub-manager.c
+          gcc -Wall -Wextra -Werror -fsyntax-only media-api.c
 
       - name: Check JavaScript syntax
         run: |

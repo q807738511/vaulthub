@@ -5,7 +5,7 @@
 
 services:
   vaulthub:
-    image: ghcr.io/<github用户名>/vaulthub:latest
+    image: ghcr.io/q807738511/vaulthub:latest
     container_name: VaultHub
     pull_policy: always
     ports:
@@ -21,6 +21,9 @@ services:
       - /tmp:size=32m,mode=1777
     volumes:
       - ./data:/data
+      - ${MUSIC_PATH:-./media/music}:/media/music:ro
+      - ${COMIC_PATH:-./media/comics}:/media/comics:ro
+      - ${BOOK_PATH:-./media/books}:/media/books:ro
     read_only: false
     security_opt:
       - no-new-privileges:true

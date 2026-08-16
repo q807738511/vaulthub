@@ -4,6 +4,7 @@ FROM scratch
 
 COPY --chmod=755 caddy /usr/bin/caddy
 COPY --chmod=755 vaulthub-manager /usr/bin/vaulthub-manager
+COPY --chmod=755 media-api /usr/bin/media-api
 COPY Caddyfile /etc/caddy/Caddyfile
 COPY index.html /srv/index.html
 

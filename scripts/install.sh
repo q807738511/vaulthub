@@ -5,7 +5,7 @@ TARGET_DIR="${1:-/vol1/1000/Docker/vaulthub}"
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PROJECT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 FILES_DIR="$PROJECT_DIR"
-VERSION="v0.5.0"
+VERSION="v0.6.0"
 STAMP=$(date +%Y%m%d-%H%M%S)
 
 if [ ! -d "$FILES_DIR" ]; then
