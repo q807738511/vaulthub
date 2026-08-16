@@ -1721,8 +1721,12 @@ const localMediaSelection = {};
 function mediaTypeForGroup(group) { return group === "audio" ? "audio" : "comic"; }
 function mediaTypeName(type) { return ({ audio: "音乐", comic: "漫画", book: "电子书" })[type] || type; }
 function mediaAdminHeaders() {
-  let token = "";
-  try { token = localStorage.getItem("dwu_media_admin_token") || ""; } catch (e) {}
+  let token = document.getElementById("mediaAdminToken")?.value.trim() || "";
+  if (!token) {
+    try { token = localStorage.getItem("dwu_media_admin_token") || ""; } catch (e) {}
+  } else {
+    try { localStorage.setItem("dwu_media_admin_token", token); } catch (e) {}
+  }
   return token ? { "X-VaultHub-Token": token } : {};
 }
 function mediaFileUrl(lib, path) {
