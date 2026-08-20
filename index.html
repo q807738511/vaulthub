@@ -488,7 +488,7 @@
   <div class="add-board-btn" onclick="openModuleModal()">
     <span>＋</span><span data-i18n="addBoardNav">添加模块</span>
   </div>
-  <div class="sidebar-foot">v0.6.4 · Low-impact Media Index</div>
+  <div class="sidebar-foot">v0.6.5 · Built-in System Monitor</div>
 </aside>
 
 <!-- ===== 主区域 ===== -->
@@ -510,7 +510,7 @@
     <section class="view active" id="view-home">
       <div class="section-title">
         <span data-i18n="secNas">NAS 监控</span>
-        <span class="badge" id="nasBadge">Glances · 每 2s 刷新</span>
+        <span class="badge" id="nasBadge">内置监控 · 每 5s 刷新</span>
       </div>
       <div class="grid g-4">
         <div class="card">
@@ -565,7 +565,7 @@
         </div>
       </div>
 
-      <div class="section-title"><span data-i18n="secDisk">硬盘容量</span><span class="badge" id="diskSource">Glances · /api/4/fs</span></div>
+      <div class="section-title"><span data-i18n="secDisk">硬盘容量</span><span class="badge" id="diskSource">内置监控 · statvfs</span></div>
       <div class="card" id="diskCard"></div>
     </section>
 
@@ -942,13 +942,8 @@
       <div class="hint" data-i18n="bgHint">提示：图片仅保存在本浏览器 localStorage，不经过服务器。</div>
     </div>
 
-    <div class="modal-sec" data-i18n="glancesLbl">NAS 监控（Glances 直连）</div>
-    <div class="cfg-field">
-      <label data-i18n="glancesAddr">Glances API 地址</label>
-      <input id="glancesUrl" type="text" placeholder="/api/glances（容器代理）">
-    </div>
-    <button class="btn btn-primary" onclick="saveGlances()">💾 <span data-i18n="btnSave">保存</span></button>
-    <div class="hint" data-i18n="glancesHint">提示：Glances 容器需以只读方式挂载磁盘路径（/dev、/sys、/proc 等加 :ro）才能读到硬盘温度与使用率，示例见交付说明。</div>
+      <div class="modal-sec" data-i18n="monitoringLbl">NAS 监控（内置读取）</div>
+      <div class="hint" data-i18n="monitoringHint">监控数据由 VaultHub 读取只读挂载的系统信息；配置请在 Compose 环境变量中修改。</div>
   </div>
 </div>
 
@@ -1039,7 +1034,6 @@
     </div>
     <button class="btn btn-primary" style="width:100%;" id="btnMpLogin" onclick="loginMp()">🔑 <span data-i18n="btnLogin">登录并获取数据</span></button>
     <button class="btn" style="width:100%;margin-top:8px;" onclick="mpLogout()">🚪 <span data-i18n="btnLogout">退出</span></button>
-    <div class="hint" data-i18n="mpHint">提示：使用 MoviePilot 网页登录的账号密码（POST /api/v1/login/access-token），登录后自动获取站点管理与 PT 监护室数据，Token 仅保存在本浏览器。</div>
   </div>
 </div>
 
@@ -1070,13 +1064,13 @@
   <div class="modal">
     <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
     <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
-    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.6.4 · Low-impact Media Index</b></div>
+    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.6.5 · Built-in System Monitor</b></div>
     <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>HTML / CSS / JS · 单文件</b></div>
-    <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>Glances REST API (61208)</b></div>
+    <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>VaultHub 内置系统监控</b></div>
     <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>
     <div class="about-row"><span data-i18n="aboutAuthor">生成</span><b>Hermes Agent</b></div>
     <div style="margin-top:14px;font-size:11px;color:var(--text2);line-height:1.7;" data-i18n="aboutNote">
-      预览版仅展示 UI 结构与交互逻辑，真实接口不可达时自动回退模拟数据。实际部署时将对接 Glances API、MoviePilot 插件接口与各服务 API。
+      系统指标由内置接口读取只读挂载的宿主机信息；MoviePilot 与媒体服务继续使用各自接口。
     </div>
   </div>
 </div>
@@ -1127,7 +1121,6 @@ const I18N = {
     mpAddr: "MoviePilot 访问地址", mpUser: "登录账号", mpPass: "登录密码",
     btnLogin: "登录并获取数据", btnLogout: "退出",
     ptNotLoggedIn: "未登录",
-    mpHint: "提示：域名请带 https://（如 https://mp.enged.top），否则 Cloudflare 的 http 301 跳转会被浏览器拦截；内网可用 http://192.168.112.3:3000 直连。登录走 POST /api/v1/login/access-token，Token 仅保存在本浏览器。",
     ptSubNav: "子页面", ptSubSites: "站点管理", ptSubGuard: "PT 监护室",
     ptSiteList: "已添加站点", colCookie: "Cookie", colPri: "优先级",
     colSite: "站点", colDomain: "域名", colStatus: "状态",
@@ -1164,10 +1157,9 @@ const I18N = {
     settingsTitle: "系统设置", langLbl: "界面语言",
     themeLbl: "主题", themeDark: "晚上（暗色）", themeLight: "白天（亮色）", themeCustom: "自定义（上传背景图片）",
     bgUpload: "上传背景图片", bgClear: "清除自定义背景", bgHint: "提示：图片仅保存在本浏览器 localStorage，不经过服务器。",
-    glancesLbl: "NAS 监控（Glances 直连）", glancesAddr: "Glances API 地址",
-    glancesHint: "提示：Glances 容器需以只读方式挂载磁盘路径（/dev、/sys、/proc 等加 :ro）才能读到硬盘温度与使用率，示例见交付说明。",
-    nasOnline: "Glances · 每 2s 刷新", nasOffline: "Glances 离线 · 模拟数据",
-    diskSourceReal: "Glances · /api/4/fs", diskSourceMock: "模拟数据（Glances 不可达）",
+    monitoringLbl: "NAS 监控（内置读取）", monitoringHint: "监控参数由 Compose 环境变量和只读挂载配置。",
+    nasOnline: "内置监控 · 每 5s 刷新", nasOffline: "内置监控不可用",
+    diskSourceReal: "内置监控 · statvfs", diskSourceOffline: "内置监控不可用",
     boardTitle: "模块设置", boardExisting: "已有模块", boardAddNew: "手动添加模块",
     boardName: "模块名称", boardIcon: "图标（emoji）", boardType: "功能类型",
     boardAddr: "服务器 IP 或域名", boardPort: "端口（可选）", boardProto: "协议",
@@ -1183,7 +1175,7 @@ const I18N = {
     moduleHide: "隐藏", moduleShow: "显示",
     aboutTitle: "关于", aboutName: "应用名称", aboutVer: "版本", aboutStack: "技术栈",
     aboutMon: "监控组件", aboutPt: "PT 插件", aboutAuthor: "生成",
-    aboutNote: "预览版仅展示 UI 结构与交互逻辑，真实接口不可达时自动回退模拟数据。实际部署时将对接 Glances API、MoviePilot 插件接口与各服务 API。",
+    aboutNote: "系统指标由内置接口读取只读挂载的宿主机信息；MoviePilot 与媒体服务继续使用各自接口。",
     up: "运行中", stopped: "已停止", restarting: "重启中",
     healthy: "healthy", unhealthy: "unhealthy",
     ptConnSaved: "✅ MoviePilot 连接已保存", ptReal: "MoviePilot API", ptMock: "模拟数据（API 不可达）",
@@ -1205,7 +1197,6 @@ const I18N = {
     mpAddr: "MoviePilot 存取位址", mpUser: "登入帳號", mpPass: "登入密碼",
     btnLogin: "登入並取得資料", btnLogout: "登出",
     ptNotLoggedIn: "未登入",
-    mpHint: "提示：使用 MoviePilot 網頁登入的帳號密碼（POST /api/v1/login/access-token），登入後自動取得站點管理與 PT 監護室資料，Token 僅保存在本瀏覽器。",
     ptSubNav: "子頁面", ptSubSites: "站點管理", ptSubGuard: "PT 監護室",
     ptSiteList: "已新增站點", colCookie: "Cookie", colPri: "優先順序",
     colSite: "站點", colDomain: "網域", colStatus: "狀態",
@@ -1242,10 +1233,9 @@ const I18N = {
     settingsTitle: "系統設定", langLbl: "介面語言",
     themeLbl: "主題", themeDark: "晚上（暗色）", themeLight: "白天（亮色）", themeCustom: "自訂（上傳背景圖片）",
     bgUpload: "上傳背景圖片", bgClear: "清除自訂背景", bgHint: "提示：圖片僅保存在本瀏覽器 localStorage，不經過伺服器。",
-    glancesLbl: "NAS 監控（Glances 直連）", glancesAddr: "Glances API 位址",
-    glancesHint: "提示：Glances 容器需以唯讀方式掛載磁碟路徑（/dev、/sys、/proc 等加 :ro）才能讀到硬碟溫度與使用率，範例見交付說明。",
-    nasOnline: "Glances · 每 2s 重新整理", nasOffline: "Glances 離線 · 模擬資料",
-    diskSourceReal: "Glances · /api/4/fs", diskSourceMock: "模擬資料（Glances 不可達）",
+    monitoringLbl: "NAS 監控（內建讀取）", monitoringHint: "監控參數由 Compose 環境變數和唯讀掛載設定。",
+    nasOnline: "內建監控 · 每 5s 重新整理", nasOffline: "內建監控不可用",
+    diskSourceReal: "內建監控 · statvfs", diskSourceOffline: "內建監控不可用",
     boardTitle: "模組設定", boardExisting: "既有模組", boardAddNew: "手動新增模組",
     boardName: "模組名稱", boardIcon: "圖示（emoji）", boardType: "功能類型",
     boardAddr: "伺服器 IP 或網域", boardPort: "連接埠（選填）", boardProto: "協定",
@@ -1261,7 +1251,7 @@ const I18N = {
     moduleHide: "隱藏", moduleShow: "顯示",
     aboutTitle: "關於", aboutName: "應用名稱", aboutVer: "版本", aboutStack: "技術棧",
     aboutMon: "監控元件", aboutPt: "PT 外掛", aboutAuthor: "產生",
-    aboutNote: "預覽版僅展示 UI 結構與互動邏輯，真實介面不可達時自動回退模擬資料。實際部署時將對接 Glances API、MoviePilot 外掛介面與各服務 API。",
+    aboutNote: "系統指標由內建介面讀取唯讀掛載的主機資訊；MoviePilot 與媒體服務繼續使用各自介面。",
     up: "運行中", stopped: "已停止", restarting: "重啟中",
     healthy: "healthy", unhealthy: "unhealthy",
     ptConnSaved: "✅ MoviePilot 連線已儲存", ptReal: "MoviePilot API", ptMock: "模擬資料（API 不可達）",
@@ -1283,7 +1273,6 @@ const I18N = {
     mpAddr: "MoviePilot URL", mpUser: "Username", mpPass: "Password",
     btnLogin: "Login & fetch data", btnLogout: "Logout",
     ptNotLoggedIn: "Not logged in",
-    mpHint: "Use the same account/password as the MoviePilot web UI (POST /api/v1/login/access-token). After login, site manager and PT guard data load automatically; token stays in this browser only.",
     ptSubNav: "Sections", ptSubSites: "Site Manager", ptSubGuard: "PT Guard",
     ptSiteList: "Added Sites", colCookie: "Cookie", colPri: "Priority",
     colSite: "Site", colDomain: "Domain", colStatus: "Status",
@@ -1320,10 +1309,9 @@ const I18N = {
     settingsTitle: "Settings", langLbl: "Language",
     themeLbl: "Theme", themeDark: "Night (dark)", themeLight: "Day (light)", themeCustom: "Custom (upload background)",
     bgUpload: "Upload background image", bgClear: "Clear custom background", bgHint: "Tip: image stays in this browser's localStorage, never sent to a server.",
-    glancesLbl: "NAS Monitor (Glances direct)", glancesAddr: "Glances API URL",
-    glancesHint: "Tip: mount disk paths read-only (:ro) into the Glances container (/dev, /sys, /proc) to read disk temp & usage. Example in delivery notes.",
-    nasOnline: "Glances · refresh 2s", nasOffline: "Glances offline · mock data",
-    diskSourceReal: "Glances · /api/4/fs", diskSourceMock: "Mock (Glances unreachable)",
+    monitoringLbl: "NAS Monitor (built in)", monitoringHint: "Configure monitoring with Compose environment variables and read-only mounts.",
+    nasOnline: "Built-in monitor · refresh 5s", nasOffline: "Built-in monitor unavailable",
+    diskSourceReal: "Built-in monitor · statvfs", diskSourceOffline: "Built-in monitor unavailable",
     boardTitle: "Module Settings", boardExisting: "Existing Modules", boardAddNew: "Add Module Manually",
     boardName: "Module name", boardIcon: "Icon (emoji)", boardType: "Type",
     boardAddr: "Server IP or domain", boardPort: "Port (optional)", boardProto: "Protocol",
@@ -1339,7 +1327,7 @@ const I18N = {
     moduleHide: "Hide", moduleShow: "Show",
     aboutTitle: "About", aboutName: "App name", aboutVer: "Version", aboutStack: "Stack",
     aboutMon: "Monitor", aboutPt: "PT plugin", aboutAuthor: "Generated by",
-    aboutNote: "Preview shows UI structure & interactions; falls back to mock data when real APIs are unreachable. Production build will connect to Glances API, MoviePilot plugin endpoints and service APIs.",
+    aboutNote: "System metrics come from the built-in endpoint and read-only host mounts; MoviePilot and media services keep their own APIs.",
     up: "running", stopped: "stopped", restarting: "restarting",
     healthy: "healthy", unhealthy: "unhealthy",
     ptConnSaved: "✅ MoviePilot connection saved", ptReal: "MoviePilot API", ptMock: "Mock (API unreachable)",
@@ -1377,7 +1365,6 @@ const LS_BG = "dwu_bgimg";
 let settings = {
   theme: "dark",
   /* 容器版默认经同源 Caddy 代理；外部浏览器无需直连 192.168.x.x */
-  glancesUrl: "/api/glances",
   mp: { mpUrl: "/api/mp", username: "", password: "", token: "", tokenUser: "" }
 };
 
@@ -1393,7 +1380,6 @@ function loadSettings() {
   try {
     const s = JSON.parse(localStorage.getItem(LS_SETTINGS) || "{}");
     if (s.theme) settings.theme = s.theme;
-    if (s.glancesUrl) settings.glancesUrl = preferContainerProxy(s.glancesUrl, "/api/glances");
     if (s.mp && typeof s.mp === "object") Object.assign(settings.mp, s.mp);
     settings.mp.mpUrl = preferContainerProxy(settings.mp.mpUrl, "/api/mp");
     /* 兼容旧版本 mpInstances 数组 */
@@ -2034,8 +2020,7 @@ function renderDocker() {
 }
 document.getElementById("dockerSearch").addEventListener("input", renderDocker);
 
-/* ================= Glances 直连 ================= */
-let glancesOnline = false;
+/* ================= 内置系统监控 ================= */
 
 async function fetchJson(url, timeout = 4000, headers = {}) {
   const ctrl = new AbortController();
@@ -2051,88 +2036,42 @@ async function fetchJson(url, timeout = 4000, headers = {}) {
   }
 }
 
+let previousNetworkSample = null;
 async function tickMetrics() {
-  const base = (settings.glancesUrl || "").replace(/\/+$/, "");
-  let ok = true;
+  let ok = false;
   try {
-    const [cpu, mem, net, fs, sens] = await Promise.all([
-      fetchJson(base + "/api/4/cpu"),
-      fetchJson(base + "/api/4/mem"),
-      fetchJson(base + "/api/4/network"),
-      fetchJson(base + "/api/4/fs"),
-      fetchJson(base + "/api/4/sensors")
-    ]);
-    /* CPU */
-    const cpuPct = Math.round((cpu.total || 0) * 100) / 100;
-    const cores = (cpu.cpucore || cpu.cores) ? `${cpu.cpucore || cpu.cores}C` : "--";
-    const load = (cpu.load && cpu.load[0] != null) ? cpu.load[0].toFixed(2) : "--";
-
-    /* 温度：sensors 为数组，temperature_core=CPU，hdd=硬盘 */
-    let coreTemps = [], hddTemps = [];
-    if (Array.isArray(sens)) {
-      sens.forEach(s => {
-        if (!s || s.value == null) return;
-        if (String(s.type || "").toLowerCase().includes("hdd")) hddTemps.push(s);
-        else if (String(s.type || "").includes("temperature_core")) coreTemps.push(s);
-      });
-    }
-    const pkg = coreTemps.find(s => /package/i.test(s.label || ""));
-    const cpuTempTxt = pkg ? Math.round(pkg.value) + "°C"
-      : coreTemps.length ? Math.round(Math.max(...coreTemps.map(s => s.value))) + "°C"
-      : "--";
-    setCpu(cpuPct, cores, load, cpuTempTxt);
-
-    /* 内存 */
-    const memPct = mem ? Math.round(mem.percent || 0) : 0;
-    const usedG = mem ? (mem.used / 1073741824).toFixed(1) : "--";
-    const totalG = mem ? (mem.total / 1073741824).toFixed(1) : "--";
-    const swapG = mem && mem.swap_total ? (mem.swap_used / 1073741824).toFixed(1) : "0.0";
-    setMem(memPct, usedG, totalG, swapG);
-
-    /* 网络：数组，取非 lo 主接口速率 bytes/s → MB/s */
+    const data = await fetchJson("/api/system/metrics");
+    if (data.enabled === false) throw new Error("monitoring disabled");
+    const mem = data.memory || {};
+    const total = Number(mem.total || 0), used = Number(mem.used || 0);
+    const pct = total ? Math.round(used * 100 / total) : 0;
+    const cpu = data.cpu || {};
+    const net = data.network || {};
+    setCpu(Number(cpu.percent || 0), "--", cpu.load1 != null ? Number(cpu.load1).toFixed(2) : "--", "--");
+    setMem(pct, (used / 1073741824).toFixed(1), (total / 1073741824).toFixed(1), "--");
+    const now = performance.now();
     let down = 0, up = 0;
-    if (Array.isArray(net)) {
-      const iface = net.find(i => i && i.interface_name && i.interface_name !== "lo" && i.bytes_recv_rate_per_sec != null)
-        || net.find(i => i && i.interface_name && i.interface_name !== "lo");
-      if (iface) {
-        down = (iface.bytes_recv_rate_per_sec != null ? iface.bytes_recv_rate_per_sec : iface.bytes_recv / Math.max(iface.time_since_update, 1)) / 1048576;
-        up = (iface.bytes_sent_rate_per_sec != null ? iface.bytes_sent_rate_per_sec : iface.bytes_sent / Math.max(iface.time_since_update, 1)) / 1048576;
-      }
-    } else if (net && typeof net === "object") {
-      const iface = Object.values(net).find(i => i && i.interface_name && i.interface_name !== "lo");
-      if (iface) { down = (iface.rx || 0) / 1048576; up = (iface.tx || 0) / 1048576; }
+    if (previousNetworkSample) {
+      const seconds = Math.max((now - previousNetworkSample.time) / 1000, 0.001);
+      down = Math.max(0, Number(net.rx_bytes || 0) - previousNetworkSample.rx) / seconds / 1048576;
+      up = Math.max(0, Number(net.tx_bytes || 0) - previousNetworkSample.tx) / seconds / 1048576;
     }
+    previousNetworkSample = { rx: Number(net.rx_bytes || 0), tx: Number(net.tx_bytes || 0), time: now };
     setNet(down, up);
-
-    /* 磁盘 */
-    const disks = (fs || []).filter(d => d.mnt_point && (d.mnt_point.startsWith("/vol") || d.mnt_point === "/"));
-    if (disks.length) {
-      document.getElementById("diskCard").innerHTML = disks.slice(0, 8).map(d => {
-        const pct = Math.round(d.percent || 0);
-        const used = fmtSize(d.used), total = fmtSize(d.size);
-        return `<div class="disk-row">
-          <div class="disk-top"><span class="name">${esc(d.mnt_point)}</span><span>${used} / ${total} · ${pct}%</span></div>
-          <div class="bar"><i class="${pct > 80 ? "warn" : ""}" style="width:${Math.min(pct,100)}%"></i></div>
-        </div>`;
-      }).join("");
-      document.getElementById("diskSource").textContent = t("diskSourceReal");
-    }
-
-    /* 温度卡片：优先硬盘温度，无则显示 CPU 核心温度 */
-    if (hddTemps.length) {
-      document.getElementById("tempMain").textContent = Math.round(Math.max(...hddTemps.map(s => s.value)));
-      document.getElementById("tempList").innerHTML = hddTemps.slice(0, 5).map(s =>
-        `<div class="temp-item"><span>${esc(s.label)}</span><b>${Math.round(s.value)}°C</b></div>`).join("");
-    } else if (coreTemps.length) {
-      document.getElementById("tempMain").textContent = cpuTempTxt.replace("°C", "");
-      document.getElementById("tempList").innerHTML = coreTemps.slice(0, 5).map(s =>
-        `<div class="temp-item"><span>${esc(s.label)}</span><b>${Math.round(s.value)}°C</b></div>`).join("");
-    }
+    const disks = data.filesystems || [];
+    document.getElementById("diskCard").innerHTML = disks.map(d => {
+      const p = Math.min(Number(d.percent || 0), 100);
+      return `<div class="disk-row"><div class="disk-top"><span class="name">${esc(d.path)}</span><span>${fmtSize(d.used)} / ${fmtSize(d.total)} · ${p}%</span></div><div class="bar"><i class="${p > 80 ? "warn" : ""}" style="width:${p}%"></i></div></div>`;
+    }).join("") || `<div class="empty-tip">${curLang === "en" ? "No configured volumes" : "未配置监控卷"}</div>`;
+    document.getElementById("diskSource").textContent = t("diskSourceReal");
+    ok = true;
   } catch (e) {
-    ok = false;
+    setCpu(0, "--", "--", "--");
+    setMem(0, "--", "--", "--");
+    setNet(0, 0);
+    document.getElementById("diskSource").textContent = t("diskSourceOffline");
   }
   setNasBadge(ok);
-  if (!ok) mockTick();
 }
 
 function fmtSize(bytes) {
@@ -2169,43 +2108,11 @@ function setNet(down, up) {
   spark.appendChild(b);
 }
 function setNasBadge(online) {
-  glancesOnline = online;
   const badge = document.getElementById("nasBadge");
   badge.textContent = online ? t("nasOnline") : t("nasOffline");
   badge.className = "badge" + (online ? " green" : " red");
 }
 
-/* 模拟数据回退 */
-function mockTick() {
-  const cpu = Math.floor(20 + Math.random() * 45);
-  setCpu(cpu, "4C", (0.8 + Math.random() * 1.5).toFixed(2), (48 + Math.random() * 8).toFixed(0) + "°C");
-  const mem = Math.floor(38 + Math.random() * 15);
-  setMem(mem, (5 + Math.random() * 3).toFixed(1), "16", (0.1 + Math.random() * 0.4).toFixed(1));
-  setNet(30 + Math.random() * 90, 2 + Math.random() * 23);
-  if (!document.getElementById("tempList").children.length) {
-    document.getElementById("tempMain").textContent = "42";
-    document.getElementById("tempList").innerHTML = `
-      <div class="temp-item"><span>nvme0n1 (系统)</span><b>38°C</b></div>
-      <div class="temp-item"><span>sda (数据卷1)</span><b>42°C</b></div>
-      <div class="temp-item"><span>sdb (数据卷2)</span><b>45°C</b></div>
-      <div class="temp-item"><span>sdc (数据卷3)</span><b>41°C</b></div>`;
-  }
-  if (!document.getElementById("diskCard").innerHTML) {
-    document.getElementById("diskCard").innerHTML = `
-      <div class="disk-row"><div class="disk-top"><span class="name">/vol1</span><span>1.2 TB / 4.0 TB · 30%</span></div><div class="bar"><i style="width:30%"></i></div></div>
-      <div class="disk-row"><div class="disk-top"><span class="name">/vol2</span><span>2.8 TB / 4.0 TB · 70%</span></div><div class="bar"><i style="width:70%"></i></div></div>
-      <div class="disk-row"><div class="disk-top"><span class="name">/vol3</span><span>3.6 TB / 4.0 TB · 90%</span></div><div class="bar"><i class="warn" style="width:90%"></i></div></div>
-      <div class="disk-row"><div class="disk-top"><span class="name">/vol4</span><span>880 GB / 4.0 TB · 22%</span></div><div class="bar"><i style="width:22%"></i></div></div>`;
-    document.getElementById("diskSource").textContent = t("diskSourceMock");
-  }
-}
-
-function saveGlances() {
-  settings.glancesUrl = document.getElementById("glancesUrl").value.trim() || "http://192.168.112.3:61208";
-  saveSettings();
-  toast(t("saved"));
-  tickMetrics();
-}
 
 /* ================= PT 管理（登录 + 站点管理 + PT 监护室） ================= */
 const MOCK_MP_SITES = [
@@ -2889,7 +2796,6 @@ document.getElementById("customBgWrap").style.display = settings.theme === "cust
 applyBgImage();
 document.querySelectorAll(".theme-opt").forEach(el => el.classList.toggle("on", el.dataset.themeOpt === settings.theme));
 
-document.getElementById("glancesUrl").value = settings.glancesUrl;
 document.getElementById("mpUrl").value = settings.mp.mpUrl || "";
 document.getElementById("mpUser").value = settings.mp.username || "";
 document.getElementById("mpPass").value = settings.mp.password || "";
@@ -2903,7 +2809,7 @@ initMediaLogin();
 renderPtLoginState();
 renderPtMock();
 tickMetrics();
-setInterval(tickMetrics, 2000);
+setInterval(tickMetrics, 5000);
 </script>
 </body>
 </html>

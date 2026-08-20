@@ -1,6 +1,6 @@
-# VaultHub 蜀鼠之家 v0.6.4：低影响媒体索引与绝对路径媒体库
+# VaultHub 蜀鼠之家 v0.6.5：内置系统监控
 
-v0.6.4 修复大规模电子书、音乐和漫画目录在打开页面时同步批量读取，导致 NAS 磁盘 I/O 飙升、服务卡顿甚至无响应的问题。
+v0.6.5 在保留低影响媒体索引能力的基础上，移除页面对 Glances 监控 API 的依赖，改用 VaultHub 内置系统监控。
 
 ## 变更
 
@@ -209,7 +209,7 @@ curl -sI https://kom.examples.top/ | grep -i content-security-policy
 GitHub 推送 main 或发布版本标签
   -> GitHub Actions 构建 linux/amd64 镜像
   -> 发布 ghcr.io/q807738511/vaulthub:latest
-  -> 版本标签同时发布 ghcr.io/q807738511/vaulthub:0.6.4
+  -> 版本标签同时发布 ghcr.io/q807738511/vaulthub:0.6.5
   -> 自动创建对应 GitHub Release
   -> NAS Watchtower 每 5 分钟检查
   -> 自动拉取并重启 VaultHub
