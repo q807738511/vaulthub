@@ -6,11 +6,30 @@ services:
     ports:
       - "8088:8088"
     environment:
-      # 公网部署建议改为长随机令牌；留空表示不启用管理接口鉴权。
+      # 管理接口令牌；留空表示不启用鉴权。
       ADMIN_TOKEN: ""
+      # 内置 NAS 监控开关，不需要 Glances 容器。
+      SYSTEM_MONITOR_ENABLED: "true"
+      # 采样间隔示例，当前接口按请求即时读取。
+      SYSTEM_MONITOR_INTERVAL: "5"
+      # 网卡名称；留空时由后端使用默认网卡策略。
+      SYSTEM_MONITOR_INTERFACE: ""
+      # 容器内要显示容量的卷，逗号分隔；也可直接填容器内绝对路径。
+      SYSTEM_MONITOR_FILESYSTEMS: "vol1,vol2,vol3"
+      # 宿主机系统信息在容器内的只读路径。
+      SYSTEM_MONITOR_PROC_ROOT: "/host/proc"
+      SYSTEM_MONITOR_SYS_ROOT: "/host/sys"
     volumes:
       - ./data:/data
+      # 媒体目录：按实际宿主机目录修改，保持只读。
       - /media:/media:ro
+      # 内置监控所需的少量只读系统信息。
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      # 仅监控这里列出的卷容量，不会递归扫描文件。
+      - /vol1:/host/vol1:ro
+      - /vol2:/host/vol2:ro
+      - /vol3:/host/vol3:ro
     tmpfs:
       - /tmp:size=32m,mode=1777
     security_opt:

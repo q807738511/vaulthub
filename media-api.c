@@ -12,6 +12,7 @@
 #include <string.h>
 #include <strings.h>
 #include <sys/socket.h>
+#include <sys/statvfs.h>
 #include <pthread.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -308,11 +309,100 @@ static void serve_file(int fd, const char *method, const char *url, const char *
   off_t len=st.st_size?end-start+1:0;if(ranged)snprintf(extra,sizeof(extra),"Accept-Ranges: bytes\r\nContent-Range: bytes %lld-%lld/%lld\r\n",(long long)start,(long long)end,(long long)st.st_size);else snprintf(extra,sizeof(extra),"Accept-Ranges: bytes\r\n");send_headers(fd,ranged?206:200,mime_type(canonical),len,extra);if(!strcmp(method,"HEAD")||!len)return;
   int file=open(canonical,O_RDONLY);if(file<0)return;if(lseek(file,start,SEEK_SET)<0){close(file);return;}char buf[65536];off_t left=len;while(left>0){size_t want=left<(off_t)sizeof(buf)?(size_t)left:sizeof(buf);ssize_t n=read(file,buf,want);if(n<=0)break;size_t sent=0;while(sent<(size_t)n){ssize_t w=write(fd,buf+sent,(size_t)n-sent);if(w<=0){left=0;break;}sent+=(size_t)w;}left-=n;}close(file);
 }
+static double read_cpu_percent(const char *proc) {
+  static unsigned long long old_total = 0, old_idle = 0;
+  char path[MAX_PATH_LEN];
+  snprintf(path, sizeof(path), "%s/stat", proc);
+  FILE *f = fopen(path, "r"); if (!f) return 0.0;
+  unsigned long long user=0,nice=0,system=0,idle=0,iowait=0,irq=0,softirq=0,steal=0;
+  int ok = fscanf(f, "cpu %llu %llu %llu %llu %llu %llu %llu %llu", &user,&nice,&system,&idle,&iowait,&irq,&softirq,&steal) == 8;
+  fclose(f); if (!ok) return 0.0;
+  unsigned long long total=user+nice+system+idle+iowait+irq+softirq+steal;
+  unsigned long long dt=total-old_total, di=idle+iowait-old_idle;
+  old_total=total; old_idle=idle+iowait;
+  return dt ? (double)(dt-di)*100.0/(double)dt : 0.0;
+}
+static void read_network(const char *proc, const char *wanted, double *rx, double *tx) {
+  char path[MAX_PATH_LEN], line[512], name[64];
+  snprintf(path, sizeof(path), "%s/net/dev", proc); FILE *f=fopen(path,"r");
+  *rx=0.0; *tx=0.0; if (!f) return;
+  while (fgets(line,sizeof(line),f)) {
+    unsigned long long r=0,t=0,dummy[14]={0}; char *colon=strchr(line,':'); if (!colon) continue;
+    if (sscanf(line," %63[^:]:",name)!=1 || !strcmp(name,"lo")) continue;
+    if (*wanted && strcmp(name,wanted)) continue;
+    if (sscanf(colon+1," %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu",
+      &r,&dummy[0],&dummy[1],&dummy[2],&dummy[3],&dummy[4],&dummy[5],&dummy[6],
+      &t,&dummy[7],&dummy[8],&dummy[9],&dummy[10],&dummy[11],&dummy[12],&dummy[13]) != 16) continue;
+    *rx=(double)r; *tx=(double)t; fclose(f); return;
+  }
+  fclose(f);
+}
+
+static void system_metrics(int fd) {
+  const char *proc = getenv("SYSTEM_MONITOR_PROC_ROOT");
+  const char *sys = getenv("SYSTEM_MONITOR_SYS_ROOT");
+  const char *enabled = getenv("SYSTEM_MONITOR_ENABLED");
+  const char *interface_name = getenv("SYSTEM_MONITOR_INTERFACE");
+  if (!interface_name) interface_name = "";
+  (void)interface_name;
+  if (!proc || !*proc) proc = "/host/proc";
+  if (!sys || !*sys) sys = "/host/sys";
+  (void)sys;
+  if (enabled && (!strcmp(enabled, "0") || !strcasecmp(enabled, "false"))) {
+    response(fd, 200, "application/json", "{\"enabled\":false}");
+    return;
+  }
+  char path[MAX_PATH_LEN], buf[8192];
+  snprintf(path, sizeof(path), "%s/loadavg", proc);
+  FILE *f = fopen(path, "r");
+  double load = 0.0;
+  if (f) { (void)fscanf(f, "%lf", &load); fclose(f); }
+  snprintf(path, sizeof(path), "%s/meminfo", proc);
+  f = fopen(path, "r");
+  unsigned long long total = 0, available = 0;
+  if (f) {
+    while (fgets(buf, sizeof(buf), f)) {
+      if (sscanf(buf, "MemTotal: %llu kB", &total) == 1) continue;
+      (void)sscanf(buf, "MemAvailable: %llu kB", &available);
+    }
+    fclose(f);
+  }
+  unsigned long long used = total > available ? total - available : 0;
+  double cpu_percent = read_cpu_percent(proc), rx = 0.0, tx = 0.0;
+  read_network(proc, interface_name, &rx, &tx);
+  struct buffer out = {0};
+  appendf(&out, "{\"enabled\":true,\"cpu\":{\"percent\":%.2f,\"load1\":%.2f},\"memory\":{\"total\":%llu,\"used\":%llu,\"available\":%llu},\"network\":{\"rx_bytes\":%.0f,\"tx_bytes\":%.0f},\"filesystems\":[", cpu_percent, load, total * 1024ULL, used * 1024ULL, available * 1024ULL, rx, tx);
+  const char *filesystems = getenv("SYSTEM_MONITOR_FILESYSTEMS");
+  if (filesystems && *filesystems) {
+    char list[4096]; snprintf(list, sizeof(list), "%s", filesystems);
+    char *save = NULL; int first = 1;
+    for (char *item = strtok_r(list, ",", &save); item; item = strtok_r(NULL, ",", &save)) {
+      while (*item == ' ') item++;
+      char mount[MAX_PATH_LEN];
+      if (item[0] == '/') snprintf(mount, sizeof(mount), "%s", item);
+      else snprintf(mount, sizeof(mount), "/host/%s", item);
+      struct statvfs st;
+      if (statvfs(mount, &st) != 0) continue;
+      unsigned long long total_bytes = (unsigned long long)st.f_blocks * st.f_frsize;
+      unsigned long long free_bytes = (unsigned long long)st.f_bavail * st.f_frsize;
+      unsigned long long used_bytes = total_bytes > free_bytes ? total_bytes - free_bytes : 0;
+      unsigned pct = total_bytes ? (unsigned)(used_bytes * 100ULL / total_bytes) : 0;
+      appendf(&out, "%s{\"path\":\"%s\",\"total\":%llu,\"used\":%llu,\"percent\":%u}", first ? "" : ",", mount, total_bytes, used_bytes, pct);
+      first = 0;
+    }
+  }
+  appendf(&out, "]}\n");
+  send_headers(fd, 200, "application/json", (off_t)out.len, NULL);
+  (void)write(fd, out.data, out.len);
+  free(out.data);
+}
+
 static void handle_client(int fd) {
   char *req=calloc(MAX_REQ+1,1);if(!req){close(fd);return;}size_t n=0,header_len=0,content_len=0;
   while(n<MAX_REQ){ssize_t got=read(fd,req+n,MAX_REQ-n);if(got<=0)break;n+=(size_t)got;req[n]=0;char *end=strstr(req,"\r\n\r\n");if(end){header_len=(size_t)(end+4-req);const char *cl=header_value(req,"Content-Length");if(cl)content_len=(size_t)strtoull(cl,NULL,10);if(content_len>MAX_REQ-header_len){json_error(fd,413,"request too large");free(req);close(fd);return;}if(n>=header_len+content_len)break;}}
   char method[16]={0},url[MAX_PATH_LEN]={0};if(!header_len||sscanf(req,"%15s %4095s",method,url)!=2){json_error(fd,400,"invalid request");goto done;}char *query=strchr(url,'?');if(query)*query++=0;
   if(!strcmp(url,"/healthz"))response(fd,200,"text/plain; charset=utf-8","ok");
+  else if(!strcmp(url,"/api/system/metrics")&&!strcmp(method,"GET"))system_metrics(fd);
   else if(!strcmp(url,"/api/media/libraries")&&!strcmp(method,"GET"))list_libraries(fd);
   else if(!strcmp(url,"/api/media/files")&&!strcmp(method,"GET"))list_files(fd,query);
   else if(!strcmp(url,"/api/media/libraries")&&!strcmp(method,"POST"))add_library(fd,req+header_len,req);
