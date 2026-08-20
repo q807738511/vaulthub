@@ -1,6 +1,6 @@
-# VaultHub 蜀鼠之家 v0.6.5：内置系统监控
+# VaultHub 蜀鼠之家 v0.6.6：内置监控外网访问修复
 
-v0.6.5 在保留低影响媒体索引能力的基础上，移除页面对 Glances 监控 API 的依赖，改用 VaultHub 内置系统监控。
+v0.6.6 修复内置监控同源路由与发布镜像携带旧二进制的问题，并为已有持久化 Caddyfile 自动补充 `/api/system/*` 路由。
 
 ## 变更
 
@@ -209,7 +209,7 @@ curl -sI https://kom.examples.top/ | grep -i content-security-policy
 GitHub 推送 main 或发布版本标签
   -> GitHub Actions 构建 linux/amd64 镜像
   -> 发布 ghcr.io/q807738511/vaulthub:latest
-  -> 版本标签同时发布 ghcr.io/q807738511/vaulthub:0.6.5
+  -> 版本标签同时发布 ghcr.io/q807738511/vaulthub:0.6.6
   -> 自动创建对应 GitHub Release
   -> NAS Watchtower 每 5 分钟检查
   -> 自动拉取并重启 VaultHub
