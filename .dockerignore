@@ -9,6 +9,6 @@
 data
 media
 scripts
-vaulthub-manager.c
+
 backup-*
 *.backup-*

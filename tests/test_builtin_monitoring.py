@@ -39,6 +39,8 @@ for item in required_compose:
 assert 'handle /api/system/*' in caddyfile, "default Caddyfile misses system route"
 assert 'handle /api/system/*' in manager, "persisted Caddyfile migration misses system route"
 assert 'FROM alpine' in dockerfile and 'gcc' in dockerfile and 'media-api.c' in dockerfile, "Dockerfile does not compile media API from source"
+dockerignore = (ROOT / ".dockerignore").read_text()
+assert 'vaulthub-manager.c' not in dockerignore, "Docker build context excludes manager source"
 
 for forbidden in [
     '/api/4/cpu', '/api/4/mem', '/api/4/network', '/api/4/fs', '/api/4/sensors',
