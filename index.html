@@ -488,7 +488,7 @@
   <div class="add-board-btn" onclick="openModuleModal()">
     <span>＋</span><span data-i18n="addBoardNav">添加模块</span>
   </div>
-  <div class="sidebar-foot">v0.6.0 · Local Media</div>
+  <div class="sidebar-foot">v0.6.4 · Low-impact Media Index</div>
 </aside>
 
 <!-- ===== 主区域 ===== -->
@@ -903,7 +903,7 @@
     <div class="cfg-field"><label>管理令牌（如后端启用）</label><input id="mediaAdminToken" type="password" placeholder="X-VaultHub-Token" autocomplete="off"></div>
     <button class="btn btn-primary" type="button" onclick="saveMediaLibraries()">💾 保存</button>
     <button class="btn" type="button" onclick="refreshMediaLibraries(true)">↻ 刷新</button>
-    <div class="hint">每个路径会保存为一个本地库，必须是容器内已挂载且存在的 /media/... 目录。</div>
+    <div class="hint">每个路径会保存为一个本地库，必须是容器内已挂载且存在的绝对目录。</div>
   </div>
 </div>
 
@@ -1070,7 +1070,7 @@
   <div class="modal">
     <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
     <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
-    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.6.0 · Local Media</b></div>
+    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.6.4 · Low-impact Media Index</b></div>
     <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>HTML / CSS / JS · 单文件</b></div>
     <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>Glances REST API (61208)</b></div>
     <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>
@@ -1771,7 +1771,7 @@ function renderLocalMedia(group) {
   if (!host) return;
   const libs = librariesForGroup(group);
   if (!libs.length) {
-    host.innerHTML = `${mediaModeBar(group)}<div class="media-empty"><div class="big">▤</div><h3>暂无本地媒体库</h3><p>添加容器内的 /media/... 路径后，即可浏览音乐、漫画或电子书。</p><button class="btn btn-primary" onclick="showMediaLibraryConfig('${esc(group)}')">⚙ 配置媒体库</button></div>`;
+    host.innerHTML = `${mediaModeBar(group)}<div class="media-empty"><div class="big">▤</div><h3>暂无本地媒体库</h3><p>添加容器内已挂载的绝对路径后，即可浏览音乐、漫画或电子书。</p><button class="btn btn-primary" onclick="showMediaLibraryConfig('${esc(group)}')">⚙ 配置媒体库</button></div>`;
     return;
   }
   let selected = libs.find(lib => lib.id === localMediaSelection[group]) || libs[0];
@@ -1791,20 +1791,22 @@ function normalizeFilePayload(data) {
   const files = Array.isArray(data) ? data : (data?.files || data?.items || []);
   return files.map(item => typeof item === "string" ? { path: item } : item).filter(item => item?.path);
 }
-async function loadLocalFiles(group, lib) {
+async function loadLocalFiles(group, lib, offset = 0) {
   const target = document.getElementById("local-media-content-" + group);
   if (!target) return;
   try {
-    let files = lib.files;
-    if (!Array.isArray(files)) {
-      const res = await fetch("/api/media/libraries", { cache: "no-store" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const all = normalizeLibraryPayload(await res.json());
-      files = all.find(item => item.id === lib.id)?.files || [];
+    const res = await fetch(`/api/media/files?id=${encodeURIComponent(lib.id)}&offset=${offset}&limit=100`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const files = normalizeFilePayload(data).sort((a, b) => String(a.path).localeCompare(String(b.path), "zh-CN"));
+    if (data.status === "indexing") {
+      target.innerHTML = '<div class="empty-tip">正在后台建立低速索引，请稍后刷新。扫描不会阻塞页面。</div>';
+      return;
     }
-    files = normalizeFilePayload(files).sort((a, b) => String(a.path).localeCompare(String(b.path), "zh-CN"));
     if (!files.length) { target.innerHTML = '<div class="empty-tip">该媒体库中暂无支持的文件</div>'; return; }
-    target.innerHTML = `<div class="media-file-list">${files.map(file => renderLocalFileRow(group, lib, file)).join("")}</div>`;
+    const prev = offset > 0 ? `<button class="btn" onclick="loadLocalFiles('${esc(group)}',findMediaLibrary('${esc(lib.id)}'),${Math.max(0, offset - 100)})">← 上一页</button>` : "";
+    const next = data.has_more ? `<button class="btn" onclick="loadLocalFiles('${esc(group)}',findMediaLibrary('${esc(lib.id)}'),${offset + 100})">下一页 →</button>` : "";
+    target.innerHTML = `<div class="media-file-list">${files.map(file => renderLocalFileRow(group, lib, file)).join("")}</div><div class="media-actions">${prev}<span class="media-file-meta">${offset + 1}-${offset + files.length} / ${Number(data.total) || files.length}</span>${next}</div>`;
   } catch (err) {
     target.innerHTML = `<div class="media-error">文件列表读取失败：${esc(err.message)}</div>`;
   }
@@ -1843,12 +1845,13 @@ async function openLocalMedia(group, libId, path) {
   else if (["jpg","jpeg","png","webp","gif"].includes(ext)) body = `<div class="media-viewer-body"><img src="${esc(url)}" alt="${esc(path)}"></div>`;
   else if (ext === "pdf") body = `<iframe src="${esc(url)}" title="${esc(path)}"></iframe>`;
   else if (ext === "txt") {
-    viewer.innerHTML = viewerShell(group, path, '<div class="media-viewer-body"><div class="empty-tip">正在读取文本...</div></div>', url);
+    viewer.innerHTML = viewerShell(group, path, '<div class="media-viewer-body"><div class="empty-tip">正在读取文本片段...</div></div>', url);
     try {
-      let res = await fetch(url, { cache: "no-store" });
-      if (res.status === 404) res = await fetch(mediaLegacyFileUrl(lib, path), { cache: "no-store" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      body = `<div class="media-viewer-body"><pre class="media-text">${esc(await res.text())}</pre></div>`;
+      const res = await fetch(url, { headers: { Range: "bytes=0-1048575" }, cache: "no-store" });
+      if (!res.ok && res.status !== 206) throw new Error(`HTTP ${res.status}`);
+      const text = await res.text();
+      const suffix = res.status === 206 ? '<div class="empty-tip">仅显示前 1MB，超大 TXT 请下载或拆分后阅读。</div>' : '';
+      body = `<div class="media-viewer-body">${suffix}<pre class="media-text">${esc(text)}</pre></div>`;
     } catch (err) { body = `<div class="media-error">文本读取失败：${esc(err.message)}</div>`; }
   } else {
     const note = ["cbz","zip","cbr"].includes(ext) ? "压缩漫画可在新窗口打开或下载后使用漫画阅读器查看。" : ext === "epub" ? "EPUB 可下载后使用电子书阅读器打开。" : "该格式可下载或交给浏览器打开。";
@@ -1872,7 +1875,7 @@ function addMediaPath(value = "") {
   if (!host) return;
   const row = document.createElement("div");
   row.className = "media-path-row";
-  row.innerHTML = `<input type="text" class="media-lib-path" placeholder="/media/music" value="${esc(value)}"><button class="icon-btn" type="button" title="删除路径" onclick="removeMediaPath(this)">✕</button>`;
+  row.innerHTML = `<input type="text" class="media-lib-path" placeholder="/books 或 /mnt/music" value="${esc(value)}"><button class="icon-btn" type="button" title="删除路径" onclick="removeMediaPath(this)">✕</button>`;
   host.appendChild(row);
 }
 function removeMediaPath(button) {
@@ -1893,7 +1896,7 @@ async function saveMediaLibraries() {
   const paths = [...document.querySelectorAll(".media-lib-path")].map(el => el.value.trim().replace(/\/$/, "")).filter(Boolean);
   const token = document.getElementById("mediaAdminToken")?.value.trim() || "";
   if (!name || !type || !paths.length) { toast("⚠️ 请填写库名称、类型和至少一个路径"); return; }
-  if (paths.some(path => path !== "/media" && !path.startsWith("/media/"))) { toast("⚠️ 路径必须位于 /media 下"); return; }
+  if (paths.some(path => !path.startsWith("/"))) { toast("⚠️ 路径必须是容器内已挂载的绝对路径"); return; }
   try { localStorage.setItem("dwu_media_admin_token", token); } catch (e) {}
   try {
     let saved = 0;

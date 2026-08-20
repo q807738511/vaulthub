@@ -1,6 +1,6 @@
-# VaultHub 蜀鼠之家 v0.6.2：本地媒体库
+# VaultHub 蜀鼠之家 v0.6.4：低影响媒体索引与绝对路径媒体库
 
-v0.6.x 在保留 Komga、Kavita、Calibre-Web、Navidrome 等外连服务的同时，新增由 VaultHub 直接读取 NAS 文件的本地音乐、漫画和电子书媒体库。v0.6.1-v0.6.2 修复了重复添加和部分路径保存后无法继续添加的问题。
+v0.6.4 修复大规模电子书、音乐和漫画目录在打开页面时同步批量读取，导致 NAS 磁盘 I/O 飙升、服务卡顿甚至无响应的问题。
 
 ## 变更
 
@@ -8,7 +8,11 @@ v0.6.x 在保留 Komga、Kavita、Calibre-Web、Navidrome 等外连服务的同�
 - 媒体源可在“本地媒体库”和原有“外连服务”之间切换。
 - 本地音乐支持浏览器原生播放，本地图片/TXT/PDF 支持直接预览，其他电子书和压缩漫画可下载或由浏览器支持能力打开。
 - 本地媒体文件通过 `home.examples.top/api/media/*` 同源访问，浏览器不会连接 NAS 内网 IP。
-- 媒体目录以只读方式挂载，VaultHub 不修改、不移动源文件。
+- 媒体列表接口只返回库配置；文件索引由后台单线程低速任务生成，带临时文件原子替换，避免页面请求阻塞。
+- 文件列表使用 `/api/media/files` 分页接口，默认每页 100 条，避免一次性构造巨型 JSON 和浏览器 DOM。
+- 扫描会跳过 `@eaDir`、`.cache`、`#recycle`，并按批次休眠降低磁盘 I/O 竞争；索引保存到 `/data/media-index`。
+- TXT 预览只读取首个 1MB Range，不再把超大 TXT 全部加载进浏览器内存。
+- 媒体库路径改为任意容器内已挂载的绝对目录，不再强制要求 `/media` 前缀；仍保留真实路径和符号链接逃逸校验。
 
 - 项目名称改为 `VaultHub 蜀鼠之家`。
 - Compose 服务名为 `vaulthub`，容器名为 `VaultHub`。
@@ -74,7 +78,7 @@ volumes:
 - /vol5/音乐:/media/music-vol5:ro
 ```
 
-然后在同一个音乐库中添加 `/media/music-vol5`。为避免泄露容器文件，媒体 API 只接受 `/media` 下的路径。
+然后在同一个音乐库中添加 `/media/music-vol5`。为避免泄露容器文件，媒体 API 只接受容器内已挂载的绝对目录。
 
 ## 公网接入方案
 
@@ -205,7 +209,7 @@ curl -sI https://kom.examples.top/ | grep -i content-security-policy
 GitHub 推送 main 或发布版本标签
   -> GitHub Actions 构建 linux/amd64 镜像
   -> 发布 ghcr.io/q807738511/vaulthub:latest
-  -> 版本标签同时发布 ghcr.io/q807738511/vaulthub:0.6.2
+  -> 版本标签同时发布 ghcr.io/q807738511/vaulthub:0.6.4
   -> 自动创建对应 GitHub Release
   -> NAS Watchtower 每 5 分钟检查
   -> 自动拉取并重启 VaultHub

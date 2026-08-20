@@ -12,8 +12,10 @@
 #include <string.h>
 #include <strings.h>
 #include <sys/socket.h>
+#include <pthread.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <time.h>
 #include <unistd.h>
 
 #define PORT 9100
@@ -27,7 +29,8 @@
 struct library { char id[MAX_ID], name[MAX_NAME], type[MAX_TYPE], path[MAX_PATH_LEN]; };
 struct buffer { char *data; size_t len, cap; };
 static const char *config_path = "/data/media-libraries.json";
-static const char *media_root = "/media";
+static const char *index_dir = "/data/media-index";
+static unsigned scan_sleep_ms = 25;
 
 static int appendf(struct buffer *b, const char *fmt, ...) {
   va_list ap, copy;
@@ -133,37 +136,85 @@ static int save_libraries(const struct library *libs, int count) {
   if (appendf(&b, "]\n")) { free(b.data); return -1; }
   int rc = write_atomic(config_path, b.data, b.len); free(b.data); return rc;
 }
-static int scan_directory(const char *base, const char *relative, struct buffer *out, int *first) {
-  char dirpath[MAX_PATH_LEN]; int z = snprintf(dirpath,sizeof(dirpath),"%s%s%s",base,*relative?"/":"",relative); if (z<0 || (size_t)z>=sizeof(dirpath)) return -1;
-  DIR *dir = opendir(dirpath); if (!dir) return -1; struct dirent *entry;
+static int scan_index_directory(const char *base, const char *relative, FILE *out, size_t *count) {
+  char dirpath[MAX_PATH_LEN];
+  int z = snprintf(dirpath, sizeof(dirpath), "%s%s%s", base, *relative ? "/" : "", relative);
+  if (z < 0 || (size_t)z >= sizeof(dirpath)) return -1;
+  DIR *dir = opendir(dirpath); if (!dir) return -1;
+  struct dirent *entry;
   while ((entry = readdir(dir))) {
-    if (!strcmp(entry->d_name,".") || !strcmp(entry->d_name,"..")) continue;
+    if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, "..")) continue;
+    if (!strcmp(entry->d_name, "@eaDir") || !strcmp(entry->d_name, ".cache") || !strcmp(entry->d_name, "#recycle")) continue;
     char rel[MAX_PATH_LEN], full[MAX_PATH_LEN];
-    z = snprintf(rel,sizeof(rel),"%s%s%s",relative,*relative?"/":"",entry->d_name); if (z<0 || (size_t)z>=sizeof(rel)) continue;
-    z = snprintf(full,sizeof(full),"%s/%s",base,rel); if (z<0 || (size_t)z>=sizeof(full)) continue;
-    struct stat st; if (lstat(full,&st)) continue;
-    if (S_ISDIR(st.st_mode)) { if (scan_directory(base,rel,out,first)) { closedir(dir); return -1; } }
-    else if (S_ISREG(st.st_mode)) {
-      char *e=json_escape(rel); if (!e || appendf(out,"%s{\"path\":\"%s\",\"size\":%lld,\"mtime\":%lld}",*first?"":",",e,(long long)st.st_size,(long long)st.st_mtime)) { free(e);closedir(dir);return -1; }
-      free(e); *first=0;
+    z = snprintf(rel, sizeof(rel), "%s%s%s", relative, *relative ? "/" : "", entry->d_name);
+    if (z < 0 || (size_t)z >= sizeof(rel)) continue;
+    z = snprintf(full, sizeof(full), "%s/%s", base, rel);
+    if (z < 0 || (size_t)z >= sizeof(full)) continue;
+    struct stat st; if (lstat(full, &st)) continue;
+    if (S_ISDIR(st.st_mode)) {
+      if (scan_index_directory(base, rel, out, count)) { closedir(dir); return -1; }
+    } else if (S_ISREG(st.st_mode)) {
+      if (fprintf(out, "%s\t%lld\t%lld\n", rel, (long long)st.st_size, (long long)st.st_mtime) < 0) { closedir(dir); return -1; }
+      (*count)++;
+      if (scan_sleep_ms) { struct timespec ts = {0, (long)scan_sleep_ms * 1000000L}; nanosleep(&ts, NULL); }
     }
   }
   closedir(dir); return 0;
+}
+static int index_path(const char *id, char *out, size_t cap) {
+  if (!valid_id(id)) return -1;
+  if (mkdir(index_dir, 0755) && errno != EEXIST) return -1;
+  int n = snprintf(out, cap, "%s/%s.idx", index_dir, id);
+  return n < 0 || (size_t)n >= cap ? -1 : 0;
+}
+static pthread_mutex_t scan_lock = PTHREAD_MUTEX_INITIALIZER;
+struct scan_arg { struct library lib; };
+static void *scan_worker(void *opaque) {
+  struct scan_arg *arg = opaque; char path[MAX_PATH_LEN], tmp[MAX_PATH_LEN]; size_t count = 0;
+  pthread_mutex_lock(&scan_lock);
+  if (!index_path(arg->lib.id, path, sizeof(path))) {
+    if (snprintf(tmp, sizeof(tmp), "%s.tmp.%ld", path, (long)getpid()) < 0 || strlen(path) + 32 >= sizeof(tmp)) { pthread_mutex_unlock(&scan_lock); free(arg); return NULL; }
+    FILE *out = fopen(tmp, "wb");
+    if (out) {
+      int ok = scan_index_directory(arg->lib.path, "", out, &count) == 0 && fflush(out) == 0 && fsync(fileno(out)) == 0;
+      if (fclose(out) != 0) ok = 0;
+      if (ok) rename(tmp, path); else unlink(tmp);
+    }
+  }
+  pthread_mutex_unlock(&scan_lock); free(arg); return NULL;
+}
+static void start_scan(const struct library *lib) {
+  struct scan_arg *arg = malloc(sizeof(*arg)); if (!arg) return; arg->lib = *lib;
+  pthread_t thread; if (pthread_create(&thread, NULL, scan_worker, arg) == 0) pthread_detach(thread); else free(arg);
 }
 static void list_libraries(int fd) {
   struct library libs[MAX_LIBS]; int count=0; if (load_libraries(libs,&count)) { json_error(fd,500,"configuration read failed"); return; }
   struct buffer b={0}; if (appendf(&b,"{\"libraries\":[")) goto oom;
   for (int i=0;i<count;i++) {
     char *id=json_escape(libs[i].id),*name=json_escape(libs[i].name),*type=json_escape(libs[i].type),*path=json_escape(libs[i].path);
-    if (!id||!name||!type||!path||appendf(&b,"%s{\"id\":\"%s\",\"name\":\"%s\",\"type\":\"%s\",\"path\":\"%s\",\"files\":[",i?",":"",id,name,type,path)) { free(id);free(name);free(type);free(path);goto oom; }
-    free(id);free(name);free(type);free(path); int first=1;
-    if (path_is_under(libs[i].path,media_root)) (void)scan_directory(libs[i].path,"",&b,&first);
-    if (appendf(&b,"]}")) goto oom;
+    if (!id||!name||!type||!path||appendf(&b,"%s{\"id\":\"%s\",\"name\":\"%s\",\"type\":\"%s\",\"path\":\"%s\"}",i?",":"",id,name,type,path)) { free(id);free(name);free(type);free(path);goto oom; }
+    free(id);free(name);free(type);free(path);
   }
   if (appendf(&b,"]}\n")) goto oom;
-  send_headers(fd,200,"application/json",(off_t)b.len,NULL);
-  (void)write(fd,b.data,b.len); free(b.data); return;
+  send_headers(fd,200,"application/json",(off_t)b.len,NULL); (void)write(fd,b.data,b.len); free(b.data); return;
 oom: free(b.data); json_error(fd,500,"out of memory");
+}
+static const char *query_value(const char *query, const char *key) {
+  if (!query) return NULL;
+  size_t n = strlen(key);
+  const char *p = query;
+  while (p && *p) { if (!strncmp(p,key,n) && p[n]=='=') return p+n+1; p=strchr(p,'&'); if(p)p++; }
+  return NULL;
+}
+static void list_files(int fd, const char *query) {
+  const char *raw_id=query_value(query,"id"), *raw_offset=query_value(query,"offset"), *raw_limit=query_value(query,"limit");
+  char id[MAX_ID]; if(!raw_id){json_error(fd,400,"id is required");return;} size_t id_len=strcspn(raw_id,"&"); if(!id_len||id_len>=sizeof(id)){json_error(fd,400,"invalid id");return;} memcpy(id,raw_id,id_len);id[id_len]=0;
+  if(!valid_id(id)){json_error(fd,400,"invalid id");return;} unsigned long offset=raw_offset?strtoul(raw_offset,NULL,10):0, limit=raw_limit?strtoul(raw_limit,NULL,10):100; if(!limit||limit>500)limit=100;
+  char path[MAX_PATH_LEN]; if(index_path(id,path,sizeof(path))){json_error(fd,500,"index unavailable");return;} FILE *in=fopen(path,"rb");
+  if(!in){ response(fd,200,"application/json","{\"status\":\"indexing\",\"total\":0,\"offset\":0,\"limit\":100,\"has_more\":false,\"files\":[]}"); return; }
+  struct buffer files={0}; size_t total=0, emitted=0; char *line=NULL; size_t cap=0; ssize_t got;
+  while((got=getline(&line,&cap,in))>=0){ char *tab1=strrchr(line,'\t'); if(!tab1)continue; *tab1++=0; char *tab2=strrchr(line,'\t'); if(!tab2)continue; *tab2++=0; if(total>=offset&&emitted<limit){char *e=json_escape(line);if(!e||appendf(&files,"%s{\"path\":\"%s\",\"size\":%lld,\"mtime\":%lld}",emitted?",":"",e,strtoll(tab1,NULL,10),strtoll(tab2,NULL,10))){free(e);free(line);fclose(in);free(files.data);json_error(fd,500,"out of memory");return;}free(e);emitted++;} total++; }
+  free(line);fclose(in); struct buffer body={0}; appendf(&body,"{\"status\":\"ready\",\"total\":%zu,\"offset\":%lu,\"limit\":%lu,\"has_more\":%s,\"files\":[%s]}\n",total,offset,limit,offset+emitted<total?"true":"false",files.data?files.data:""); free(files.data);send_headers(fd,200,"application/json",(off_t)body.len,NULL);write(fd,body.data,body.len);free(body.data);
 }
 static int authorized(const char *request) {
   const char *token=getenv("ADMIN_TOKEN"); if (!token || !*token) return 1;
@@ -178,13 +229,14 @@ static void add_library(int fd, const char *body, const char *request) {
   int type_ok=!strcmp(lib.type,"audio")||!strcmp(lib.type,"comic")||!strcmp(lib.type,"book");
   if (!valid_id(lib.id)||!*lib.name||!type_ok) { json_error(fd,400,"invalid id, name or type"); return; }
   char canonical[MAX_PATH_LEN]; struct stat st;
-  if (!realpath(lib.path,canonical)||!path_is_under(canonical,media_root)||stat(canonical,&st)||!S_ISDIR(st.st_mode)) { json_error(fd,400,"path must be an existing directory under /media"); return; }
+  if (!realpath(lib.path,canonical)||stat(canonical,&st)||!S_ISDIR(st.st_mode)) { json_error(fd,400,"path must be an existing absolute directory"); return; }
   snprintf(lib.path,sizeof(lib.path),"%s",canonical);
   struct library libs[MAX_LIBS]; int count=0;
   if (load_libraries(libs,&count)) { json_error(fd,500,"configuration unavailable"); return; }
   for (int i=0;i<count;i++) if (!strcmp(libs[i].id,lib.id)) {
     if (!strcmp(libs[i].name,lib.name) && !strcmp(libs[i].type,lib.type) && !strcmp(libs[i].path,lib.path)) {
-      response(fd,200,"application/json","{\"ok\":true,\"existing\":true}");
+      start_scan(&libs[i]);
+      response(fd,200,"application/json","{\"ok\":true,\"existing\":true,\"status\":\"indexing\"}");
     } else {
       json_error(fd,409,"id already exists with different library data");
     }
@@ -192,7 +244,8 @@ static void add_library(int fd, const char *body, const char *request) {
   }
   if (count>=MAX_LIBS) { json_error(fd,500,"configuration unavailable"); return; }
   libs[count++]=lib; if (save_libraries(libs,count)) { json_error(fd,500,"configuration write failed"); return; }
-  response(fd,201,"application/json","{\"ok\":true}");
+  start_scan(&lib);
+  response(fd,201,"application/json","{\"ok\":true,\"status\":\"indexing\"}");
 }
 static void delete_library(int fd, const char *id, const char *request) {
   if (!authorized(request)) { json_error(fd,401,"unauthorized"); return; }
@@ -204,6 +257,7 @@ static void delete_library(int fd, const char *id, const char *request) {
   if (found<0) { json_error(fd,404,"library not found"); return; }
   for (int i=found;i<count-1;i++) libs[i]=libs[i+1];
   if (save_libraries(libs,count-1)) { json_error(fd,500,"configuration write failed"); return; }
+  char idx[MAX_PATH_LEN]; if (!index_path(id,idx,sizeof(idx))) unlink(idx);
   response(fd,200,"application/json","{\"ok\":true}");
 }
 static int url_decode(const char *src, char *dst, size_t cap) {
@@ -260,6 +314,7 @@ static void handle_client(int fd) {
   char method[16]={0},url[MAX_PATH_LEN]={0};if(!header_len||sscanf(req,"%15s %4095s",method,url)!=2){json_error(fd,400,"invalid request");goto done;}char *query=strchr(url,'?');if(query)*query++=0;
   if(!strcmp(url,"/healthz"))response(fd,200,"text/plain; charset=utf-8","ok");
   else if(!strcmp(url,"/api/media/libraries")&&!strcmp(method,"GET"))list_libraries(fd);
+  else if(!strcmp(url,"/api/media/files")&&!strcmp(method,"GET"))list_files(fd,query);
   else if(!strcmp(url,"/api/media/libraries")&&!strcmp(method,"POST"))add_library(fd,req+header_len,req);
   else if(!strcmp(url,"/api/media/libraries")&&!strcmp(method,"DELETE")) {
     const char *id=query&&strncmp(query,"id=",3)==0?query+3:""; char decoded_id[MAX_ID];
@@ -270,8 +325,8 @@ static void handle_client(int fd) {
 done:free(req);close(fd);
 }
 int main(void) {
-  const char *configured_root=getenv("MEDIA_ROOT"),*configured_config=getenv("MEDIA_CONFIG");
-  if(configured_root&&*configured_root)media_root=configured_root;
-  if(configured_config&&*configured_config)config_path=configured_config;
+  const char *configured_config=getenv("MEDIA_CONFIG"); if(configured_config&&*configured_config)config_path=configured_config;
+  const char *configured_index=getenv("MEDIA_INDEX_DIR"); if(configured_index&&*configured_index)index_dir=configured_index;
+  const char *configured_sleep=getenv("MEDIA_SCAN_SLEEP_MS"); if(configured_sleep&&*configured_sleep)scan_sleep_ms=(unsigned)strtoul(configured_sleep,NULL,10);
   signal(SIGPIPE,SIG_IGN);int s=socket(AF_INET,SOCK_STREAM,0);if(s<0)return 1;int yes=1;setsockopt(s,SOL_SOCKET,SO_REUSEADDR,&yes,sizeof(yes));struct sockaddr_in addr={0};addr.sin_family=AF_INET;addr.sin_addr.s_addr=htonl(INADDR_LOOPBACK);addr.sin_port=htons(PORT);if(bind(s,(struct sockaddr*)&addr,sizeof(addr))||listen(s,32)){perror("media-api listen");return 1;}fprintf(stderr,"VaultHub media API listening on 127.0.0.1:%d\n",PORT);for(;;){int fd=accept(s,NULL,NULL);if(fd>=0)handle_client(fd);else if(errno!=EINTR)break;}close(s);return 0;
 }
