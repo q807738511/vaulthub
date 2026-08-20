@@ -89,21 +89,25 @@ static void ensure_data_config(void) {
   size_t len = 0;
   char *cfg = read_file(data_config, &len);
   const char *marker = "handle /api/media/*";
+  const char *system_marker = "handle /api/system/*";
   const char *admin = "\thandle /api/admin/* {";
-  if (cfg && !strstr(cfg, marker)) {
+  if (cfg && (!strstr(cfg, marker) || !strstr(cfg, system_marker))) {
     char *pos = strstr(cfg, admin);
     if (pos) {
-      const char *media_block = "\n\t# 本地媒体库 API，仅由同容器内绑定回环地址的进程处理。\n\thandle /api/media/* {\n\t\treverse_proxy http://127.0.0.1:9100\n\t}\n";
+      const char *system_block = strstr(cfg, system_marker) ? "" : "\n\t# VaultHub 内置系统监控 API。\n\thandle /api/system/* {\n\t\treverse_proxy http://127.0.0.1:9100\n\t}\n";
+      const char *media_block = strstr(cfg, marker) ? "" : "\n\t# 本地媒体库 API，仅由同容器内绑定回环地址的进程处理。\n\thandle /api/media/* {\n\t\treverse_proxy http://127.0.0.1:9100\n\t}\n";
       size_t prefix = (size_t)(pos - cfg);
-      size_t out_len = len + strlen(media_block);
+      size_t extra_len = strlen(system_block) + strlen(media_block);
+      size_t out_len = len + extra_len;
       char *out = malloc(out_len + 1);
       if (!out) { free(cfg); logmsg("failed to allocate caddy migration buffer"); exit(1); }
       memcpy(out, cfg, prefix);
-      memcpy(out + prefix, media_block, strlen(media_block));
-      memcpy(out + prefix + strlen(media_block), cfg + prefix, len - prefix);
+      memcpy(out + prefix, system_block, strlen(system_block));
+      memcpy(out + prefix + strlen(system_block), media_block, strlen(media_block));
+      memcpy(out + prefix + extra_len, cfg + prefix, len - prefix);
       out[out_len] = 0;
       if (write_file_atomic(data_config, out, out_len) != 0) {
-        logmsg("failed to migrate %s for media API: %s", data_config, strerror(errno));
+        logmsg("failed to migrate %s for API routes: %s", data_config, strerror(errno));
         free(out); free(cfg); exit(1);
       }
       free(out);

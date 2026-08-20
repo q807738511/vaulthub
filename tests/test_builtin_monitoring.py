@@ -19,6 +19,10 @@ required_html = [
     'fetchJson("/api/system/metrics")',
     '内置监控',
 ]
+dockerfile = (ROOT / "Dockerfile").read_text()
+manager = (ROOT / "vaulthub-manager.c").read_text()
+caddyfile = (ROOT / "Caddyfile").read_text()
+
 required_compose = [
     'SYSTEM_MONITOR_ENABLED:',
     'SYSTEM_MONITOR_INTERFACE:',
@@ -32,6 +36,9 @@ for item in required_html:
     assert item in html, f"missing frontend monitoring support: {item}"
 for item in required_compose:
     assert item in compose, f"missing compose monitoring example: {item}"
+assert 'handle /api/system/*' in caddyfile, "default Caddyfile misses system route"
+assert 'handle /api/system/*' in manager, "persisted Caddyfile migration misses system route"
+assert 'FROM alpine' in dockerfile and 'gcc' in dockerfile and 'media-api.c' in dockerfile, "Dockerfile does not compile media API from source"
 
 for forbidden in [
     '/api/4/cpu', '/api/4/mem', '/api/4/network', '/api/4/fs', '/api/4/sensors',
