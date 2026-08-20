@@ -22,7 +22,7 @@ jobs:
       - name: Check manager source
         run: |
           gcc -Wall -Wextra -Werror -fsyntax-only vaulthub-manager.c
-          gcc -Wall -Wextra -Werror -fsyntax-only media-api.c
+          gcc -Wall -Wextra -Werror -pthread -fsyntax-only media-api.c
 
       - name: Check JavaScript syntax
         run: |
