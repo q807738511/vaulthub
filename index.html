@@ -369,6 +369,8 @@
   .book-cover { position:relative; aspect-ratio:3/4; border-radius:7px 11px 11px 7px; overflow:hidden; display:flex; align-items:center; justify-content:center; padding:15px; color:#fff; text-align:center; box-shadow:inset 7px 0 rgba(0,0,0,.18),0 8px 18px rgba(0,0,0,.24); }
   .book-cover::after { content:""; position:absolute; inset:0; background:linear-gradient(125deg,transparent 15%,rgba(255,255,255,.18) 45%,transparent 62%); }
   .book-cover-title { position:relative; z-index:1; font-size:15px; font-weight:700; line-height:1.45; word-break:break-word; text-shadow:0 1px 2px rgba(0,0,0,.4); }
+  .book-cover-image { position:absolute; inset:0; z-index:2; width:100%; height:100%; object-fit:cover; opacity:0; transition:opacity .2s; }
+  .book-cover-image.loaded { opacity:1; }
   .book-card-title { margin-top:9px; color:var(--text); font-size:13px; line-height:1.4; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
   .book-card-meta { margin-top:5px; color:var(--text2); font-size:11px; display:flex; justify-content:space-between; gap:6px; }
   .book-progress { height:3px; margin-top:7px; border-radius:4px; overflow:hidden; background:var(--border); }
@@ -514,7 +516,7 @@
   <div class="add-board-btn" onclick="openModuleModal()">
     <span>＋</span><span data-i18n="addBoardNav">添加模块</span>
   </div>
-  <div class="sidebar-foot">v0.6.7 · Comic Bookshelf Reader</div>
+  <div class="sidebar-foot">v0.6.8 · Reader & Cover Scraper</div>
 </aside>
 
 <!-- ===== 主区域 ===== -->
@@ -1090,7 +1092,7 @@
   <div class="modal">
     <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
     <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
-    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.6.7 · Comic Bookshelf Reader</b></div>
+    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.6.8 · Reader & Cover Scraper</b></div>
     <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>HTML / CSS / JS · 单文件</b></div>
     <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>VaultHub 内置系统监控</b></div>
     <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>
@@ -1765,7 +1767,10 @@ function mediaAdminHeaders() {
   return token ? { "X-VaultHub-Token": token } : {};
 }
 function mediaFileUrl(lib, path) {
-  return mediaLegacyFileUrl(lib, path);
+  const url = new URL("/api/media/file", window.location.origin);
+  url.searchParams.set("id", String(lib.id));
+  url.searchParams.set("path", String(path));
+  return url.pathname + url.search;
 }
 function mediaLegacyFileUrl(lib, path) {
   return `/api/media/file/${encodeURIComponent(lib.id)}/${String(path).split("/").map(encodeURIComponent).join("/")}`;
@@ -1849,8 +1854,9 @@ async function loadLocalFiles(group, lib, offset = 0) {
     const next = data.has_more ? `<button class="btn" onclick="loadLocalFiles('${esc(group)}',findMediaLibrary('${esc(lib.id)}'),${offset + pageSize})">下一页 →</button>` : "";
     const pager = `<div class="media-actions">${prev}<span class="media-file-meta">${offset + 1}-${offset + files.length} / ${Number(data.total) || files.length}</span>${next}</div>`;
     if (group === "comic") {
-      const toolbar = `<div class="comic-shelf-toolbar"><div class="comic-shelf-tabs"><button class="${comicShelfView === "shelf" ? "active" : ""}" onclick="setComicShelfView('shelf')">📚 书架</button><button class="${comicShelfView === "completed" ? "active" : ""}" onclick="setComicShelfView('completed')">✓ 已读收藏</button></div><label class="page-size-picker">每页 <select id="mediaPageSize" onchange="setMediaPageSize(this.value)"><option value="20"${pageSize===20?' selected':''}>20</option><option value="50"${pageSize===50?' selected':''}>50</option><option value="100"${pageSize===100?' selected':''}>100</option></select></label></div>`;
+      const toolbar = `<div class="comic-shelf-toolbar"><div class="comic-shelf-tabs"><button class="${comicShelfView === "shelf" ? "active" : ""}" onclick="setComicShelfView('shelf')">📚 书架</button><button class="${comicShelfView === "completed" ? "active" : ""}" onclick="setComicShelfView('completed')">✓ 已读收藏</button></div><div class="media-actions"><button class="btn" onclick="refreshBookCovers()">↻ 重新刮削封面</button><label class="page-size-picker">每页 <select id="mediaPageSize" onchange="setMediaPageSize(this.value)"><option value="20"${pageSize===20?' selected':''}>20</option><option value="50"${pageSize===50?' selected':''}>50</option><option value="100"${pageSize===100?' selected':''}>100</option></select></label></div></div>`;
       target.innerHTML = `${toolbar}${files.length ? `<div class="book-grid">${files.map(file => renderBookCard(group, lib, file)).join("")}</div>` : `<div class="empty-tip">${comicShelfView === "completed" ? "还没有读完的书" : "当前页没有未读书籍"}</div>`}${pager}`;
+      scrapeVisibleBookCovers(target);
     } else {
       target.innerHTML = `${files.length ? `<div class="media-file-list">${files.map(file => renderLocalFileRow(group, lib, file)).join("")}</div>` : '<div class="empty-tip">该媒体库中暂无支持的文件</div>'}${pager}`;
     }
@@ -1881,10 +1887,56 @@ function coverGradient(title) {
   const hue = Math.abs(hash) % 360, hue2 = (hue + 55) % 360;
   return `linear-gradient(145deg,hsl(${hue} 58% 38%),hsl(${hue2} 68% 24%))`;
 }
+const coverScrapeCache = "vaulthub_cover_scrape_v1";
+function readCoverCache() {
+  try { return JSON.parse(localStorage.getItem(coverScrapeCache)) || {}; } catch (e) { return {}; }
+}
+function writeCoverCache(cache) {
+  try { localStorage.setItem(coverScrapeCache, JSON.stringify(cache)); } catch (e) {}
+}
+function coverSearchTitle(title) {
+  return String(title).replace(/[（(][^）)]*(?:全本|未删节|完结|全集)[^）)]*[）)]/g, " ").replace(/第?\s*\d+\s*[卷册部]/g, " ").replace(/\s+/g, " ").trim();
+}
+function bookCoverFallback(img) { img.removeAttribute("src"); img.classList.remove("loaded"); img.hidden = true; }
+async function scrapeBookCover(img) {
+  const title = coverSearchTitle(img.dataset.coverTitle || ""); if (!title) return;
+  const cache = readCoverCache(), key = title.toLowerCase(), cached = cache[key];
+  if (cached?.url) { img.hidden=false; img.src=cached.url; return; }
+  if (cached?.checkedAt && Date.now()-cached.checkedAt < 86400000) return;
+  let coverUrl = "";
+  try {
+    const google = await fetch(`https://www.googleapis.com/books/v1/volumes?q=intitle:${encodeURIComponent(title)}&maxResults=3&printType=books`, { cache:"force-cache" });
+    if (google.ok) {
+      const data = await google.json();
+      const links = data?.items?.map(item => item?.volumeInfo?.imageLinks).find(Boolean);
+      coverUrl = links?.thumbnail || links?.smallThumbnail || "";
+      if (coverUrl) coverUrl = coverUrl.replace(/^http:/,"https:").replace(/&zoom=\d/,"&zoom=2");
+    }
+  } catch (e) {}
+  if (!coverUrl) try {
+    const res = await fetch(`https://openlibrary.org/search.json?title=${encodeURIComponent(title)}&fields=cover_i,title&limit=3`, { cache:"force-cache" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json(), coverId = data?.docs?.find(doc => doc.cover_i)?.cover_i;
+    coverUrl = coverId ? `https://covers.openlibrary.org/b/id/${coverId}-L.jpg` : "";
+  } catch (e) {}
+  cache[key] = { url:coverUrl, checkedAt:Date.now() }; writeCoverCache(cache);
+  if (coverUrl) { img.hidden=false; img.src=coverUrl; }
+}
+function refreshBookCovers() {
+  try { localStorage.removeItem(coverScrapeCache); } catch (e) {}
+  const target=document.getElementById("local-media-content-comic");
+  if (target) { target.querySelectorAll(".book-cover-image").forEach(bookCoverFallback); scrapeVisibleBookCovers(target); }
+  toast("🔄 正在重新刮削封面");
+}
+function scrapeVisibleBookCovers(host) {
+  const images = [...host.querySelectorAll("img[data-cover-title]")];
+  let cursor=0; const worker=async()=>{ while(cursor<images.length) await scrapeBookCover(images[cursor++]); };
+  Promise.all(Array.from({length:Math.min(4,images.length)},worker));
+}
 function renderBookCard(group, lib, file) {
   const path = String(file.path), title = displayBookTitle(path), ext = fileExt(path).toUpperCase() || "BOOK";
   const progress = Number(readingState(lib.id, path).progress || 0);
-  return `<article class="book-card" data-media-group="${esc(group)}" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openLocalMediaButton(this)"><div class="book-cover" style="background:${coverGradient(title)}"><span class="book-cover-title">${esc(title)}</span></div><div class="book-card-title" title="${esc(path)}">${esc(title)}</div><div class="book-card-meta"><span>${esc(ext)}</span><span>${progress ? progress.toFixed(1)+"%" : "新入书架"}</span></div><div class="book-progress"><span style="width:${Math.min(100,progress)}%"></span></div></article>`;
+  return `<article class="book-card" data-media-group="${esc(group)}" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openLocalMediaButton(this)"><div class="book-cover" style="background:${coverGradient(title)}"><span class="book-cover-title">${esc(title)}</span><img class="book-cover-image" data-cover-title="${esc(title)}" alt="${esc(title)} 封面" hidden onload="this.hidden=false;this.classList.add('loaded')" onerror="bookCoverFallback(this)"></div><div class="book-card-title" title="${esc(path)}">${esc(title)}</div><div class="book-card-meta"><span>${esc(ext)}</span><span>${progress ? progress.toFixed(1)+"%" : "新入书架"}</span></div><div class="book-progress"><span style="width:${Math.min(100,progress)}%"></span></div></article>`;
 }
 function openLocalMediaButton(button) {
   openLocalMedia(button.dataset.mediaGroup, button.dataset.mediaLibrary, button.dataset.mediaPath);

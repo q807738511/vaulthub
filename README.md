@@ -1,6 +1,6 @@
-# VaultHub 蜀鼠之家 v0.6.7：超漫画书架阅读器
+# VaultHub 蜀鼠之家 v0.6.8：阅读修复与封面刮削
 
-v0.6.7 为超漫画本地媒体库增加书本封面、书架/已读收藏、20/50/100 分页和页面内沉浸式阅读器；保留 v0.6.6 的内置监控路由及镜像构建修复。
+v0.6.8 修复特殊中文书名打开 TXT/电子书时的 HTTP 404，并为漫画、电子书增加 Google Books 与 Open Library 两级封面刮削；未匹配或网络失败时继续使用文件名生成封面。
 
 ## 变更
 
@@ -209,7 +209,7 @@ curl -sI https://kom.examples.top/ | grep -i content-security-policy
 GitHub 推送 main 或发布版本标签
   -> GitHub Actions 构建 linux/amd64 镜像
   -> 发布 ghcr.io/q807738511/vaulthub:latest
-  -> 版本标签同时发布 ghcr.io/q807738511/vaulthub:0.6.7
+  -> 版本标签同时发布 ghcr.io/q807738511/vaulthub:0.6.8
   -> 自动创建对应 GitHub Release
   -> NAS Watchtower 每 5 分钟检查
   -> 自动拉取并重启 VaultHub
