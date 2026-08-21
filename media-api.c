@@ -270,6 +270,13 @@ static int url_decode(const char *src, char *dst, size_t cap) {
   }
   dst[n]=0; return 0;
 }
+static int url_decode_component(const char *src, char *dst, size_t cap) {
+  size_t n=strcspn(src,"&"); if(!n||n>=MAX_PATH_LEN)return -1;
+  char encoded[MAX_PATH_LEN];
+  for(size_t i=0;i<n;i++) encoded[i]=src[i]=='+'?' ':src[i];
+  encoded[n]=0;
+  return url_decode(encoded,dst,cap);
+}
 static int safe_relative(const char *path) {
   if (!*path||*path=='/'||strchr(path,'\\')) return 0;
   const char *p=path; while (*p) { const char *end=strchr(p,'/'); size_t n=end?(size_t)(end-p):strlen(p); if (!n||(n==1&&p[0]=='.')||(n==2&&p[0]=='.'&&p[1]=='.')) return 0; if (!end) break; p=end+1; }
@@ -303,6 +310,15 @@ static int parse_range(const char *request, off_t size, off_t *start, off_t *end
 static void serve_file(int fd, const char *method, const char *url, const char *request) {
   const char *prefix="/api/media/file/"; char decoded[MAX_PATH_LEN]; if (url_decode(url,decoded,sizeof(decoded))||strncmp(decoded,prefix,strlen(prefix))) { json_error(fd,400,"invalid path"); return; }
   char *id=decoded+strlen(prefix),*slash=strchr(id,'/'); if(!slash){json_error(fd,400,"file path required");return;} *slash=0; const char *rel=slash+1; if(!valid_id(id)||!safe_relative(rel)){json_error(fd,400,"invalid path");return;}
+  struct library libs[MAX_LIBS];int count=0;if(load_libraries(libs,&count)){json_error(fd,500,"configuration unavailable");return;}const char *base=NULL;for(int i=0;i<count;i++)if(!strcmp(libs[i].id,id))base=libs[i].path;if(!base){json_error(fd,404,"library not found");return;}
+  char candidate[MAX_PATH_LEN],canonical[MAX_PATH_LEN];int z=snprintf(candidate,sizeof(candidate),"%s/%s",base,rel);struct stat st;if(z<0||(size_t)z>=sizeof(candidate)||!realpath(candidate,canonical)||!path_is_under(canonical,base)||stat(canonical,&st)||!S_ISREG(st.st_mode)){json_error(fd,404,"file not found");return;}
+  off_t start=0,end=st.st_size?st.st_size-1:0;int ranged=parse_range(request,st.st_size,&start,&end);char extra[256];if(ranged<0){snprintf(extra,sizeof(extra),"Content-Range: bytes */%lld\r\nAccept-Ranges: bytes\r\n",(long long)st.st_size);send_headers(fd,416,"application/json",0,extra);return;}
+  off_t len=st.st_size?end-start+1:0;if(ranged)snprintf(extra,sizeof(extra),"Accept-Ranges: bytes\r\nContent-Range: bytes %lld-%lld/%lld\r\n",(long long)start,(long long)end,(long long)st.st_size);else snprintf(extra,sizeof(extra),"Accept-Ranges: bytes\r\n");send_headers(fd,ranged?206:200,mime_type(canonical),len,extra);if(!strcmp(method,"HEAD")||!len)return;
+  int file=open(canonical,O_RDONLY);if(file<0)return;if(lseek(file,start,SEEK_SET)<0){close(file);return;}char buf[65536];off_t left=len;while(left>0){size_t want=left<(off_t)sizeof(buf)?(size_t)left:sizeof(buf);ssize_t n=read(file,buf,want);if(n<=0)break;size_t sent=0;while(sent<(size_t)n){ssize_t w=write(fd,buf+sent,(size_t)n-sent);if(w<=0){left=0;break;}sent+=(size_t)w;}left-=n;}close(file);
+}
+static void serve_file_query(int fd, const char *method, const char *query, const char *request) {
+  const char *raw_id=query_value(query,"id"),*raw_path=query_value(query,"path"); char id[MAX_ID],rel[MAX_PATH_LEN];
+  if(!raw_id||!raw_path||url_decode_component(raw_id,id,sizeof(id))||url_decode_component(raw_path,rel,sizeof(rel))||!valid_id(id)||!safe_relative(rel)){json_error(fd,400,"invalid path");return;}
   struct library libs[MAX_LIBS];int count=0;if(load_libraries(libs,&count)){json_error(fd,500,"configuration unavailable");return;}const char *base=NULL;for(int i=0;i<count;i++)if(!strcmp(libs[i].id,id))base=libs[i].path;if(!base){json_error(fd,404,"library not found");return;}
   char candidate[MAX_PATH_LEN],canonical[MAX_PATH_LEN];int z=snprintf(candidate,sizeof(candidate),"%s/%s",base,rel);struct stat st;if(z<0||(size_t)z>=sizeof(candidate)||!realpath(candidate,canonical)||!path_is_under(canonical,base)||stat(canonical,&st)||!S_ISREG(st.st_mode)){json_error(fd,404,"file not found");return;}
   off_t start=0,end=st.st_size?st.st_size-1:0;int ranged=parse_range(request,st.st_size,&start,&end);char extra[256];if(ranged<0){snprintf(extra,sizeof(extra),"Content-Range: bytes */%lld\r\nAccept-Ranges: bytes\r\n",(long long)st.st_size);send_headers(fd,416,"application/json",0,extra);return;}
@@ -410,6 +426,7 @@ static void handle_client(int fd) {
     const char *id=query&&strncmp(query,"id=",3)==0?query+3:""; char decoded_id[MAX_ID];
     if (url_decode(id,decoded_id,sizeof(decoded_id))) json_error(fd,400,"invalid id"); else delete_library(fd,decoded_id,req);
   }
+  else if(!strcmp(url,"/api/media/file")&&query&&(!strcmp(method,"GET")||!strcmp(method,"HEAD")))serve_file_query(fd,method,query,req);
   else if(!strncmp(url,"/api/media/file/",16)&&(!strcmp(method,"GET")||!strcmp(method,"HEAD")))serve_file(fd,method,url,req);
   else if(!strncmp(url,"/api/media/",11))json_error(fd,405,"method not allowed");else json_error(fd,404,"not found");
 done:free(req);close(fd);
