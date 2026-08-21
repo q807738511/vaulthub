@@ -359,6 +359,30 @@
   .media-file-meta { color: var(--text2); font-size: 11px; white-space: nowrap; }
   .media-viewer { margin-top: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); overflow: hidden; }
   .media-viewer-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 12px; border-bottom: 1px solid var(--border); }
+  .comic-shelf-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:12px 0; flex-wrap:wrap; }
+  .comic-shelf-tabs,.page-size-picker { display:inline-flex; gap:4px; padding:3px; border:1px solid var(--border); border-radius:9px; background:var(--card2); }
+  .comic-shelf-tabs button,.page-size-picker button { border:0; border-radius:6px; padding:7px 12px; color:var(--text2); background:transparent; cursor:pointer; }
+  .comic-shelf-tabs button.active,.page-size-picker button.active { color:#fff; background:var(--accent); }
+  .book-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:16px; }
+  .book-card { min-width:0; padding:10px; border:1px solid var(--border); border-radius:12px; background:var(--card); cursor:pointer; transition:transform .16s,border-color .16s; }
+  .book-card:hover { transform:translateY(-3px); border-color:var(--accent); }
+  .book-cover { position:relative; aspect-ratio:3/4; border-radius:7px 11px 11px 7px; overflow:hidden; display:flex; align-items:center; justify-content:center; padding:15px; color:#fff; text-align:center; box-shadow:inset 7px 0 rgba(0,0,0,.18),0 8px 18px rgba(0,0,0,.24); }
+  .book-cover::after { content:""; position:absolute; inset:0; background:linear-gradient(125deg,transparent 15%,rgba(255,255,255,.18) 45%,transparent 62%); }
+  .book-cover-title { position:relative; z-index:1; font-size:15px; font-weight:700; line-height:1.45; word-break:break-word; text-shadow:0 1px 2px rgba(0,0,0,.4); }
+  .book-card-title { margin-top:9px; color:var(--text); font-size:13px; line-height:1.4; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+  .book-card-meta { margin-top:5px; color:var(--text2); font-size:11px; display:flex; justify-content:space-between; gap:6px; }
+  .book-progress { height:3px; margin-top:7px; border-radius:4px; overflow:hidden; background:var(--border); }
+  .book-progress span { display:block; height:100%; background:var(--green); }
+  .media-reader-overlay { position:absolute; inset:0; z-index:60; display:flex; flex-direction:column; background:var(--bg); min-height:calc(100vh - var(--media-chrome-offset)); }
+  .media-reader-head { flex:0 0 auto; min-height:50px; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 12px; border-bottom:1px solid var(--border); background:var(--bg2); }
+  .media-reader-title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .media-reader-close { flex:0 0 auto; width:36px; height:36px; border-radius:50%; border:1px solid var(--border); color:var(--text); background:var(--card2); cursor:pointer; font-size:18px; }
+  .media-reader-body { flex:1; min-height:0; overflow:auto; display:flex; align-items:flex-start; justify-content:center; background:#17191d; }
+  .media-reader-body iframe { width:100%; height:100%; min-height:calc(100vh - var(--media-chrome-offset) - 52px); border:0; background:#fff; }
+  .media-reader-body img { display:block; max-width:100%; max-height:none; object-fit:contain; margin:auto; }
+  .media-reader-body .media-text { width:min(860px,100%); min-height:100%; margin:0; padding:clamp(24px,5vw,72px); box-sizing:border-box; color:#30281f; background:#f4ecd8; font-family:Georgia,"Noto Serif SC",serif; font-size:clamp(15px,1.5vw,19px); line-height:1.9; white-space:pre-wrap; box-shadow:0 0 35px rgba(0,0,0,.45); }
+  .reader-book-fallback { width:min(520px,90%); margin:auto; text-align:center; color:#eee; }
+  #view-comic { position:relative; }
   .media-viewer-body { padding: 12px; max-height: 72vh; overflow: auto; }
   .media-viewer img { display: block; max-width: 100%; height: auto; margin: 0 auto; }
   .media-viewer audio { width: 100%; }
@@ -374,6 +398,8 @@
     .media-mode { flex: 1; }
     .media-file-row { grid-template-columns: minmax(0,1fr) auto; }
     .media-file-meta { display: none; }
+    .book-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+    .media-reader-overlay { position:fixed; inset:0; z-index:300; min-height:100vh; }
   }
   /* PT 子页 */
   .ptsub-panel { display: none; }
@@ -488,7 +514,7 @@
   <div class="add-board-btn" onclick="openModuleModal()">
     <span>＋</span><span data-i18n="addBoardNav">添加模块</span>
   </div>
-  <div class="sidebar-foot">v0.6.5 · Built-in System Monitor</div>
+  <div class="sidebar-foot">v0.6.7 · Comic Bookshelf Reader</div>
 </aside>
 
 <!-- ===== 主区域 ===== -->
@@ -1064,7 +1090,7 @@
   <div class="modal">
     <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
     <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
-    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.6.5 · Built-in System Monitor</b></div>
+    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.6.7 · Comic Bookshelf Reader</b></div>
     <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>HTML / CSS / JS · 单文件</b></div>
     <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>VaultHub 内置系统监控</b></div>
     <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>
@@ -1704,6 +1730,29 @@ function openActiveMediaExternal(group) {
 /* ================= 本地媒体库 ================= */
 let localMediaLibraries = [];
 const localMediaSelection = {};
+const COMPLETED_PROGRESS = 99.9;
+let comicShelfView = "shelf";
+let mediaPageSize = 20;
+let activeReader = null;
+function mediaStateKey(libId, path) { return `vaulthub_reading_${libId}_${path}`; }
+function readingState(libId, path) {
+  try { return JSON.parse(localStorage.getItem(mediaStateKey(libId, path))) || { progress: 0 }; } catch (e) { return { progress: 0 }; }
+}
+function saveReadingProgress(libId, path, progress) {
+  const value = Math.max(0, Math.min(100, Number(progress) || 0));
+  try { localStorage.setItem(mediaStateKey(libId, path), JSON.stringify({ progress: value, updatedAt: Date.now() })); } catch (e) {}
+  return value;
+}
+function setComicShelfView(view) {
+  comicShelfView = view === "completed" ? "completed" : "shelf";
+  const lib = findMediaLibrary(localMediaSelection.comic);
+  if (lib) loadLocalFiles("comic", lib, 0);
+}
+function setMediaPageSize(size) {
+  mediaPageSize = [20, 50, 100].includes(Number(size)) ? Number(size) : 20;
+  const lib = findMediaLibrary(localMediaSelection.comic);
+  if (lib) loadLocalFiles("comic", lib, 0);
+}
 function mediaTypeForGroup(group) { return group === "audio" ? "audio" : "comic"; }
 function mediaTypeName(type) { return ({ audio: "音乐", comic: "漫画", book: "电子书" })[type] || type; }
 function mediaAdminHeaders() {
@@ -1781,18 +1830,30 @@ async function loadLocalFiles(group, lib, offset = 0) {
   const target = document.getElementById("local-media-content-" + group);
   if (!target) return;
   try {
-    const res = await fetch(`/api/media/files?id=${encodeURIComponent(lib.id)}&offset=${offset}&limit=100`, { cache: "no-store" });
+    const pageSize = group === "comic" ? mediaPageSize : 100;
+    const res = await fetch(`/api/media/files?id=${encodeURIComponent(lib.id)}&offset=${offset}&limit=${pageSize}`, { cache: "no-store" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    const files = normalizeFilePayload(data).sort((a, b) => String(a.path).localeCompare(String(b.path), "zh-CN"));
+    let files = normalizeFilePayload(data).sort((a, b) => String(a.path).localeCompare(String(b.path), "zh-CN"));
     if (data.status === "indexing") {
       target.innerHTML = '<div class="empty-tip">正在后台建立低速索引，请稍后刷新。扫描不会阻塞页面。</div>';
       return;
     }
-    if (!files.length) { target.innerHTML = '<div class="empty-tip">该媒体库中暂无支持的文件</div>'; return; }
-    const prev = offset > 0 ? `<button class="btn" onclick="loadLocalFiles('${esc(group)}',findMediaLibrary('${esc(lib.id)}'),${Math.max(0, offset - 100)})">← 上一页</button>` : "";
-    const next = data.has_more ? `<button class="btn" onclick="loadLocalFiles('${esc(group)}',findMediaLibrary('${esc(lib.id)}'),${offset + 100})">下一页 →</button>` : "";
-    target.innerHTML = `<div class="media-file-list">${files.map(file => renderLocalFileRow(group, lib, file)).join("")}</div><div class="media-actions">${prev}<span class="media-file-meta">${offset + 1}-${offset + files.length} / ${Number(data.total) || files.length}</span>${next}</div>`;
+    if (group === "comic") {
+      files = files.filter(file => {
+        const progress = Number(readingState(lib.id, String(file.path)).progress || 0);
+        return comicShelfView === "completed" ? progress >= COMPLETED_PROGRESS : progress < COMPLETED_PROGRESS;
+      });
+    }
+    const prev = offset > 0 ? `<button class="btn" onclick="loadLocalFiles('${esc(group)}',findMediaLibrary('${esc(lib.id)}'),${Math.max(0, offset - pageSize)})">← 上一页</button>` : "";
+    const next = data.has_more ? `<button class="btn" onclick="loadLocalFiles('${esc(group)}',findMediaLibrary('${esc(lib.id)}'),${offset + pageSize})">下一页 →</button>` : "";
+    const pager = `<div class="media-actions">${prev}<span class="media-file-meta">${offset + 1}-${offset + files.length} / ${Number(data.total) || files.length}</span>${next}</div>`;
+    if (group === "comic") {
+      const toolbar = `<div class="comic-shelf-toolbar"><div class="comic-shelf-tabs"><button class="${comicShelfView === "shelf" ? "active" : ""}" onclick="setComicShelfView('shelf')">📚 书架</button><button class="${comicShelfView === "completed" ? "active" : ""}" onclick="setComicShelfView('completed')">✓ 已读收藏</button></div><label class="page-size-picker">每页 <select id="mediaPageSize" onchange="setMediaPageSize(this.value)"><option value="20"${pageSize===20?' selected':''}>20</option><option value="50"${pageSize===50?' selected':''}>50</option><option value="100"${pageSize===100?' selected':''}>100</option></select></label></div>`;
+      target.innerHTML = `${toolbar}${files.length ? `<div class="book-grid">${files.map(file => renderBookCard(group, lib, file)).join("")}</div>` : `<div class="empty-tip">${comicShelfView === "completed" ? "还没有读完的书" : "当前页没有未读书籍"}</div>`}${pager}`;
+    } else {
+      target.innerHTML = `${files.length ? `<div class="media-file-list">${files.map(file => renderLocalFileRow(group, lib, file)).join("")}</div>` : '<div class="empty-tip">该媒体库中暂无支持的文件</div>'}${pager}`;
+    }
   } catch (err) {
     target.innerHTML = `<div class="media-error">文件列表读取失败：${esc(err.message)}</div>`;
   }
@@ -1812,13 +1873,38 @@ function renderLocalFileRow(group, lib, file) {
   const action = viewable ? "查看" : (["cbz","zip","cbr","epub"].includes(ext) ? "打开" : "下载");
   return `<div class="media-file-row"><div class="media-file-name" title="${esc(path)}">${esc(path)}</div><span class="media-file-meta">${esc(ext.toUpperCase() || "FILE")} · ${formatFileSize(file.size)}</span><button class="btn" data-media-group="${esc(group)}" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openLocalMediaButton(this)">${action}</button></div>`;
 }
+function displayBookTitle(path) {
+  return String(path).split("/").pop().replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim() || "未命名书籍";
+}
+function coverGradient(title) {
+  let hash = 0; for (const char of title) hash = ((hash << 5) - hash + char.charCodeAt(0)) | 0;
+  const hue = Math.abs(hash) % 360, hue2 = (hue + 55) % 360;
+  return `linear-gradient(145deg,hsl(${hue} 58% 38%),hsl(${hue2} 68% 24%))`;
+}
+function renderBookCard(group, lib, file) {
+  const path = String(file.path), title = displayBookTitle(path), ext = fileExt(path).toUpperCase() || "BOOK";
+  const progress = Number(readingState(lib.id, path).progress || 0);
+  return `<article class="book-card" data-media-group="${esc(group)}" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openLocalMediaButton(this)"><div class="book-cover" style="background:${coverGradient(title)}"><span class="book-cover-title">${esc(title)}</span></div><div class="book-card-title" title="${esc(path)}">${esc(title)}</div><div class="book-card-meta"><span>${esc(ext)}</span><span>${progress ? progress.toFixed(1)+"%" : "新入书架"}</span></div><div class="book-progress"><span style="width:${Math.min(100,progress)}%"></span></div></article>`;
+}
 function openLocalMediaButton(button) {
   openLocalMedia(button.dataset.mediaGroup, button.dataset.mediaLibrary, button.dataset.mediaPath);
 }
 function findMediaLibrary(id) { return localMediaLibraries.find(lib => lib.id === id); }
-function viewerShell(group, path, body, url) {
+function viewerShell(group, lib, path, body, url) {
   const download = `${url}${url.includes("?") ? "&" : "?"}download=1`;
-  return `<div class="media-viewer"><div class="media-viewer-head"><strong title="${esc(path)}">${esc(path)}</strong><div class="media-actions"><a class="btn" href="${esc(url)}" target="_blank" rel="noopener">↗ 打开</a><a class="btn" href="${esc(download)}" download>↓ 下载</a><button class="icon-btn" title="关闭" onclick="closeLocalViewer('${esc(group)}')">✕</button></div></div>${body}</div>`;
+  return `<div class="media-reader-overlay"><div class="media-reader-head"><strong class="media-reader-title" title="${esc(path)}">${esc(displayBookTitle(path))}</strong><div class="media-actions"><button class="btn" onclick="markReaderCompleted()">✓ 标记已读</button><a class="btn" href="${esc(download)}" download>↓ 下载</a><button class="media-reader-close" title="关闭并返回书架" onclick="closeLocalViewer('${esc(group)}')">✕</button></div></div><div class="media-reader-body" data-reader-scroll onscroll="trackReaderProgress(this)">${body}</div></div>`;
+}
+function trackReaderProgress(scroller) {
+  if (!activeReader) return;
+  const max = scroller.scrollHeight - scroller.clientHeight;
+  if (max <= 2) return;
+  const progress = Math.min(100, scroller.scrollTop / max * 100);
+  saveReadingProgress(activeReader.libId, activeReader.path, progress);
+}
+function markReaderCompleted() {
+  if (!activeReader) return;
+  saveReadingProgress(activeReader.libId, activeReader.path, 100);
+  toast("✅ 已归档到已读收藏");
 }
 async function openLocalMedia(group, libId, path) {
   const lib = findMediaLibrary(libId);
@@ -1826,27 +1912,37 @@ async function openLocalMedia(group, libId, path) {
   if (!lib || !viewer) return;
   const ext = fileExt(path);
   const url = mediaFileUrl(lib, path);
+  activeReader = { group, libId, path };
   let body = "";
   if (["mp3","flac","m4a","ogg","wav"].includes(ext)) body = `<div class="media-viewer-body"><audio controls autoplay preload="metadata" src="${esc(url)}"></audio></div>`;
-  else if (["jpg","jpeg","png","webp","gif"].includes(ext)) body = `<div class="media-viewer-body"><img src="${esc(url)}" alt="${esc(path)}"></div>`;
-  else if (ext === "pdf") body = `<iframe src="${esc(url)}" title="${esc(path)}"></iframe>`;
+  else if (["jpg","jpeg","png","webp","gif"].includes(ext)) body = `<img src="${esc(url)}" alt="${esc(path)}">`;
+  else if (ext === "pdf") body = `<iframe src="${esc(url)}#view=FitH" title="${esc(path)}"></iframe>`;
   else if (ext === "txt") {
-    viewer.innerHTML = viewerShell(group, path, '<div class="media-viewer-body"><div class="empty-tip">正在读取文本片段...</div></div>', url);
+    viewer.innerHTML = viewerShell(group, lib, path, '<div class="empty-tip">正在读取文本...</div>', url);
     try {
-      const res = await fetch(url, { headers: { Range: "bytes=0-1048575" }, cache: "no-store" });
-      if (!res.ok && res.status !== 206) throw new Error(`HTTP ${res.status}`);
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const text = await res.text();
-      const suffix = res.status === 206 ? '<div class="empty-tip">仅显示前 1MB，超大 TXT 请下载或拆分后阅读。</div>' : '';
-      body = `<div class="media-viewer-body">${suffix}<pre class="media-text">${esc(text)}</pre></div>`;
+      body = `<pre class="media-text">${esc(text)}</pre>`;
     } catch (err) { body = `<div class="media-error">文本读取失败：${esc(err.message)}</div>`; }
   } else {
-    const note = ["cbz","zip","cbr"].includes(ext) ? "压缩漫画可在新窗口打开或下载后使用漫画阅读器查看。" : ext === "epub" ? "EPUB 可下载后使用电子书阅读器打开。" : "该格式可下载或交给浏览器打开。";
-    body = `<div class="media-viewer-body"><div class="empty-tip">${note}</div></div>`;
+    const note = ["cbz","zip","cbr"].includes(ext) ? "该漫画压缩包已生成书架封面。当前浏览器不能直接解析此压缩格式，请下载后使用漫画阅读器打开。" : ext === "epub" ? "该 EPUB 已生成书架封面。当前内置阅读器暂不解包 EPUB，可在新窗口打开或下载阅读。" : "该格式可下载或交给浏览器打开。";
+    body = `<div class="reader-book-fallback"><div class="book-cover" style="max-width:220px;margin:0 auto 24px;background:${coverGradient(displayBookTitle(path))}"><span class="book-cover-title">${esc(displayBookTitle(path))}</span></div><p>${note}</p><p><a class="btn btn-primary" href="${esc(url)}" target="_blank" rel="noopener">↗ 尝试在浏览器打开</a></p></div>`;
   }
-  viewer.innerHTML = viewerShell(group, path, body, url);
-  viewer.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  viewer.innerHTML = viewerShell(group, lib, path, body, url);
+  const overlay = viewer.querySelector(".media-reader-overlay");
+  if (overlay) overlay.scrollIntoView({ block: "start" });
 }
-function closeLocalViewer(group) { const el = document.getElementById("local-media-viewer-" + group); if (el) el.innerHTML = ""; }
+function closeLocalViewer(group) {
+  const prior = activeReader;
+  const el = document.getElementById("local-media-viewer-" + group);
+  if (el) el.innerHTML = "";
+  activeReader = null;
+  if (group === "comic") {
+    setComicShelfView("shelf");
+    if (prior && readingState(prior.libId, prior.path).progress >= COMPLETED_PROGRESS) toast("📚 已读文档已移入收藏");
+  }
+}
 function showMediaLibraryConfig(group) {
   const modal = document.getElementById("mediaLibraryModal");
   const type = document.getElementById("mediaLibType");
