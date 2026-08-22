@@ -25,6 +25,10 @@ with tempfile.TemporaryDirectory(prefix="vaulthub-media-test-", dir="/opt/data")
         (library / f"book-{i:03}.txt").write_text(f"book {i}\n", encoding="utf-8")
     special = library / "《白妇谱》（未删节全本）#特别?版.epub"
     special.write_bytes(b"special-ebook-content")
+    plus_dir = library / "A++乱伦" / "A++待分类乱伦篇"
+    plus_dir.mkdir(parents=True)
+    plus_file = plus_dir / "《白妇谱》（未删节全本）.txt"
+    plus_file.write_bytes(b"plus-path-content")
     env = os.environ | {
         "MEDIA_CONFIG": str(root / "libraries.json"),
         "MEDIA_INDEX_DIR": str(root / "indexes"),
@@ -47,21 +51,30 @@ with tempfile.TemporaryDirectory(prefix="vaulthub-media-test-", dir="/opt/data")
         page = None
         while time.time() < deadline:
             status, page = request("GET", "/api/media/files?id=books&offset=0&limit=100")
-            if status == 200 and page.get("total") == 251: break
+            if status == 200 and page.get("total") == 252: break
             time.sleep(.1)
         assert status == 200, (status, page)
-        assert page["total"] == 251, page
+        assert page["total"] == 252, page
         assert len(page["files"]) == 100, len(page["files"])
         assert page["has_more"] is True
         status, page2 = request("GET", "/api/media/files?id=books&offset=200&limit=100")
         assert status == 200
-        assert len(page2["files"]) == 51
+        assert len(page2["files"]) == 52
         assert page2["has_more"] is False
         encoded = urllib.parse.quote(str(special.name), safe="")
         status, payload = request("GET", f"/api/media/file?id=books&path={encoded}", raw=True)
         assert status == 200, (status, payload)
         assert payload == b"special-ebook-content", payload
-        print("PASS: unrestricted mapped path, async index, config-only list, paginated files, special ebook URL")
+        plus_rel = "A++乱伦/A++待分类乱伦篇/《白妇谱》（未删节全本）.txt"
+        encoded_plus = urllib.parse.quote(plus_rel, safe="")
+        status, payload = request("GET", f"/api/media/file?id=books&path={encoded_plus}", raw=True)
+        assert status == 200, (status, payload)
+        assert payload == b"plus-path-content", payload
+        proxied = encoded_plus.replace("%2B", "+").replace("%2F", "/")
+        status, payload = request("GET", "/api/media/file?id=books&path=" + proxied, raw=True)
+        assert status == 200, (status, payload)
+        assert payload == b"plus-path-content", payload
+        print("PASS: unrestricted mapped path, async index, config-only list, paginated files, special and plus-path URLs")
     finally:
         proc.send_signal(signal.SIGTERM)
         try: proc.wait(timeout=2)
