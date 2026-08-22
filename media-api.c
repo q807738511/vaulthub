@@ -271,11 +271,12 @@ static int url_decode(const char *src, char *dst, size_t cap) {
   dst[n]=0; return 0;
 }
 static int url_decode_component(const char *src, char *dst, size_t cap) {
-  size_t n=strcspn(src,"&"); if(!n||n>=MAX_PATH_LEN)return -1;
+  size_t n = strcspn(src, "&");
+  if (!n || n >= MAX_PATH_LEN) return -1;
   char encoded[MAX_PATH_LEN];
-  for(size_t i=0;i<n;i++) encoded[i]=src[i]=='+'?' ':src[i];
-  encoded[n]=0;
-  return url_decode(encoded,dst,cap);
+  for (size_t i = 0; i < n; i++) encoded[i] = src[i];
+  encoded[n] = 0;
+  return url_decode(encoded, dst, cap);
 }
 static int safe_relative(const char *path) {
   if (!*path||*path=='/'||strchr(path,'\\')) return 0;

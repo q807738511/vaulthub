@@ -31,6 +31,6 @@ assert 'loadLocalFiles("audio"' in html
 assert 'group === "audio" ? audioPageSize' in html, "audio list still uses fixed page size"
 assert 'Bangumi' in html and 'api.bgm.tv' in html, "comic cover scraper lacks Bangumi source"
 assert 'mediaFileUrl(lib, path)' in html, "audio reader does not use stable query-parameter file URL"
-assert 'url.searchParams.set("path", String(path))' in html, "reader path is not query-parameter encoded"
+assert 'encodeURIComponent(String(path))' in html, "reader path is not percent-encoded in query transmission"
 assert 'serve_file_query' in media, "media API lacks stable query file reader"
 print("PASS: audio controls, metadata views, Bangumi source, and stable ebook URLs are present")
