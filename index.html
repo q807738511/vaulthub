@@ -393,6 +393,29 @@
   .media-path-row { display: grid; grid-template-columns: minmax(0,1fr) 34px; gap: 8px; margin-bottom: 8px; }
   .media-path-row .icon-btn { width: 34px; height: 34px; }
   .media-error { color: var(--red); padding: 12px; border: 1px solid rgba(248,81,73,.35); border-radius: 8px; background: rgba(248,81,73,.08); }
+  .audio-view-tabs { display:inline-flex; gap:4px; padding:3px; border:1px solid var(--border); border-radius:9px; background:var(--card2); }
+  .audio-view-tabs button { border:0; border-radius:6px; padding:7px 12px; color:var(--text2); background:transparent; cursor:pointer; }
+  .audio-view-tabs button.active { color:#fff; background:var(--accent); }
+  .audio-album-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:14px; margin-bottom:16px; }
+  .audio-album-card { min-width:0; border:1px solid var(--border); border-radius:10px; background:var(--card); overflow:hidden; cursor:pointer; }
+  .audio-album-card:hover { border-color:var(--accent); }
+  .audio-album-cover { aspect-ratio:1; display:flex; align-items:center; justify-content:center; padding:14px; color:#fff; text-align:center; font-weight:700; line-height:1.4; background:linear-gradient(145deg,#284b63,#1b2838); }
+  .audio-album-cover img { width:100%; height:100%; object-fit:cover; }
+  .audio-album-info { padding:9px 10px; }
+  .audio-album-info strong { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .audio-album-info small { display:block; margin-top:4px; color:var(--text2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .audio-player { position:fixed; z-index:250; left:var(--sidebar-w); right:0; bottom:0; display:none; align-items:center; gap:12px; min-height:74px; padding:10px 18px; border-top:1px solid var(--border); background:rgba(22,27,34,.96); box-shadow:0 -8px 26px rgba(0,0,0,.28); backdrop-filter:blur(12px); }
+  .audio-player.show { display:flex; }
+  .audio-player-cover { width:52px; height:52px; flex:0 0 52px; border-radius:6px; object-fit:cover; background:linear-gradient(145deg,#284b63,#1b2838); }
+  .audio-player-main { min-width:0; flex:1; }
+  .audio-player-title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
+  .audio-player-meta { color:var(--text2); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:4px; }
+  .audio-player-controls { display:flex; align-items:center; gap:6px; }
+  .audio-player-controls button { min-width:34px; height:32px; padding:0 9px; border:1px solid var(--border); border-radius:6px; color:var(--text); background:var(--card2); cursor:pointer; }
+  .audio-player-controls button:hover { border-color:var(--accent); color:var(--accent); }
+  .audio-player audio { display:none; }
+  .audio-lyrics { max-width:720px; max-height:45vh; overflow:auto; margin:12px auto 0; padding:14px; white-space:pre-wrap; line-height:1.8; color:var(--text2); background:var(--card2); border-radius:8px; }
+  @media (max-width:768px) { .audio-player { left:0; padding:8px 10px; } .audio-player-cover { width:42px; height:42px; flex-basis:42px; } .audio-player-controls button { min-width:30px; padding:0 6px; } }
   @media (max-width: 768px) {
     .media-login-grid { grid-template-columns: 1fr; }
     .media-modebar { align-items: stretch; flex-direction: column; }
@@ -1103,6 +1126,42 @@
   </div>
 </div>
 
+<div class="audio-player" id="audio-bottom-player">
+  <img class="audio-player-cover" id="audioCover" alt="当前歌曲海报">
+  <div class="audio-player-main">
+    <div class="audio-player-title" id="audioPlayerTitle">未播放</div>
+    <div class="audio-player-meta" id="audioPlayerMeta">选择歌曲开始播放</div>
+  </div>
+  <div class="audio-player-controls">
+    <button title="上一曲" onclick="audioPrevious()">◀</button>
+    <button id="audioPauseButton" title="暂停或继续" onclick="audioTogglePause()">Ⅱ</button>
+    <button title="停止" onclick="audioStop()">■</button>
+    <button title="下一曲" onclick="audioNext()">▶</button>
+    <button title="歌曲详情与歌词" onclick="showAudioDetails()">ⓘ</button>
+  </div>
+  <audio id="audioPlayerElement" preload="metadata"></audio>
+</div>
+
+<div class="modal-mask" id="audioMetadataModal">
+  <div class="modal">
+    <h3>手动适配歌曲信息<button class="close" onclick="closeModal('audioMetadataModal')">✕</button></h3>
+    <input id="audioMetadataPath" type="hidden">
+    <div class="cfg-field"><label>歌曲名</label><input id="audioMetadataTitle" type="text"></div>
+    <div class="cfg-field"><label>歌手</label><input id="audioMetadataArtist" type="text"></div>
+    <div class="cfg-field"><label>专辑</label><input id="audioMetadataAlbum" type="text"></div>
+    <div class="cfg-field"><label>封面地址</label><input id="audioMetadataCover" type="url" placeholder="https://..."></div>
+    <div class="cfg-field"><label>歌词</label><textarea id="audioMetadataLyrics" style="width:100%;min-height:160px"></textarea></div>
+    <button class="btn btn-primary" onclick="saveManualAudioMetadata()">保存适配</button>
+  </div>
+</div>
+
+<div class="modal-mask" id="audioDetailsModal">
+  <div class="modal">
+    <h3>歌曲详情<button class="close" onclick="closeModal('audioDetailsModal')">✕</button></h3>
+    <div id="audioDetailsContent"></div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -1735,6 +1794,12 @@ const localMediaSelection = {};
 const COMPLETED_PROGRESS = 99.9;
 let comicShelfView = "shelf";
 let mediaPageSize = 20;
+let audioPageSize = 20;
+let audioView = "albums";
+let audioFiles = [];
+let audioCursor = 0;
+let activeAudio = null;
+const audioMetadataCache = "vaulthub_audio_metadata_v1";
 let activeReader = null;
 function mediaStateKey(libId, path) { return `vaulthub_reading_${libId}_${path}`; }
 function readingState(libId, path) {
@@ -1754,6 +1819,16 @@ function setMediaPageSize(size) {
   mediaPageSize = [20, 50, 100].includes(Number(size)) ? Number(size) : 20;
   const lib = findMediaLibrary(localMediaSelection.comic);
   if (lib) loadLocalFiles("comic", lib, 0);
+}
+function setAudioPageSize(size) {
+  audioPageSize = [20, 50, 100].includes(Number(size)) ? Number(size) : 20;
+  const lib = findMediaLibrary(localMediaSelection.audio);
+  if (lib) loadLocalFiles("audio", lib, 0);
+}
+function setAudioView(view) {
+  audioView = ["albums", "artists", "files"].includes(view) ? view : "albums";
+  const lib = findMediaLibrary(localMediaSelection.audio);
+  if (lib) loadLocalFiles("audio", lib, 0);
 }
 function mediaTypeForGroup(group) { return group === "audio" ? "audio" : "comic"; }
 function mediaTypeName(type) { return ({ audio: "音乐", comic: "漫画", book: "电子书" })[type] || type; }
@@ -1835,7 +1910,7 @@ async function loadLocalFiles(group, lib, offset = 0) {
   const target = document.getElementById("local-media-content-" + group);
   if (!target) return;
   try {
-    const pageSize = group === "comic" ? mediaPageSize : 100;
+    const pageSize = group === "comic" ? mediaPageSize : group === "audio" ? audioPageSize : 100;
     const res = await fetch(`/api/media/files?id=${encodeURIComponent(lib.id)}&offset=${offset}&limit=${pageSize}`, { cache: "no-store" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
@@ -1857,6 +1932,11 @@ async function loadLocalFiles(group, lib, offset = 0) {
       const toolbar = `<div class="comic-shelf-toolbar"><div class="comic-shelf-tabs"><button class="${comicShelfView === "shelf" ? "active" : ""}" onclick="setComicShelfView('shelf')">📚 书架</button><button class="${comicShelfView === "completed" ? "active" : ""}" onclick="setComicShelfView('completed')">✓ 已读收藏</button></div><div class="media-actions"><button class="btn" onclick="refreshBookCovers()">↻ 重新刮削封面</button><label class="page-size-picker">每页 <select id="mediaPageSize" onchange="setMediaPageSize(this.value)"><option value="20"${pageSize===20?' selected':''}>20</option><option value="50"${pageSize===50?' selected':''}>50</option><option value="100"${pageSize===100?' selected':''}>100</option></select></label></div></div>`;
       target.innerHTML = `${toolbar}${files.length ? `<div class="book-grid">${files.map(file => renderBookCard(group, lib, file)).join("")}</div>` : `<div class="empty-tip">${comicShelfView === "completed" ? "还没有读完的书" : "当前页没有未读书籍"}</div>`}${pager}`;
       scrapeVisibleBookCovers(target);
+    } else if (group === "audio") {
+      audioFiles = files;
+      audioCursor = offset;
+      target.innerHTML = renderAudioLibrary(lib, files, data);
+      scrapeAudioMetadata(target, lib, files);
     } else {
       target.innerHTML = `${files.length ? `<div class="media-file-list">${files.map(file => renderLocalFileRow(group, lib, file)).join("")}</div>` : '<div class="empty-tip">该媒体库中暂无支持的文件</div>'}${pager}`;
     }
@@ -1872,6 +1952,75 @@ function formatFileSize(size) {
   if (n < 1048576) return `${(n / 1024).toFixed(1)} KB`;
   return `${(n / 1048576).toFixed(1)} MB`;
 }
+function readAudioMetadata() {
+  try { return JSON.parse(localStorage.getItem(audioMetadataCache) || "{}") || {}; } catch (e) { return {}; }
+}
+function writeAudioMetadata(data) {
+  try { localStorage.setItem(audioMetadataCache, JSON.stringify(data)); } catch (e) {}
+}
+function audioBaseMetadata(path) {
+  const stem = displayBookTitle(path);
+  const parts = stem.split(" - ");
+  return { title: parts.length > 1 ? parts[parts.length - 1].trim() : stem, artist: parts.length > 1 ? parts[0].trim() : "未知歌手", album: "未知专辑", cover: "", lyrics: "" };
+}
+function audioMetadataFor(path) {
+  const all = readAudioMetadata();
+  return { ...audioBaseMetadata(path), ...(all[path] || {}) };
+}
+async function scrapeAudioMetadata(host, lib, files) {
+  const all = readAudioMetadata();
+  const pending = files.filter(file => !all[file.path]);
+  for (const file of pending) {
+    const meta = audioBaseMetadata(String(file.path));
+    meta.checkedAt = Date.now();
+    all[file.path] = meta;
+  }
+  writeAudioMetadata(all);
+  if (pending.length) renderAudioLibraryContent(host, lib, files);
+}
+function audioCoverData(meta, title) {
+  return meta.cover ? `<img src="${esc(meta.cover)}" alt="${esc(title)}" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:${JSON.stringify(title)}}))">` : esc(title);
+}
+function renderAudioAlbums(lib, files) {
+  const groups = new Map();
+  files.forEach(file => { const meta = audioMetadataFor(String(file.path)); const key = meta.album || "未知专辑"; if (!groups.has(key)) groups.set(key, { meta, files: [] }); groups.get(key).files.push(file); });
+  return `<div class="audio-album-grid">${[...groups.entries()].map(([album, group]) => `<article class="audio-album-card" onclick="playAudioFile('${esc(lib.id)}','${esc(group.files[0].path)}')"><div class="audio-album-cover" style="background:${coverGradient(album)}">${audioCoverData(group.meta, album)}</div><div class="audio-album-info"><strong>${esc(album)}</strong><small>${esc(group.meta.artist)} · ${group.files.length} 首</small></div></article>`).join("")}</div>`;
+}
+function renderAudioArtists(lib, files) {
+  const groups = new Map();
+  files.forEach(file => { const meta = audioMetadataFor(String(file.path)); const key = meta.artist || "未知歌手"; if (!groups.has(key)) groups.set(key, []); groups.get(key).push(file); });
+  return `<div class="audio-album-grid">${[...groups.entries()].map(([artist, songs]) => `<article class="audio-album-card" onclick="playAudioFile('${esc(lib.id)}','${esc(songs[0].path)}')"><div class="audio-album-cover" style="background:${coverGradient(artist)}">${esc(artist)}</div><div class="audio-album-info"><strong>${esc(artist)}</strong><small>${songs.length} 首歌曲</small></div></article>`).join("")}</div>`;
+}
+function renderAudioLibraryContent(host, lib, files) {
+  const pager = `<div class="media-actions"><button class="btn" ${audioCursor <= 0 ? "disabled" : ""} onclick="loadLocalFiles('audio',findMediaLibrary('${esc(lib.id)}'),${Math.max(0,audioCursor-audioPageSize)})">← 上一页</button><span class="media-file-meta">${audioCursor + 1}-${audioCursor + files.length}</span><button class="btn" onclick="loadLocalFiles('audio',findMediaLibrary('${esc(lib.id)}'),${audioCursor + audioPageSize})">下一页 →</button></div>`;
+  let body = audioView === "artists" ? renderAudioArtists(lib, files) : audioView === "files" ? `<div class="media-file-list">${files.map(file => renderAudioRow(lib, file)).join("")}</div>` : renderAudioAlbums(lib, files);
+  host.innerHTML = `<div class="comic-shelf-toolbar"><div class="audio-view-tabs"><button class="${audioView === "albums" ? "active" : ""}" onclick="setAudioView('albums')">专辑</button><button class="${audioView === "artists" ? "active" : ""}" onclick="setAudioView('artists')">歌手</button><button class="${audioView === "files" ? "active" : ""}" onclick="setAudioView('files')">文件</button></div><div class="media-actions"><button class="btn" onclick="refreshAudioMetadata()">↻ 重新刮削</button><label class="page-size-picker">每页 <select id="audioPageSize" onchange="setAudioPageSize(this.value)"><option value="20"${audioPageSize===20?' selected':''}>20</option><option value="50"${audioPageSize===50?' selected':''}>50</option><option value="100"${audioPageSize===100?' selected':''}>100</option></select></label></div></div>${body}${pager}`;
+}
+function renderAudioLibrary(lib, files) { const host = document.createElement("div"); renderAudioLibraryContent(host, lib, files); return host.innerHTML; }
+function renderAudioRow(lib, file) { const meta = audioMetadataFor(String(file.path)); return `<div class="media-file-row"><div class="media-file-name" title="${esc(file.path)}"><b>${esc(meta.title)}</b><small>${esc(meta.artist)} · ${esc(meta.album)}</small></div><span class="media-file-meta">${esc(fileExt(file.path).toUpperCase())}</span><div class="media-actions"><button class="btn" onclick="playAudioFile('${esc(lib.id)}','${esc(file.path)}')">▶</button><button class="btn" onclick="openAudioMetadata('${esc(file.path)}')">✎</button></div></div>`; }
+function refreshAudioMetadata() { try { localStorage.removeItem(audioMetadataCache); } catch (e) {} const lib = findMediaLibrary(localMediaSelection.audio); if (lib) loadLocalFiles("audio", lib, 0); toast("🔄 正在重新刮削音乐信息"); }
+function openAudioMetadata(path) { const meta = audioMetadataFor(path); document.getElementById("audioMetadataPath").value=path; document.getElementById("audioMetadataTitle").value=meta.title; document.getElementById("audioMetadataArtist").value=meta.artist; document.getElementById("audioMetadataAlbum").value=meta.album; document.getElementById("audioMetadataCover").value=meta.cover; document.getElementById("audioMetadataLyrics").value=meta.lyrics; openModal("audioMetadataModal"); }
+function manualAudioMetadata(path) { openAudioMetadata(path); }
+function saveManualAudioMetadata() { const path=document.getElementById("audioMetadataPath").value, all=readAudioMetadata(); all[path]={title:document.getElementById("audioMetadataTitle").value.trim()||audioBaseMetadata(path).title,artist:document.getElementById("audioMetadataArtist").value.trim()||"未知歌手",album:document.getElementById("audioMetadataAlbum").value.trim()||"未知专辑",cover:document.getElementById("audioMetadataCover").value.trim(),lyrics:document.getElementById("audioMetadataLyrics").value}; writeAudioMetadata(all); closeModal("audioMetadataModal"); const lib=findMediaLibrary(localMediaSelection.audio); if(lib) loadLocalFiles("audio",lib,audioCursor); }
+function playAudioFile(libId, path) {
+  const lib = findMediaLibrary(libId), player = document.getElementById("audioPlayerElement"); if (!lib || !player) return;
+  const index = audioFiles.findIndex(file => String(file.path) === String(path));
+  activeAudio = { libId, path, index: index < 0 ? 0 : index };
+  const meta = audioMetadataFor(path);
+  player.src = mediaFileUrl(lib, path); player.play().catch(() => {});
+  document.getElementById("audio-bottom-player").classList.add("show");
+  document.getElementById("audioPlayerTitle").textContent = meta.title;
+  document.getElementById("audioPlayerMeta").textContent = `${meta.artist} · ${meta.album}`;
+  const cover = document.getElementById("audioCover"); cover.src = meta.cover || ""; cover.alt = `${meta.title} 海报`;
+  document.getElementById("audioPauseButton").textContent = "Ⅱ";
+}
+function audioTogglePause() { const player=document.getElementById("audioPlayerElement"); if(!player?.src) return; if(player.paused) { player.play().catch(() => {}); document.getElementById("audioPauseButton").textContent="Ⅱ"; } else { player.pause(); document.getElementById("audioPauseButton").textContent="▶"; } }
+function audioStop() { const player=document.getElementById("audioPlayerElement"); if(!player) return; player.pause(); player.currentTime=0; document.getElementById("audioPauseButton").textContent="▶"; }
+function audioPrevious() { if(!activeAudio || !audioFiles.length) return; const index=(activeAudio.index-1+audioFiles.length)%audioFiles.length; playAudioFile(activeAudio.libId,audioFiles[index].path); }
+function audioNext() { if(!activeAudio || !audioFiles.length) return; const index=(activeAudio.index+1)%audioFiles.length; playAudioFile(activeAudio.libId,audioFiles[index].path); }
+function showAudioDetails() { if(!activeAudio) return; const meta=audioMetadataFor(activeAudio.path); document.getElementById("audioDetailsContent").innerHTML=`<h4>${esc(meta.title)}</h4><p>${esc(meta.artist)} · ${esc(meta.album)}</p>${meta.lyrics ? `<pre class="audio-lyrics">${esc(meta.lyrics)}</pre>` : '<div class="empty-tip">暂无歌词，可通过“文件”视图的手动适配填写。</div>'}`; openModal("audioDetailsModal"); }
+document.getElementById("audioPlayerElement")?.addEventListener("ended", audioNext);
+
 function renderLocalFileRow(group, lib, file) {
   const path = String(file.path);
   const ext = fileExt(path);
@@ -1904,6 +2053,15 @@ async function scrapeBookCover(img) {
   if (cached?.url) { img.hidden=false; img.src=cached.url; return; }
   if (cached?.checkedAt && Date.now()-cached.checkedAt < 86400000) return;
   let coverUrl = "";
+  /* 漫画首选国内 Bangumi 元数据源，失败后继续使用国际书目源。 */
+  try {
+    const bgm = await fetch("https://api.bgm.tv/v0/search/subjects", { method:"POST", headers:{"Content-Type":"application/json","User-Agent":"VaultHub/0.6.9"}, body:JSON.stringify({ keyword:title, sort:"match", filter:{ type:[1], nsfw:false } }), cache:"force-cache" });
+    if (bgm.ok) {
+      const data = await bgm.json();
+      const item = data?.data?.find(entry => entry?.images?.large || entry?.images?.common || entry?.images?.medium);
+      coverUrl = item?.images?.large || item?.images?.common || item?.images?.medium || "";
+    }
+  } catch (e) {}
   try {
     const google = await fetch(`https://www.googleapis.com/books/v1/volumes?q=intitle:${encodeURIComponent(title)}&maxResults=3&printType=books`, { cache:"force-cache" });
     if (google.ok) {
