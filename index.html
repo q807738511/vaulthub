@@ -539,7 +539,7 @@
   <div class="add-board-btn" onclick="openModuleModal()">
     <span>＋</span><span data-i18n="addBoardNav">添加模块</span>
   </div>
-  <div class="sidebar-foot">v0.6.11 · Audio Click Fix</div>
+  <div class="sidebar-foot">v0.6.12 · Audio Click Fix</div>
 </aside>
 
 <!-- ===== 主区域 ===== -->
@@ -1115,7 +1115,7 @@
   <div class="modal">
     <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
     <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
-    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.6.11 · Audio Click Fix</b></div>
+    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.6.12 · Audio Click Fix</b></div>
     <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>HTML / CSS / JS · 单文件</b></div>
     <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>VaultHub 内置系统监控</b></div>
     <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>
@@ -1842,6 +1842,7 @@ function mediaAdminHeaders() {
   return token ? { "X-VaultHub-Token": token } : {};
 }
 function jsArg(value) { return JSON.stringify(String(value)); }
+function jsAttrArg(value) { return esc(jsArg(value)); }
 function mediaFileUrl(lib, path) {
   const query = `id=${encodeURIComponent(String(lib.id))}&path=${encodeURIComponent(String(path))}`;
   return `/api/media/file?${query}`;
@@ -1983,12 +1984,12 @@ function audioCoverData(meta, title) {
 function renderAudioAlbums(lib, files) {
   const groups = new Map();
   files.forEach(file => { const meta = audioMetadataFor(String(file.path)); const key = meta.album || "未知专辑"; if (!groups.has(key)) groups.set(key, { meta, files: [] }); groups.get(key).files.push(file); });
-  return `<div class="audio-album-grid">${[...groups.entries()].map(([album, group]) => `<article class="audio-album-card" onclick="playAudioFile(${jsArg(lib.id)},${jsArg(group.files[0].path)})"><div class="audio-album-cover" style="background:${coverGradient(album)}">${audioCoverData(group.meta, album)}</div><div class="audio-album-info"><strong>${esc(album)}</strong><small>${esc(group.meta.artist)} · ${group.files.length} 首</small></div></article>`).join("")}</div>`;
+  return `<div class="audio-album-grid">${[...groups.entries()].map(([album, group]) => `<article class="audio-album-card" onclick="playAudioFile(${jsAttrArg(lib.id)},${jsAttrArg(group.files[0].path)})"><div class="audio-album-cover" style="background:${coverGradient(album)}">${audioCoverData(group.meta, album)}</div><div class="audio-album-info"><strong>${esc(album)}</strong><small>${esc(group.meta.artist)} · ${group.files.length} 首</small></div></article>`).join("")}</div>`;
 }
 function renderAudioArtists(lib, files) {
   const groups = new Map();
   files.forEach(file => { const meta = audioMetadataFor(String(file.path)); const key = meta.artist || "未知歌手"; if (!groups.has(key)) groups.set(key, []); groups.get(key).push(file); });
-  return `<div class="audio-album-grid">${[...groups.entries()].map(([artist, songs]) => `<article class="audio-album-card" onclick="playAudioFile(${jsArg(lib.id)},${jsArg(songs[0].path)})"><div class="audio-album-cover" style="background:${coverGradient(artist)}">${esc(artist)}</div><div class="audio-album-info"><strong>${esc(artist)}</strong><small>${songs.length} 首歌曲</small></div></article>`).join("")}</div>`;
+  return `<div class="audio-album-grid">${[...groups.entries()].map(([artist, songs]) => `<article class="audio-album-card" onclick="playAudioFile(${jsAttrArg(lib.id)},${jsAttrArg(songs[0].path)})"><div class="audio-album-cover" style="background:${coverGradient(artist)}">${esc(artist)}</div><div class="audio-album-info"><strong>${esc(artist)}</strong><small>${songs.length} 首歌曲</small></div></article>`).join("")}</div>`;
 }
 function renderAudioLibraryContent(host, lib, files) {
   const pager = `<div class="media-actions"><button class="btn" ${audioCursor <= 0 ? "disabled" : ""} onclick="loadLocalFiles('audio',findMediaLibrary('${esc(lib.id)}'),${Math.max(0,audioCursor-audioPageSize)})">← 上一页</button><span class="media-file-meta">${audioCursor + 1}-${audioCursor + files.length}</span><button class="btn" onclick="loadLocalFiles('audio',findMediaLibrary('${esc(lib.id)}'),${audioCursor + audioPageSize})">下一页 →</button></div>`;
@@ -1996,7 +1997,7 @@ function renderAudioLibraryContent(host, lib, files) {
   host.innerHTML = `<div class="comic-shelf-toolbar"><div class="audio-view-tabs"><button class="${audioView === "albums" ? "active" : ""}" onclick="setAudioView('albums')">专辑</button><button class="${audioView === "artists" ? "active" : ""}" onclick="setAudioView('artists')">歌手</button><button class="${audioView === "files" ? "active" : ""}" onclick="setAudioView('files')">文件</button></div><div class="media-actions"><button class="btn" onclick="refreshAudioMetadata()">↻ 重新刮削</button><label class="page-size-picker">每页 <select id="audioPageSize" onchange="setAudioPageSize(this.value)"><option value="20"${audioPageSize===20?' selected':''}>20</option><option value="50"${audioPageSize===50?' selected':''}>50</option><option value="100"${audioPageSize===100?' selected':''}>100</option></select></label></div></div>${body}${pager}`;
 }
 function renderAudioLibrary(lib, files) { const host = document.createElement("div"); renderAudioLibraryContent(host, lib, files); return host.innerHTML; }
-function renderAudioRow(lib, file) { const meta = audioMetadataFor(String(file.path)); return `<div class="media-file-row"><div class="media-file-name" title="${esc(file.path)}"><b>${esc(meta.title)}</b><small>${esc(meta.artist)} · ${esc(meta.album)}</small></div><span class="media-file-meta">${esc(fileExt(file.path).toUpperCase())}</span><div class="media-actions"><button class="btn" onclick="playAudioFile(${jsArg(lib.id)},${jsArg(file.path)})">▶</button><button class="btn" onclick="openAudioMetadata(${jsArg(file.path)})">✎</button></div></div>`; }
+function renderAudioRow(lib, file) { const meta = audioMetadataFor(String(file.path)); return `<div class="media-file-row"><div class="media-file-name" title="${esc(file.path)}"><b>${esc(meta.title)}</b><small>${esc(meta.artist)} · ${esc(meta.album)}</small></div><span class="media-file-meta">${esc(fileExt(file.path).toUpperCase())}</span><div class="media-actions"><button class="btn" onclick="playAudioFile(${jsAttrArg(lib.id)},${jsAttrArg(file.path)})">▶</button><button class="btn" onclick="openAudioMetadata(${jsAttrArg(file.path)})">✎</button></div></div>`; }
 function refreshAudioMetadata() { try { localStorage.removeItem(audioMetadataCache); } catch (e) {} const lib = findMediaLibrary(localMediaSelection.audio); if (lib) loadLocalFiles("audio", lib, 0); toast("🔄 正在重新刮削音乐信息"); }
 function openAudioMetadata(path) { const meta = audioMetadataFor(path); document.getElementById("audioMetadataPath").value=path; document.getElementById("audioMetadataTitle").value=meta.title; document.getElementById("audioMetadataArtist").value=meta.artist; document.getElementById("audioMetadataAlbum").value=meta.album; document.getElementById("audioMetadataCover").value=meta.cover; document.getElementById("audioMetadataLyrics").value=meta.lyrics; openModal("audioMetadataModal"); }
 function manualAudioMetadata(path) { openAudioMetadata(path); }
