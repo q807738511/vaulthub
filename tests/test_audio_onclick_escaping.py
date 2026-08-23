@@ -10,8 +10,8 @@ assert "playAudioFile('${esc(lib.id)}','${esc(group.files[0].path)}')" not in ht
 assert "playAudioFile('${esc(lib.id)}','${esc(songs[0].path)}')" not in html, "artist audio play handler still uses HTML escaping as JS escaping"
 assert "openAudioMetadata('${esc(file.path)}')" not in html, "manual metadata handler still uses HTML escaping as JS escaping"
 assert 'onclick="playAudioFile(${jsAttrArg(lib.id)},${jsAttrArg(file.path)})"' in html, "file view play handler does not use HTML-attribute-safe JS literals"
-assert 'onclick="playAudioFile(${jsAttrArg(lib.id)},${jsAttrArg(group.files[0].path)})"' in html, "album card play handler does not use HTML-attribute-safe JS literals"
-assert 'onclick="playAudioFile(${jsAttrArg(lib.id)},${jsAttrArg(songs[0].path)})"' in html, "artist card play handler does not use HTML-attribute-safe JS literals"
+assert 'openAudioTracks(\'${esc(lib.id)}\',\'album\',${esc(JSON.stringify(album))})' in html, "album card track handler is not HTML-attribute-safe"
+assert 'openAudioTracks(\'${esc(lib.id)}\',\'artist\',${esc(JSON.stringify(artist))})' in html, "artist card track handler is not HTML-attribute-safe"
 assert 'onclick="openAudioMetadata(${jsAttrArg(file.path)})"' in html, "manual metadata handler does not use HTML-attribute-safe JS literals"
 
 print("PASS: audio inline handlers use HTML-attribute-safe JS string escaping")
