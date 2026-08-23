@@ -404,7 +404,7 @@
   .audio-album-info { padding:9px 10px; }
   .audio-album-info strong { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .audio-album-info small { display:block; margin-top:4px; color:var(--text2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .audio-player { position:fixed; z-index:250; left:var(--sidebar-w); right:0; bottom:0; display:none; align-items:center; gap:12px; min-height:74px; padding:10px 18px; border-top:1px solid var(--border); background:rgba(22,27,34,.96); box-shadow:0 -8px 26px rgba(0,0,0,.28); backdrop-filter:blur(12px); }
+  .audio-player { position:fixed; z-index:250; left:50%; top:50%; right:auto; bottom:auto; transform:translate(-50%,-50%); width:min(520px,calc(100vw - 28px)); display:none; align-items:center; gap:12px; min-height:110px; padding:16px; border:1px solid var(--border); border-radius:12px; background:rgba(22,27,34,.97); box-shadow:0 16px 50px rgba(0,0,0,.48); backdrop-filter:blur(12px); }
   .audio-player.show { display:flex; }
   .audio-player-cover { width:52px; height:52px; flex:0 0 52px; border-radius:6px; object-fit:cover; background:linear-gradient(145deg,#284b63,#1b2838); }
   .audio-player-main { min-width:0; flex:1; }
@@ -415,7 +415,7 @@
   .audio-player-controls button:hover { border-color:var(--accent); color:var(--accent); }
   .audio-player audio { display:none; }
   .audio-lyrics { max-width:720px; max-height:45vh; overflow:auto; margin:12px auto 0; padding:14px; white-space:pre-wrap; line-height:1.8; color:var(--text2); background:var(--card2); border-radius:8px; }
-  @media (max-width:768px) { .audio-player { left:0; padding:8px 10px; } .audio-player-cover { width:42px; height:42px; flex-basis:42px; } .audio-player-controls button { min-width:30px; padding:0 6px; } }
+  @media (max-width:768px) { .audio-player { padding:12px 10px; } .audio-player-cover { width:42px; height:42px; flex-basis:42px; } .audio-player-controls button { min-width:30px; padding:0 6px; } }
   @media (max-width: 768px) {
     .media-login-grid { grid-template-columns: 1fr; }
     .media-modebar { align-items: stretch; flex-direction: column; }
@@ -531,6 +531,7 @@
     <div class="nav-item" data-view="comic" data-module="comic"><span class="ic">📚</span><span class="txt" data-i18n="navComic">超漫画</span><span class="nav-tools"><button class="icon-btn" title="配置服务器" onclick="event.stopPropagation(); showMediaConfig('comic')">⚙</button><button class="icon-btn" title="新窗口打开" onclick="event.stopPropagation(); openActiveMediaExternal('comic')">↗</button></span></div>
     <div class="nav-item" data-view="movie" data-module="movie"><span class="ic">🎬</span><span class="txt" data-i18n="navMovie">影视</span><span class="nav-tools"><button class="icon-btn" title="配置服务器" onclick="event.stopPropagation(); showMediaConfig('movie')">⚙</button><button class="icon-btn" title="新窗口打开" onclick="event.stopPropagation(); openActiveMediaExternal('movie')">↗</button></span></div>
     <div class="nav-item" data-view="audio" data-module="audio"><span class="ic">🎵</span><span class="txt" data-i18n="navAudio">音频</span><span class="nav-tools"><button class="icon-btn" title="配置服务器" onclick="event.stopPropagation(); showMediaConfig('audio')">⚙</button><button class="icon-btn" title="新窗口打开" onclick="event.stopPropagation(); openActiveMediaExternal('audio')">↗</button></span></div>
+    <div class="nav-item" data-view="audio-favorites" data-module="audio-favorites"><span class="ic">♥</span><span class="txt">喜欢</span></div>
     <div class="nav-group" data-nav-group="sys" data-i18n="navGroupSys">系统</div>
     <div class="nav-item" data-view="docker" data-module="docker"><span class="ic">🐳</span><span class="txt" data-i18n="navDocker">容器管理</span></div>
     <div class="nav-group" data-nav-group="custom" data-i18n="navGroupCustom">自定义</div>
@@ -539,7 +540,7 @@
   <div class="add-board-btn" onclick="openModuleModal()">
     <span>＋</span><span data-i18n="addBoardNav">添加模块</span>
   </div>
-  <div class="sidebar-foot">v0.6.12 · Audio Click Fix</div>
+  <div class="sidebar-foot">v0.6.13 · Reader and Audio Update</div>
 </aside>
 
 <!-- ===== 主区域 ===== -->
@@ -927,6 +928,11 @@
       <div class="media-wide-host" id="media-wide-audio"></div>
     </section>
 
+    <section class="view" id="view-audio-favorites">
+      <div class="section-title">喜欢</div>
+      <div class="media-wide-host" id="media-wide-audio-favorites"></div>
+    </section>
+
     <!-- ============ 容器管理 ============ -->
     <section class="view" id="view-docker">
       <div class="section-title"><span data-i18n="secDocker">Docker 容器</span> <span class="badge" id="containerCount">共 24 个</span></div>
@@ -1137,6 +1143,7 @@
     <button id="audioPauseButton" title="暂停或继续" onclick="audioTogglePause()">Ⅱ</button>
     <button title="停止" onclick="audioStop()">■</button>
     <button title="下一曲" onclick="audioNext()">▶</button>
+    <button id="audioFavoriteButton" title="喜欢" onclick="toggleActiveAudioFavorite()">♡</button>
     <button title="歌曲详情与歌词" onclick="showAudioDetails()">ⓘ</button>
   </div>
   <audio id="audioPlayerElement" preload="metadata"></audio>
@@ -1534,7 +1541,7 @@ function clearBg() {
 }
 
 /* ================= 导航 ================= */
-const titleMap = { home: "navHome", pt: "navPt", comic: "navComic", movie: "navMovie", audio: "navAudio", docker: "navDocker" };
+const titleMap = { home: "navHome", pt: "navPt", comic: "navComic", movie: "navMovie", audio: "navAudio", "audio-favorites": "navAudio", docker: "navDocker" };
 
 function switchView(v) {
   document.querySelectorAll(".nav-item[data-view]").forEach(n => n.classList.remove("active"));
@@ -1544,6 +1551,7 @@ function switchView(v) {
   const view = document.getElementById("view-" + v);
   if (view) view.classList.add("active");
   document.getElementById("pageTitle").textContent = t(titleMap[v] || "navHome");
+  if (v === "audio-favorites") renderAudioFavorites();
   window.scrollTo(0, 0);
 }
 
@@ -1800,7 +1808,29 @@ let audioFiles = [];
 let audioCursor = 0;
 let activeAudio = null;
 const audioMetadataCache = "vaulthub_audio_metadata_v1";
+const audioFavoritesCache = "vaulthub_audio_favorites_v1";
 let activeReader = null;
+function readAudioFavorites() { try { return JSON.parse(localStorage.getItem(audioFavoritesCache) || "[]") || []; } catch (e) { return []; } }
+function audioFavoriteKey(libId, path) { return `${libId}\n${path}`; }
+function isAudioFavorite(libId, path) { return readAudioFavorites().includes(audioFavoriteKey(libId, path)); }
+function toggleAudioFavorite(libId, path) {
+  const key = audioFavoriteKey(libId, path), values = readAudioFavorites(), index = values.indexOf(key);
+  if (index >= 0) values.splice(index, 1); else values.push(key);
+  try { localStorage.setItem(audioFavoritesCache, JSON.stringify(values)); } catch (e) {}
+  updateAudioFavoriteButton();
+  const lib = findMediaLibrary(localMediaSelection.audio); if (lib) loadLocalFiles("audio", lib, audioCursor);
+  if (document.getElementById("view-audio-favorites")?.classList.contains("active")) renderAudioFavorites();
+}
+function toggleActiveAudioFavorite() { if (activeAudio) toggleAudioFavorite(activeAudio.libId, activeAudio.path); }
+function updateAudioFavoriteButton() { const button = document.getElementById("audioFavoriteButton"); if (button) button.textContent = activeAudio && isAudioFavorite(activeAudio.libId, activeAudio.path) ? "♥" : "♡"; }
+function renderAudioFavorites() {
+  const host = document.getElementById("media-wide-audio-favorites"); if (!host) return;
+  const favorites = new Set(readAudioFavorites()), rows = [];
+  localMediaLibraries.filter(lib => lib.type === "audio").forEach(lib => {
+    favorites.forEach(key => { const split = key.indexOf("\n"); if (split < 0 || key.slice(0, split) !== lib.id) return; const path = key.slice(split + 1); rows.push({ lib, path }); });
+  });
+  host.innerHTML = rows.length ? `<div class="media-file-list">${rows.map(({lib, path}) => renderAudioRow(lib, { path })).join("")}</div>` : '<div class="empty-tip">还没有喜欢的歌曲，请在歌曲列表中点击 ♡ 收藏。</div>';
+}
 function mediaStateKey(libId, path) { return `vaulthub_reading_${libId}_${path}`; }
 function readingState(libId, path) {
   try { return JSON.parse(localStorage.getItem(mediaStateKey(libId, path))) || { progress: 0 }; } catch (e) { return { progress: 0 }; }
@@ -1977,6 +2007,17 @@ async function scrapeAudioMetadata(host, lib, files) {
   }
   writeAudioMetadata(all);
   if (pending.length) renderAudioLibraryContent(host, lib, files);
+  for (const file of pending) {
+    const path = String(file.path), fallback = all[path], query = `${fallback.artist} ${fallback.title}`.trim();
+    try {
+      const response = await fetch(`https://musicbrainz.org/ws/2/recording/?query=${encodeURIComponent(query)}&fmt=json&limit=1`, { headers: { Accept: "application/json" }, cache: "force-cache" });
+      const item = response.ok ? (await response.json()).recordings?.[0] : null;
+      if (item) {
+        all[path] = { ...fallback, title: item.title || fallback.title, artist: item["artist-credit"]?.[0]?.name || fallback.artist, album: item.releases?.[0]?.title || fallback.album, checkedAt: Date.now() };
+        writeAudioMetadata(all); renderAudioLibraryContent(host, lib, files);
+      }
+    } catch (e) { /* Keep filename-derived metadata when scraping is unavailable. */ }
+  }
 }
 function audioCoverData(meta, title) {
   return meta.cover ? `<img src="${esc(meta.cover)}" alt="${esc(title)}" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:${JSON.stringify(title)}}))">` : esc(title);
@@ -1984,20 +2025,22 @@ function audioCoverData(meta, title) {
 function renderAudioAlbums(lib, files) {
   const groups = new Map();
   files.forEach(file => { const meta = audioMetadataFor(String(file.path)); const key = meta.album || "未知专辑"; if (!groups.has(key)) groups.set(key, { meta, files: [] }); groups.get(key).files.push(file); });
-  return `<div class="audio-album-grid">${[...groups.entries()].map(([album, group]) => `<article class="audio-album-card" onclick="playAudioFile(${jsAttrArg(lib.id)},${jsAttrArg(group.files[0].path)})"><div class="audio-album-cover" style="background:${coverGradient(album)}">${audioCoverData(group.meta, album)}</div><div class="audio-album-info"><strong>${esc(album)}</strong><small>${esc(group.meta.artist)} · ${group.files.length} 首</small></div></article>`).join("")}</div>`;
+  return `<div class="audio-album-grid">${[...groups.entries()].map(([album, group]) => `<article class="audio-album-card" onclick="playAudioFile(${jsAttrArg(lib.id)},${jsAttrArg(group.files[0].path)})"><div class="audio-album-cover" style="background:${coverGradient(album)}">${audioCoverData(group.meta, album)}</div><div class="audio-album-info"><strong>${esc(album)}</strong><small>${esc(group.meta.artist)} · ${group.files.length} 首</small><button class="btn" title="查看专辑歌曲" onclick="event.stopPropagation();audioArtistFilter=${JSON.stringify(album)};setAudioView('files')">✎</button></div></article>`).join("")}</div>`;
 }
 function renderAudioArtists(lib, files) {
   const groups = new Map();
   files.forEach(file => { const meta = audioMetadataFor(String(file.path)); const key = meta.artist || "未知歌手"; if (!groups.has(key)) groups.set(key, []); groups.get(key).push(file); });
-  return `<div class="audio-album-grid">${[...groups.entries()].map(([artist, songs]) => `<article class="audio-album-card" onclick="playAudioFile(${jsAttrArg(lib.id)},${jsAttrArg(songs[0].path)})"><div class="audio-album-cover" style="background:${coverGradient(artist)}">${esc(artist)}</div><div class="audio-album-info"><strong>${esc(artist)}</strong><small>${songs.length} 首歌曲</small></div></article>`).join("")}</div>`;
+  return `<div class="audio-album-grid">${[...groups.entries()].map(([artist, songs]) => `<article class="audio-album-card" onclick="playAudioFile(${jsAttrArg(lib.id)},${jsAttrArg(songs[0].path)})"><div class="audio-album-cover" style="background:${coverGradient(artist)}">${esc(artist)}</div><div class="audio-album-info"><strong>${esc(artist)}</strong><small>${songs.length} 首歌曲</small><button class="btn" title="查看歌手歌曲" onclick="event.stopPropagation();audioArtistFilter=${JSON.stringify(artist)};setAudioView('files')">✎</button></div></article>`).join("")}</div>`;
 }
+let audioArtistFilter = "";
 function renderAudioLibraryContent(host, lib, files) {
   const pager = `<div class="media-actions"><button class="btn" ${audioCursor <= 0 ? "disabled" : ""} onclick="loadLocalFiles('audio',findMediaLibrary('${esc(lib.id)}'),${Math.max(0,audioCursor-audioPageSize)})">← 上一页</button><span class="media-file-meta">${audioCursor + 1}-${audioCursor + files.length}</span><button class="btn" onclick="loadLocalFiles('audio',findMediaLibrary('${esc(lib.id)}'),${audioCursor + audioPageSize})">下一页 →</button></div>`;
-  let body = audioView === "artists" ? renderAudioArtists(lib, files) : audioView === "files" ? `<div class="media-file-list">${files.map(file => renderAudioRow(lib, file)).join("")}</div>` : renderAudioAlbums(lib, files);
+  const visibleFiles = audioArtistFilter ? files.filter(file => { const meta = audioMetadataFor(String(file.path)); return meta.artist === audioArtistFilter || meta.album === audioArtistFilter; }) : files;
+  let body = audioView === "artists" ? renderAudioArtists(lib, files) : audioView === "files" ? `<div class="media-file-list">${visibleFiles.map(file => renderAudioRow(lib, file)).join("")}</div>` : renderAudioAlbums(lib, files);
   host.innerHTML = `<div class="comic-shelf-toolbar"><div class="audio-view-tabs"><button class="${audioView === "albums" ? "active" : ""}" onclick="setAudioView('albums')">专辑</button><button class="${audioView === "artists" ? "active" : ""}" onclick="setAudioView('artists')">歌手</button><button class="${audioView === "files" ? "active" : ""}" onclick="setAudioView('files')">文件</button></div><div class="media-actions"><button class="btn" onclick="refreshAudioMetadata()">↻ 重新刮削</button><label class="page-size-picker">每页 <select id="audioPageSize" onchange="setAudioPageSize(this.value)"><option value="20"${audioPageSize===20?' selected':''}>20</option><option value="50"${audioPageSize===50?' selected':''}>50</option><option value="100"${audioPageSize===100?' selected':''}>100</option></select></label></div></div>${body}${pager}`;
 }
 function renderAudioLibrary(lib, files) { const host = document.createElement("div"); renderAudioLibraryContent(host, lib, files); return host.innerHTML; }
-function renderAudioRow(lib, file) { const meta = audioMetadataFor(String(file.path)); return `<div class="media-file-row"><div class="media-file-name" title="${esc(file.path)}"><b>${esc(meta.title)}</b><small>${esc(meta.artist)} · ${esc(meta.album)}</small></div><span class="media-file-meta">${esc(fileExt(file.path).toUpperCase())}</span><div class="media-actions"><button class="btn" onclick="playAudioFile(${jsAttrArg(lib.id)},${jsAttrArg(file.path)})">▶</button><button class="btn" onclick="openAudioMetadata(${jsAttrArg(file.path)})">✎</button></div></div>`; }
+function renderAudioRow(lib, file) { const meta = audioMetadataFor(String(file.path)); return `<div class="media-file-row"><div class="media-file-name" title="${esc(file.path)}"><b>${esc(meta.title)}</b><small>${esc(meta.artist)} · ${esc(meta.album)}</small></div><span class="media-file-meta">${esc(fileExt(file.path).toUpperCase())}</span><div class="media-actions"><button class="btn" onclick="playAudioFile(${jsAttrArg(lib.id)},${jsAttrArg(file.path)})">▶</button><button class="btn" title="喜欢" onclick="toggleAudioFavorite(${jsAttrArg(lib.id)},${jsAttrArg(file.path)})">${isAudioFavorite(lib.id, file.path) ? "♥" : "♡"}</button><button class="btn" onclick="openAudioMetadata(${jsAttrArg(file.path)})">✎</button></div></div>`; }
 function refreshAudioMetadata() { try { localStorage.removeItem(audioMetadataCache); } catch (e) {} const lib = findMediaLibrary(localMediaSelection.audio); if (lib) loadLocalFiles("audio", lib, 0); toast("🔄 正在重新刮削音乐信息"); }
 function openAudioMetadata(path) { const meta = audioMetadataFor(path); document.getElementById("audioMetadataPath").value=path; document.getElementById("audioMetadataTitle").value=meta.title; document.getElementById("audioMetadataArtist").value=meta.artist; document.getElementById("audioMetadataAlbum").value=meta.album; document.getElementById("audioMetadataCover").value=meta.cover; document.getElementById("audioMetadataLyrics").value=meta.lyrics; openModal("audioMetadataModal"); }
 function manualAudioMetadata(path) { openAudioMetadata(path); }
@@ -2015,6 +2058,7 @@ function playAudioFile(libId, path) {
   document.getElementById("audioPlayerMeta").textContent = `${meta.artist} · ${meta.album}`;
   const cover = document.getElementById("audioCover"); cover.src = meta.cover || ""; cover.alt = `${meta.title} 海报`;
   document.getElementById("audioPauseButton").textContent = "Ⅱ";
+  updateAudioFavoriteButton();
 }
 function audioTogglePause() { const player=document.getElementById("audioPlayerElement"); if(!player?.src) return; if(player.paused) { player.play().catch(() => {}); document.getElementById("audioPauseButton").textContent="Ⅱ"; } else { player.pause(); document.getElementById("audioPauseButton").textContent="▶"; } }
 function audioStop() { const player=document.getElementById("audioPlayerElement"); if(!player) return; player.pause(); player.currentTime=0; document.getElementById("audioPauseButton").textContent="▶"; }
@@ -2134,7 +2178,10 @@ async function openLocalMedia(group, libId, path) {
     try {
       const res = await fetch(url, { cache: "no-store" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const text = await res.text();
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      let text;
+      try { text = new TextDecoder("utf-8", { fatal: true }).decode(bytes); }
+      catch (e) { text = new TextDecoder("gb18030").decode(bytes); }
       body = `<pre class="media-text">${esc(text)}</pre>`;
     } catch (err) { body = `<div class="media-error">文本读取失败：${esc(err.message)}</div>`; }
   } else {
