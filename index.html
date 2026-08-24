@@ -358,6 +358,12 @@
   .media-file-row { display: grid; grid-template-columns: minmax(0,1fr) auto auto; align-items: center; gap: 10px; min-height: 48px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
   .media-file-row:last-child { border-bottom: 0; }
   .media-file-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .movie-file-name { display:flex; align-items:center; gap:10px; }
+  .movie-file-name span { min-width:0; display:flex; flex-direction:column; gap:2px; }
+  .movie-file-name small { color:var(--text2); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .movie-poster-mini { width:42px; height:58px; object-fit:cover; border-radius:6px; background:var(--bg2); border:1px solid var(--border); flex:0 0 auto; }
+  .select-mini { background:var(--card2); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:6px 8px; }
+  .movie-player-tools { align-items:center; margin-top:10px; }
   .media-file-meta { color: var(--text2); font-size: 11px; white-space: nowrap; }
   .media-viewer { margin-top: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); overflow: hidden; }
   .media-viewer-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 12px; border-bottom: 1px solid var(--border); }
@@ -560,7 +566,7 @@
   <div class="add-board-btn" onclick="openModuleModal()">
     <span>＋</span><span data-i18n="addBoardNav">添加模块</span>
   </div>
-  <div class="sidebar-foot">v0.6.15 · Local Movie and Format Update</div>
+  <div class="sidebar-foot">v0.6.16 · Movie Playback and Subtitles</div>
 </aside>
 
 <!-- ===== 主区域 ===== -->
@@ -1136,7 +1142,7 @@
   <div class="modal">
     <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
     <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
-    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.6.15 · Local Movie and Format Update</b></div>
+    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.6.16 · Movie Playback and Subtitles</b></div>
     <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>HTML / CSS / JS · 单文件</b></div>
     <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>VaultHub 内置系统监控</b></div>
     <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>
@@ -1851,7 +1857,7 @@ function renderAudioFavorites(lib) {
   return rows.length ? `<div class="media-file-list">${rows.map(({lib: rowLib, path}) => renderAudioRow(rowLib, { path })).join("")}</div>` : '<div class="empty-tip">还没有喜欢的歌曲，请在歌曲列表中点击 ♡ 收藏。</div>';
 }
 
-const movieMetadataCache = "vaulthub_movie_metadata_v1";
+const movieMetadataCache = "vaulthub_movie_metadata_v2";
 let scraperStatus = { default: "douban", tmdb_enabled: false };
 function readMovieMetadata() { try { return JSON.parse(localStorage.getItem(movieMetadataCache) || "{}") || {}; } catch (e) { return {}; } }
 function writeMovieMetadata(data) { try { localStorage.setItem(movieMetadataCache, JSON.stringify(data)); } catch (e) {} }
@@ -1859,36 +1865,60 @@ function movieTitleFromPath(path) { return displayBookTitle(path).replace(/\b(19
 function movieYearFromPath(path) { const m = String(path).match(/\b(19|20)\d{2}\b/); return m ? m[0] : ""; }
 function movieBaseMetadata(path) { return { title: movieTitleFromPath(path), year: movieYearFromPath(path), poster: "", overview: "", provider: "文件名展示", checkedAt: 0 }; }
 function movieMetadataFor(path) { const all = readMovieMetadata(); return { ...movieBaseMetadata(path), ...(all[path] || {}) }; }
+function movieScraperProvider() { try { return localStorage.getItem("vaulthub_movie_scraper_provider") || "douban"; } catch(e) { return "douban"; } }
+function setMovieScraperProvider(provider) { try { localStorage.setItem("vaulthub_movie_scraper_provider", provider); } catch(e) {} const lib=findMediaLibrary(localMediaSelection.movie); if(lib) loadLocalFiles("movie", lib, 0); }
 async function loadScraperStatus() { try { const res = await fetch("/api/media/scrapers", { cache:"no-store" }); if (res.ok) scraperStatus = await res.json(); } catch(e) {} }
-async function scrapeMovieMetadata(host, lib, files) {
+async function doubanMovieScrape(title) {
+  const douban = await fetch(`https://movie.douban.com/j/subject_suggest?q=${encodeURIComponent(title)}`, { cache:"force-cache" });
+  const item = douban.ok ? (await douban.json())?.[0] : null;
+  return item ? { title:item.title || title, year:item.year || "", poster:item.img || "", overview:"", provider:"豆瓣" } : null;
+}
+async function tmdbMovieScrape(title) {
+  if (!scraperStatus.tmdb_enabled) return null;
+  const tmdb = await fetch(`/api/media/tmdb?query=${encodeURIComponent(title)}`, { cache:"force-cache" });
+  const data = tmdb.ok ? await tmdb.json() : null;
+  const item = data?.results?.find(x => x.poster_path || x.overview || x.title || x.name);
+  return item ? { title:item.title || item.name || title, year:String(item.release_date || item.first_air_date || "").slice(0,4), poster:item.poster_path ? `https://image.tmdb.org/t/p/w342${item.poster_path}` : "", overview:item.overview || "", provider:"TMDB" } : null;
+}
+async function scrapeOneMovie(lib, path, provider) {
+  const fallback = movieBaseMetadata(path), title = fallback.title;
+  let hit = null;
+  if (provider === "tmdb") hit = await tmdbMovieScrape(title);
+  else hit = await doubanMovieScrape(title);
+  if (!hit && provider === "douban" && scraperStatus.tmdb_enabled) hit = await tmdbMovieScrape(title);
+  if (!hit) hit = { ...fallback, poster: mediaSnapshotUrl(lib, path), provider:"片段截图", overview:"未命中豆瓣/TMDB，已尝试使用影片片段截图作为封面。" };
+  return { ...fallback, ...hit, checkedAt:Date.now() };
+}
+async function scrapeMovieMetadata(host, lib, files, provider = movieScraperProvider(), force = false) {
   await loadScraperStatus();
   const all = readMovieMetadata();
-  const pending = files.filter(file => !all[file.path]);
-  for (const file of pending) { all[file.path] = { ...movieBaseMetadata(String(file.path)), provider: "文件名展示（等待豆瓣刮削）", checkedAt: Date.now() }; }
+  const pending = files.filter(file => force || !all[file.path]);
+  for (const file of pending) { all[file.path] = { ...movieBaseMetadata(String(file.path)), provider: `等待${provider === "tmdb" ? "TMDB" : "豆瓣"}刮削`, checkedAt: Date.now() }; }
   writeMovieMetadata(all); if (pending.length) renderMovieLibraryContent(host, lib, files);
   for (const file of pending) {
-    const path = String(file.path), fallback = all[path], title = fallback.title;
-    try {
-      const douban = await fetch(`https://movie.douban.com/j/subject_suggest?q=${encodeURIComponent(title)}`, { cache:"force-cache" });
-      const item = douban.ok ? (await douban.json())?.[0] : null;
-      if (item) { all[path] = { ...fallback, title:item.title || fallback.title, year:item.year || fallback.year, poster:item.img || "", provider:"豆瓣", checkedAt:Date.now() }; writeMovieMetadata(all); renderMovieLibraryContent(host, lib, files); continue; }
-    } catch(e) {}
-    if (scraperStatus.tmdb_enabled) try {
-      const tmdb = await fetch(`/api/media/tmdb?query=${encodeURIComponent(title)}`, { cache:"force-cache" });
-      const data = tmdb.ok ? await tmdb.json() : null;
-      const item = data?.results?.find(x => x.poster_path || x.overview || x.title || x.name);
-      if (item) { all[path] = { ...fallback, title:item.title || item.name || fallback.title, year:String(item.release_date || item.first_air_date || fallback.year).slice(0,4), poster:item.poster_path ? `https://image.tmdb.org/t/p/w342${item.poster_path}` : "", overview:item.overview || "", provider:"TMDB", checkedAt:Date.now() }; writeMovieMetadata(all); renderMovieLibraryContent(host, lib, files); }
-    } catch(e) {}
+    const path = String(file.path);
+    try { all[path] = await scrapeOneMovie(lib, path, provider); }
+    catch(e) { all[path] = { ...movieBaseMetadata(path), poster: mediaSnapshotUrl(lib, path), provider:"片段截图", overview:"刮削异常，使用影片片段截图兜底。", checkedAt:Date.now() }; }
+    writeMovieMetadata(all); renderMovieLibraryContent(host, lib, files);
   }
 }
 function renderMovieLibraryContent(host, lib, files) {
-  const status = scraperStatus.tmdb_enabled ? "默认豆瓣刮削 · TMDB 已启用" : "默认豆瓣刮削 · TMDB 未配置（设置 TMDB_API_KEY 后启用）";
-  host.innerHTML = `<div class="comic-shelf-toolbar"><strong>本地影视库</strong><div class="media-actions"><span class="badge">${esc(status)}</span><button class="btn" onclick="refreshMovieMetadata()">↻ 重新刮削</button></div></div><div class="media-file-list">${files.map(file => renderMovieRow(lib, file)).join("")}</div>`;
+  const provider = movieScraperProvider();
+  const status = scraperStatus.tmdb_enabled ? "TMDB 已配置" : "TMDB 未配置（设置 TMDB_API_KEY 后启用）";
+  host.innerHTML = `<div class="comic-shelf-toolbar"><strong>本地影视库</strong><div class="media-actions"><span class="badge">默认自动刮削 · ${esc(provider === "tmdb" ? "TMDB" : "豆瓣")}</span><span class="badge">${esc(status)}</span><select class="select-mini" onchange="setMovieScraperProvider(this.value)"><option value="douban" ${provider === "douban" ? "selected" : ""}>豆瓣</option><option value="tmdb" ${provider === "tmdb" ? "selected" : ""} ${scraperStatus.tmdb_enabled ? "" : "disabled"}>TMDB</option></select><button class="btn" onclick="refreshMovieMetadata()">↻ 刮削</button></div></div><div class="media-file-list">${files.map(file => renderMovieRow(lib, file)).join("")}</div>`;
 }
 function renderMovieLibrary(lib, files) { const host = document.createElement("div"); renderMovieLibraryContent(host, lib, files); return host.innerHTML; }
-function renderMovieRow(lib, file) { const path=String(file.path), meta=movieMetadataFor(path); return `<div class="media-file-row"><div class="media-file-name" title="${esc(path)}"><b>${esc(meta.title)}</b><small>${esc([meta.year, meta.provider].filter(Boolean).join(" · "))}</small></div><span class="media-file-meta">${esc(fileExt(path).toUpperCase())} · ${formatFileSize(file.size)}</span><div class="media-actions"><button class="btn" data-media-group="movie" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openLocalMediaButton(this)">▶ 播放</button></div></div>`; }
+function renderMovieRow(lib, file) { const path=String(file.path), meta=movieMetadataFor(path), poster=meta.poster || mediaSnapshotUrl(lib,path); return `<div class="media-file-row movie-row"><div class="media-file-name movie-file-name" title="${esc(path)}"><img class="movie-poster-mini" src="${esc(poster)}" alt="" onerror="this.hidden=true"><span><b>${esc(meta.title)}</b><small>${esc([meta.year, meta.provider].filter(Boolean).join(" · "))}</small></span></div><span class="media-file-meta">${esc(fileExt(path).toUpperCase())} · ${formatFileSize(file.size)}</span><div class="media-actions"><button class="btn" data-media-group="movie" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openLocalMediaButton(this)">▶ 播放</button></div></div>`; }
 function refreshMovieMetadata() { try { localStorage.removeItem(movieMetadataCache); } catch(e) {} const lib=findMediaLibrary(localMediaSelection.movie); if(lib) loadLocalFiles("movie", lib, 0); toast("🔄 正在重新刮削影视信息"); }
-
+function movieVideoType(ext) { return ({mp4:"video/mp4",m4v:"video/mp4",webm:"video/webm",mov:"video/quicktime",mkv:"video/x-matroska",avi:"video/x-msvideo"})[ext] || "video/mp4"; }
+async function movieSubtitleTracks(lib, path) { try { const res=await fetch(mediaSubtitlesUrl(lib,path), {cache:"no-store"}); if(!res.ok) return []; return (await res.json()).subtitles || []; } catch(e) { return []; } }
+function moviePlayerError(video) { if (!video || video.dataset.transcoded === "1") return; video.dataset.transcoded = "1"; video.src = mediaTranscodeUrl({id:video.dataset.library}, video.dataset.path); video.load(); video.play().catch(()=>{}); toast("⚠️ 原始文件浏览器解码失败，已切换兼容转码流"); }
+function switchMovieSubtitle(select) { const video=document.getElementById("moviePlayer"); if(!video) return; [...video.textTracks].forEach((track,i)=>track.mode = i === Number(select.value) ? "showing" : "disabled"); }
+function buildMovieSubtitlePicker(subtitles) { return subtitles.length ? `<label class="hint">字幕 <select class="select-mini" onchange="switchMovieSubtitle(this)">${subtitles.map((s,i)=>`<option value="${i}" ${i===0?"selected":""}>${esc(s.name || s.path)}</option>`).join("")}</select> 默认开启</label>` : `<span class="hint">未发现同名字幕文件（支持 .vtt/.srt/.ass/.ssa，其中 SRT 会转 VTT）</span>`; }
+function buildMoviePlayer(lib, path, ext, subtitles) {
+  const original = mediaFileUrl(lib, path), snapshot = mediaSnapshotUrl(lib, path), tracks = subtitles.map((s,i)=>`<track kind="subtitles" srclang="zh" label="${esc(s.name || `字幕${i+1}`)}" src="${esc(mediaSubtitleUrl(lib, s.path))}" ${i===0?"default":""}>`).join("");
+  return `<div class="media-viewer-body"><video id="moviePlayer" data-library="${esc(lib.id)}" data-path="${esc(path)}" controls autoplay preload="metadata" crossorigin="anonymous" poster="${esc(movieMetadataFor(path).poster || snapshot)}" style="width:100%;max-height:72vh;background:#000" onerror="moviePlayerError(this)"><source src="${esc(original)}" type="${esc(movieVideoType(ext))}">${tracks}</video><div class="media-actions movie-player-tools"><button class="btn" onclick="const v=document.getElementById('moviePlayer'); if(v){v.dataset.transcoded='1'; v.src='${esc(mediaTranscodeUrl(lib,path))}'; v.load(); v.play().catch(()=>{});}">兼容转码播放</button><a class="btn" href="${esc(original)}" target="_blank" rel="noopener">外部打开原片</a>${buildMovieSubtitlePicker(subtitles)}</div><div class="hint">若 MKV/HEVC/DTS 出现无画面或无声音，请使用“兼容转码播放”；字幕默认开启第一个同名字幕。</div></div>`;
+}
 function mediaStateKey(libId, path) { return `vaulthub_reading_${libId}_${path}`; }
 function readingState(libId, path) {
   try { return JSON.parse(localStorage.getItem(mediaStateKey(libId, path))) || { progress: 0 }; } catch (e) { return { progress: 0 }; }
@@ -1951,6 +1981,10 @@ function mediaFileUrl(lib, path) {
 function mediaLegacyFileUrl(lib, path) {
   return `/api/media/file/${encodeURIComponent(lib.id)}/${String(path).split("/").map(encodeURIComponent).join("/")}`;
 }
+function mediaSubtitleUrl(lib, subtitlePath) { return `/api/media/subtitle?id=${encodeURIComponent(String(lib.id))}&path=${encodeURIComponent(String(subtitlePath))}`; }
+function mediaSubtitlesUrl(lib, path) { return `/api/media/subtitles?id=${encodeURIComponent(String(lib.id))}&path=${encodeURIComponent(String(path))}`; }
+function mediaSnapshotUrl(lib, path) { return `/api/media/snapshot?id=${encodeURIComponent(String(lib.id))}&path=${encodeURIComponent(String(path))}`; }
+function mediaTranscodeUrl(lib, path) { return `/api/media/transcode?id=${encodeURIComponent(String(lib.id))}&path=${encodeURIComponent(String(path))}`; }
 function normalizeLibraryPayload(data) {
   const libs = Array.isArray(data) ? data : (data?.libraries || data?.items || []);
   return libs.map((lib, idx) => ({
@@ -2355,7 +2389,16 @@ async function openLocalMedia(group, libId, path) {
   activeReader = { group, libId, path };
   let body = "";
   if (["mp3","flac","m4a","ogg","wav"].includes(ext)) body = `<div class="media-viewer-body"><audio controls autoplay preload="metadata" src="${esc(url)}"></audio></div>`;
-  else if (MEDIA_FORMATS.movie.includes(ext)) body = `<div class="media-viewer-body"><video controls autoplay preload="metadata" style="width:100%;max-height:72vh;background:#000" src="${esc(url)}"></video><div class="hint">${esc(movieMetadataFor(path).provider || "豆瓣刮削/文件名展示")}</div></div>`;
+  else if (MEDIA_FORMATS.movie.includes(ext)) {
+    viewer.innerHTML = viewerShell(group, lib, path, '<div class="empty-tip">正在加载播放器与字幕...</div>', url);
+    const subtitles = await movieSubtitleTracks(lib, path);
+    body = buildMoviePlayer(lib, path, ext, subtitles);
+    viewer.innerHTML = viewerShell(group, lib, path, body, url);
+    setTimeout(() => { const v=document.getElementById("moviePlayer"); if(v && v.textTracks?.[0]) v.textTracks[0].mode="showing"; }, 300);
+    const overlay = viewer.querySelector(".media-reader-overlay");
+    if (overlay) overlay.scrollIntoView({ block: "start" });
+    return;
+  }
   else if (["jpg","jpeg","png","webp","gif","bmp","avif"].includes(ext)) body = `<img src="${esc(url)}" alt="${esc(path)}">`;
   else if (ext === "pdf") body = `<iframe src="${esc(url)}#view=FitH" title="${esc(path)}"></iframe>`;
   else if (ext === "txt") {

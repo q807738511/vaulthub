@@ -320,6 +320,9 @@ static const char *mime_type(const char *p) {
   if(!strcasecmp(e,".png"))return "image/png";
   if(!strcasecmp(e,".webp"))return "image/webp";
   if(!strcasecmp(e,".txt"))return "text/plain; charset=utf-8";
+  if(!strcasecmp(e,".vtt"))return "text/vtt; charset=utf-8";
+  if(!strcasecmp(e,".srt"))return "application/x-subrip; charset=utf-8";
+  if(!strcasecmp(e,".ass")||!strcasecmp(e,".ssa"))return "text/plain; charset=utf-8";
   return "application/octet-stream";
 }
 static const char *header_value(const char *request, const char *name) {
@@ -360,6 +363,64 @@ static void tmdb_search(int fd, const char *query) {
   while ((got = fread(chunk, 1, sizeof(chunk), pipe)) > 0) { if (b.len + got > MAX_REQ || appendf(&b, "%.*s", (int)got, chunk)) { free(b.data); pclose(pipe); json_error(fd, 500, "tmdb response too large"); return; } }
   int rc = pclose(pipe); if (rc != 0 || !b.data) { free(b.data); json_error(fd, 500, "tmdb scrape failed"); return; }
   send_headers(fd, 200, "application/json", (off_t)b.len, NULL); write(fd, b.data, b.len); free(b.data);
+}
+
+
+static int resolve_query_file(const char *query, char *canonical, size_t ccap, char *rel_out, size_t rcap) {
+  (void)ccap;
+  const char *raw_id=query_value(query,"id"),*raw_path=query_value(query,"path"); char id[MAX_ID],rel[MAX_PATH_LEN];
+  if(!raw_id||!raw_path||url_decode_component(raw_id,id,sizeof(id))||url_decode_component(raw_path,rel,sizeof(rel))||!valid_id(id)||!safe_relative(rel)) return -1;
+  struct library libs[MAX_LIBS]; int count=0; if(load_libraries(libs,&count)) return -2;
+  const char *base=NULL; for(int i=0;i<count;i++) if(!strcmp(libs[i].id,id)) base=libs[i].path;
+  if(!base) return -3;
+  char candidate[MAX_PATH_LEN]; struct stat st; int z=snprintf(candidate,sizeof(candidate),"%s/%s",base,rel);
+  if(z<0||(size_t)z>=sizeof(candidate)||!realpath(candidate,canonical)||!path_is_under(canonical,base)||stat(canonical,&st)||!S_ISREG(st.st_mode)) return -4;
+  if(rel_out && rcap) snprintf(rel_out, rcap, "%s", rel);
+  return 0;
+}
+static int is_subtitle_ext(const char *name) {
+  const char *e=strrchr(name,'.'); if(!e) return 0;
+  return !strcasecmp(e,".vtt")||!strcasecmp(e,".srt")||!strcasecmp(e,".ass")||!strcasecmp(e,".ssa");
+}
+static void subtitle_base(const char *rel, char *out, size_t cap) {
+  snprintf(out, cap, "%s", rel); char *slash=strrchr(out,'/'), *dot=strrchr(out,'.');
+  if(dot && (!slash || dot>slash)) *dot=0;
+}
+static void send_stream_headers(int fd, int code, const char *type, const char *extra) {
+  const char *reason = code == 200 ? "OK" : code == 404 ? "Not Found" : "Error";
+  dprintf(fd, "HTTP/1.1 %d %s\r\nContent-Type: %s\r\nX-Content-Type-Options: nosniff\r\nCache-Control: no-store\r\n%sConnection: close\r\n\r\n", code, reason, type, extra ? extra : "");
+}
+static void list_subtitles(int fd, const char *query) {
+  char canonical[MAX_PATH_LEN], rel[MAX_PATH_LEN]; int rc=resolve_query_file(query, canonical, sizeof(canonical), rel, sizeof(rel));
+  if(rc){ json_error(fd, rc==-3?404:400, "invalid media path"); return; }
+  char rel_base[MAX_PATH_LEN]; subtitle_base(rel, rel_base, sizeof(rel_base));
+  char dir[MAX_PATH_LEN]; snprintf(dir, sizeof(dir), "%s", canonical); char *slash=strrchr(dir,'/'); if(!slash){json_error(fd,400,"invalid media path");return;} *slash=0;
+  char rel_dir[MAX_PATH_LEN]=""; snprintf(rel_dir,sizeof(rel_dir),"%s",rel); char *rslash=strrchr(rel_dir,'/'); if(rslash) *rslash=0; else rel_dir[0]=0;
+  DIR *d=opendir(dir); if(!d){json_error(fd,404,"subtitle directory not found");return;}
+  struct buffer b={0}; appendf(&b,"{\"subtitles\":["); int n=0; struct dirent *de;
+  while((de=readdir(d))){ if(!is_subtitle_ext(de->d_name)) continue; char sub_rel[MAX_PATH_LEN], sub_base[MAX_PATH_LEN]; snprintf(sub_rel,sizeof(sub_rel),"%s%s%s",rel_dir[0]?rel_dir:"",rel_dir[0]?"/":"",de->d_name); subtitle_base(sub_rel, sub_base, sizeof(sub_base)); size_t rb=strlen(rel_base); if(strncmp(sub_base, rel_base, rb) || (sub_base[rb] && sub_base[rb]!='.' && sub_base[rb]!='-' && sub_base[rb]!='_')) continue; char *path=json_escape(sub_rel), *name=json_escape(de->d_name); if(!path||!name||appendf(&b,"%s{\"path\":\"%s\",\"name\":\"%s\"}",n?",":"",path,name)){free(path);free(name);closedir(d);free(b.data);json_error(fd,500,"out of memory");return;} free(path);free(name); n++; }
+  closedir(d); appendf(&b,"]}\n"); send_headers(fd,200,"application/json",(off_t)b.len,NULL); write(fd,b.data,b.len); free(b.data);
+}
+static void serve_subtitle_vtt(int fd, const char *query) {
+  char canonical[MAX_PATH_LEN], rel[MAX_PATH_LEN]; int rc=resolve_query_file(query, canonical, sizeof(canonical), rel, sizeof(rel));
+  if(rc){ json_error(fd, rc==-3?404:400, "invalid subtitle path"); return; }
+  const char *e=strrchr(canonical,'.'); if(!e||!is_subtitle_ext(canonical)){json_error(fd,400,"unsupported subtitle");return;}
+  FILE *in=fopen(canonical,"rb"); if(!in){json_error(fd,404,"subtitle not found");return;}
+  struct buffer b={0}; appendf(&b,"WEBVTT\n\n"); char line[4096]; int first=1;
+  while(fgets(line,sizeof(line),in)){ if(first && !strncmp(line,"WEBVTT",6)){ b.len=0; appendf(&b,"WEBVTT\n\n"); first=0; continue; } first=0; for(char *p=line; *p; p++) if(*p==',') *p='.'; if(appendf(&b,"%s",line)){fclose(in);free(b.data);json_error(fd,500,"out of memory");return;} }
+  fclose(in); send_headers(fd,200,"text/vtt; charset=utf-8",(off_t)b.len,NULL); write(fd,b.data,b.len); free(b.data);
+}
+static void snapshot_image(int fd, const char *query) {
+  char canonical[MAX_PATH_LEN]; int rc=resolve_query_file(query, canonical, sizeof(canonical), NULL, 0); if(rc){ json_error(fd, rc==-3?404:400, "invalid media path"); return; }
+  char q_file[8192], cmd[12000]; if(shell_quote(canonical,q_file,sizeof(q_file))){json_error(fd,400,"path too long");return;}
+  snprintf(cmd,sizeof(cmd),"ffmpeg -hide_banner -loglevel error -ss 00:03:00 -i %s -frames:v 1 -vf scale='min(640,iw)':-2 -f image2pipe -vcodec mjpeg pipe:1 2>/dev/null",q_file);
+  FILE *pipe=popen(cmd,"r"); if(!pipe){json_error(fd,500,"snapshot unavailable");return;} send_stream_headers(fd,200,"image/jpeg",NULL); char buf[65536]; size_t n; while((n=fread(buf,1,sizeof(buf),pipe))>0) if(write(fd,buf,n)<=0) break; pclose(pipe);
+}
+static void transcode_video(int fd, const char *query) {
+  char canonical[MAX_PATH_LEN]; int rc=resolve_query_file(query, canonical, sizeof(canonical), NULL, 0); if(rc){ json_error(fd, rc==-3?404:400, "invalid media path"); return; }
+  char q_file[8192], cmd[14000]; if(shell_quote(canonical,q_file,sizeof(q_file))){json_error(fd,400,"path too long");return;}
+  snprintf(cmd,sizeof(cmd),"ffmpeg -hide_banner -loglevel error -i %s -map 0:v:0 -map 0:a:0? -c:v libx264 -preset veryfast -tune zerolatency -pix_fmt yuv420p -c:a aac -b:a 160k -movflags frag_keyframe+empty_moov+default_base_moof -f mp4 pipe:1 2>/dev/null",q_file);
+  FILE *pipe=popen(cmd,"r"); if(!pipe){json_error(fd,500,"transcode unavailable");return;} send_stream_headers(fd,200,"video/mp4","Accept-Ranges: none\r\n"); char buf[65536]; size_t n; while((n=fread(buf,1,sizeof(buf),pipe))>0) if(write(fd,buf,n)<=0) break; pclose(pipe);
 }
 
 static void serve_file(int fd, const char *method, const char *url, const char *request) {
@@ -478,6 +539,10 @@ static void handle_client(int fd) {
   else if(!strcmp(url,"/api/media/files")&&!strcmp(method,"GET"))list_files(fd,query);
   else if(!strcmp(url,"/api/media/scrapers")&&!strcmp(method,"GET"))scraper_status(fd);
   else if(!strcmp(url,"/api/media/tmdb")&&!strcmp(method,"GET"))tmdb_search(fd,query);
+  else if(!strcmp(url,"/api/media/subtitles")&&!strcmp(method,"GET"))list_subtitles(fd,query);
+  else if(!strcmp(url,"/api/media/subtitle")&&!strcmp(method,"GET"))serve_subtitle_vtt(fd,query);
+  else if(!strcmp(url,"/api/media/snapshot")&&!strcmp(method,"GET"))snapshot_image(fd,query);
+  else if(!strcmp(url,"/api/media/transcode")&&!strcmp(method,"GET"))transcode_video(fd,query);
   else if(!strcmp(url,"/api/media/libraries")&&!strcmp(method,"POST"))add_library(fd,req+header_len,req);
   else if(!strcmp(url,"/api/media/libraries")&&!strcmp(method,"DELETE")) {
     const char *id=query&&strncmp(query,"id=",3)==0?query+3:""; char decoded_id[MAX_ID];
