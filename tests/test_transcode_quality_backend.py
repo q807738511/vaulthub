@@ -63,6 +63,12 @@ with tempfile.TemporaryDirectory() as tmp:
         assert headers.get("Content-Type") == "video/mp4"
         assert data.startswith(b"\x00\x00\x00")
 
+        status, headers, data = read_url("http://127.0.0.1:9100/api/media/transcode?id=movies&path=Demo.2024.mp4&quality=original", {"Range": "bytes=0-4095"})
+        assert status == 206, status
+        assert headers.get("Content-Type") == "video/mp4"
+        assert headers.get("Content-Range", "").startswith("bytes 0-4095/"), headers
+        assert data.startswith(b"\x00\x00\x00")
+
         status, headers, data = read_url("http://127.0.0.1:9100/api/media/transcode?id=movies&path=Demo.2024.mp4&quality=720p")
         assert status == 200, status
         assert headers.get("Content-Type") == "video/mp4"
@@ -80,6 +86,35 @@ with tempfile.TemporaryDirectory() as tmp:
         assert headers.get("Content-Range", "").startswith("bytes 0-4095/"), headers
         assert data.startswith(b"\x00\x00\x00")
         assert len(list(cache.glob("*.mp4"))) >= 2, list(cache.glob("*"))
+
+        caddyfile = tmp / "Caddyfile"
+        caddyfile.write_text("""{
+    auto_https off
+}
+:18088 {
+    handle /api/media/* {
+        reverse_proxy http://127.0.0.1:9100 {
+            flush_interval -1
+        }
+    }
+}
+""", encoding="utf-8")
+        caddy = subprocess.Popen([str(ROOT / "caddy"), "run", "--config", str(caddyfile), "--adapter", "caddyfile"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            wait_port(18088)
+            status, headers, data = read_url("http://127.0.0.1:18088/api/media/transcode?id=movies&path=Demo.2024.mp4&quality=original", {"Range": "bytes=0-4095"})
+            assert status == 206, status
+            assert data.startswith(b"\x00\x00\x00")
+            status, headers, data = read_url("http://127.0.0.1:18088/api/media/transcode?id=movies&path=Demo.2024.mp4&quality=720p")
+            assert status in (200, 206), status
+            assert headers.get("Content-Type") == "video/mp4"
+            assert data.startswith(b"\x00\x00\x00")
+        finally:
+            caddy.terminate()
+            try:
+                caddy.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                caddy.kill()
     finally:
         proc.terminate()
         try:
@@ -87,4 +122,4 @@ with tempfile.TemporaryDirectory() as tmp:
         except subprocess.TimeoutExpired:
             proc.kill()
 
-print("PASS: transcode quality validation, real 720p/480p playback streams, range, and cache files work")
+print("PASS: transcode quality validation, original passthrough, Caddy-proxied playback, range, and cache files work")

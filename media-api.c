@@ -422,6 +422,7 @@ static unsigned long long fnv1a64(const char *s) {
   for (const unsigned char *p=(const unsigned char*)s; *p; p++) { h ^= *p; h *= 1099511628211ULL; }
   return h;
 }
+static void serve_file_query(int fd, const char *method, const char *query, const char *request);
 static int transcode_quality_height(const char *quality) {
   if (!quality || !*quality || !strcmp(quality,"original")) return 0;
   if (!strcmp(quality,"1080p")) return 1080;
@@ -447,6 +448,7 @@ static void transcode_video(int fd, const char *query, const char *method, const
   char canonical[MAX_PATH_LEN]; int rc=resolve_query_file(query, canonical, sizeof(canonical), NULL, 0); if(rc){ json_error(fd, rc==-3?404:400, "invalid media path"); return; }
   char quality[32]="original"; const char *raw_q=query_value(query,"quality"); if(raw_q){ size_t n=strcspn(raw_q,"&"); if(n>=sizeof(quality)){json_error(fd,400,"invalid quality");return;} memcpy(quality,raw_q,n); quality[n]=0; }
   int height=transcode_quality_height(quality); if(height<0){json_error(fd,400,"invalid quality");return;}
+  if(height==0){ serve_file_query(fd,method,query,request); return; }
   struct stat st; if(stat(canonical,&st)){json_error(fd,404,"file not found");return;}
   ensure_cache_dir();
   char key_src[MAX_PATH_LEN+128]; snprintf(key_src,sizeof(key_src),"%s:%lld:%lld:%s",canonical,(long long)st.st_size,(long long)st.st_mtime,quality);
