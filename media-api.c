@@ -57,6 +57,10 @@ static void response(int fd, int code, const char *type, const char *body) {
   size_t len = body ? strlen(body) : 0; send_headers(fd, code, type, (off_t)len, NULL);
   if (len) (void)write(fd, body, len);
 }
+static void send_stream_headers(int fd, int code, const char *type, const char *extra) {
+  const char *reason = code == 200 ? "OK" : code == 400 ? "Bad Request" : code == 404 ? "Not Found" : "Internal Server Error";
+  dprintf(fd, "HTTP/1.1 %d %s\r\nContent-Type: %s\r\nX-Content-Type-Options: nosniff\r\nCache-Control: no-store\r\n%sConnection: close\r\n\r\n", code, reason, type, extra ? extra : "");
+}
 static void json_error(int fd, int code, const char *msg) {
   struct buffer b = {0}; appendf(&b, "{\"ok\":false,\"error\":\"%s\"}", msg); response(fd, code, "application/json", b.data); free(b.data);
 }
@@ -362,6 +366,46 @@ static void tmdb_search(int fd, const char *query) {
   send_headers(fd, 200, "application/json", (off_t)b.len, NULL); write(fd, b.data, b.len); free(b.data);
 }
 
+static int resolve_query_media_file(const char *query, char *canonical, size_t canonical_cap, char *rel, size_t rel_cap) {
+  (void)canonical_cap;
+  const char *raw_id=query_value(query,"id"),*raw_path=query_value(query,"path"); char id[MAX_ID],decoded_rel[MAX_PATH_LEN];
+  if(!raw_id||!raw_path||url_decode_component(raw_id,id,sizeof(id))||url_decode_component(raw_path,decoded_rel,sizeof(decoded_rel))||!valid_id(id)||!safe_relative(decoded_rel)) return -1;
+  struct library libs[MAX_LIBS];int count=0;if(load_libraries(libs,&count))return -2;const char *base=NULL;for(int i=0;i<count;i++)if(!strcmp(libs[i].id,id))base=libs[i].path;if(!base)return -3;
+  char candidate[MAX_PATH_LEN];struct stat st;int z=snprintf(candidate,sizeof(candidate),"%s/%s",base,decoded_rel);
+  if(z<0||(size_t)z>=sizeof(candidate)||!realpath(candidate,canonical)||!path_is_under(canonical,base)||stat(canonical,&st)||!S_ISREG(st.st_mode))return -3;
+  if(rel&&rel_cap){snprintf(rel,rel_cap,"%s",decoded_rel);} return 0;
+}
+static int ffprobe_value(const char *canonical, const char *selector, char *out, size_t cap) {
+  char q_file[8192], q_sel[128], cmd[12000]; if(shell_quote(canonical,q_file,sizeof(q_file))||shell_quote(selector,q_sel,sizeof(q_sel)))return -1;
+  snprintf(cmd,sizeof(cmd),"ffprobe -v error -select_streams %s -show_entries stream=codec_name -of default=noprint_wrappers=1:nokey=1 %s 2>/dev/null",q_sel,q_file);
+  FILE *pipe=popen(cmd,"r"); if(!pipe)return -1; if(!fgets(out,(int)cap,pipe))out[0]=0; int rc=pclose(pipe);
+  out[strcspn(out,"\r\n")]=0; return rc==0?0:-1;
+}
+static int browser_audio_codec_ok(const char *codec) {
+  return !strcmp(codec,"aac")||!strcmp(codec,"mp3")||!strcmp(codec,"opus")||!strcmp(codec,"vorbis")||!strcmp(codec,"flac");
+}
+static int browser_container_likely_ok(const char *rel) {
+  const char *e=strrchr(rel,'.'); if(!e)return 0; e++;
+  return !strcasecmp(e,"mp4")||!strcasecmp(e,"m4v")||!strcasecmp(e,"webm")||!strcasecmp(e,"ogv")||!strcasecmp(e,"ogg");
+}
+static void probe_media(int fd, const char *query) {
+  char canonical[MAX_PATH_LEN], rel[MAX_PATH_LEN]; int rc=resolve_query_media_file(query,canonical,sizeof(canonical),rel,sizeof(rel)); if(rc){json_error(fd,rc==-3?404:400,"invalid media path");return;}
+  char acodec[64]="", vcodec[64]=""; (void)ffprobe_value(canonical,"a:0",acodec,sizeof(acodec)); (void)ffprobe_value(canonical,"v:0",vcodec,sizeof(vcodec));
+  int compat = !browser_container_likely_ok(rel) || (acodec[0] && !browser_audio_codec_ok(acodec));
+  char *eac=json_escape(acodec), *evc=json_escape(vcodec); struct buffer b={0};
+  appendf(&b,"{\"audio_codec\":\"%s\",\"video_codec\":\"%s\",\"container_likely_supported\":%s,\"audio_likely_supported\":%s,\"compat_recommended\":%s}\n",eac?eac:"",evc?evc:"",browser_container_likely_ok(rel)?"true":"false",(!acodec[0]||browser_audio_codec_ok(acodec))?"true":"false",compat?"true":"false");
+  free(eac);free(evc); send_headers(fd,200,"application/json",(off_t)b.len,NULL); write(fd,b.data,b.len); free(b.data);
+}
+static void compat_media(int fd, const char *method, const char *query) {
+  char canonical[MAX_PATH_LEN]; int rc=resolve_query_media_file(query,canonical,sizeof(canonical),NULL,0); if(rc){json_error(fd,rc==-3?404:400,"invalid media path");return;}
+  if(!strcmp(method,"HEAD")){send_stream_headers(fd,200,"video/mp4","Accept-Ranges: none\r\nX-VaultHub-Compat: audio-aac\r\n");return;}
+  char q_file[8192], cmd[12000]; if(shell_quote(canonical,q_file,sizeof(q_file))){json_error(fd,400,"path too long");return;}
+  snprintf(cmd,sizeof(cmd),"ffmpeg -hide_banner -loglevel error -i %s -map 0:v:0 -map 0:a:0? -c:v libx264 -preset veryfast -crf 23 -pix_fmt yuv420p -c:a aac -b:a 160k -ac 2 -movflags frag_keyframe+empty_moov+default_base_moof -f mp4 pipe:1 2>/dev/null",q_file);
+  FILE *pipe=popen(cmd,"r"); if(!pipe){json_error(fd,500,"compat playback unavailable");return;}
+  send_stream_headers(fd,200,"video/mp4","Accept-Ranges: none\r\nX-VaultHub-Compat: audio-aac\r\n"); char buf[65536]; size_t n;
+  while((n=fread(buf,1,sizeof(buf),pipe))>0){size_t sent=0;while(sent<n){ssize_t w=write(fd,buf+sent,n-sent);if(w<=0){pclose(pipe);return;}sent+=(size_t)w;}}
+  pclose(pipe);
+}
 static void serve_file(int fd, const char *method, const char *url, const char *request) {
   const char *prefix="/api/media/file/"; char decoded[MAX_PATH_LEN]; if (url_decode(url,decoded,sizeof(decoded))||strncmp(decoded,prefix,strlen(prefix))) { json_error(fd,400,"invalid path"); return; }
   char *id=decoded+strlen(prefix),*slash=strchr(id,'/'); if(!slash){json_error(fd,400,"file path required");return;} *slash=0; const char *rel=slash+1; if(!valid_id(id)||!safe_relative(rel)){json_error(fd,400,"invalid path");return;}
@@ -478,6 +522,8 @@ static void handle_client(int fd) {
   else if(!strcmp(url,"/api/media/files")&&!strcmp(method,"GET"))list_files(fd,query);
   else if(!strcmp(url,"/api/media/scrapers")&&!strcmp(method,"GET"))scraper_status(fd);
   else if(!strcmp(url,"/api/media/tmdb")&&!strcmp(method,"GET"))tmdb_search(fd,query);
+  else if(!strcmp(url,"/api/media/probe")&&query&&!strcmp(method,"GET"))probe_media(fd,query);
+  else if(!strcmp(url,"/api/media/compat")&&query&&(!strcmp(method,"GET")||!strcmp(method,"HEAD")))compat_media(fd,method,query);
   else if(!strcmp(url,"/api/media/libraries")&&!strcmp(method,"POST"))add_library(fd,req+header_len,req);
   else if(!strcmp(url,"/api/media/libraries")&&!strcmp(method,"DELETE")) {
     const char *id=query&&strncmp(query,"id=",3)==0?query+3:""; char decoded_id[MAX_ID];
