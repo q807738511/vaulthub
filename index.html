@@ -366,6 +366,11 @@
   .view-toggle button { border:0; border-radius:6px; padding:7px 12px; color:var(--text2); background:transparent; cursor:pointer; }
   .view-toggle button.active { color:#fff; background:var(--accent); }
   .movie-poster-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:16px; }
+  .movie-player-shell { position:relative; width:100%; background:#000; border-radius:10px; overflow:hidden; }
+  .movie-player-shell video { display:block; width:100%; max-height:72vh; background:#000; }
+  .movie-quality-floating { position:absolute; right:12px; bottom:42px; z-index:5; display:flex; align-items:center; gap:6px; padding:5px 7px; border-radius:9px; background:rgba(0,0,0,.58); border:1px solid rgba(255,255,255,.22); color:#fff; backdrop-filter:blur(8px); font-size:12px; }
+  .movie-quality-floating .select-mini { background:rgba(22,27,34,.92); color:#fff; border-color:rgba(255,255,255,.25); padding:4px 6px; }
+
   .movie-card { min-width:0; border:1px solid var(--border); border-radius:12px; background:var(--card); overflow:hidden; cursor:pointer; transition:transform .16s,border-color .16s; }
   .movie-card:hover { transform:translateY(-3px); border-color:var(--accent); }
   .movie-card-poster { position:relative; aspect-ratio:2/3; background:var(--bg2); display:flex; align-items:center; justify-content:center; color:#fff; text-align:center; padding:16px; overflow:hidden; }
@@ -577,7 +582,7 @@
   <div class="add-board-btn" onclick="openModuleModal()">
     <span>＋</span><span data-i18n="addBoardNav">添加模块</span>
   </div>
-  <div class="sidebar-foot">v0.6.17 · Adaptive Media Views and Cached Transcoding</div>
+  <div class="sidebar-foot">v0.6.18 · Default 720P Video Playback Fix</div>
 </aside>
 
 <!-- ===== 主区域 ===== -->
@@ -1153,7 +1158,7 @@
   <div class="modal">
     <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
     <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
-    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.6.17 · Adaptive Media Views and Cached Transcoding</b></div>
+    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.6.18 · Default 720P Video Playback Fix</b></div>
     <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>HTML / CSS / JS · 单文件</b></div>
     <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>VaultHub 内置系统监控</b></div>
     <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>
@@ -1930,14 +1935,14 @@ function renderMovieCard(lib, file) { const path=String(file.path), meta=movieMe
 function refreshMovieMetadata() { try { localStorage.removeItem(movieMetadataCache); } catch(e) {} const lib=findMediaLibrary(localMediaSelection.movie); if(lib) loadLocalFiles("movie", lib, 0); toast("🔄 正在重新刮削影视信息"); }
 function movieVideoType(ext) { return ({mp4:"video/mp4",m4v:"video/mp4",webm:"video/webm",mov:"video/quicktime",mkv:"video/x-matroska",avi:"video/x-msvideo"})[ext] || "video/mp4"; }
 async function movieSubtitleTracks(lib, path) { try { const res=await fetch(mediaSubtitlesUrl(lib,path), {cache:"no-store"}); if(!res.ok) return []; return (await res.json()).subtitles || []; } catch(e) { return []; } }
-function moviePlayerError(video) { if (!video || video.dataset.transcoded === "1") return; video.dataset.transcoded = "1"; video.src = mediaTranscodeUrl({id:video.dataset.library}, video.dataset.path, video.dataset.quality || "original"); video.load(); video.play().catch(()=>{}); toast("⚠️ 原始文件浏览器解码失败，已切换缓存转码流"); }
-function switchMovieQuality(select) { const video=document.getElementById("moviePlayer"); if(!video) return; const q=select.value || "original"; video.dataset.quality=q; const lib={id:video.dataset.library}; video.dataset.transcoded = (q === "original" && isLanPlaybackOrigin()) ? "0" : "1"; video.src = moviePlaybackUrl(lib, video.dataset.path, q); video.load(); video.play().catch(()=>{}); toast(q === "original" && isLanPlaybackOrigin() ? "🎬 已切换原画直连" : `🎬 已切换${q}缓存转码`); }
+function moviePlayerError(video) { if (!video) return; const q = video.dataset.quality || "720p"; toast(q === "original" ? "⚠️ 原画直连加载失败，请切换 720P/480P 转码" : `⚠️ ${q} 转码播放加载失败，请稍后重试或检查 ffmpeg 日志`); }
+function switchMovieQuality(select) { const video=document.getElementById("moviePlayer"); if(!video) return; const q=select.value || "720p"; video.dataset.quality=q; const lib={id:video.dataset.library}; video.dataset.transcoded = q === "original" ? "0" : "1"; video.src = moviePlaybackUrl(lib, video.dataset.path, q); video.load(); video.play().catch(()=>{}); toast(q === "original" ? "🎬 已切换原画直连" : `🎬 已切换${q}缓存转码`); }
 function switchMovieSubtitle(select) { const video=document.getElementById("moviePlayer"); if(!video) return; [...video.textTracks].forEach((track,i)=>track.mode = i === Number(select.value) ? "showing" : "disabled"); }
 function buildMovieSubtitlePicker(subtitles) { return subtitles.length ? `<label class="hint">字幕 <select class="select-mini" onchange="switchMovieSubtitle(this)">${subtitles.map((s,i)=>`<option value="${i}" ${i===0?"selected":""}>${esc(s.name || s.path)}</option>`).join("")}</select> 默认开启</label>` : `<span class="hint">未发现同名字幕文件（支持 .vtt/.srt/.ass/.ssa，其中 SRT 会转 VTT）</span>`; }
-function buildMovieQualityPicker() { return `<label class="hint">画质 <select id="movieQualitySelect" class="select-mini" onchange="switchMovieQuality(this)"><option value="original" selected>原画</option><option value="1080p">1080P</option><option value="720p">720P</option><option value="480p">480P</option><option value="360p">360P</option></select></label>`; }
+function buildMovieQualityPicker() { return `<label class="movie-quality-floating">画质 <select id="movieQualitySelect" class="select-mini" onchange="switchMovieQuality(this)"><option value="original">原画</option><option value="1080p">1080P</option><option value="720p" selected>720P</option><option value="480p">480P</option><option value="360p">360P</option></select></label>`; }
 function buildMoviePlayer(lib, path, ext, subtitles) {
-  const original = mediaFileUrl(lib, path), initialQuality = "original", initialUrl = moviePlaybackUrl(lib, path, initialQuality), direct = initialUrl === original, snapshot = mediaSnapshotUrl(lib, path), tracks = subtitles.map((s,i)=>`<track kind="subtitles" srclang="zh" label="${esc(s.name || `字幕${i+1}`)}" src="${esc(mediaSubtitleUrl(lib, s.path))}" ${i===0?"default":""}>`).join("");
-  return `<div class="media-viewer-body"><video id="moviePlayer" data-library="${esc(lib.id)}" data-path="${esc(path)}" data-quality="${initialQuality}" data-transcoded="${direct ? "0" : "1"}" controls autoplay preload="metadata" crossorigin="anonymous" poster="${esc(movieMetadataFor(path).poster || snapshot)}" style="width:100%;max-height:72vh;background:#000" onerror="moviePlayerError(this)"><source src="${esc(initialUrl)}" type="${esc(direct ? movieVideoType(ext) : "video/mp4")}">${tracks}</video><div class="media-actions movie-player-tools">${buildMovieQualityPicker()}<button class="btn" onclick="const s=document.getElementById('movieQualitySelect'); if(s){s.value='1080p'; switchMovieQuality(s);}">兼容转码播放</button><a class="btn" href="${esc(original)}" target="_blank" rel="noopener">外部打开原片</a>${buildMovieSubtitlePicker(subtitles)}</div><div class="hint">自动识别网络：内网/localhost 的“原画”使用文件直连；域名反代/穿透或 1080P/720P/480P/360P 会走 ffmpeg 缓存转码，第二次播放直接命中缓存。</div></div>`;
+  const initialQuality = "720p", initialUrl = moviePlaybackUrl(lib, path, initialQuality), snapshot = mediaSnapshotUrl(lib, path), tracks = subtitles.map((s,i)=>`<track kind="subtitles" srclang="zh" label="${esc(s.name || `字幕${i+1}`)}" src="${esc(mediaSubtitleUrl(lib, s.path))}" ${i===0?"default":""}>`).join("");
+  return `<div class="media-viewer-body"><div class="movie-player-shell"><video id="moviePlayer" data-library="${esc(lib.id)}" data-path="${esc(path)}" data-quality="${initialQuality}" data-transcoded="1" controls autoplay preload="metadata" crossorigin="anonymous" poster="${esc(movieMetadataFor(path).poster || snapshot)}" onerror="moviePlayerError(this)"><source src="${esc(initialUrl)}" type="video/mp4">${tracks}</video>${buildMovieQualityPicker()}</div><div class="media-actions movie-player-tools">${buildMovieSubtitlePicker(subtitles)}</div><div class="hint">默认 720P 转码播放；切换“原画”时才尝试文件直连，1080P/720P/480P/360P 均使用对应分辨率缓存转码。</div></div>`;
 }
 function mediaStateKey(libId, path) { return `vaulthub_reading_${libId}_${path}`; }
 function readingState(libId, path) {
@@ -2006,7 +2011,7 @@ function mediaSubtitlesUrl(lib, path) { return `/api/media/subtitles?id=${encode
 function mediaSnapshotUrl(lib, path) { return `/api/media/snapshot?id=${encodeURIComponent(String(lib.id))}&path=${encodeURIComponent(String(path))}`; }
 function mediaTranscodeUrl(lib, path, quality = "original") { return `/api/media/transcode?id=${encodeURIComponent(String(lib.id))}&path=${encodeURIComponent(String(path))}&quality=${encodeURIComponent(String(quality))}`; }
 function isLanPlaybackOrigin() { const h = location.hostname; return h === "localhost" || h === "127.0.0.1" || h === "::1" || h.endsWith(".local") || /^10\./.test(h) || /^192\.168\./.test(h) || /^172\.(1[6-9]|2\d|3[0-1])\./.test(h); }
-function moviePlaybackUrl(lib, path, quality = "original") { return quality === "original" && isLanPlaybackOrigin() ? mediaFileUrl(lib, path) : mediaTranscodeUrl(lib, path, quality); }
+function moviePlaybackUrl(lib, path, quality = "720p") { return quality === "original" ? mediaFileUrl(lib, path) : mediaTranscodeUrl(lib, path, quality); }
 function normalizeLibraryPayload(data) {
   const libs = Array.isArray(data) ? data : (data?.libraries || data?.items || []);
   return libs.map((lib, idx) => ({

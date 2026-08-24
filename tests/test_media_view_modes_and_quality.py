@@ -36,22 +36,27 @@ for marker in [
 ]:
     assert_contains(html, marker)
 
-# 网络自动识别 + 画质档位。
+# 默认 720P 转码播放；只有原画走直连；画质控件内置播放器右下角。
 for marker in [
-    "function isLanPlaybackOrigin()",
-    "function moviePlaybackUrl(lib, path, quality = \"original\")",
+    "function moviePlaybackUrl(lib, path, quality = \"720p\")",
+    "quality === \"original\" ? mediaFileUrl(lib, path) : mediaTranscodeUrl(lib, path, quality)",
     "mediaTranscodeUrl(lib, path, quality = \"original\")",
     "function switchMovieQuality(select)",
+    "movie-quality-floating",
     "id=\"movieQualitySelect\"",
-    "<option value=\"original\" selected>原画</option>",
+    "<option value=\"original\">原画</option>",
     "<option value=\"1080p\">1080P</option>",
-    "<option value=\"720p\">720P</option>",
+    "<option value=\"720p\" selected>720P</option>",
     "<option value=\"480p\">480P</option>",
     "<option value=\"360p\">360P</option>",
-    "自动识别网络",
+    "默认 720P 转码播放",
     "缓存转码",
 ]:
     assert_contains(html, marker)
+
+# 旧的兼容/外部按钮必须移除。
+assert "兼容转码播放</button>" not in html
+assert "外部打开原片" not in html
 
 # 后端转码缓存和画质参数。
 for marker in [
@@ -66,7 +71,8 @@ for marker in [
     "X-VaultHub-Transcode-Cache: HIT",
     "serve_cached_video",
     "quality",
-    "scale=-2:'min(%d,ih)'",
+    "scale=-2:min(%d\\\\,ih)",
+    "-f mp4",
     "-movflags +faststart",
 ]:
     assert_contains(c, marker)
@@ -75,4 +81,4 @@ assert "ffmpeg" in dockerfile
 assert "TRANSCODE_CACHE_DIR=/data/transcode-cache" in dockerfile
 assert "TRANSCODE_CACHE_DIR" in compose
 
-print("PASS: media view switches, sidebar-safe viewer, network-aware quality selection, and transcode cache markers are present")
+print("PASS: media view switches, sidebar-safe viewer, default 720p player, quality selector, and transcode cache markers are present")

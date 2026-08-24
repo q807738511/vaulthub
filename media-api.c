@@ -457,8 +457,8 @@ static void transcode_video(int fd, const char *query, const char *method, const
   z = snprintf(tmp_path,sizeof(tmp_path),"%s.tmp.%ld",cache_path,(long)getpid());
   if(z<0||(size_t)z>=sizeof(tmp_path)){json_error(fd,400,"cache path too long");return;}
   char q_file[8192], q_tmp[8192], vf[160]="", cmd[24000]; if(shell_quote(canonical,q_file,sizeof(q_file))||shell_quote(tmp_path,q_tmp,sizeof(q_tmp))){json_error(fd,400,"path too long");return;}
-  if(height>0) snprintf(vf,sizeof(vf)," -vf scale=-2:'min(%d,ih)'",height);
-  z = snprintf(cmd,sizeof(cmd),"ffmpeg -hide_banner -loglevel error -y -i %s -map 0:v:0 -map 0:a:0? -c:v libx264 -preset veryfast -pix_fmt yuv420p%s -c:a aac -b:a 160k -movflags +faststart %s 2>/dev/null",q_file,vf,q_tmp);
+  if(height>0) snprintf(vf,sizeof(vf)," -vf 'scale=-2:min(%d\\,ih)'",height);
+  z = snprintf(cmd,sizeof(cmd),"ffmpeg -hide_banner -loglevel error -y -i %s -map 0:v:0 -map 0:a:0? -c:v libx264 -preset veryfast -pix_fmt yuv420p%s -c:a aac -b:a 160k -movflags +faststart -f mp4 %s 2>/dev/null",q_file,vf,q_tmp);
   if(z<0||(size_t)z>=sizeof(cmd)){json_error(fd,400,"command too long");return;}
   int rc2=system(cmd); if(rc2!=0 || rename(tmp_path,cache_path)){ unlink(tmp_path); json_error(fd,500,"transcode failed"); return; }
   serve_cached_video(fd,method,cache_path,request);
