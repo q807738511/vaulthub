@@ -19,6 +19,8 @@ services:
       # 宿主机系统信息在容器内的只读路径。
       SYSTEM_MONITOR_PROC_ROOT: "/host/proc"
       SYSTEM_MONITOR_SYS_ROOT: "/host/sys"
+      # 可选：配置后影视本地库启用 TMDB 刮削；未配置时默认豆瓣/文件名兜底。
+      TMDB_API_KEY: ""
     volumes:
       - ./data:/data
       # 媒体目录：按实际宿主机目录修改，保持只读。
