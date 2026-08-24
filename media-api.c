@@ -454,7 +454,7 @@ static void transcode_video(int fd, const char *query, const char *method, const
   int z = snprintf(cache_path,sizeof(cache_path),"%s/%016llx-%s.mp4",transcode_cache_dir,hash,quality);
   if(z<0||(size_t)z>=sizeof(cache_path)){json_error(fd,400,"cache path too long");return;}
   if(!access(cache_path,R_OK)){ serve_cached_video(fd,method,cache_path,request); return; }
-  z = snprintf(tmp_path,sizeof(tmp_path),"%s.tmp.%ld",cache_path,(long)getpid());
+  z = snprintf(tmp_path,sizeof(tmp_path),"%s.tmp.%ld.%llu",cache_path,(long)getpid(),(unsigned long long)pthread_self());
   if(z<0||(size_t)z>=sizeof(tmp_path)){json_error(fd,400,"cache path too long");return;}
   char q_file[8192], q_tmp[8192], vf[160]="", cmd[24000]; if(shell_quote(canonical,q_file,sizeof(q_file))||shell_quote(tmp_path,q_tmp,sizeof(q_tmp))){json_error(fd,400,"path too long");return;}
   if(height>0) snprintf(vf,sizeof(vf)," -vf 'scale=-2:min(%d\\,ih)'",height);
@@ -594,10 +594,20 @@ static void handle_client(int fd) {
   else if(!strncmp(url,"/api/media/",11))json_error(fd,405,"method not allowed");else json_error(fd,404,"not found");
 done:free(req);close(fd);
 }
+static void *client_thread(void *arg) {
+  int fd = (int)(intptr_t)arg;
+  handle_client(fd);
+  return NULL;
+}
+static void dispatch_client(int fd) {
+  pthread_t tid;
+  if (pthread_create(&tid, NULL, client_thread, (void *)(intptr_t)fd) == 0) pthread_detach(tid);
+  else handle_client(fd);
+}
 int main(void) {
   const char *configured_config=getenv("MEDIA_CONFIG"); if(configured_config&&*configured_config)config_path=configured_config;
   const char *configured_index=getenv("MEDIA_INDEX_DIR"); if(configured_index&&*configured_index)index_dir=configured_index;
   const char *configured_sleep=getenv("MEDIA_SCAN_SLEEP_MS"); if(configured_sleep&&*configured_sleep)scan_sleep_ms=(unsigned)strtoul(configured_sleep,NULL,10);
   const char *configured_cache=getenv("TRANSCODE_CACHE_DIR"); if(configured_cache&&*configured_cache)transcode_cache_dir=configured_cache;
-  signal(SIGPIPE,SIG_IGN);int s=socket(AF_INET,SOCK_STREAM,0);if(s<0)return 1;int yes=1;setsockopt(s,SOL_SOCKET,SO_REUSEADDR,&yes,sizeof(yes));struct sockaddr_in addr={0};addr.sin_family=AF_INET;addr.sin_addr.s_addr=htonl(INADDR_LOOPBACK);addr.sin_port=htons(PORT);if(bind(s,(struct sockaddr*)&addr,sizeof(addr))||listen(s,32)){perror("media-api listen");return 1;}fprintf(stderr,"VaultHub media API listening on 127.0.0.1:%d\n",PORT);for(;;){int fd=accept(s,NULL,NULL);if(fd>=0)handle_client(fd);else if(errno!=EINTR)break;}close(s);return 0;
+  signal(SIGPIPE,SIG_IGN);int s=socket(AF_INET,SOCK_STREAM,0);if(s<0)return 1;int yes=1;setsockopt(s,SOL_SOCKET,SO_REUSEADDR,&yes,sizeof(yes));struct sockaddr_in addr={0};addr.sin_family=AF_INET;addr.sin_addr.s_addr=htonl(INADDR_LOOPBACK);addr.sin_port=htons(PORT);if(bind(s,(struct sockaddr*)&addr,sizeof(addr))||listen(s,128)){perror("media-api listen");return 1;}fprintf(stderr,"VaultHub media API listening on 127.0.0.1:%d\n",PORT);for(;;){int fd=accept(s,NULL,NULL);if(fd>=0)dispatch_client(fd);else if(errno!=EINTR)break;}close(s);return 0;
 }
