@@ -17,7 +17,8 @@ ENV NAS_IP=192.168.112.3 \
     DASHBOARD_ORIGIN=https://home.enged.top \
     WEB_ROOT=/srv \
     ADMIN_TOKEN= \
-    TMDB_API_KEY=
+    TMDB_API_KEY= \
+    TRANSCODE_CACHE_DIR=/data/transcode-cache
 
 EXPOSE 8088
 WORKDIR /srv

@@ -31,6 +31,7 @@ struct library { char id[MAX_ID], name[MAX_NAME], type[MAX_TYPE], path[MAX_PATH_
 struct buffer { char *data; size_t len, cap; };
 static const char *config_path = "/data/media-libraries.json";
 static const char *index_dir = "/data/media-index";
+static const char *transcode_cache_dir = "/data/transcode-cache";
 static unsigned scan_sleep_ms = 25;
 
 static int appendf(struct buffer *b, const char *fmt, ...) {
@@ -416,11 +417,51 @@ static void snapshot_image(int fd, const char *query) {
   snprintf(cmd,sizeof(cmd),"ffmpeg -hide_banner -loglevel error -ss 00:03:00 -i %s -frames:v 1 -vf scale='min(640,iw)':-2 -f image2pipe -vcodec mjpeg pipe:1 2>/dev/null",q_file);
   FILE *pipe=popen(cmd,"r"); if(!pipe){json_error(fd,500,"snapshot unavailable");return;} send_stream_headers(fd,200,"image/jpeg",NULL); char buf[65536]; size_t n; while((n=fread(buf,1,sizeof(buf),pipe))>0) if(write(fd,buf,n)<=0) break; pclose(pipe);
 }
-static void transcode_video(int fd, const char *query) {
+static unsigned long long fnv1a64(const char *s) {
+  unsigned long long h = 1469598103934665603ULL;
+  for (const unsigned char *p=(const unsigned char*)s; *p; p++) { h ^= *p; h *= 1099511628211ULL; }
+  return h;
+}
+static int transcode_quality_height(const char *quality) {
+  if (!quality || !*quality || !strcmp(quality,"original")) return 0;
+  if (!strcmp(quality,"1080p")) return 1080;
+  if (!strcmp(quality,"720p")) return 720;
+  if (!strcmp(quality,"480p")) return 480;
+  if (!strcmp(quality,"360p")) return 360;
+  return -1;
+}
+static void ensure_cache_dir(void) {
+  mkdir("/data",0755);
+  mkdir(transcode_cache_dir,0755);
+}
+static void serve_cached_video(int fd, const char *method, const char *path, const char *request) {
+  struct stat st; if(stat(path,&st)||!S_ISREG(st.st_mode)){json_error(fd,404,"transcode cache not found");return;}
+  off_t start=0,end=st.st_size?st.st_size-1:0; int ranged=parse_range(request,st.st_size,&start,&end); char extra[256];
+  if(ranged<0){snprintf(extra,sizeof(extra),"Content-Range: bytes */%lld\r\nAccept-Ranges: bytes\r\n",(long long)st.st_size);send_headers(fd,416,"application/json",0,extra);return;}
+  off_t len=st.st_size?end-start+1:0; if(ranged)snprintf(extra,sizeof(extra),"Accept-Ranges: bytes\r\nContent-Range: bytes %lld-%lld/%lld\r\n",(long long)start,(long long)end,(long long)st.st_size);else snprintf(extra,sizeof(extra),"Accept-Ranges: bytes\r\nX-VaultHub-Transcode-Cache: HIT\r\n");
+  send_headers(fd,ranged?206:200,"video/mp4",len,extra); if(!strcmp(method,"HEAD")||!len)return;
+  int file=open(path,O_RDONLY); if(file<0)return; if(lseek(file,start,SEEK_SET)<0){close(file);return;} char buf[65536]; off_t left=len;
+  while(left>0){size_t want=left<(off_t)sizeof(buf)?(size_t)left:sizeof(buf); ssize_t n=read(file,buf,want); if(n<=0)break; size_t sent=0; while(sent<(size_t)n){ssize_t w=write(fd,buf+sent,(size_t)n-sent); if(w<=0){left=0;break;} sent+=(size_t)w;} left-=n;} close(file);
+}
+static void transcode_video(int fd, const char *query, const char *method, const char *request) {
   char canonical[MAX_PATH_LEN]; int rc=resolve_query_file(query, canonical, sizeof(canonical), NULL, 0); if(rc){ json_error(fd, rc==-3?404:400, "invalid media path"); return; }
-  char q_file[8192], cmd[14000]; if(shell_quote(canonical,q_file,sizeof(q_file))){json_error(fd,400,"path too long");return;}
-  snprintf(cmd,sizeof(cmd),"ffmpeg -hide_banner -loglevel error -i %s -map 0:v:0 -map 0:a:0? -c:v libx264 -preset veryfast -tune zerolatency -pix_fmt yuv420p -c:a aac -b:a 160k -movflags frag_keyframe+empty_moov+default_base_moof -f mp4 pipe:1 2>/dev/null",q_file);
-  FILE *pipe=popen(cmd,"r"); if(!pipe){json_error(fd,500,"transcode unavailable");return;} send_stream_headers(fd,200,"video/mp4","Accept-Ranges: none\r\n"); char buf[65536]; size_t n; while((n=fread(buf,1,sizeof(buf),pipe))>0) if(write(fd,buf,n)<=0) break; pclose(pipe);
+  char quality[32]="original"; const char *raw_q=query_value(query,"quality"); if(raw_q){ size_t n=strcspn(raw_q,"&"); if(n>=sizeof(quality)){json_error(fd,400,"invalid quality");return;} memcpy(quality,raw_q,n); quality[n]=0; }
+  int height=transcode_quality_height(quality); if(height<0){json_error(fd,400,"invalid quality");return;}
+  struct stat st; if(stat(canonical,&st)){json_error(fd,404,"file not found");return;}
+  ensure_cache_dir();
+  char key_src[MAX_PATH_LEN+128]; snprintf(key_src,sizeof(key_src),"%s:%lld:%lld:%s",canonical,(long long)st.st_size,(long long)st.st_mtime,quality);
+  unsigned long long hash=fnv1a64(key_src); char cache_path[MAX_PATH_LEN], tmp_path[MAX_PATH_LEN];
+  int z = snprintf(cache_path,sizeof(cache_path),"%s/%016llx-%s.mp4",transcode_cache_dir,hash,quality);
+  if(z<0||(size_t)z>=sizeof(cache_path)){json_error(fd,400,"cache path too long");return;}
+  if(!access(cache_path,R_OK)){ serve_cached_video(fd,method,cache_path,request); return; }
+  z = snprintf(tmp_path,sizeof(tmp_path),"%s.tmp.%ld",cache_path,(long)getpid());
+  if(z<0||(size_t)z>=sizeof(tmp_path)){json_error(fd,400,"cache path too long");return;}
+  char q_file[8192], q_tmp[8192], vf[160]="", cmd[24000]; if(shell_quote(canonical,q_file,sizeof(q_file))||shell_quote(tmp_path,q_tmp,sizeof(q_tmp))){json_error(fd,400,"path too long");return;}
+  if(height>0) snprintf(vf,sizeof(vf)," -vf scale=-2:'min(%d,ih)'",height);
+  z = snprintf(cmd,sizeof(cmd),"ffmpeg -hide_banner -loglevel error -y -i %s -map 0:v:0 -map 0:a:0? -c:v libx264 -preset veryfast -pix_fmt yuv420p%s -c:a aac -b:a 160k -movflags +faststart %s 2>/dev/null",q_file,vf,q_tmp);
+  if(z<0||(size_t)z>=sizeof(cmd)){json_error(fd,400,"command too long");return;}
+  int rc2=system(cmd); if(rc2!=0 || rename(tmp_path,cache_path)){ unlink(tmp_path); json_error(fd,500,"transcode failed"); return; }
+  serve_cached_video(fd,method,cache_path,request);
 }
 
 static void serve_file(int fd, const char *method, const char *url, const char *request) {
@@ -542,7 +583,7 @@ static void handle_client(int fd) {
   else if(!strcmp(url,"/api/media/subtitles")&&!strcmp(method,"GET"))list_subtitles(fd,query);
   else if(!strcmp(url,"/api/media/subtitle")&&!strcmp(method,"GET"))serve_subtitle_vtt(fd,query);
   else if(!strcmp(url,"/api/media/snapshot")&&!strcmp(method,"GET"))snapshot_image(fd,query);
-  else if(!strcmp(url,"/api/media/transcode")&&!strcmp(method,"GET"))transcode_video(fd,query);
+  else if(!strcmp(url,"/api/media/transcode")&&(!strcmp(method,"GET")||!strcmp(method,"HEAD")))transcode_video(fd,query,method,req);
   else if(!strcmp(url,"/api/media/libraries")&&!strcmp(method,"POST"))add_library(fd,req+header_len,req);
   else if(!strcmp(url,"/api/media/libraries")&&!strcmp(method,"DELETE")) {
     const char *id=query&&strncmp(query,"id=",3)==0?query+3:""; char decoded_id[MAX_ID];
@@ -557,5 +598,6 @@ int main(void) {
   const char *configured_config=getenv("MEDIA_CONFIG"); if(configured_config&&*configured_config)config_path=configured_config;
   const char *configured_index=getenv("MEDIA_INDEX_DIR"); if(configured_index&&*configured_index)index_dir=configured_index;
   const char *configured_sleep=getenv("MEDIA_SCAN_SLEEP_MS"); if(configured_sleep&&*configured_sleep)scan_sleep_ms=(unsigned)strtoul(configured_sleep,NULL,10);
+  const char *configured_cache=getenv("TRANSCODE_CACHE_DIR"); if(configured_cache&&*configured_cache)transcode_cache_dir=configured_cache;
   signal(SIGPIPE,SIG_IGN);int s=socket(AF_INET,SOCK_STREAM,0);if(s<0)return 1;int yes=1;setsockopt(s,SOL_SOCKET,SO_REUSEADDR,&yes,sizeof(yes));struct sockaddr_in addr={0};addr.sin_family=AF_INET;addr.sin_addr.s_addr=htonl(INADDR_LOOPBACK);addr.sin_port=htons(PORT);if(bind(s,(struct sockaddr*)&addr,sizeof(addr))||listen(s,32)){perror("media-api listen");return 1;}fprintf(stderr,"VaultHub media API listening on 127.0.0.1:%d\n",PORT);for(;;){int fd=accept(s,NULL,NULL);if(fd>=0)handle_client(fd);else if(errno!=EINTR)break;}close(s);return 0;
 }
