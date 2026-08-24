@@ -21,8 +21,6 @@ services:
       SYSTEM_MONITOR_SYS_ROOT: "/host/sys"
       # 可选：配置后影视本地库启用 TMDB 刮削；未配置时默认豆瓣/文件名兜底。
       TMDB_API_KEY: ""
-      # 转码缓存目录；默认落在 ./data/transcode-cache，二次播放直接命中缓存。
-      TRANSCODE_CACHE_DIR: "/data/transcode-cache"
     volumes:
       - ./data:/data
       # 媒体目录：按实际宿主机目录修改，保持只读。

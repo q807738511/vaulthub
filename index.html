@@ -358,28 +358,6 @@
   .media-file-row { display: grid; grid-template-columns: minmax(0,1fr) auto auto; align-items: center; gap: 10px; min-height: 48px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
   .media-file-row:last-child { border-bottom: 0; }
   .media-file-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .movie-file-name { display:flex; align-items:center; gap:10px; }
-  .movie-file-name span { min-width:0; display:flex; flex-direction:column; gap:2px; }
-  .movie-file-name small { color:var(--text2); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .movie-poster-mini { width:42px; height:58px; object-fit:cover; border-radius:6px; background:var(--bg2); border:1px solid var(--border); flex:0 0 auto; }
-  .view-toggle { display:inline-flex; gap:4px; padding:3px; border:1px solid var(--border); border-radius:9px; background:var(--card2); }
-  .view-toggle button { border:0; border-radius:6px; padding:7px 12px; color:var(--text2); background:transparent; cursor:pointer; }
-  .view-toggle button.active { color:#fff; background:var(--accent); }
-  .movie-poster-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:16px; }
-  .movie-player-shell { position:relative; width:100%; background:#000; border-radius:10px; overflow:hidden; }
-  .movie-player-shell video { display:block; width:100%; max-height:72vh; background:#000; }
-  .movie-quality-floating { position:absolute; right:12px; bottom:42px; z-index:5; display:flex; align-items:center; gap:6px; padding:5px 7px; border-radius:9px; background:rgba(0,0,0,.58); border:1px solid rgba(255,255,255,.22); color:#fff; backdrop-filter:blur(8px); font-size:12px; }
-  .movie-quality-floating .select-mini { background:rgba(22,27,34,.92); color:#fff; border-color:rgba(255,255,255,.25); padding:4px 6px; }
-
-  .movie-card { min-width:0; border:1px solid var(--border); border-radius:12px; background:var(--card); overflow:hidden; cursor:pointer; transition:transform .16s,border-color .16s; }
-  .movie-card:hover { transform:translateY(-3px); border-color:var(--accent); }
-  .movie-card-poster { position:relative; aspect-ratio:2/3; background:var(--bg2); display:flex; align-items:center; justify-content:center; color:#fff; text-align:center; padding:16px; overflow:hidden; }
-  .movie-card-poster img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
-  .movie-card-info { padding:10px 12px; }
-  .movie-card-title { font-weight:700; line-height:1.35; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
-  .movie-card-meta { margin-top:6px; color:var(--text2); font-size:11px; display:flex; justify-content:space-between; gap:8px; }
-  .select-mini { background:var(--card2); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:6px 8px; }
-  .movie-player-tools { align-items:center; margin-top:10px; }
   .media-file-meta { color: var(--text2); font-size: 11px; white-space: nowrap; }
   .media-viewer { margin-top: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); overflow: hidden; }
   .media-viewer-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 12px; border-bottom: 1px solid var(--border); }
@@ -399,17 +377,13 @@
   .book-card-meta { margin-top:5px; color:var(--text2); font-size:11px; display:flex; justify-content:space-between; gap:6px; }
   .book-progress { height:3px; margin-top:7px; border-radius:4px; overflow:hidden; background:var(--border); }
   .book-progress span { display:block; height:100%; background:var(--green); }
-  .media-reader-overlay { position:fixed; top:0; right:0; bottom:0; left:var(--sidebar-w); z-index:300; display:flex; flex-direction:column; background:var(--bg); min-height:100vh; max-width:calc(100vw - var(--sidebar-w)); }
+  .media-reader-overlay { position:fixed; inset:0; z-index:300; display:flex; flex-direction:column; background:var(--bg); min-height:100vh; }
   .media-reader-head { flex:0 0 auto; min-height:50px; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 12px; border-bottom:1px solid var(--border); background:var(--bg2); }
   .media-reader-title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .media-reader-close { flex:0 0 auto; width:36px; height:36px; border-radius:50%; border:1px solid var(--border); color:var(--text); background:var(--card2); cursor:pointer; font-size:18px; }
-  .media-reader-body { flex:1; min-height:0; overflow:auto; display:flex; align-items:stretch; justify-content:center; background:#17191d; }
-  .media-reader-wrap { width:100%; min-height:100%; display:flex; align-items:stretch; justify-content:center; }
-  .media-reader-wrap > .media-viewer-body { flex:1 1 auto; min-width:0; min-height:0; width:100%; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; padding:clamp(12px,2vw,28px); box-sizing:border-box; }
-  .movie-player-shell { width:min(100%, calc((100vh - var(--media-chrome-offset) - 84px) * 16 / 9)); max-width:100%; aspect-ratio:16 / 9; margin:auto; flex:0 1 auto; }
-  .movie-player-shell video { width:100%; height:100%; max-height:none; object-fit:contain; }
-  .movie-player-tools, .movie-player-shell + .movie-player-tools { width:min(100%, calc((100vh - var(--media-chrome-offset) - 84px) * 16 / 9)); max-width:100%; }
-  .ebook-chapters { flex:0 0 220px; max-width:220px; max-height:calc(100vh - var(--media-chrome-offset) - 52px); overflow:auto; padding:14px 10px; border-right:1px solid var(--border); background:var(--bg2); position:sticky; top:0; align-self:flex-start; }
+  .media-reader-body { flex:1; min-height:0; height:calc(100vh - 51px); overflow:auto; display:flex; align-items:stretch; justify-content:center; background:#17191d; }
+  .media-reader-wrap { width:100%; min-height:100%; height:100%; display:flex; align-items:stretch; justify-content:center; }
+  .ebook-chapters { flex:0 0 220px; max-width:220px; height:100%; max-height:none; overflow:auto; padding:14px 10px; border-right:1px solid var(--border); background:var(--bg2); position:sticky; top:0; align-self:stretch; }
   .ebook-chapters h4 { font-size:12px; color:var(--text2); padding:0 6px 8px; }
   .ebook-chapters button { display:block; width:100%; text-align:left; border:0; background:transparent; color:var(--text2); padding:7px 8px; border-radius:6px; cursor:pointer; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .ebook-chapters button:hover { color:var(--text); background:var(--card2); }
@@ -417,12 +391,14 @@
   .ebook-toolbar { display:inline-flex; gap:4px; align-items:center; margin-right:8px; }
   .ebook-toolbar button { min-width:30px; height:30px; padding:0 8px; border:1px solid var(--border); border-radius:6px; color:var(--text); background:var(--card2); cursor:pointer; font-size:12px; }
   .ebook-toolbar button:hover { border-color:var(--accent); color:var(--accent); }
-  .media-reader-body iframe { width:100%; height:100%; min-height:calc(100vh - var(--media-chrome-offset) - 52px); border:0; background:#fff; }
-  .media-reader-body img { display:block; max-width:100%; max-height:none; object-fit:contain; margin:auto; }
-  .media-reader-body .media-text { width:min(860px,100%); min-height:100%; margin:0; padding:clamp(24px,5vw,72px); box-sizing:border-box; color:#30281f; background:#f4ecd8; font-family:Georgia,"Noto Serif SC",serif; font-size:var(--ebook-font-size,17px); font-style:var(--ebook-font-style,normal); line-height:1.9; white-space:pre-wrap; box-shadow:0 0 35px rgba(0,0,0,.45); }
+  .media-reader-body iframe { width:100%; height:100%; min-height:0; border:0; background:#fff; }
+  .media-reader-body img { display:block; max-width:100%; max-height:100%; object-fit:contain; margin:auto; }
+  .media-reader-body .media-text { width:min(960px,100%); min-height:100%; margin:0 auto; padding:clamp(24px,5vw,72px); box-sizing:border-box; color:#30281f; background:#f4ecd8; font-family:Georgia,"Noto Serif SC",serif; font-size:var(--ebook-font-size,17px); font-style:var(--ebook-font-style,normal); line-height:1.9; white-space:pre-wrap; box-shadow:0 0 35px rgba(0,0,0,.45); }
   .reader-book-fallback { width:min(520px,90%); margin:auto; text-align:center; color:#eee; }
   #view-comic { position:relative; }
-  .media-viewer-body { padding: 12px; max-height: 72vh; overflow: auto; }
+  .media-viewer-body { padding: 12px; max-height: none; overflow: auto; }
+  .media-video-body { width:100%; height:100%; padding:0; margin:0; overflow:hidden; background:#000; display:flex; align-items:center; justify-content:center; }
+  .media-video-body video { width:100%; height:100%; max-width:none; max-height:none; object-fit:contain; background:#000; }
   .media-viewer img { display: block; max-width: 100%; height: auto; margin: 0 auto; }
   .media-viewer audio { width: 100%; }
   .media-viewer iframe { display: block; width: 100%; height: 68vh; border: 0; background: #fff; }
@@ -471,9 +447,7 @@
     .media-file-row { grid-template-columns: minmax(0,1fr) auto; }
     .media-file-meta { display: none; }
     .book-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
-    .media-reader-overlay { position:fixed; inset:0; left:0; z-index:300; min-height:100vh; max-width:100vw; }
-    .movie-player-shell, .movie-player-tools, .movie-player-shell + .movie-player-tools { width:100%; }
-    .media-reader-wrap > .media-viewer-body { padding:10px; }
+    .media-reader-overlay { position:fixed; inset:0; z-index:300; min-height:100vh; }
   }
   /* PT 子页 */
   .ptsub-panel { display: none; }
@@ -588,7 +562,7 @@
   <div class="add-board-btn" onclick="openModuleModal()">
     <span>＋</span><span data-i18n="addBoardNav">添加模块</span>
   </div>
-  <div class="sidebar-foot">v0.6.22 · Adaptive Player and Streaming</div>
+  <div class="sidebar-foot">v0.6.16 · Direct Playback Fix</div>
 </aside>
 
 <!-- ===== 主区域 ===== -->
@@ -1164,7 +1138,7 @@
   <div class="modal">
     <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
     <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
-    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.6.22 · Adaptive Player and Streaming</b></div>
+    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.6.16 · Direct Playback Fix</b></div>
     <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>HTML / CSS / JS · 单文件</b></div>
     <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>VaultHub 内置系统监控</b></div>
     <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>
@@ -1845,11 +1819,6 @@ let localMediaLibraries = [];
 const localMediaSelection = {};
 const COMPLETED_PROGRESS = 99.9;
 let comicShelfView = "shelf";
-const mediaViewModeCache = "vaulthub_media_view_modes_v1";
-function readMediaViewModes() { try { return JSON.parse(localStorage.getItem(mediaViewModeCache) || "{}") || {}; } catch(e) { return {}; } }
-function mediaViewMode(type) { const modes = readMediaViewModes(); return modes[type] === "list" ? "list" : "poster"; }
-function setMediaViewMode(type, mode) { const modes = readMediaViewModes(); modes[type] = mode === "list" ? "list" : "poster"; try { localStorage.setItem(mediaViewModeCache, JSON.stringify(modes)); } catch(e) {} const group = type === "movie" ? "movie" : "comic"; const lib = findMediaLibrary(localMediaSelection[group]); if (lib) loadLocalFiles(group, lib, 0); }
-function viewToggle(type) { const mode = mediaViewMode(type); return `<span class="view-toggle"><button class="${mode === "poster" ? "active" : ""}" onclick="setMediaViewMode('${esc(type)}','poster')">▦ 海报</button><button class="${mode === "list" ? "active" : ""}" onclick="setMediaViewMode('${esc(type)}','list')">☰ 列表</button></span>`; }
 let mediaPageSize = 20;
 let audioPageSize = 20;
 let audioView = "albums";
@@ -1884,7 +1853,7 @@ function renderAudioFavorites(lib) {
   return rows.length ? `<div class="media-file-list">${rows.map(({lib: rowLib, path}) => renderAudioRow(rowLib, { path })).join("")}</div>` : '<div class="empty-tip">还没有喜欢的歌曲，请在歌曲列表中点击 ♡ 收藏。</div>';
 }
 
-const movieMetadataCache = "vaulthub_movie_metadata_v2";
+const movieMetadataCache = "vaulthub_movie_metadata_v1";
 let scraperStatus = { default: "douban", tmdb_enabled: false };
 function readMovieMetadata() { try { return JSON.parse(localStorage.getItem(movieMetadataCache) || "{}") || {}; } catch (e) { return {}; } }
 function writeMovieMetadata(data) { try { localStorage.setItem(movieMetadataCache, JSON.stringify(data)); } catch (e) {} }
@@ -1892,64 +1861,36 @@ function movieTitleFromPath(path) { return displayBookTitle(path).replace(/\b(19
 function movieYearFromPath(path) { const m = String(path).match(/\b(19|20)\d{2}\b/); return m ? m[0] : ""; }
 function movieBaseMetadata(path) { return { title: movieTitleFromPath(path), year: movieYearFromPath(path), poster: "", overview: "", provider: "文件名展示", checkedAt: 0 }; }
 function movieMetadataFor(path) { const all = readMovieMetadata(); return { ...movieBaseMetadata(path), ...(all[path] || {}) }; }
-function movieScraperProvider() { try { return localStorage.getItem("vaulthub_movie_scraper_provider") || "douban"; } catch(e) { return "douban"; } }
-function setMovieScraperProvider(provider) { try { localStorage.setItem("vaulthub_movie_scraper_provider", provider); } catch(e) {} const lib=findMediaLibrary(localMediaSelection.movie); if(lib) loadLocalFiles("movie", lib, 0); }
 async function loadScraperStatus() { try { const res = await fetch("/api/media/scrapers", { cache:"no-store" }); if (res.ok) scraperStatus = await res.json(); } catch(e) {} }
-async function doubanMovieScrape(title) {
-  const douban = await fetch(`https://movie.douban.com/j/subject_suggest?q=${encodeURIComponent(title)}`, { cache:"force-cache" });
-  const item = douban.ok ? (await douban.json())?.[0] : null;
-  return item ? { title:item.title || title, year:item.year || "", poster:item.img || "", overview:"", provider:"豆瓣" } : null;
-}
-async function tmdbMovieScrape(title) {
-  if (!scraperStatus.tmdb_enabled) return null;
-  const tmdb = await fetch(`/api/media/tmdb?query=${encodeURIComponent(title)}`, { cache:"force-cache" });
-  const data = tmdb.ok ? await tmdb.json() : null;
-  const item = data?.results?.find(x => x.poster_path || x.overview || x.title || x.name);
-  return item ? { title:item.title || item.name || title, year:String(item.release_date || item.first_air_date || "").slice(0,4), poster:item.poster_path ? `https://image.tmdb.org/t/p/w342${item.poster_path}` : "", overview:item.overview || "", provider:"TMDB" } : null;
-}
-async function scrapeOneMovie(lib, path, provider) {
-  const fallback = movieBaseMetadata(path), title = fallback.title;
-  let hit = null;
-  if (provider === "tmdb") hit = await tmdbMovieScrape(title);
-  else hit = await doubanMovieScrape(title);
-  if (!hit && provider === "douban" && scraperStatus.tmdb_enabled) hit = await tmdbMovieScrape(title);
-  if (!hit) hit = { ...fallback, poster: mediaSnapshotUrl(lib, path), provider:"片段截图", overview:"未命中豆瓣/TMDB，已尝试使用影片片段截图作为封面。" };
-  return { ...fallback, ...hit, checkedAt:Date.now() };
-}
-async function scrapeMovieMetadata(host, lib, files, provider = movieScraperProvider(), force = false) {
+async function scrapeMovieMetadata(host, lib, files) {
   await loadScraperStatus();
   const all = readMovieMetadata();
-  const pending = files.filter(file => force || !all[file.path]);
-  for (const file of pending) { all[file.path] = { ...movieBaseMetadata(String(file.path)), provider: `等待${provider === "tmdb" ? "TMDB" : "豆瓣"}刮削`, checkedAt: Date.now() }; }
+  const pending = files.filter(file => !all[file.path]);
+  for (const file of pending) { all[file.path] = { ...movieBaseMetadata(String(file.path)), provider: "文件名展示（等待豆瓣刮削）", checkedAt: Date.now() }; }
   writeMovieMetadata(all); if (pending.length) renderMovieLibraryContent(host, lib, files);
   for (const file of pending) {
-    const path = String(file.path);
-    try { all[path] = await scrapeOneMovie(lib, path, provider); }
-    catch(e) { all[path] = { ...movieBaseMetadata(path), poster: mediaSnapshotUrl(lib, path), provider:"片段截图", overview:"刮削异常，使用影片片段截图兜底。", checkedAt:Date.now() }; }
-    writeMovieMetadata(all); renderMovieLibraryContent(host, lib, files);
+    const path = String(file.path), fallback = all[path], title = fallback.title;
+    try {
+      const douban = await fetch(`https://movie.douban.com/j/subject_suggest?q=${encodeURIComponent(title)}`, { cache:"force-cache" });
+      const item = douban.ok ? (await douban.json())?.[0] : null;
+      if (item) { all[path] = { ...fallback, title:item.title || fallback.title, year:item.year || fallback.year, poster:item.img || "", provider:"豆瓣", checkedAt:Date.now() }; writeMovieMetadata(all); renderMovieLibraryContent(host, lib, files); continue; }
+    } catch(e) {}
+    if (scraperStatus.tmdb_enabled) try {
+      const tmdb = await fetch(`/api/media/tmdb?query=${encodeURIComponent(title)}`, { cache:"force-cache" });
+      const data = tmdb.ok ? await tmdb.json() : null;
+      const item = data?.results?.find(x => x.poster_path || x.overview || x.title || x.name);
+      if (item) { all[path] = { ...fallback, title:item.title || item.name || fallback.title, year:String(item.release_date || item.first_air_date || fallback.year).slice(0,4), poster:item.poster_path ? `https://image.tmdb.org/t/p/w342${item.poster_path}` : "", overview:item.overview || "", provider:"TMDB", checkedAt:Date.now() }; writeMovieMetadata(all); renderMovieLibraryContent(host, lib, files); }
+    } catch(e) {}
   }
 }
 function renderMovieLibraryContent(host, lib, files) {
-  const provider = movieScraperProvider(), mode = mediaViewMode("movie");
-  const status = scraperStatus.tmdb_enabled ? "TMDB 已配置" : "TMDB 未配置（设置 TMDB_API_KEY 后启用）";
-  const body = mode === "list" ? `<div class="media-file-list">${files.map(file => renderMovieRow(lib, file)).join("")}</div>` : `<div class="movie-poster-grid">${files.map(file => renderMovieCard(lib, file)).join("")}</div>`;
-  host.innerHTML = `<div class="comic-shelf-toolbar"><strong>本地影视库</strong><div class="media-actions">${viewToggle("movie")}<span class="badge">默认自动刮削 · ${esc(provider === "tmdb" ? "TMDB" : "豆瓣")}</span><span class="badge">${esc(status)}</span><select class="select-mini" onchange="setMovieScraperProvider(this.value)"><option value="douban" ${provider === "douban" ? "selected" : ""}>豆瓣</option><option value="tmdb" ${provider === "tmdb" ? "selected" : ""} ${scraperStatus.tmdb_enabled ? "" : "disabled"}>TMDB</option></select><button class="btn" onclick="refreshMovieMetadata()">↻ 刮削</button></div></div>${body}`;
+  const status = scraperStatus.tmdb_enabled ? "默认豆瓣刮削 · TMDB 已启用" : "默认豆瓣刮削 · TMDB 未配置（设置 TMDB_API_KEY 后启用）";
+  host.innerHTML = `<div class="comic-shelf-toolbar"><strong>本地影视库</strong><div class="media-actions"><span class="badge">${esc(status)}</span><button class="btn" onclick="refreshMovieMetadata()">↻ 重新刮削</button></div></div><div class="media-file-list">${files.map(file => renderMovieRow(lib, file)).join("")}</div>`;
 }
 function renderMovieLibrary(lib, files) { const host = document.createElement("div"); renderMovieLibraryContent(host, lib, files); return host.innerHTML; }
-function renderMovieRow(lib, file) { const path=String(file.path), meta=movieMetadataFor(path), poster=meta.poster || mediaSnapshotUrl(lib,path); return `<div class="media-file-row movie-row"><div class="media-file-name movie-file-name" title="${esc(path)}"><img class="movie-poster-mini" src="${esc(poster)}" alt="" onerror="this.hidden=true"><span><b>${esc(meta.title)}</b><small>${esc([meta.year, meta.provider].filter(Boolean).join(" · "))}</small></span></div><span class="media-file-meta">${esc(fileExt(path).toUpperCase())} · ${formatFileSize(file.size)}</span><div class="media-actions"><button class="btn" data-media-group="movie" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openLocalMediaButton(this)">▶ 播放</button></div></div>`; }
-function renderMovieCard(lib, file) { const path=String(file.path), meta=movieMetadataFor(path), poster=meta.poster || mediaSnapshotUrl(lib,path); return `<article class="movie-card" data-media-group="movie" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openLocalMediaButton(this)"><div class="movie-card-poster" style="background:${coverGradient(meta.title)}"><span>${esc(meta.title)}</span><img src="${esc(poster)}" alt="${esc(meta.title)} 海报" onerror="this.hidden=true"></div><div class="movie-card-info"><div class="movie-card-title" title="${esc(path)}">${esc(meta.title)}</div><div class="movie-card-meta"><span>${esc(meta.year || fileExt(path).toUpperCase())}</span><span>${esc(meta.provider || "文件名")}</span></div></div></article>`; }
+function renderMovieRow(lib, file) { const path=String(file.path), meta=movieMetadataFor(path); return `<div class="media-file-row"><div class="media-file-name" title="${esc(path)}"><b>${esc(meta.title)}</b><small>${esc([meta.year, meta.provider].filter(Boolean).join(" · "))}</small></div><span class="media-file-meta">${esc(fileExt(path).toUpperCase())} · ${formatFileSize(file.size)}</span><div class="media-actions"><button class="btn" data-media-group="movie" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openLocalMediaButton(this)">▶ 播放</button></div></div>`; }
 function refreshMovieMetadata() { try { localStorage.removeItem(movieMetadataCache); } catch(e) {} const lib=findMediaLibrary(localMediaSelection.movie); if(lib) loadLocalFiles("movie", lib, 0); toast("🔄 正在重新刮削影视信息"); }
-function movieVideoType(ext) { return ({mp4:"video/mp4",m4v:"video/mp4",webm:"video/webm",mov:"video/quicktime",mkv:"video/x-matroska",avi:"video/x-msvideo"})[ext] || "video/mp4"; }
-async function movieSubtitleTracks(lib, path) { try { const res=await fetch(mediaSubtitlesUrl(lib,path), {cache:"no-store"}); if(!res.ok) return []; return (await res.json()).subtitles || []; } catch(e) { return []; } }
-function moviePlayerError(video) { if (!video) return; const q = video.dataset.quality || "720p"; toast(q === "original" ? "⚠️ 原画直连加载失败，请切换 720P/480P 转码" : `⚠️ ${q} 转码播放加载失败，请稍后重试或检查 ffmpeg 日志`); }
-function switchMovieQuality(select) { const video=document.getElementById("moviePlayer"); if(!video) return; const q=select.value || "720p"; video.dataset.quality=q; const lib={id:video.dataset.library}; video.dataset.transcoded = q === "original" ? "0" : "1"; video.src = moviePlaybackUrl(lib, video.dataset.path, q); video.load(); video.play().catch(()=>{}); toast(q === "original" ? "🎬 已切换原画直连" : `🎬 已切换${q}缓存转码`); }
-function switchMovieSubtitle(select) { const video=document.getElementById("moviePlayer"); if(!video) return; [...video.textTracks].forEach((track,i)=>track.mode = i === Number(select.value) ? "showing" : "disabled"); }
-function buildMovieSubtitlePicker(subtitles) { return subtitles.length ? `<label class="hint">字幕 <select class="select-mini" onchange="switchMovieSubtitle(this)">${subtitles.map((s,i)=>`<option value="${i}" ${i===0?"selected":""}>${esc(s.name || s.path)}</option>`).join("")}</select> 默认开启</label>` : `<span class="hint">未发现同名字幕文件（支持 .vtt/.srt/.ass/.ssa，其中 SRT 会转 VTT）</span>`; }
-function buildMovieQualityPicker() { return `<label class="movie-quality-floating">画质 <select id="movieQualitySelect" class="select-mini" onchange="switchMovieQuality(this)"><option value="original">原画</option><option value="1080p">1080P</option><option value="720p" selected>720P</option><option value="480p">480P</option><option value="360p">360P</option></select></label>`; }
-function buildMoviePlayer(lib, path, ext, subtitles) {
-  const initialQuality = "720p", initialUrl = moviePlaybackUrl(lib, path, initialQuality), snapshot = mediaSnapshotUrl(lib, path), tracks = subtitles.map((s,i)=>`<track kind="subtitles" srclang="zh" label="${esc(s.name || `字幕${i+1}`)}" src="${esc(mediaSubtitleUrl(lib, s.path))}" ${i===0?"default":""}>`).join("");
-  return `<div class="media-viewer-body"><div class="movie-player-shell"><video id="moviePlayer" data-library="${esc(lib.id)}" data-path="${esc(path)}" data-quality="${initialQuality}" data-transcoded="1" controls autoplay preload="metadata" crossorigin="anonymous" poster="${esc(movieMetadataFor(path).poster || snapshot)}" onerror="moviePlayerError(this)"><source src="${esc(initialUrl)}" type="video/mp4">${tracks}</video>${buildMovieQualityPicker()}</div><div class="media-actions movie-player-tools">${buildMovieSubtitlePicker(subtitles)}</div><div class="hint">默认 720P 转码播放；切换“原画”时才尝试文件直连，1080P/720P/480P/360P 均使用对应分辨率缓存转码。</div></div>`;
-}
+
 function mediaStateKey(libId, path) { return `vaulthub_reading_${libId}_${path}`; }
 function readingState(libId, path) {
   try { return JSON.parse(localStorage.getItem(mediaStateKey(libId, path))) || { progress: 0 }; } catch (e) { return { progress: 0 }; }
@@ -2012,12 +1953,6 @@ function mediaFileUrl(lib, path) {
 function mediaLegacyFileUrl(lib, path) {
   return `/api/media/file/${encodeURIComponent(lib.id)}/${String(path).split("/").map(encodeURIComponent).join("/")}`;
 }
-function mediaSubtitleUrl(lib, subtitlePath) { return `/api/media/subtitle?id=${encodeURIComponent(String(lib.id))}&path=${encodeURIComponent(String(subtitlePath))}`; }
-function mediaSubtitlesUrl(lib, path) { return `/api/media/subtitles?id=${encodeURIComponent(String(lib.id))}&path=${encodeURIComponent(String(path))}`; }
-function mediaSnapshotUrl(lib, path) { return `/api/media/snapshot?id=${encodeURIComponent(String(lib.id))}&path=${encodeURIComponent(String(path))}`; }
-function mediaTranscodeUrl(lib, path, quality = "original") { return `/api/media/transcode?id=${encodeURIComponent(String(lib.id))}&path=${encodeURIComponent(String(path))}&quality=${encodeURIComponent(String(quality))}`; }
-function isLanPlaybackOrigin() { const h = location.hostname; return h === "localhost" || h === "127.0.0.1" || h === "::1" || h.endsWith(".local") || /^10\./.test(h) || /^192\.168\./.test(h) || /^172\.(1[6-9]|2\d|3[0-1])\./.test(h); }
-function moviePlaybackUrl(lib, path, quality = "720p") { return quality === "original" ? mediaFileUrl(lib, path) : mediaTranscodeUrl(lib, path, quality); }
 function normalizeLibraryPayload(data) {
   const libs = Array.isArray(data) ? data : (data?.libraries || data?.items || []);
   return libs.map((lib, idx) => ({
@@ -2098,11 +2033,8 @@ async function loadLocalFiles(group, lib, offset = 0) {
     const next = data.has_more ? `<button class="btn" onclick="loadLocalFiles('${esc(group)}',findMediaLibrary('${esc(lib.id)}'),${offset + pageSize})">下一页 →</button>` : "";
     const pager = `<div class="media-actions">${prev}<span class="media-file-meta">${offset + 1}-${offset + files.length} / ${Number(data.total) || files.length}</span>${next}</div>`;
     if (group === "comic") {
-      const viewType = lib.type === "book" ? "book" : "comic";
-      const toolbar = `<div class="comic-shelf-toolbar"><div class="comic-shelf-tabs"><button class="${comicShelfView === "shelf" ? "active" : ""}" onclick="setComicShelfView('shelf')">📚 书架</button><button class="${comicShelfView === "completed" ? "active" : ""}" onclick="setComicShelfView('completed')">✓ 已读收藏</button></div><div class="media-actions">${viewToggle(viewType)}<button class="btn" onclick="refreshBookCovers()">↻ 重新刮削封面</button><label class="page-size-picker">每页 <select id="mediaPageSize" onchange="setMediaPageSize(this.value)"><option value="20"${pageSize===20?' selected':''}>20</option><option value="50"${pageSize===50?' selected':''}>50</option><option value="100"${pageSize===100?' selected':''}>100</option></select></label></div></div>`;
-      const listBody = `<div class="media-file-list">${files.map(file => renderLocalFileRow(group, lib, file)).join("")}</div>`;
-      const posterBody = `<div class="book-grid">${files.map(file => renderBookCard(group, lib, file)).join("")}</div>`;
-      target.innerHTML = `${toolbar}${files.length ? (mediaViewMode(viewType) === "list" ? listBody : posterBody) : `<div class="empty-tip">${comicShelfView === "completed" ? "还没有读完的书" : "当前页没有未读书籍"}</div>`}${pager}`;
+      const toolbar = `<div class="comic-shelf-toolbar"><div class="comic-shelf-tabs"><button class="${comicShelfView === "shelf" ? "active" : ""}" onclick="setComicShelfView('shelf')">📚 书架</button><button class="${comicShelfView === "completed" ? "active" : ""}" onclick="setComicShelfView('completed')">✓ 已读收藏</button></div><div class="media-actions"><button class="btn" onclick="refreshBookCovers()">↻ 重新刮削封面</button><label class="page-size-picker">每页 <select id="mediaPageSize" onchange="setMediaPageSize(this.value)"><option value="20"${pageSize===20?' selected':''}>20</option><option value="50"${pageSize===50?' selected':''}>50</option><option value="100"${pageSize===100?' selected':''}>100</option></select></label></div></div>`;
+      target.innerHTML = `${toolbar}${files.length ? `<div class="book-grid">${files.map(file => renderBookCard(group, lib, file)).join("")}</div>` : `<div class="empty-tip">${comicShelfView === "completed" ? "还没有读完的书" : "当前页没有未读书籍"}</div>`}${pager}`;
       scrapeVisibleBookCovers(target);
     } else if (group === "audio") {
       audioFiles = files;
@@ -2425,16 +2357,7 @@ async function openLocalMedia(group, libId, path) {
   activeReader = { group, libId, path };
   let body = "";
   if (["mp3","flac","m4a","ogg","wav"].includes(ext)) body = `<div class="media-viewer-body"><audio controls autoplay preload="metadata" src="${esc(url)}"></audio></div>`;
-  else if (MEDIA_FORMATS.movie.includes(ext)) {
-    viewer.innerHTML = viewerShell(group, lib, path, '<div class="empty-tip">正在加载播放器与字幕...</div>', url);
-    const subtitles = await movieSubtitleTracks(lib, path);
-    body = buildMoviePlayer(lib, path, ext, subtitles);
-    viewer.innerHTML = viewerShell(group, lib, path, body, url);
-    setTimeout(() => { const v=document.getElementById("moviePlayer"); if(v && v.textTracks?.[0]) v.textTracks[0].mode="showing"; }, 300);
-    const overlay = viewer.querySelector(".media-reader-overlay");
-    if (overlay) overlay.scrollIntoView({ block: "start" });
-    return;
-  }
+  else if (MEDIA_FORMATS.movie.includes(ext)) body = `<div class="media-viewer-body media-video-body"><video controls playsinline preload="metadata" src="${esc(url)}" onloadedmetadata="this.muted=false;this.volume=1" onvolumechange="this.dataset.volume=String(this.volume)"></video></div>`;
   else if (["jpg","jpeg","png","webp","gif","bmp","avif"].includes(ext)) body = `<img src="${esc(url)}" alt="${esc(path)}">`;
   else if (ext === "pdf") body = `<iframe src="${esc(url)}#view=FitH" title="${esc(path)}"></iframe>`;
   else if (ext === "txt") {

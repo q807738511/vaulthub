@@ -14,16 +14,12 @@
 
 	# VaultHub 内置系统监控 API。
 	handle /api/system/* {
-		reverse_proxy http://127.0.0.1:9100 {
-			flush_interval -1
-		}
+		reverse_proxy http://127.0.0.1:9100
 	}
 
 	# 本地媒体库 API，仅由同容器内绑定回环地址的进程处理。
 	handle /api/media/* {
-		reverse_proxy http://127.0.0.1:9100 {
-			flush_interval -1
-		}
+		reverse_proxy http://127.0.0.1:9100
 	}
 
 	# WebUI 同源 API。handle_path 会剥掉 /api/glances 和 /api/mp 前缀。
