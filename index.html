@@ -362,6 +362,17 @@
   .movie-file-name span { min-width:0; display:flex; flex-direction:column; gap:2px; }
   .movie-file-name small { color:var(--text2); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .movie-poster-mini { width:42px; height:58px; object-fit:cover; border-radius:6px; background:var(--bg2); border:1px solid var(--border); flex:0 0 auto; }
+  .view-toggle { display:inline-flex; gap:4px; padding:3px; border:1px solid var(--border); border-radius:9px; background:var(--card2); }
+  .view-toggle button { border:0; border-radius:6px; padding:7px 12px; color:var(--text2); background:transparent; cursor:pointer; }
+  .view-toggle button.active { color:#fff; background:var(--accent); }
+  .movie-poster-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:16px; }
+  .movie-card { min-width:0; border:1px solid var(--border); border-radius:12px; background:var(--card); overflow:hidden; cursor:pointer; transition:transform .16s,border-color .16s; }
+  .movie-card:hover { transform:translateY(-3px); border-color:var(--accent); }
+  .movie-card-poster { position:relative; aspect-ratio:2/3; background:var(--bg2); display:flex; align-items:center; justify-content:center; color:#fff; text-align:center; padding:16px; overflow:hidden; }
+  .movie-card-poster img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+  .movie-card-info { padding:10px 12px; }
+  .movie-card-title { font-weight:700; line-height:1.35; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+  .movie-card-meta { margin-top:6px; color:var(--text2); font-size:11px; display:flex; justify-content:space-between; gap:8px; }
   .select-mini { background:var(--card2); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:6px 8px; }
   .movie-player-tools { align-items:center; margin-top:10px; }
   .media-file-meta { color: var(--text2); font-size: 11px; white-space: nowrap; }
@@ -383,7 +394,7 @@
   .book-card-meta { margin-top:5px; color:var(--text2); font-size:11px; display:flex; justify-content:space-between; gap:6px; }
   .book-progress { height:3px; margin-top:7px; border-radius:4px; overflow:hidden; background:var(--border); }
   .book-progress span { display:block; height:100%; background:var(--green); }
-  .media-reader-overlay { position:fixed; inset:0; z-index:300; display:flex; flex-direction:column; background:var(--bg); min-height:100vh; }
+  .media-reader-overlay { position:fixed; top:0; right:0; bottom:0; left:var(--sidebar-w); z-index:300; display:flex; flex-direction:column; background:var(--bg); min-height:100vh; max-width:calc(100vw - var(--sidebar-w)); }
   .media-reader-head { flex:0 0 auto; min-height:50px; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 12px; border-bottom:1px solid var(--border); background:var(--bg2); }
   .media-reader-title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .media-reader-close { flex:0 0 auto; width:36px; height:36px; border-radius:50%; border:1px solid var(--border); color:var(--text); background:var(--card2); cursor:pointer; font-size:18px; }
@@ -451,7 +462,7 @@
     .media-file-row { grid-template-columns: minmax(0,1fr) auto; }
     .media-file-meta { display: none; }
     .book-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
-    .media-reader-overlay { position:fixed; inset:0; z-index:300; min-height:100vh; }
+    .media-reader-overlay { position:fixed; inset:0; left:0; z-index:300; min-height:100vh; max-width:100vw; }
   }
   /* PT 子页 */
   .ptsub-panel { display: none; }
@@ -566,7 +577,7 @@
   <div class="add-board-btn" onclick="openModuleModal()">
     <span>＋</span><span data-i18n="addBoardNav">添加模块</span>
   </div>
-  <div class="sidebar-foot">v0.6.16 · Movie Playback and Subtitles</div>
+  <div class="sidebar-foot">v0.6.17 · Adaptive Media Views and Cached Transcoding</div>
 </aside>
 
 <!-- ===== 主区域 ===== -->
@@ -1142,7 +1153,7 @@
   <div class="modal">
     <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
     <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
-    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.6.16 · Movie Playback and Subtitles</b></div>
+    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.6.17 · Adaptive Media Views and Cached Transcoding</b></div>
     <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>HTML / CSS / JS · 单文件</b></div>
     <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>VaultHub 内置系统监控</b></div>
     <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>
@@ -1823,6 +1834,11 @@ let localMediaLibraries = [];
 const localMediaSelection = {};
 const COMPLETED_PROGRESS = 99.9;
 let comicShelfView = "shelf";
+const mediaViewModeCache = "vaulthub_media_view_modes_v1";
+function readMediaViewModes() { try { return JSON.parse(localStorage.getItem(mediaViewModeCache) || "{}") || {}; } catch(e) { return {}; } }
+function mediaViewMode(type) { const modes = readMediaViewModes(); return modes[type] === "list" ? "list" : "poster"; }
+function setMediaViewMode(type, mode) { const modes = readMediaViewModes(); modes[type] = mode === "list" ? "list" : "poster"; try { localStorage.setItem(mediaViewModeCache, JSON.stringify(modes)); } catch(e) {} const group = type === "movie" ? "movie" : "comic"; const lib = findMediaLibrary(localMediaSelection[group]); if (lib) loadLocalFiles(group, lib, 0); }
+function viewToggle(type) { const mode = mediaViewMode(type); return `<span class="view-toggle"><button class="${mode === "poster" ? "active" : ""}" onclick="setMediaViewMode('${esc(type)}','poster')">▦ 海报</button><button class="${mode === "list" ? "active" : ""}" onclick="setMediaViewMode('${esc(type)}','list')">☰ 列表</button></span>`; }
 let mediaPageSize = 20;
 let audioPageSize = 20;
 let audioView = "albums";
@@ -1903,21 +1919,25 @@ async function scrapeMovieMetadata(host, lib, files, provider = movieScraperProv
   }
 }
 function renderMovieLibraryContent(host, lib, files) {
-  const provider = movieScraperProvider();
+  const provider = movieScraperProvider(), mode = mediaViewMode("movie");
   const status = scraperStatus.tmdb_enabled ? "TMDB 已配置" : "TMDB 未配置（设置 TMDB_API_KEY 后启用）";
-  host.innerHTML = `<div class="comic-shelf-toolbar"><strong>本地影视库</strong><div class="media-actions"><span class="badge">默认自动刮削 · ${esc(provider === "tmdb" ? "TMDB" : "豆瓣")}</span><span class="badge">${esc(status)}</span><select class="select-mini" onchange="setMovieScraperProvider(this.value)"><option value="douban" ${provider === "douban" ? "selected" : ""}>豆瓣</option><option value="tmdb" ${provider === "tmdb" ? "selected" : ""} ${scraperStatus.tmdb_enabled ? "" : "disabled"}>TMDB</option></select><button class="btn" onclick="refreshMovieMetadata()">↻ 刮削</button></div></div><div class="media-file-list">${files.map(file => renderMovieRow(lib, file)).join("")}</div>`;
+  const body = mode === "list" ? `<div class="media-file-list">${files.map(file => renderMovieRow(lib, file)).join("")}</div>` : `<div class="movie-poster-grid">${files.map(file => renderMovieCard(lib, file)).join("")}</div>`;
+  host.innerHTML = `<div class="comic-shelf-toolbar"><strong>本地影视库</strong><div class="media-actions">${viewToggle("movie")}<span class="badge">默认自动刮削 · ${esc(provider === "tmdb" ? "TMDB" : "豆瓣")}</span><span class="badge">${esc(status)}</span><select class="select-mini" onchange="setMovieScraperProvider(this.value)"><option value="douban" ${provider === "douban" ? "selected" : ""}>豆瓣</option><option value="tmdb" ${provider === "tmdb" ? "selected" : ""} ${scraperStatus.tmdb_enabled ? "" : "disabled"}>TMDB</option></select><button class="btn" onclick="refreshMovieMetadata()">↻ 刮削</button></div></div>${body}`;
 }
 function renderMovieLibrary(lib, files) { const host = document.createElement("div"); renderMovieLibraryContent(host, lib, files); return host.innerHTML; }
 function renderMovieRow(lib, file) { const path=String(file.path), meta=movieMetadataFor(path), poster=meta.poster || mediaSnapshotUrl(lib,path); return `<div class="media-file-row movie-row"><div class="media-file-name movie-file-name" title="${esc(path)}"><img class="movie-poster-mini" src="${esc(poster)}" alt="" onerror="this.hidden=true"><span><b>${esc(meta.title)}</b><small>${esc([meta.year, meta.provider].filter(Boolean).join(" · "))}</small></span></div><span class="media-file-meta">${esc(fileExt(path).toUpperCase())} · ${formatFileSize(file.size)}</span><div class="media-actions"><button class="btn" data-media-group="movie" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openLocalMediaButton(this)">▶ 播放</button></div></div>`; }
+function renderMovieCard(lib, file) { const path=String(file.path), meta=movieMetadataFor(path), poster=meta.poster || mediaSnapshotUrl(lib,path); return `<article class="movie-card" data-media-group="movie" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openLocalMediaButton(this)"><div class="movie-card-poster" style="background:${coverGradient(meta.title)}"><span>${esc(meta.title)}</span><img src="${esc(poster)}" alt="${esc(meta.title)} 海报" onerror="this.hidden=true"></div><div class="movie-card-info"><div class="movie-card-title" title="${esc(path)}">${esc(meta.title)}</div><div class="movie-card-meta"><span>${esc(meta.year || fileExt(path).toUpperCase())}</span><span>${esc(meta.provider || "文件名")}</span></div></div></article>`; }
 function refreshMovieMetadata() { try { localStorage.removeItem(movieMetadataCache); } catch(e) {} const lib=findMediaLibrary(localMediaSelection.movie); if(lib) loadLocalFiles("movie", lib, 0); toast("🔄 正在重新刮削影视信息"); }
 function movieVideoType(ext) { return ({mp4:"video/mp4",m4v:"video/mp4",webm:"video/webm",mov:"video/quicktime",mkv:"video/x-matroska",avi:"video/x-msvideo"})[ext] || "video/mp4"; }
 async function movieSubtitleTracks(lib, path) { try { const res=await fetch(mediaSubtitlesUrl(lib,path), {cache:"no-store"}); if(!res.ok) return []; return (await res.json()).subtitles || []; } catch(e) { return []; } }
-function moviePlayerError(video) { if (!video || video.dataset.transcoded === "1") return; video.dataset.transcoded = "1"; video.src = mediaTranscodeUrl({id:video.dataset.library}, video.dataset.path); video.load(); video.play().catch(()=>{}); toast("⚠️ 原始文件浏览器解码失败，已切换兼容转码流"); }
+function moviePlayerError(video) { if (!video || video.dataset.transcoded === "1") return; video.dataset.transcoded = "1"; video.src = mediaTranscodeUrl({id:video.dataset.library}, video.dataset.path, video.dataset.quality || "original"); video.load(); video.play().catch(()=>{}); toast("⚠️ 原始文件浏览器解码失败，已切换缓存转码流"); }
+function switchMovieQuality(select) { const video=document.getElementById("moviePlayer"); if(!video) return; const q=select.value || "original"; video.dataset.quality=q; const lib={id:video.dataset.library}; video.dataset.transcoded = (q === "original" && isLanPlaybackOrigin()) ? "0" : "1"; video.src = moviePlaybackUrl(lib, video.dataset.path, q); video.load(); video.play().catch(()=>{}); toast(q === "original" && isLanPlaybackOrigin() ? "🎬 已切换原画直连" : `🎬 已切换${q}缓存转码`); }
 function switchMovieSubtitle(select) { const video=document.getElementById("moviePlayer"); if(!video) return; [...video.textTracks].forEach((track,i)=>track.mode = i === Number(select.value) ? "showing" : "disabled"); }
 function buildMovieSubtitlePicker(subtitles) { return subtitles.length ? `<label class="hint">字幕 <select class="select-mini" onchange="switchMovieSubtitle(this)">${subtitles.map((s,i)=>`<option value="${i}" ${i===0?"selected":""}>${esc(s.name || s.path)}</option>`).join("")}</select> 默认开启</label>` : `<span class="hint">未发现同名字幕文件（支持 .vtt/.srt/.ass/.ssa，其中 SRT 会转 VTT）</span>`; }
+function buildMovieQualityPicker() { return `<label class="hint">画质 <select id="movieQualitySelect" class="select-mini" onchange="switchMovieQuality(this)"><option value="original" selected>原画</option><option value="1080p">1080P</option><option value="720p">720P</option><option value="480p">480P</option><option value="360p">360P</option></select></label>`; }
 function buildMoviePlayer(lib, path, ext, subtitles) {
-  const original = mediaFileUrl(lib, path), snapshot = mediaSnapshotUrl(lib, path), tracks = subtitles.map((s,i)=>`<track kind="subtitles" srclang="zh" label="${esc(s.name || `字幕${i+1}`)}" src="${esc(mediaSubtitleUrl(lib, s.path))}" ${i===0?"default":""}>`).join("");
-  return `<div class="media-viewer-body"><video id="moviePlayer" data-library="${esc(lib.id)}" data-path="${esc(path)}" controls autoplay preload="metadata" crossorigin="anonymous" poster="${esc(movieMetadataFor(path).poster || snapshot)}" style="width:100%;max-height:72vh;background:#000" onerror="moviePlayerError(this)"><source src="${esc(original)}" type="${esc(movieVideoType(ext))}">${tracks}</video><div class="media-actions movie-player-tools"><button class="btn" onclick="const v=document.getElementById('moviePlayer'); if(v){v.dataset.transcoded='1'; v.src='${esc(mediaTranscodeUrl(lib,path))}'; v.load(); v.play().catch(()=>{});}">兼容转码播放</button><a class="btn" href="${esc(original)}" target="_blank" rel="noopener">外部打开原片</a>${buildMovieSubtitlePicker(subtitles)}</div><div class="hint">若 MKV/HEVC/DTS 出现无画面或无声音，请使用“兼容转码播放”；字幕默认开启第一个同名字幕。</div></div>`;
+  const original = mediaFileUrl(lib, path), initialQuality = "original", initialUrl = moviePlaybackUrl(lib, path, initialQuality), direct = initialUrl === original, snapshot = mediaSnapshotUrl(lib, path), tracks = subtitles.map((s,i)=>`<track kind="subtitles" srclang="zh" label="${esc(s.name || `字幕${i+1}`)}" src="${esc(mediaSubtitleUrl(lib, s.path))}" ${i===0?"default":""}>`).join("");
+  return `<div class="media-viewer-body"><video id="moviePlayer" data-library="${esc(lib.id)}" data-path="${esc(path)}" data-quality="${initialQuality}" data-transcoded="${direct ? "0" : "1"}" controls autoplay preload="metadata" crossorigin="anonymous" poster="${esc(movieMetadataFor(path).poster || snapshot)}" style="width:100%;max-height:72vh;background:#000" onerror="moviePlayerError(this)"><source src="${esc(initialUrl)}" type="${esc(direct ? movieVideoType(ext) : "video/mp4")}">${tracks}</video><div class="media-actions movie-player-tools">${buildMovieQualityPicker()}<button class="btn" onclick="const s=document.getElementById('movieQualitySelect'); if(s){s.value='1080p'; switchMovieQuality(s);}">兼容转码播放</button><a class="btn" href="${esc(original)}" target="_blank" rel="noopener">外部打开原片</a>${buildMovieSubtitlePicker(subtitles)}</div><div class="hint">自动识别网络：内网/localhost 的“原画”使用文件直连；域名反代/穿透或 1080P/720P/480P/360P 会走 ffmpeg 缓存转码，第二次播放直接命中缓存。</div></div>`;
 }
 function mediaStateKey(libId, path) { return `vaulthub_reading_${libId}_${path}`; }
 function readingState(libId, path) {
@@ -1984,7 +2004,9 @@ function mediaLegacyFileUrl(lib, path) {
 function mediaSubtitleUrl(lib, subtitlePath) { return `/api/media/subtitle?id=${encodeURIComponent(String(lib.id))}&path=${encodeURIComponent(String(subtitlePath))}`; }
 function mediaSubtitlesUrl(lib, path) { return `/api/media/subtitles?id=${encodeURIComponent(String(lib.id))}&path=${encodeURIComponent(String(path))}`; }
 function mediaSnapshotUrl(lib, path) { return `/api/media/snapshot?id=${encodeURIComponent(String(lib.id))}&path=${encodeURIComponent(String(path))}`; }
-function mediaTranscodeUrl(lib, path) { return `/api/media/transcode?id=${encodeURIComponent(String(lib.id))}&path=${encodeURIComponent(String(path))}`; }
+function mediaTranscodeUrl(lib, path, quality = "original") { return `/api/media/transcode?id=${encodeURIComponent(String(lib.id))}&path=${encodeURIComponent(String(path))}&quality=${encodeURIComponent(String(quality))}`; }
+function isLanPlaybackOrigin() { const h = location.hostname; return h === "localhost" || h === "127.0.0.1" || h === "::1" || h.endsWith(".local") || /^10\./.test(h) || /^192\.168\./.test(h) || /^172\.(1[6-9]|2\d|3[0-1])\./.test(h); }
+function moviePlaybackUrl(lib, path, quality = "original") { return quality === "original" && isLanPlaybackOrigin() ? mediaFileUrl(lib, path) : mediaTranscodeUrl(lib, path, quality); }
 function normalizeLibraryPayload(data) {
   const libs = Array.isArray(data) ? data : (data?.libraries || data?.items || []);
   return libs.map((lib, idx) => ({
@@ -2065,8 +2087,11 @@ async function loadLocalFiles(group, lib, offset = 0) {
     const next = data.has_more ? `<button class="btn" onclick="loadLocalFiles('${esc(group)}',findMediaLibrary('${esc(lib.id)}'),${offset + pageSize})">下一页 →</button>` : "";
     const pager = `<div class="media-actions">${prev}<span class="media-file-meta">${offset + 1}-${offset + files.length} / ${Number(data.total) || files.length}</span>${next}</div>`;
     if (group === "comic") {
-      const toolbar = `<div class="comic-shelf-toolbar"><div class="comic-shelf-tabs"><button class="${comicShelfView === "shelf" ? "active" : ""}" onclick="setComicShelfView('shelf')">📚 书架</button><button class="${comicShelfView === "completed" ? "active" : ""}" onclick="setComicShelfView('completed')">✓ 已读收藏</button></div><div class="media-actions"><button class="btn" onclick="refreshBookCovers()">↻ 重新刮削封面</button><label class="page-size-picker">每页 <select id="mediaPageSize" onchange="setMediaPageSize(this.value)"><option value="20"${pageSize===20?' selected':''}>20</option><option value="50"${pageSize===50?' selected':''}>50</option><option value="100"${pageSize===100?' selected':''}>100</option></select></label></div></div>`;
-      target.innerHTML = `${toolbar}${files.length ? `<div class="book-grid">${files.map(file => renderBookCard(group, lib, file)).join("")}</div>` : `<div class="empty-tip">${comicShelfView === "completed" ? "还没有读完的书" : "当前页没有未读书籍"}</div>`}${pager}`;
+      const viewType = lib.type === "book" ? "book" : "comic";
+      const toolbar = `<div class="comic-shelf-toolbar"><div class="comic-shelf-tabs"><button class="${comicShelfView === "shelf" ? "active" : ""}" onclick="setComicShelfView('shelf')">📚 书架</button><button class="${comicShelfView === "completed" ? "active" : ""}" onclick="setComicShelfView('completed')">✓ 已读收藏</button></div><div class="media-actions">${viewToggle(viewType)}<button class="btn" onclick="refreshBookCovers()">↻ 重新刮削封面</button><label class="page-size-picker">每页 <select id="mediaPageSize" onchange="setMediaPageSize(this.value)"><option value="20"${pageSize===20?' selected':''}>20</option><option value="50"${pageSize===50?' selected':''}>50</option><option value="100"${pageSize===100?' selected':''}>100</option></select></label></div></div>`;
+      const listBody = `<div class="media-file-list">${files.map(file => renderLocalFileRow(group, lib, file)).join("")}</div>`;
+      const posterBody = `<div class="book-grid">${files.map(file => renderBookCard(group, lib, file)).join("")}</div>`;
+      target.innerHTML = `${toolbar}${files.length ? (mediaViewMode(viewType) === "list" ? listBody : posterBody) : `<div class="empty-tip">${comicShelfView === "completed" ? "还没有读完的书" : "当前页没有未读书籍"}</div>`}${pager}`;
       scrapeVisibleBookCovers(target);
     } else if (group === "audio") {
       audioFiles = files;
