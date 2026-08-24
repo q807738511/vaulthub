@@ -74,6 +74,9 @@ with tempfile.TemporaryDirectory() as tmp:
         assert result.get("ctype") == "video/mp4", result
         assert result.get("head", b"").startswith(b"\x00\x00\x00"), result
         assert max(quick_times) < 2.0, quick_times
+        deadline = time.time() + 60
+        while time.time() < deadline and not list(cache.glob("*.mp4")):
+            time.sleep(0.1)
         assert list(cache.glob("*.mp4")), "transcode cache file should be created"
     finally:
         proc.terminate()

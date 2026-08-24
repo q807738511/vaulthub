@@ -10,11 +10,15 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/select.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
+
+static volatile sig_atomic_t shutting_down = 0;
+static volatile sig_atomic_t child_changed = 0;
 
 #define LISTEN_PORT 9099
 #define MAX_REQ 1048576
@@ -158,8 +162,37 @@ static void start_media_api(void) {
 
 static void stop_caddy(int sig) {
   (void)sig;
+  shutting_down = 1;
   if (caddy_pid > 0) kill(caddy_pid, SIGTERM);
   if (media_pid > 0) kill(media_pid, SIGTERM);
+}
+
+static void child_signal(int sig) {
+  (void)sig;
+  child_changed = 1;
+}
+
+static void reap_children(void) {
+  int st = 0;
+  pid_t pid;
+  child_changed = 0;
+  while ((pid = waitpid(-1, &st, WNOHANG)) > 0) {
+    if (pid == media_pid) {
+      logmsg("media API exited with status %d", st);
+      media_pid = -1;
+      if (!shutting_down) {
+        logmsg("restarting media API");
+        start_media_api();
+      }
+    } else if (pid == caddy_pid) {
+      logmsg("caddy exited with status %d", st);
+      caddy_pid = -1;
+      if (!shutting_down) {
+        logmsg("restarting caddy");
+        start_caddy();
+      }
+    }
+  }
 }
 
 static void send_resp(int fd, int code, const char *ctype, const char *body) {
@@ -283,6 +316,10 @@ static void handle_client(int fd) {
 
 int main(void) {
   signal(SIGTERM, stop_caddy);
+  signal(SIGINT, stop_caddy);
+  signal(SIGCHLD, child_signal);
+  const char *dc = getenv("CADDY_DATA_CONFIG"); if (dc && *dc) data_config = dc;
+  const char *df = getenv("CADDY_DEFAULT_CONFIG"); if (df && *df) default_config = df;
   ensure_data_config();
   start_media_api();
   start_caddy();
@@ -295,8 +332,19 @@ int main(void) {
   }
   logmsg("VaultHub manager listening on 127.0.0.1:%d", LISTEN_PORT);
   for (;;) {
-    int fd = accept(s, NULL, NULL);
-    if (fd >= 0) handle_client(fd);
-    int st; while (waitpid(-1, &st, WNOHANG) > 0) {}
+    if (child_changed) reap_children();
+    if (shutting_down) break;
+    fd_set rfds; FD_ZERO(&rfds); FD_SET(s, &rfds);
+    struct timeval tv; tv.tv_sec = 0; tv.tv_usec = 200000;
+    int ready = select(s + 1, &rfds, NULL, NULL, &tv);
+    if (ready > 0 && FD_ISSET(s, &rfds)) {
+      int fd = accept(s, NULL, NULL);
+      if (fd >= 0) handle_client(fd);
+      else if (errno != EINTR) logmsg("manager accept failed: %s", strerror(errno));
+    } else if (ready < 0 && errno != EINTR) {
+      logmsg("manager select failed: %s", strerror(errno));
+    }
   }
+  reap_children();
+  return 0;
 }
