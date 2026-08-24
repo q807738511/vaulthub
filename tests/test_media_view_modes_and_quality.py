@@ -5,6 +5,7 @@ html = (ROOT / "index.html").read_text(encoding="utf-8")
 c = (ROOT / "media-api.c").read_text(encoding="utf-8")
 dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
 compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+caddyfile = (ROOT / "Caddyfile").read_text(encoding="utf-8")
 
 
 def assert_contains(text, needle):
@@ -80,5 +81,6 @@ for marker in [
 assert "ffmpeg" in dockerfile
 assert "TRANSCODE_CACHE_DIR=/data/transcode-cache" in dockerfile
 assert "TRANSCODE_CACHE_DIR" in compose
+assert "flush_interval -1" in caddyfile
 
 print("PASS: media view switches, sidebar-safe viewer, default 720p player, quality selector, and transcode cache markers are present")
