@@ -1,8 +1,25 @@
-# VaultHub 蜀鼠之家 v0.6.10：阅读与播放修复
+# VaultHub 蜀鼠之家 v0.6.15：本地影视与格式扩展
 
-v0.6.10 修复含 `+` 文件名的电子书/音乐 404（路径改为百分号编码传输，兼容中间层解码），并修复阅读器全屏穿模。
+v0.6.15 扩展漫画/电子书格式识别，增加影视本地媒体库，可映射本地影片目录进行读取、刮削与浏览器播放；影视刮削默认豆瓣，配置 `TMDB_API_KEY` 后启用 TMDB 代理刮削。
 
 ## 变更
+
+## v0.6.15 更新
+
+- 漫画本地库支持：EPUB、MOBI、ZIP、CBZ、PDF、RAR、CBR、7Z、CB7、JPG/PNG 等散图、CPG、LZH、CBL、TAR、CBT。
+- 电子书本地库支持：EPUB、PDF、MOBI、AZW/AZW3、CHM、EXE、UMD、JAR/JAD、CAJ、PDG、DJVU、CEB、DOC/DOCX、XPS、TXT。
+- 影视栏目新增“本地媒体库 / 外连服务”切换；本地库支持 MP4、MKV、AVI、MOV、WEBM、TS/M2TS、WMV、FLV、MPG/MPEG、RMVB、ISO 等影片文件。
+- 影视本地库支持文件名兜底展示、豆瓣默认刮削、`TMDB_API_KEY` 环境变量启用 TMDB 刮削代理。
+
+### TMDB 可选配置
+
+```yaml
+environment:
+  - TMDB_API_KEY=你的_tmdb_api_key
+```
+
+未配置 `TMDB_API_KEY` 时，影视库仍可正常读取和播放，刮削失败会使用文件名展示。
+
 
 - 新增本地媒体库设置：名称、类型和多个容器目录路径。
 - 媒体源可在“本地媒体库”和原有“外连服务”之间切换。

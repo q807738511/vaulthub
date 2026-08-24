@@ -227,7 +227,7 @@ static void add_library(int fd, const char *body, const char *request) {
   if (!authorized(request)) { json_error(fd,401,"unauthorized"); return; }
   struct library lib={{0},{0},{0},{0}};
   if (json_string(body,"id",lib.id,sizeof(lib.id)) || json_string(body,"name",lib.name,sizeof(lib.name)) || json_string(body,"type",lib.type,sizeof(lib.type)) || json_string(body,"path",lib.path,sizeof(lib.path))) { json_error(fd,400,"id, name, type and path are required"); return; }
-  int type_ok=!strcmp(lib.type,"audio")||!strcmp(lib.type,"comic")||!strcmp(lib.type,"book");
+  int type_ok=!strcmp(lib.type,"audio")||!strcmp(lib.type,"comic")||!strcmp(lib.type,"book")||!strcmp(lib.type,"movie");
   if (!valid_id(lib.id)||!*lib.name||!type_ok) { json_error(fd,400,"invalid id, name or type"); return; }
   char canonical[MAX_PATH_LEN]; struct stat st;
   if (!realpath(lib.path,canonical)||stat(canonical,&st)||!S_ISDIR(st.st_mode)) { json_error(fd,400,"path must be an existing absolute directory"); return; }
@@ -289,10 +289,33 @@ static const char *mime_type(const char *p) {
   if(!strcasecmp(e,".flac"))return "audio/flac";
   if(!strcasecmp(e,".m4a"))return "audio/mp4";
   if(!strcasecmp(e,".ogg"))return "audio/ogg";
+  if(!strcasecmp(e,".wav"))return "audio/wav";
+  if(!strcasecmp(e,".mp4"))return "video/mp4";
+  if(!strcasecmp(e,".m4v"))return "video/mp4";
+  if(!strcasecmp(e,".webm"))return "video/webm";
+  if(!strcasecmp(e,".mkv"))return "video/x-matroska";
+  if(!strcasecmp(e,".avi"))return "video/x-msvideo";
+  if(!strcasecmp(e,".mov"))return "video/quicktime";
+  if(!strcasecmp(e,".ts"))return "video/mp2t";
+  if(!strcasecmp(e,".m2ts"))return "video/mp2t";
   if(!strcasecmp(e,".pdf"))return "application/pdf";
   if(!strcasecmp(e,".epub"))return "application/epub+zip";
+  if(!strcasecmp(e,".mobi"))return "application/x-mobipocket-ebook";
+  if(!strcasecmp(e,".azw")||!strcasecmp(e,".azw3"))return "application/vnd.amazon.ebook";
+  if(!strcasecmp(e,".djvu")||!strcasecmp(e,".djv"))return "image/vnd.djvu";
+  if(!strcasecmp(e,".doc"))return "application/msword";
+  if(!strcasecmp(e,".docx"))return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  if(!strcasecmp(e,".xps"))return "application/vnd.ms-xpsdocument";
   if(!strcasecmp(e,".cbz"))return "application/vnd.comicbook+zip";
   if(!strcasecmp(e,".cbr"))return "application/vnd.comicbook-rar";
+  if(!strcasecmp(e,".cb7"))return "application/x-7z-compressed";
+  if(!strcasecmp(e,".cbt"))return "application/x-tar";
+  if(!strcasecmp(e,".cbl"))return "application/x-lzh-compressed";
+  if(!strcasecmp(e,".zip"))return "application/zip";
+  if(!strcasecmp(e,".rar"))return "application/vnd.rar";
+  if(!strcasecmp(e,".7z"))return "application/x-7z-compressed";
+  if(!strcasecmp(e,".tar"))return "application/x-tar";
+  if(!strcasecmp(e,".lzh"))return "application/x-lzh-compressed";
   if(!strcasecmp(e,".jpg")||!strcasecmp(e,".jpeg"))return "image/jpeg";
   if(!strcasecmp(e,".png"))return "image/png";
   if(!strcasecmp(e,".webp"))return "image/webp";
@@ -308,6 +331,37 @@ static int parse_range(const char *request, off_t size, off_t *start, off_t *end
   else { long long a=strtoll(p,&tail,10); if(tail==p||a<0||a>=size)return -1;*start=(off_t)a;if(*tail=='-'){tail++;if(isdigit((unsigned char)*tail)){long long z=strtoll(tail,&tail,10);if(z<a)return -1;*end=z>=size?size-1:(off_t)z;}else *end=size-1;}else return -1; }
   return (*tail=='\r'||*tail=='\n'||*tail==0)?1:-1;
 }
+
+static int shell_quote(const char *src, char *dst, size_t cap) {
+  size_t n = 0; if (n + 1 >= cap) return -1; dst[n++] = '\'';
+  for (const char *p = src; *p; p++) {
+    if (*p == '\'') { const char *q = "'\\''"; for (int i=0;q[i];i++) { if (n + 1 >= cap) return -1; dst[n++] = q[i]; } }
+    else { if (n + 1 >= cap) return -1; dst[n++] = *p; }
+  }
+  if (n + 2 >= cap) return -1;
+  dst[n++] = '\'';
+  dst[n] = 0;
+  return 0;
+}
+static void scraper_status(int fd) {
+  const char *key = getenv("TMDB_API_KEY");
+  response(fd, 200, "application/json", key && *key ? "{\"default\":\"douban\",\"tmdb_enabled\":true}\n" : "{\"default\":\"douban\",\"tmdb_enabled\":false}\n");
+}
+static void tmdb_search(int fd, const char *query) {
+  const char *key = getenv("TMDB_API_KEY");
+  if (!key || !*key) { json_error(fd, 400, "TMDB_API_KEY is not configured"); return; }
+  const char *raw = query_value(query, "query"); char title[512];
+  if (!raw || url_decode_component(raw, title, sizeof(title))) { json_error(fd, 400, "query is required"); return; }
+  char q_key[1024], q_title[1024], cmd[4096];
+  if (shell_quote(key, q_key, sizeof(q_key)) || shell_quote(title, q_title, sizeof(q_title))) { json_error(fd, 400, "query too long"); return; }
+  snprintf(cmd, sizeof(cmd), "curl -fsS --get 'https://api.themoviedb.org/3/search/multi' --data-urlencode api_key=%s --data-urlencode language=zh-CN --data-urlencode query=%s --data-urlencode page=1 --max-time 8", q_key, q_title);
+  FILE *pipe = popen(cmd, "r"); if (!pipe) { json_error(fd, 500, "tmdb scrape unavailable"); return; }
+  struct buffer b = {0}; char chunk[4096]; size_t got;
+  while ((got = fread(chunk, 1, sizeof(chunk), pipe)) > 0) { if (b.len + got > MAX_REQ || appendf(&b, "%.*s", (int)got, chunk)) { free(b.data); pclose(pipe); json_error(fd, 500, "tmdb response too large"); return; } }
+  int rc = pclose(pipe); if (rc != 0 || !b.data) { free(b.data); json_error(fd, 500, "tmdb scrape failed"); return; }
+  send_headers(fd, 200, "application/json", (off_t)b.len, NULL); write(fd, b.data, b.len); free(b.data);
+}
+
 static void serve_file(int fd, const char *method, const char *url, const char *request) {
   const char *prefix="/api/media/file/"; char decoded[MAX_PATH_LEN]; if (url_decode(url,decoded,sizeof(decoded))||strncmp(decoded,prefix,strlen(prefix))) { json_error(fd,400,"invalid path"); return; }
   char *id=decoded+strlen(prefix),*slash=strchr(id,'/'); if(!slash){json_error(fd,400,"file path required");return;} *slash=0; const char *rel=slash+1; if(!valid_id(id)||!safe_relative(rel)){json_error(fd,400,"invalid path");return;}
@@ -422,6 +476,8 @@ static void handle_client(int fd) {
   else if(!strcmp(url,"/api/system/metrics")&&!strcmp(method,"GET"))system_metrics(fd);
   else if(!strcmp(url,"/api/media/libraries")&&!strcmp(method,"GET"))list_libraries(fd);
   else if(!strcmp(url,"/api/media/files")&&!strcmp(method,"GET"))list_files(fd,query);
+  else if(!strcmp(url,"/api/media/scrapers")&&!strcmp(method,"GET"))scraper_status(fd);
+  else if(!strcmp(url,"/api/media/tmdb")&&!strcmp(method,"GET"))tmdb_search(fd,query);
   else if(!strcmp(url,"/api/media/libraries")&&!strcmp(method,"POST"))add_library(fd,req+header_len,req);
   else if(!strcmp(url,"/api/media/libraries")&&!strcmp(method,"DELETE")) {
     const char *id=query&&strncmp(query,"id=",3)==0?query+3:""; char decoded_id[MAX_ID];

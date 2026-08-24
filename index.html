@@ -560,7 +560,7 @@
   <div class="add-board-btn" onclick="openModuleModal()">
     <span>＋</span><span data-i18n="addBoardNav">添加模块</span>
   </div>
-  <div class="sidebar-foot">v0.6.14 · Player and Reader Update</div>
+  <div class="sidebar-foot">v0.6.15 · Local Movie and Format Update</div>
 </aside>
 
 <!-- ===== 主区域 ===== -->
@@ -969,7 +969,7 @@
     <div class="modal-sec">添加媒体库</div>
     <div class="form-2col">
       <div class="cfg-field"><label>库名称</label><input id="mediaLibName" type="text" placeholder="例如：家庭音乐"></div>
-      <div class="cfg-field"><label>媒体类型</label><select id="mediaLibType"><option value="audio">音乐</option><option value="comic">漫画</option><option value="book">电子书</option></select></div>
+      <div class="cfg-field"><label>媒体类型</label><select id="mediaLibType"><option value="audio">音乐</option><option value="comic">漫画</option><option value="book">电子书</option><option value="movie">影视</option></select></div>
     </div>
     <div class="cfg-field"><label>容器路径</label><div id="mediaLibPaths"></div><button class="btn" type="button" onclick="addMediaPath()">＋ 添加路径</button></div>
     <div class="cfg-field"><label>管理令牌（如后端启用）</label><input id="mediaAdminToken" type="password" placeholder="X-VaultHub-Token" autocomplete="off"></div>
@@ -1136,7 +1136,7 @@
   <div class="modal">
     <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
     <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
-    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.6.14 · Player and Reader Update</b></div>
+    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.6.15 · Local Movie and Format Update</b></div>
     <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>HTML / CSS / JS · 单文件</b></div>
     <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>VaultHub 内置系统监控</b></div>
     <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>
@@ -1714,18 +1714,15 @@ function activeMediaId(group) {
 }
 function mediaStoreKey(group) { return "dwu_media_configured_" + group; }
 function mediaMode(group) {
-  if (group === "movie") return "external";
   try { return localStorage.getItem("dwu_media_mode_" + group) || "local"; } catch (e) { return "local"; }
 }
 function setMediaMode(group, mode) {
-  if (group === "movie") mode = "external";
   try { localStorage.setItem("dwu_media_mode_" + group, mode); } catch (e) {}
   const wrap = document.querySelector(`#view-${group} .cfg-wrap`);
   if (wrap) wrap.style.display = "none";
   renderMediaHome(group);
 }
 function mediaModeBar(group) {
-  if (group === "movie") return "";
   const mode = mediaMode(group);
   return `<div class="media-modebar"><div class="media-modes" role="tablist" aria-label="媒体来源">
     <button class="media-mode ${mode === "local" ? "active" : ""}" type="button" onclick="setMediaMode('${esc(group)}','local')">本地媒体库</button>
@@ -1853,6 +1850,45 @@ function renderAudioFavorites(lib) {
   const rows = audioFavoriteRows();
   return rows.length ? `<div class="media-file-list">${rows.map(({lib: rowLib, path}) => renderAudioRow(rowLib, { path })).join("")}</div>` : '<div class="empty-tip">还没有喜欢的歌曲，请在歌曲列表中点击 ♡ 收藏。</div>';
 }
+
+const movieMetadataCache = "vaulthub_movie_metadata_v1";
+let scraperStatus = { default: "douban", tmdb_enabled: false };
+function readMovieMetadata() { try { return JSON.parse(localStorage.getItem(movieMetadataCache) || "{}") || {}; } catch (e) { return {}; } }
+function writeMovieMetadata(data) { try { localStorage.setItem(movieMetadataCache, JSON.stringify(data)); } catch (e) {} }
+function movieTitleFromPath(path) { return displayBookTitle(path).replace(/\b(19|20)\d{2}\b/g, " ").replace(/[._]+/g, " ").replace(/\s+/g, " ").trim() || displayBookTitle(path); }
+function movieYearFromPath(path) { const m = String(path).match(/\b(19|20)\d{2}\b/); return m ? m[0] : ""; }
+function movieBaseMetadata(path) { return { title: movieTitleFromPath(path), year: movieYearFromPath(path), poster: "", overview: "", provider: "文件名展示", checkedAt: 0 }; }
+function movieMetadataFor(path) { const all = readMovieMetadata(); return { ...movieBaseMetadata(path), ...(all[path] || {}) }; }
+async function loadScraperStatus() { try { const res = await fetch("/api/media/scrapers", { cache:"no-store" }); if (res.ok) scraperStatus = await res.json(); } catch(e) {} }
+async function scrapeMovieMetadata(host, lib, files) {
+  await loadScraperStatus();
+  const all = readMovieMetadata();
+  const pending = files.filter(file => !all[file.path]);
+  for (const file of pending) { all[file.path] = { ...movieBaseMetadata(String(file.path)), provider: "文件名展示（等待豆瓣刮削）", checkedAt: Date.now() }; }
+  writeMovieMetadata(all); if (pending.length) renderMovieLibraryContent(host, lib, files);
+  for (const file of pending) {
+    const path = String(file.path), fallback = all[path], title = fallback.title;
+    try {
+      const douban = await fetch(`https://movie.douban.com/j/subject_suggest?q=${encodeURIComponent(title)}`, { cache:"force-cache" });
+      const item = douban.ok ? (await douban.json())?.[0] : null;
+      if (item) { all[path] = { ...fallback, title:item.title || fallback.title, year:item.year || fallback.year, poster:item.img || "", provider:"豆瓣", checkedAt:Date.now() }; writeMovieMetadata(all); renderMovieLibraryContent(host, lib, files); continue; }
+    } catch(e) {}
+    if (scraperStatus.tmdb_enabled) try {
+      const tmdb = await fetch(`/api/media/tmdb?query=${encodeURIComponent(title)}`, { cache:"force-cache" });
+      const data = tmdb.ok ? await tmdb.json() : null;
+      const item = data?.results?.find(x => x.poster_path || x.overview || x.title || x.name);
+      if (item) { all[path] = { ...fallback, title:item.title || item.name || fallback.title, year:String(item.release_date || item.first_air_date || fallback.year).slice(0,4), poster:item.poster_path ? `https://image.tmdb.org/t/p/w342${item.poster_path}` : "", overview:item.overview || "", provider:"TMDB", checkedAt:Date.now() }; writeMovieMetadata(all); renderMovieLibraryContent(host, lib, files); }
+    } catch(e) {}
+  }
+}
+function renderMovieLibraryContent(host, lib, files) {
+  const status = scraperStatus.tmdb_enabled ? "默认豆瓣刮削 · TMDB 已启用" : "默认豆瓣刮削 · TMDB 未配置（设置 TMDB_API_KEY 后启用）";
+  host.innerHTML = `<div class="comic-shelf-toolbar"><strong>本地影视库</strong><div class="media-actions"><span class="badge">${esc(status)}</span><button class="btn" onclick="refreshMovieMetadata()">↻ 重新刮削</button></div></div><div class="media-file-list">${files.map(file => renderMovieRow(lib, file)).join("")}</div>`;
+}
+function renderMovieLibrary(lib, files) { const host = document.createElement("div"); renderMovieLibraryContent(host, lib, files); return host.innerHTML; }
+function renderMovieRow(lib, file) { const path=String(file.path), meta=movieMetadataFor(path); return `<div class="media-file-row"><div class="media-file-name" title="${esc(path)}"><b>${esc(meta.title)}</b><small>${esc([meta.year, meta.provider].filter(Boolean).join(" · "))}</small></div><span class="media-file-meta">${esc(fileExt(path).toUpperCase())} · ${formatFileSize(file.size)}</span><div class="media-actions"><button class="btn" data-media-group="movie" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openLocalMediaButton(this)">▶ 播放</button></div></div>`; }
+function refreshMovieMetadata() { try { localStorage.removeItem(movieMetadataCache); } catch(e) {} const lib=findMediaLibrary(localMediaSelection.movie); if(lib) loadLocalFiles("movie", lib, 0); toast("🔄 正在重新刮削影视信息"); }
+
 function mediaStateKey(libId, path) { return `vaulthub_reading_${libId}_${path}`; }
 function readingState(libId, path) {
   try { return JSON.parse(localStorage.getItem(mediaStateKey(libId, path))) || { progress: 0 }; } catch (e) { return { progress: 0 }; }
@@ -1883,8 +1919,20 @@ function setAudioView(view) {
   const lib = findMediaLibrary(localMediaSelection.audio);
   if (lib) loadLocalFiles("audio", lib, 0);
 }
-function mediaTypeForGroup(group) { return group === "audio" ? "audio" : "comic"; }
-function mediaTypeName(type) { return ({ audio: "音乐", comic: "漫画", book: "电子书" })[type] || type; }
+function mediaTypeForGroup(group) { return group === "audio" ? "audio" : group === "movie" ? "movie" : "comic"; }
+function mediaTypeName(type) { return ({ audio: "音乐", comic: "漫画", book: "电子书", movie: "影视" })[type] || type; }
+const MEDIA_FORMATS = {
+  comic: ["epub","mobi","zip","cbz","pdf","rar","cbr","7z","cb7","jpg","jpeg","png","webp","gif","bmp","avif","cpg","lzh","cbl","tar","cbt"],
+  book: ["epub","pdf","mobi","azw","azw3","chm","exe","umd","jar","jad","caj","pdg","djvu","djv","ceb","doc","docx","xps","txt"],
+  audio: ["mp3","flac","m4a","ogg","wav","aac","ape","opus"],
+  movie: ["mp4","mkv","avi","mov","m4v","webm","ts","m2ts","wmv","flv","mpg","mpeg","rmvb","iso"]
+};
+function supportedLocalMediaFile(group, lib, path) {
+  const ext = fileExt(path);
+  if (!ext) return false;
+  if (group === "comic") return (lib?.type === "book" ? MEDIA_FORMATS.book : MEDIA_FORMATS.comic).includes(ext);
+  return (MEDIA_FORMATS[group] || []).includes(ext);
+}
 function mediaAdminHeaders() {
   let token = document.getElementById("mediaAdminToken")?.value.trim() || "";
   if (!token) {
@@ -1920,10 +1968,10 @@ async function refreshMediaLibraries(notify) {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     localMediaLibraries = normalizeLibraryPayload(await res.json());
     renderMediaLibraryConfigList();
-    ["comic", "audio"].forEach(group => { if (mediaMode(group) === "local") renderLocalMedia(group); });
+    ["comic", "movie", "audio"].forEach(group => { if (mediaMode(group) === "local") renderLocalMedia(group); });
     if (notify) toast("✅ 本地媒体库已刷新");
   } catch (err) {
-    ["comic", "audio"].forEach(group => {
+    ["comic", "movie", "audio"].forEach(group => {
       if (mediaMode(group) !== "local") return;
       const host = document.getElementById("media-wide-" + group);
       if (host) host.innerHTML = `${mediaModeBar(group)}<div class="media-error">无法读取本地媒体库：${esc(err.message)}</div>`;
@@ -1932,14 +1980,14 @@ async function refreshMediaLibraries(notify) {
   }
 }
 function librariesForGroup(group) {
-  return localMediaLibraries.filter(lib => group === "audio" ? lib.type === "audio" : (lib.type === "comic" || lib.type === "book"));
+  return localMediaLibraries.filter(lib => group === "audio" ? lib.type === "audio" : group === "movie" ? lib.type === "movie" : (lib.type === "comic" || lib.type === "book"));
 }
 function renderLocalMedia(group) {
   const host = document.getElementById("media-wide-" + group);
   if (!host) return;
   const libs = librariesForGroup(group);
   if (!libs.length) {
-    host.innerHTML = `${mediaModeBar(group)}<div class="media-empty"><div class="big">▤</div><h3>暂无本地媒体库</h3><p>添加容器内已挂载的绝对路径后，即可浏览音乐、漫画或电子书。</p><button class="btn btn-primary" onclick="showMediaLibraryConfig('${esc(group)}')">⚙ 配置媒体库</button></div>`;
+    host.innerHTML = `${mediaModeBar(group)}<div class="media-empty"><div class="big">▤</div><h3>暂无本地媒体库</h3><p>添加容器内已挂载的绝对路径后，即可浏览音乐、漫画、电子书或影视。</p><button class="btn btn-primary" onclick="showMediaLibraryConfig('${esc(group)}')">⚙ 配置媒体库</button></div>`;
     return;
   }
   let selected = libs.find(lib => lib.id === localMediaSelection[group]) || libs[0];
@@ -1963,11 +2011,12 @@ async function loadLocalFiles(group, lib, offset = 0) {
   const target = document.getElementById("local-media-content-" + group);
   if (!target) return;
   try {
-    const pageSize = group === "comic" ? mediaPageSize : group === "audio" ? audioPageSize : 100;
+    const pageSize = group === "comic" ? mediaPageSize : group === "audio" ? audioPageSize : group === "movie" ? 50 : 100;
     const res = await fetch(`/api/media/files?id=${encodeURIComponent(lib.id)}&offset=${offset}&limit=${pageSize}`, { cache: "no-store" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     let files = normalizeFilePayload(data).sort((a, b) => String(a.path).localeCompare(String(b.path), "zh-CN"));
+    files = files.filter(file => supportedLocalMediaFile(group, lib, String(file.path)));
     if (data.status === "indexing") {
       target.innerHTML = '<div class="empty-tip">正在后台建立低速索引，请稍后刷新。扫描不会阻塞页面。</div>';
       return;
@@ -1990,6 +2039,9 @@ async function loadLocalFiles(group, lib, offset = 0) {
       audioCursor = offset;
       target.innerHTML = renderAudioLibrary(lib, files, data);
       scrapeAudioMetadata(target, lib, files);
+    } else if (group === "movie") {
+      target.innerHTML = renderMovieLibrary(lib, files, data) + pager;
+      scrapeMovieMetadata(target, lib, files);
     } else {
       target.innerHTML = `${files.length ? `<div class="media-file-list">${files.map(file => renderLocalFileRow(group, lib, file)).join("")}</div>` : '<div class="empty-tip">该媒体库中暂无支持的文件</div>'}${pager}`;
     }
@@ -2166,8 +2218,9 @@ document.getElementById("audioPlayerElement")?.addEventListener("timeupdate", up
 function renderLocalFileRow(group, lib, file) {
   const path = String(file.path);
   const ext = fileExt(path);
-  const viewable = ["mp3","flac","m4a","ogg","wav","jpg","jpeg","png","webp","gif","txt","pdf"].includes(ext);
-  const action = viewable ? "查看" : (["cbz","zip","cbr","epub"].includes(ext) ? "打开" : "下载");
+  const viewable = ["mp3","flac","m4a","ogg","wav","jpg","jpeg","png","webp","gif","txt","pdf","mp4","m4v","webm","mov"].includes(ext);
+  const archiveLike = [...MEDIA_FORMATS.comic, ...MEDIA_FORMATS.book].includes(ext);
+  const action = group === "movie" && MEDIA_FORMATS.movie.includes(ext) ? "播放" : viewable ? "查看" : (archiveLike ? "打开" : "下载");
   return `<div class="media-file-row"><div class="media-file-name" title="${esc(path)}">${esc(path)}</div><span class="media-file-meta">${esc(ext.toUpperCase() || "FILE")} · ${formatFileSize(file.size)}</span><button class="btn" data-media-group="${esc(group)}" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openLocalMediaButton(this)">${action}</button></div>`;
 }
 function displayBookTitle(path) {
@@ -2302,7 +2355,8 @@ async function openLocalMedia(group, libId, path) {
   activeReader = { group, libId, path };
   let body = "";
   if (["mp3","flac","m4a","ogg","wav"].includes(ext)) body = `<div class="media-viewer-body"><audio controls autoplay preload="metadata" src="${esc(url)}"></audio></div>`;
-  else if (["jpg","jpeg","png","webp","gif"].includes(ext)) body = `<img src="${esc(url)}" alt="${esc(path)}">`;
+  else if (MEDIA_FORMATS.movie.includes(ext)) body = `<div class="media-viewer-body"><video controls autoplay preload="metadata" style="width:100%;max-height:72vh;background:#000" src="${esc(url)}"></video><div class="hint">${esc(movieMetadataFor(path).provider || "豆瓣刮削/文件名展示")}</div></div>`;
+  else if (["jpg","jpeg","png","webp","gif","bmp","avif"].includes(ext)) body = `<img src="${esc(url)}" alt="${esc(path)}">`;
   else if (ext === "pdf") body = `<iframe src="${esc(url)}#view=FitH" title="${esc(path)}"></iframe>`;
   else if (ext === "txt") {
     viewer.innerHTML = viewerShell(group, lib, path, '<div class="empty-tip">正在读取文本...</div>', url);
@@ -2327,7 +2381,7 @@ async function openLocalMedia(group, libId, path) {
       return;
     }
   } else {
-    const note = ["cbz","zip","cbr"].includes(ext) ? "该漫画压缩包已生成书架封面。当前浏览器不能直接解析此压缩格式，请下载后使用漫画阅读器打开。" : ext === "epub" ? "该 EPUB 已生成书架封面。当前内置阅读器暂不解包 EPUB，可在新窗口打开或下载阅读。" : "该格式可下载或交给浏览器打开。";
+    const note = MEDIA_FORMATS.comic.includes(ext) ? "该漫画/压缩格式已加入书架。当前浏览器不能直接解析时，可下载后用专业阅读器打开。" : MEDIA_FORMATS.book.includes(ext) ? "该电子书格式已加入书架。浏览器不支持直接解析时，可在新窗口打开或下载阅读。" : "该格式可下载或交给浏览器打开。";
     body = `<div class="reader-book-fallback"><div class="book-cover" style="max-width:220px;margin:0 auto 24px;background:${coverGradient(displayBookTitle(path))}"><span class="book-cover-title">${esc(displayBookTitle(path))}</span></div><p>${note}</p><p><a class="btn btn-primary" href="${esc(url)}" target="_blank" rel="noopener">↗ 尝试在浏览器打开</a></p></div>`;
   }
   viewer.innerHTML = viewerShell(group, lib, path, body, url);
