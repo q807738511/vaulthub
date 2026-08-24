@@ -377,7 +377,7 @@
   .book-card-meta { margin-top:5px; color:var(--text2); font-size:11px; display:flex; justify-content:space-between; gap:6px; }
   .book-progress { height:3px; margin-top:7px; border-radius:4px; overflow:hidden; background:var(--border); }
   .book-progress span { display:block; height:100%; background:var(--green); }
-  .media-reader-overlay { position:fixed; inset:0; z-index:300; display:flex; flex-direction:column; background:var(--bg); min-height:100vh; }
+  .media-reader-overlay { position:fixed; top:0; right:0; bottom:0; left:var(--sidebar-w); z-index:300; display:flex; flex-direction:column; background:var(--bg); min-height:100vh; }
   .media-reader-head { flex:0 0 auto; min-height:50px; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 12px; border-bottom:1px solid var(--border); background:var(--bg2); }
   .media-reader-title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .media-reader-close { flex:0 0 auto; width:36px; height:36px; border-radius:50%; border:1px solid var(--border); color:var(--text); background:var(--card2); cursor:pointer; font-size:18px; }
@@ -397,8 +397,11 @@
   .reader-book-fallback { width:min(520px,90%); margin:auto; text-align:center; color:#eee; }
   #view-comic { position:relative; }
   .media-viewer-body { padding: 12px; max-height: none; overflow: auto; }
-  .media-video-body { width:100%; height:100%; padding:0; margin:0; overflow:hidden; background:#000; display:flex; align-items:center; justify-content:center; }
+  .media-video-body { position:relative; width:100%; height:100%; padding:0; margin:0; overflow:hidden; background:#000; display:flex; align-items:center; justify-content:center; }
   .media-video-body video { width:100%; height:100%; max-width:none; max-height:none; object-fit:contain; background:#000; }
+  .movie-compat-bar { position:absolute; top:12px; left:12px; right:12px; z-index:2; display:flex; align-items:center; gap:8px; flex-wrap:wrap; pointer-events:none; }
+  .movie-compat-bar button,.movie-compat-bar span { pointer-events:auto; }
+  .movie-compat-status { color:#fff; font-size:12px; padding:6px 10px; border-radius:999px; background:rgba(0,0,0,.48); }
   .media-viewer img { display: block; max-width: 100%; height: auto; margin: 0 auto; }
   .media-viewer audio { width: 100%; }
   .media-viewer iframe { display: block; width: 100%; height: 68vh; border: 0; background: #fff; }
@@ -562,7 +565,7 @@
   <div class="add-board-btn" onclick="openModuleModal()">
     <span>＋</span><span data-i18n="addBoardNav">添加模块</span>
   </div>
-  <div class="sidebar-foot">v0.6.16 · Direct Playback Fix</div>
+  <div class="sidebar-foot">v0.6.17 · Audio Compatibility</div>
 </aside>
 
 <!-- ===== 主区域 ===== -->
@@ -1138,7 +1141,7 @@
   <div class="modal">
     <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
     <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
-    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.6.16 · Direct Playback Fix</b></div>
+    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.6.17 · Audio Compatibility</b></div>
     <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>HTML / CSS / JS · 单文件</b></div>
     <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>VaultHub 内置系统监控</b></div>
     <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>
@@ -1950,6 +1953,14 @@ function mediaFileUrl(lib, path) {
   const query = `id=${encodeURIComponent(String(lib.id))}&path=${encodeURIComponent(String(path))}`;
   return `/api/media/file?${query}`;
 }
+function mediaCompatUrl(lib, path) {
+  const query = `id=${encodeURIComponent(String(lib.id))}&path=${encodeURIComponent(String(path))}`;
+  return `/api/media/compat?${query}`;
+}
+function mediaProbeUrl(lib, path) {
+  const query = `id=${encodeURIComponent(String(lib.id))}&path=${encodeURIComponent(String(path))}`;
+  return `/api/media/probe?${query}`;
+}
 function mediaLegacyFileUrl(lib, path) {
   return `/api/media/file/${encodeURIComponent(lib.id)}/${String(path).split("/").map(encodeURIComponent).join("/")}`;
 }
@@ -2348,6 +2359,59 @@ function markReaderCompleted() {
   saveReadingProgress(activeReader.libId, activeReader.path, 100);
   toast("✅ 已归档到已读收藏");
 }
+function movieMimeForExt(ext) {
+  if (ext === "mp4" || ext === "m4v") return "video/mp4";
+  if (ext === "webm") return "video/webm";
+  if (ext === "ogv" || ext === "ogg") return "video/ogg";
+  if (ext === "mov") return "video/quicktime";
+  return "";
+}
+function movieExtensionNeedsCompat(path) {
+  const ext = fileExt(path);
+  return ["mkv","avi","rmvb","rm","wmv","flv","ts","m2ts","mts","vob","iso"].includes(ext);
+}
+function browserSaysVideoContainerUnsupported(path) {
+  const mime = movieMimeForExt(fileExt(path));
+  if (!mime) return true;
+  const video = document.createElement("video");
+  return !video.canPlayType(mime);
+}
+function setMovieCompatStatus(root, text) {
+  const el = root?.querySelector(".movie-compat-status");
+  if (el) el.textContent = text;
+}
+function switchMovieSource(video, url) {
+  if (!video || video.dataset.currentSrc === url) return;
+  const wasPaused = video.paused;
+  video.dataset.currentSrc = url;
+  video.src = url;
+  video.load();
+  video.muted = false;
+  video.volume = 1;
+  if (!wasPaused) video.play().catch(() => {});
+}
+async function initMovieCompatPlayer(root, lib, path) {
+  const video = root?.querySelector("video[data-movie-player]");
+  if (!video) return;
+  const direct = mediaFileUrl(lib, path);
+  const compat = mediaCompatUrl(lib, path);
+  const useDirect = () => { setMovieCompatStatus(root, "直连播放"); switchMovieSource(video, direct); };
+  const useCompat = reason => { setMovieCompatStatus(root, reason || "音频兼容流：AAC 输出"); switchMovieSource(video, compat); };
+  root.querySelector("[data-movie-direct]")?.addEventListener("click", useDirect);
+  root.querySelector("[data-movie-compat]")?.addEventListener("click", () => useCompat("手动切换：音频兼容流"));
+  video.addEventListener("loadedmetadata", () => { video.muted = false; video.volume = 1; });
+  video.addEventListener("error", () => { if (video.dataset.currentSrc !== compat) useCompat("直连失败，已自动切换兼容流"); });
+  const extRule = movieExtensionNeedsCompat(path) || browserSaysVideoContainerUnsupported(path);
+  if (extRule) { useCompat("自动判定：容器格式可能不兼容，使用 AAC 兼容流"); return; }
+  useDirect();
+  try {
+    const res = await fetch(mediaProbeUrl(lib, path), { cache: "no-store" });
+    if (!res.ok) return;
+    const info = await res.json();
+    if (info && info.compat_recommended && video.dataset.currentSrc !== compat) useCompat(`自动判定：音频 ${info.audio_codec || "未知"} 可能不兼容，使用 AAC 兼容流`);
+    else setMovieCompatStatus(root, `直连播放${info.audio_codec ? " · 音频 " + info.audio_codec : ""}`);
+  } catch (e) {}
+}
 async function openLocalMedia(group, libId, path) {
   const lib = findMediaLibrary(libId);
   const viewer = document.getElementById("local-media-viewer-" + group);
@@ -2357,7 +2421,7 @@ async function openLocalMedia(group, libId, path) {
   activeReader = { group, libId, path };
   let body = "";
   if (["mp3","flac","m4a","ogg","wav"].includes(ext)) body = `<div class="media-viewer-body"><audio controls autoplay preload="metadata" src="${esc(url)}"></audio></div>`;
-  else if (MEDIA_FORMATS.movie.includes(ext)) body = `<div class="media-viewer-body media-video-body"><video controls playsinline preload="metadata" src="${esc(url)}" onloadedmetadata="this.muted=false;this.volume=1" onvolumechange="this.dataset.volume=String(this.volume)"></video></div>`;
+  else if (MEDIA_FORMATS.movie.includes(ext)) body = `<div class="media-viewer-body media-video-body"><div class="movie-compat-bar"><button class="btn" type="button" data-movie-direct>直连原片</button><button class="btn" type="button" data-movie-compat>音频兼容</button><span class="movie-compat-status">正在判定播放方式...</span></div><video data-movie-player controls playsinline preload="metadata" onloadedmetadata="this.muted=false;this.volume=1" onvolumechange="this.dataset.volume=String(this.volume)"></video></div>`;
   else if (["jpg","jpeg","png","webp","gif","bmp","avif"].includes(ext)) body = `<img src="${esc(url)}" alt="${esc(path)}">`;
   else if (ext === "pdf") body = `<iframe src="${esc(url)}#view=FitH" title="${esc(path)}"></iframe>`;
   else if (ext === "txt") {
@@ -2387,6 +2451,7 @@ async function openLocalMedia(group, libId, path) {
     body = `<div class="reader-book-fallback"><div class="book-cover" style="max-width:220px;margin:0 auto 24px;background:${coverGradient(displayBookTitle(path))}"><span class="book-cover-title">${esc(displayBookTitle(path))}</span></div><p>${note}</p><p><a class="btn btn-primary" href="${esc(url)}" target="_blank" rel="noopener">↗ 尝试在浏览器打开</a></p></div>`;
   }
   viewer.innerHTML = viewerShell(group, lib, path, body, url);
+  if (group === "movie" && MEDIA_FORMATS.movie.includes(ext)) initMovieCompatPlayer(viewer, lib, path);
   const overlay = viewer.querySelector(".media-reader-overlay");
   if (overlay) overlay.scrollIntoView({ block: "start" });
 }

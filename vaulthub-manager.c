@@ -94,8 +94,8 @@ static void ensure_data_config(void) {
   if (cfg && (!strstr(cfg, marker) || !strstr(cfg, system_marker))) {
     char *pos = strstr(cfg, admin);
     if (pos) {
-      const char *system_block = strstr(cfg, system_marker) ? "" : "\n\t# VaultHub 内置系统监控 API。\n\thandle /api/system/* {\n\t\treverse_proxy http://127.0.0.1:9100\n\t}\n";
-      const char *media_block = strstr(cfg, marker) ? "" : "\n\t# 本地媒体库 API，仅由同容器内绑定回环地址的进程处理。\n\thandle /api/media/* {\n\t\treverse_proxy http://127.0.0.1:9100\n\t}\n";
+      const char *system_block = strstr(cfg, system_marker) ? "" : "\n\t# VaultHub 内置系统监控 API。\n\thandle /api/system/* {\n\t\treverse_proxy http://127.0.0.1:9100 {\n\t\t\tflush_interval -1\n\t\t}\n\t}\n";
+      const char *media_block = strstr(cfg, marker) ? "" : "\n\t# 本地媒体库 API，仅由同容器内绑定回环地址的进程处理。\n\thandle /api/media/* {\n\t\treverse_proxy http://127.0.0.1:9100 {\n\t\t\tflush_interval -1\n\t\t}\n\t}\n";
       size_t prefix = (size_t)(pos - cfg);
       size_t extra_len = strlen(system_block) + strlen(media_block);
       size_t out_len = len + extra_len;
