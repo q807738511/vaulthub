@@ -6,7 +6,7 @@ import tempfile
 import time
 from pathlib import Path
 from urllib.error import HTTPError
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -22,12 +22,24 @@ def wait_port(port, timeout=5):
     raise RuntimeError("server did not start")
 
 
+def read_url(url, headers=None, timeout=30):
+    req = Request(url, headers=headers or {})
+    with urlopen(req, timeout=timeout) as r:
+        data = r.read(512)
+        return r.status, dict(r.headers), data
+
+
 with tempfile.TemporaryDirectory() as tmp:
     tmp = Path(tmp)
     media = tmp / "media"
     media.mkdir()
-    # 文件不需要是真视频；invalid quality 在真正 ffmpeg 前就会返回 400。
-    (media / "Demo.2024.mkv").write_bytes(b"not-a-real-video")
+    video = media / "Demo.2024.mp4"
+    subprocess.check_call([
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-f", "lavfi", "-i", "testsrc=size=1280x720:rate=24",
+        "-f", "lavfi", "-i", "sine=frequency=1000:sample_rate=48000",
+        "-t", "2", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", str(video),
+    ])
     config = tmp / "libraries.json"
     config.write_text(json.dumps([{"id": "movies", "name": "Movies", "type": "movie", "path": str(media)}]), encoding="utf-8")
     index = tmp / "index"
@@ -38,24 +50,30 @@ with tempfile.TemporaryDirectory() as tmp:
     proc = subprocess.Popen([str(tmp / "media-api")], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
         wait_port(9100)
-        # 新增库重复 POST 可触发索引，这里直接手动写入索引避免等待扫描线程。
-        index.mkdir(exist_ok=True)
-        (index / "movies.idx").write_text("Demo.2024.mkv\t16\t1\n", encoding="utf-8")
-        bad = "http://127.0.0.1:9100/api/media/transcode?id=movies&path=Demo.2024.mkv&quality=4k"
+        bad = "http://127.0.0.1:9100/api/media/transcode?id=movies&path=Demo.2024.mp4&quality=4k"
         try:
             urlopen(bad, timeout=3).read()
             raise AssertionError("invalid quality should fail")
         except HTTPError as e:
             assert e.code == 400, e.code
-            body = e.read().decode("utf-8")
-            assert "invalid quality" in body
-        # HEAD 方法应被路由接受；伪视频会进入 ffmpeg 并失败，而不是 method not allowed。
-        req = __import__("urllib.request").request.Request("http://127.0.0.1:9100/api/media/transcode?id=movies&path=Demo.2024.mkv&quality=720p", method="HEAD")
-        try:
-            urlopen(req, timeout=5).read()
-        except HTTPError as e:
-            assert e.code == 500, e.code
-            assert cache.exists(), "cache dir should be created before ffmpeg runs"
+            assert "invalid quality" in e.read().decode("utf-8")
+
+        status, headers, data = read_url("http://127.0.0.1:9100/api/media/file?id=movies&path=Demo.2024.mp4", {"Range": "bytes=0-4095"})
+        assert status == 206, status
+        assert headers.get("Content-Type") == "video/mp4"
+        assert data.startswith(b"\x00\x00\x00")
+
+        for quality in ["720p", "480p"]:
+            status, headers, data = read_url(f"http://127.0.0.1:9100/api/media/transcode?id=movies&path=Demo.2024.mp4&quality={quality}")
+            assert status == 200, (quality, status)
+            assert headers.get("Content-Type") == "video/mp4"
+            assert data.startswith(b"\x00\x00\x00")
+
+        status, headers, data = read_url("http://127.0.0.1:9100/api/media/transcode?id=movies&path=Demo.2024.mp4&quality=720p", {"Range": "bytes=0-4095"})
+        assert status == 206, status
+        assert headers.get("Content-Range", "").startswith("bytes 0-4095/"), headers
+        assert data.startswith(b"\x00\x00\x00")
+        assert len(list(cache.glob("*.mp4"))) >= 2, list(cache.glob("*"))
     finally:
         proc.terminate()
         try:
@@ -63,4 +81,4 @@ with tempfile.TemporaryDirectory() as tmp:
         except subprocess.TimeoutExpired:
             proc.kill()
 
-print("PASS: transcode quality validation and cache directory behavior work")
+print("PASS: transcode quality validation, real 720p/480p playback streams, range, and cache files work")
