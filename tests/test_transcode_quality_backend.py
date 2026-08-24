@@ -63,11 +63,17 @@ with tempfile.TemporaryDirectory() as tmp:
         assert headers.get("Content-Type") == "video/mp4"
         assert data.startswith(b"\x00\x00\x00")
 
-        for quality in ["720p", "480p"]:
-            status, headers, data = read_url(f"http://127.0.0.1:9100/api/media/transcode?id=movies&path=Demo.2024.mp4&quality={quality}")
-            assert status == 200, (quality, status)
-            assert headers.get("Content-Type") == "video/mp4"
-            assert data.startswith(b"\x00\x00\x00")
+        status, headers, data = read_url("http://127.0.0.1:9100/api/media/transcode?id=movies&path=Demo.2024.mp4&quality=720p")
+        assert status == 200, status
+        assert headers.get("Content-Type") == "video/mp4"
+        assert headers.get("X-VaultHub-Transcode-Cache") == "MISS", headers
+        assert "Content-Length" not in headers, headers
+        assert data.startswith(b"\x00\x00\x00")
+
+        status, headers, data = read_url("http://127.0.0.1:9100/api/media/transcode?id=movies&path=Demo.2024.mp4&quality=480p")
+        assert status == 200, status
+        assert headers.get("Content-Type") == "video/mp4"
+        assert data.startswith(b"\x00\x00\x00")
 
         status, headers, data = read_url("http://127.0.0.1:9100/api/media/transcode?id=movies&path=Demo.2024.mp4&quality=720p", {"Range": "bytes=0-4095"})
         assert status == 206, status

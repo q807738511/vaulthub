@@ -4,6 +4,13 @@ v0.6.16 修复本地影视原生播放遇到无声/无画面时的兼容兜底�
 
 ## 变更
 
+## v0.6.20 更新
+
+- 修复 `media-api` 子进程异常退出后 Caddy 持续报 `dial tcp 127.0.0.1:9100: connect: connection refused` 的问题：管理进程现在会监听子进程退出并自动重启 media API。
+- 首次视频转码播放改为边转码边输出，浏览器不再必须等待完整 MP4 缓存文件生成后才开始播放。
+- 首次转码仍会写入 `/data/transcode-cache`，转码完成后后续播放继续命中持久缓存并支持 Range。
+- 保留 Caddy 作为内置网关；当前 502 根因在 media API 后端进程/播放转码流程，不是 Caddy 性能瓶颈。
+
 ## v0.6.19 更新
 
 - 修复线上批量 `502`：`media-api` 原为单线程，请求首次转码/截图时会阻塞 `/api/system/metrics`、`/api/media/libraries` 等轻量接口，Caddy 反代到 `127.0.0.1:9100` 会出现 `i/o timeout`。

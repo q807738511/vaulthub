@@ -456,12 +456,23 @@ static void transcode_video(int fd, const char *query, const char *method, const
   if(!access(cache_path,R_OK)){ serve_cached_video(fd,method,cache_path,request); return; }
   z = snprintf(tmp_path,sizeof(tmp_path),"%s.tmp.%ld.%llu",cache_path,(long)getpid(),(unsigned long long)pthread_self());
   if(z<0||(size_t)z>=sizeof(tmp_path)){json_error(fd,400,"cache path too long");return;}
-  char q_file[8192], q_tmp[8192], vf[160]="", cmd[24000]; if(shell_quote(canonical,q_file,sizeof(q_file))||shell_quote(tmp_path,q_tmp,sizeof(q_tmp))){json_error(fd,400,"path too long");return;}
+  char q_file[8192], vf[160]="", cmd[24000]; if(shell_quote(canonical,q_file,sizeof(q_file))){json_error(fd,400,"path too long");return;}
   if(height>0) snprintf(vf,sizeof(vf)," -vf 'scale=-2:min(%d\\,ih)'",height);
-  z = snprintf(cmd,sizeof(cmd),"ffmpeg -hide_banner -loglevel error -y -i %s -map 0:v:0 -map 0:a:0? -c:v libx264 -preset veryfast -pix_fmt yuv420p%s -c:a aac -b:a 160k -movflags +faststart -f mp4 %s 2>/dev/null",q_file,vf,q_tmp);
+  z = snprintf(cmd,sizeof(cmd),"ffmpeg -hide_banner -loglevel error -i %s -map 0:v:0 -map 0:a:0? -c:v libx264 -preset veryfast -pix_fmt yuv420p%s -c:a aac -b:a 160k -movflags frag_keyframe+empty_moov+default_base_moof -f mp4 pipe:1 2>/dev/null",q_file,vf);
   if(z<0||(size_t)z>=sizeof(cmd)){json_error(fd,400,"command too long");return;}
-  int rc2=system(cmd); if(rc2!=0 || rename(tmp_path,cache_path)){ unlink(tmp_path); json_error(fd,500,"transcode failed"); return; }
-  serve_cached_video(fd,method,cache_path,request);
+  FILE *pipe=popen(cmd,"r"); if(!pipe){json_error(fd,500,"transcode unavailable");return;}
+  FILE *tmp=fopen(tmp_path,"wb"); if(!tmp){pclose(pipe);json_error(fd,500,"transcode cache unavailable");return;}
+  if(!strcmp(method,"HEAD")){ fclose(tmp); unlink(tmp_path); pclose(pipe); send_stream_headers(fd,200,"video/mp4","Accept-Ranges: bytes\r\nX-VaultHub-Transcode-Cache: MISS\r\n"); return; }
+  char buf[65536]; size_t n,total=0; int sent_headers=0, client_alive=1;
+  while((n=fread(buf,1,sizeof(buf),pipe))>0){
+    if(fwrite(buf,1,n,tmp)!=n){ fclose(tmp); pclose(pipe); unlink(tmp_path); if(!sent_headers) json_error(fd,500,"transcode cache write failed"); return; }
+    total += n;
+    if(!sent_headers){ send_stream_headers(fd,200,"video/mp4","Accept-Ranges: bytes\r\nX-VaultHub-Transcode-Cache: MISS\r\n"); sent_headers=1; }
+    if(client_alive){ size_t sent=0; while(sent<n){ ssize_t w=write(fd,buf+sent,n-sent); if(w<=0){client_alive=0;break;} sent+=(size_t)w; } }
+  }
+  int rc2=pclose(pipe); int ok=fclose(tmp)==0 && rc2==0 && total>0;
+  if(ok){ if(rename(tmp_path,cache_path)) { unlink(tmp_path); ok=0; } } else unlink(tmp_path);
+  if(!sent_headers){ json_error(fd,500,"transcode failed"); return; }
 }
 
 static void serve_file(int fd, const char *method, const char *url, const char *request) {

@@ -73,7 +73,7 @@ for marker in [
     "quality",
     "scale=-2:min(%d\\\\,ih)",
     "-f mp4",
-    "-movflags +faststart",
+    "-movflags frag_keyframe+empty_moov+default_base_moof",
 ]:
     assert_contains(c, marker)
 
