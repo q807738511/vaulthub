@@ -78,6 +78,9 @@
   @keyframes mouse-tail { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(7deg); } }
   @keyframes mouse-whisker { 0%,100% { opacity: .78; } 50% { opacity: 1; } }
   .logo small { display: block; font-size: 10px; color: var(--text2); font-weight: 400; margin-top: 1px; }
+  .brand-copy { flex:1; min-width:0; text-align:center; }
+  .brand-title { display:block; font-size:18px; line-height:1.2; letter-spacing:.4px; }
+  .brand-copy small { margin-top:4px; line-height:1.35; white-space:normal; }
   .nav { flex: 1; padding: 12px 8px; overflow-y: auto; }
   .nav-group { font-size: 11px; color: var(--text2); padding: 10px 10px 4px; letter-spacing: .5px; }
   .nav-item {
@@ -132,7 +135,11 @@
   body.sidebar-hidden .add-board-btn { margin: 8px 6px 10px; padding: 9px 0; border: none; }
   body.module-hidden-pt .nav-item[data-view="pt"], body.module-hidden-docker .nav-item[data-view="docker"],
   body.module-hidden-pt #view-pt, body.module-hidden-docker #view-docker { display:none !important; }
-  .video-status-panel { position:absolute; left:12px; right:12px; bottom:12px; z-index:3; display:flex; align-items:center; gap:8px; flex-wrap:wrap; color:#fff; font-size:12px; padding:8px 10px; border-radius:8px; background:rgba(0,0,0,.62); pointer-events:none; }
+  .video-info-button { position:absolute; top:12px; right:12px; z-index:5; width:34px; height:34px; padding:0; border-radius:50%; border:1px solid rgba(255,255,255,.48); color:#fff; background:rgba(0,0,0,.58); font:800 18px/1 sans-serif; cursor:pointer; opacity:0; pointer-events:none; transition:opacity .18s,background .18s; }
+  .media-video-body.video-controls-visible .video-info-button, .media-video-body[data-video-controls-visible="true"] .video-info-button { opacity:1; pointer-events:auto; }
+  .video-info-button:hover,.video-info-button[aria-expanded="true"] { background:rgba(88,166,255,.88); }
+  .video-status-panel { position:absolute; top:54px; right:12px; z-index:4; display:none; width:min(370px,calc(100% - 24px)); color:#fff; font-size:12px; padding:10px 12px; border-radius:9px; background:rgba(0,0,0,.76); box-shadow:0 8px 24px rgba(0,0,0,.35); pointer-events:none; }
+  .video-status-panel.show { display:flex; align-items:flex-start; gap:5px; flex-direction:column; }
   .video-status-panel .status-main { font-weight:700; }
   .video-status-panel .status-detail { color:rgba(255,255,255,.78); }
   .docker-scan-bar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
@@ -366,6 +373,16 @@
   .media-file-row:last-child { border-bottom: 0; }
   .media-file-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .media-file-meta { color: var(--text2); font-size: 11px; white-space: nowrap; }
+  .media-poster-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(155px,1fr)); gap:16px; }
+  .media-poster-card { min-width:0; border:1px solid var(--border); border-radius:12px; overflow:hidden; background:var(--card); cursor:pointer; transition:transform .16s,border-color .16s; }
+  .media-poster-card:hover { transform:translateY(-3px); border-color:var(--accent); }
+  .media-poster-art { aspect-ratio:2/3; display:flex; align-items:center; justify-content:center; padding:15px; color:#fff; text-align:center; background:linear-gradient(145deg,#30363d,#161b22); overflow:hidden; }
+  .media-poster-art img { width:100%; height:100%; object-fit:cover; margin:0; }
+  .media-poster-info { padding:10px; }
+  .media-poster-info strong,.media-poster-info small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .media-poster-info small { margin-top:5px; color:var(--text2); }
+  .media-view-toggle { min-width:98px; }
+  .media-file-list .media-poster-card { display:none; }
   .media-viewer { margin-top: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); overflow: hidden; }
   .media-viewer-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 12px; border-bottom: 1px solid var(--border); }
   .comic-shelf-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:12px 0; flex-wrap:wrap; }
@@ -385,6 +402,7 @@
   .book-progress { height:3px; margin-top:7px; border-radius:4px; overflow:hidden; background:var(--border); }
   .book-progress span { display:block; height:100%; background:var(--green); }
   .media-reader-overlay { position:fixed; top:0; right:0; bottom:0; left:var(--sidebar-w); z-index:300; display:flex; flex-direction:column; background:var(--bg); min-height:100vh; }
+  body.sidebar-hidden .media-reader-overlay { left:60px; }
   .media-reader-head { flex:0 0 auto; min-height:50px; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 12px; border-bottom:1px solid var(--border); background:var(--bg2); }
   .media-reader-title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .media-reader-close { flex:0 0 auto; width:36px; height:36px; border-radius:50%; border:1px solid var(--border); color:var(--text); background:var(--card2); cursor:pointer; font-size:18px; }
@@ -411,6 +429,8 @@
   .media-video-body { position:relative; width:100%; height:100%; padding:0; margin:0; overflow:hidden; background:#000; display:flex; align-items:center; justify-content:center; }
   .media-video-body video { width:100%; height:100%; max-width:none; max-height:none; object-fit:contain; background:#000; }
   .movie-compat-bar { position:absolute; top:12px; left:12px; right:12px; z-index:2; display:flex; align-items:center; gap:8px; flex-wrap:wrap; pointer-events:none; }
+  .movie-compat-bar { opacity:0; transition:opacity .18s; }
+  .media-video-body.video-controls-visible .movie-compat-bar { opacity:1; }
   .movie-compat-bar button,.movie-compat-bar span { pointer-events:auto; }
   .movie-compat-status { color:#fff; font-size:12px; padding:6px 10px; border-radius:999px; background:rgba(0,0,0,.48); }
   .media-viewer img { display: block; max-width: 100%; height: auto; margin: 0 auto; }
@@ -463,8 +483,9 @@
     .topbar .actions { gap:4px; flex-wrap:wrap; justify-content:flex-end; }
     .topbar .actions .btn { padding:6px 8px; }
     .content { padding-left:12px; padding-right:12px; }
-    .media-reader-overlay { left:0; }
-    .video-status-panel { bottom:54px; left:8px; right:8px; }
+    .media-reader-overlay, body.sidebar-hidden .media-reader-overlay { left:0; }
+    .video-info-button { top:8px; right:8px; }
+    .video-status-panel { top:48px; right:8px; width:calc(100% - 16px); }
     .docker-scan-bar { display:grid; grid-template-columns:1fr; }
     .docker-scan-bar .btn { width:100%; }
     .media-login-grid { grid-template-columns: 1fr; }
@@ -558,9 +579,9 @@
         <path class="whisker" d="M9 20H3m20 0h6M10 22l-5 2m17-2 5 2" fill="none" stroke="#5a3218" stroke-width="1" stroke-linecap="round"/>
       </svg>
     </div>
-    <div>
-      <span data-i18n="appName">蜀鼠之家</span>
-      <small data-i18n="appSub">VaultHub · 家庭 NAS 控制台 · 预览版</small>
+    <div class="brand-copy">
+      <strong class="brand-title">VaultHub</strong>
+      <small>蜀鼠之家，承包你的所有休闲内容</small>
     </div>
   </div>
   <nav class="nav" id="mainNav">
@@ -582,7 +603,7 @@
   <div class="add-board-btn" onclick="openModuleModal()">
     <span>＋</span><span data-i18n="addBoardNav">添加模块</span>
   </div>
-  <div class="sidebar-foot">v0.6.20 · Responsive Dashboard</div>
+  <div class="sidebar-foot">v0.6.21 · Media View & Player UI</div>
 </aside>
 
 <!-- ===== 主区域 ===== -->
@@ -1164,7 +1185,7 @@
   <div class="modal">
     <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
     <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
-    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.6.20 · Responsive Dashboard</b></div>
+    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.6.21 · Media View & Player UI</b></div>
     <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>HTML / CSS / JS · 单文件</b></div>
     <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>VaultHub 内置系统监控</b></div>
     <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>
@@ -1880,6 +1901,7 @@ let localMediaLibraries = [];
 const localMediaSelection = {};
 const COMPLETED_PROGRESS = 99.9;
 let comicShelfView = "shelf";
+let mediaResourceView = (() => { try { return localStorage.getItem("vaulthub_media_resource_view") === "list" ? "list" : "poster"; } catch(e) { return "poster"; } })();
 let mediaPageSize = 20;
 let audioPageSize = 20;
 let audioView = "albums";
@@ -1946,10 +1968,13 @@ async function scrapeMovieMetadata(host, lib, files) {
 }
 function renderMovieLibraryContent(host, lib, files) {
   const status = scraperStatus.tmdb_enabled ? "默认豆瓣刮削 · TMDB 已启用" : "默认豆瓣刮削 · TMDB 未配置（设置 TMDB_API_KEY 后启用）";
-  host.innerHTML = `<div class="comic-shelf-toolbar"><strong>本地影视库</strong><div class="media-actions"><span class="badge">${esc(status)}</span><button class="btn" onclick="refreshMovieMetadata()">↻ 重新刮削</button></div></div><div class="media-file-list">${files.map(file => renderMovieRow(lib, file)).join("")}</div>`;
+  const body = mediaResourceView === "poster" ? `<div class="media-poster-grid">${files.map(file => renderMoviePoster(lib, file)).join("")}</div>` : `<div class="media-file-list">${files.map(file => renderMovieRow(lib, file)).join("")}</div>`;
+  host.innerHTML = `<div class="comic-shelf-toolbar"><strong>本地影视库</strong><div class="media-actions"><span class="badge">${esc(status)}</span><button class="btn media-view-toggle" onclick="toggleMediaResourceView('movie')">${mediaResourceView === "poster" ? "☷ 列表视图" : "▦ 海报视图"}</button><button class="btn" onclick="refreshMovieMetadata()">↻ 重新刮削</button></div></div>${body}`;
 }
 function renderMovieLibrary(lib, files) { const host = document.createElement("div"); renderMovieLibraryContent(host, lib, files); return host.innerHTML; }
 function renderMovieRow(lib, file) { const path=String(file.path), meta=movieMetadataFor(path); return `<div class="media-file-row"><div class="media-file-name" title="${esc(path)}"><b>${esc(meta.title)}</b><small>${esc([meta.year, meta.provider].filter(Boolean).join(" · "))}</small></div><span class="media-file-meta">${esc(fileExt(path).toUpperCase())} · ${formatFileSize(file.size)}</span><div class="media-actions"><button class="btn" data-media-group="movie" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openLocalMediaButton(this)">▶ 播放</button></div></div>`; }
+function renderMoviePoster(lib, file) { const path=String(file.path), meta=movieMetadataFor(path), art=meta.poster ? `<img src="${esc(meta.poster)}" alt="${esc(meta.title)}" loading="lazy">` : `<span>${esc(meta.title)}</span>`; return `<article class="media-poster-card" data-media-group="movie" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openLocalMediaButton(this)"><div class="media-poster-art" style="${meta.poster ? "" : `background:${coverGradient(meta.title)}`}" >${art}</div><div class="media-poster-info"><strong>${esc(meta.title)}</strong><small>${esc([meta.year,meta.provider].filter(Boolean).join(" · ") || fileExt(path).toUpperCase())}</small></div></article>`; }
+function toggleMediaResourceView(group) { mediaResourceView = mediaResourceView === "poster" ? "list" : "poster"; try { localStorage.setItem("vaulthub_media_resource_view",mediaResourceView); } catch(e) {} const lib=findMediaLibrary(localMediaSelection[group]); if(lib) loadLocalFiles(group,lib,group === "audio" ? audioCursor : 0); }
 function refreshMovieMetadata() { try { localStorage.removeItem(movieMetadataCache); } catch(e) {} const lib=findMediaLibrary(localMediaSelection.movie); if(lib) loadLocalFiles("movie", lib, 0); toast("🔄 正在重新刮削影视信息"); }
 
 function mediaStateKey(libId, path) { return `vaulthub_reading_${libId}_${path}`; }
@@ -2193,8 +2218,8 @@ function renderAudioTrackList(lib, files) {
 function renderAudioLibraryContent(host, lib, files) {
   const pager = `<div class="media-actions"><button class="btn" ${audioCursor <= 0 ? "disabled" : ""} onclick="loadLocalFiles('audio',findMediaLibrary('${esc(lib.id)}'),${Math.max(0,audioCursor-audioPageSize)})">← 上一页</button><span class="media-file-meta">${audioCursor + 1}-${audioCursor + files.length}</span><button class="btn" onclick="loadLocalFiles('audio',findMediaLibrary('${esc(lib.id)}'),${audioCursor + audioPageSize})">下一页 →</button></div>`;
   const visibleFiles = audioArtistFilter ? files.filter(file => { const meta = audioMetadataFor(String(file.path)); return meta.artist === audioArtistFilter || meta.album === audioArtistFilter; }) : files;
-  let body = audioView === "tracks" ? renderAudioTrackList(lib, visibleFiles) : audioView === "artists" ? renderAudioArtists(lib, files) : audioView === "files" ? `<div class="media-file-list">${visibleFiles.map(file => renderAudioRow(lib, file)).join("")}</div>` : audioView === "favorites" ? renderAudioFavorites(lib) : renderAudioAlbums(lib, files);
-  host.innerHTML = `<div class="comic-shelf-toolbar"><div class="audio-view-tabs"><button class="${audioView === "albums" ? "active" : ""}" onclick="setAudioView('albums')">专辑</button><button class="${audioView === "artists" ? "active" : ""}" onclick="setAudioView('artists')">歌手</button><button class="${audioView === "files" ? "active" : ""}" onclick="setAudioView('files')">文件</button><button class="${audioView === "favorites" ? "active" : ""}" onclick="setAudioView('favorites')">♥ 喜欢</button></div><div class="media-actions"><button class="btn" onclick="refreshAudioMetadata()">↻ 重新刮削</button><label class="page-size-picker">每页 <select id="audioPageSize" onchange="setAudioPageSize(this.value)"><option value="20"${audioPageSize===20?' selected':''}>20</option><option value="50"${audioPageSize===50?' selected':''}>50</option><option value="100"${audioPageSize===100?' selected':''}>100</option></select></label></div></div>${body}${audioView === "favorites" || audioView === "tracks" ? "" : pager}`;
+  let body = audioView === "tracks" ? renderAudioTrackList(lib, visibleFiles) : audioView === "artists" ? renderAudioArtists(lib, files) : audioView === "favorites" ? renderAudioFavorites(lib) : mediaResourceView === "list" ? `<div class="media-file-list">${visibleFiles.map(file => renderAudioRow(lib, file)).join("")}</div>` : renderAudioAlbums(lib, files);
+  host.innerHTML = `<div class="comic-shelf-toolbar"><div class="audio-view-tabs"><button class="${audioView === "albums" ? "active" : ""}" onclick="setAudioView('albums')">专辑</button><button class="${audioView === "artists" ? "active" : ""}" onclick="setAudioView('artists')">歌手</button><button class="${audioView === "favorites" ? "active" : ""}" onclick="setAudioView('favorites')">♥ 喜欢</button></div><div class="media-actions"><button class="btn media-view-toggle" onclick="toggleMediaResourceView('audio')">${mediaResourceView === "poster" ? "☷ 列表视图" : "▦ 海报视图"}</button><button class="btn" onclick="refreshAudioMetadata()">↻ 重新刮削</button><label class="page-size-picker">每页 <select id="audioPageSize" onchange="setAudioPageSize(this.value)"><option value="20"${audioPageSize===20?' selected':''}>20</option><option value="50"${audioPageSize===50?' selected':''}>50</option><option value="100"${audioPageSize===100?' selected':''}>100</option></select></label></div></div>${body}${audioView === "favorites" || audioView === "tracks" ? "" : pager}`;
 }
 function renderAudioLibrary(lib, files) { const host = document.createElement("div"); renderAudioLibraryContent(host, lib, files); return host.innerHTML; }
 function renderAudioRow(lib, file) { const meta = audioMetadataFor(String(file.path)); return `<div class="media-file-row"><div class="media-file-name" title="${esc(file.path)}"><b>${esc(meta.title)}</b><small>${esc(meta.artist)} · ${esc(meta.album)}</small></div><span class="media-file-meta">${esc(fileExt(file.path).toUpperCase())}</span><div class="media-actions"><button class="btn" onclick="playAudioFile(${jsAttrArg(lib.id)},${jsAttrArg(file.path)})">▶</button><button class="btn" title="喜欢" onclick="toggleAudioFavorite(${jsAttrArg(lib.id)},${jsAttrArg(file.path)})">${isAudioFavorite(lib.id, file.path) ? "♥" : "♡"}</button><button class="btn" onclick="openAudioMetadata(${jsAttrArg(file.path)})">✎</button></div></div>`; }
@@ -2454,10 +2479,35 @@ function updateVideoStatus(root, video, state) {
   const size=video.videoWidth ? `${video.videoWidth}×${video.videoHeight}` : "分辨率待获取";
   detail.textContent=`${formatMediaTime(video.currentTime)} / ${formatMediaTime(video.duration)} · ${size} · ${mode}`;
 }
+function toggleVideoStatusPanel(button) {
+  const root = button?.closest(".media-video-body");
+  const panel = root?.querySelector(".video-status-panel");
+  if (!panel) return;
+  const open = panel.classList.toggle("show");
+  button.setAttribute("aria-expanded", String(open));
+}
+function scheduleVideoChromeHide(root) {
+  clearTimeout(root.__videoChromeTimer);
+  root.classList.add("video-controls-visible");
+  root.dataset.videoControlsVisible = "true";
+  root.__videoChromeTimer = setTimeout(() => {
+    if (!root.querySelector("video")?.paused) {
+      root.classList.remove("video-controls-visible");
+      root.dataset.videoControlsVisible = "false";
+      const panel = root.querySelector(".video-status-panel");
+      const button = root.querySelector(".video-info-button");
+      panel?.classList.remove("show");
+      button?.setAttribute("aria-expanded", "false");
+    }
+  }, 3000);
+}
 function bindVideoStatus(root, video) {
   [["loadstart","正在连接"],["waiting","正在缓冲"],["playing","正在播放"],["pause","已暂停"],["ended","播放完成"],["stalled","网络等待"],["error","播放错误"]].forEach(([ev,label])=>video.addEventListener(ev,()=>updateVideoStatus(root,video,label)));
   video.addEventListener("timeupdate",()=>updateVideoStatus(root,video,video.paused?"已暂停":"正在播放"));
   video.addEventListener("loadedmetadata",()=>updateVideoStatus(root,video,"媒体信息已载入"));
+  ["pointermove","mouseenter","click"].forEach(ev => root.addEventListener(ev, () => scheduleVideoChromeHide(root), { passive:true }));
+  video.addEventListener("pause", () => root.classList.add("video-controls-visible"));
+  video.addEventListener("play", () => scheduleVideoChromeHide(root));
 }
 function switchMovieSource(video, url) {
   if (!video || video.dataset.currentSrc === url) return;
@@ -2526,7 +2576,7 @@ async function openLocalMedia(group, libId, path) {
   activeReader = { group, libId, path };
   let body = "";
   if (["mp3","flac","m4a","ogg","wav"].includes(ext)) body = `<div class="media-viewer-body"><audio controls autoplay preload="metadata" src="${esc(url)}"></audio></div>`;
-  else if (MEDIA_FORMATS.movie.includes(ext)) body = `<div class="media-viewer-body media-video-body"><div class="movie-compat-bar"><button class="btn" type="button" data-movie-direct>直连原片</button><button class="btn" type="button" data-movie-compat>音频兼容</button><span class="movie-compat-status">正在判定播放方式...</span></div><video data-movie-player controls playsinline preload="metadata" onloadedmetadata="this.muted=false;this.volume=1" onvolumechange="this.dataset.volume=String(this.volume)"></video><div class="video-status-panel"><span class="status-main" data-video-status>准备播放</span><span class="status-detail" data-video-detail>--:-- / --:-- · 分辨率待获取</span></div></div>`;
+  else if (MEDIA_FORMATS.movie.includes(ext)) body = `<div class="media-viewer-body media-video-body" data-video-controls-visible="true"><div class="movie-compat-bar"><button class="btn" type="button" data-movie-direct>直连原片</button><button class="btn" type="button" data-movie-compat>音频兼容</button><span class="movie-compat-status">正在判定播放方式...</span></div><button class="video-info-button" type="button" title="播放状态信息" aria-label="播放状态信息" aria-expanded="false" onclick="toggleVideoStatusPanel(this)">!</button><video data-movie-player controls playsinline preload="metadata" onloadedmetadata="this.muted=false;this.volume=1" onvolumechange="this.dataset.volume=String(this.volume)"></video><div class="video-status-panel"><span class="status-main" data-video-status>准备播放</span><span class="status-detail" data-video-detail>--:-- / --:-- · 分辨率待获取</span></div></div>`;
   else if (["jpg","jpeg","png","webp","gif","bmp","avif"].includes(ext)) body = `<img src="${esc(url)}" alt="${esc(path)}">`;
   else if (ext === "pdf") body = `<iframe src="${esc(url)}#view=FitH" title="${esc(path)}"></iframe>`;
   else if (ext === "txt") {
