@@ -393,8 +393,12 @@
   .ebook-toolbar button:hover { border-color:var(--accent); color:var(--accent); }
   .media-reader-body iframe { width:100%; height:100%; min-height:0; border:0; background:#fff; }
   .media-reader-body img { display:block; max-width:100%; max-height:100%; object-fit:contain; margin:auto; }
-  .media-reader-body .media-text { width:min(960px,100%); min-height:100%; margin:0 auto; padding:clamp(24px,5vw,72px); box-sizing:border-box; color:#30281f; background:#f4ecd8; font-family:Georgia,"Noto Serif SC",serif; font-size:var(--ebook-font-size,17px); font-style:var(--ebook-font-style,normal); line-height:1.9; white-space:pre-wrap; box-shadow:0 0 35px rgba(0,0,0,.45); }
-  .reader-book-fallback { width:min(520px,90%); margin:auto; text-align:center; color:#eee; }
+  .media-reader-body .media-text { width:min(960px,100%); min-height:100%; margin:0 auto; padding:clamp(24px,5vw,72px); box-sizing:border-box; color:var(--text); background:var(--card); font-family:Georgia,"Noto Serif SC",serif; font-size:var(--ebook-font-size,17px); font-style:var(--ebook-font-style,normal); line-height:1.9; white-space:pre-wrap; overflow-wrap:anywhere; box-shadow:0 0 35px rgba(0,0,0,.25); }
+  .media-reader-overlay.reader-theme-dark .media-reader-body { background:var(--bg); }
+  .media-reader-overlay.reader-theme-dark .media-text { color:var(--text); background:var(--card); }
+  .media-reader-overlay.reader-theme-light .media-text { color:#1f2328; background:#fff; }
+  .media-reader-overlay.reader-theme-custom .media-text { color:var(--text); background:color-mix(in srgb,var(--card) 88%,transparent); }
+  .reader-book-fallback { width:min(520px,90%); margin:auto; text-align:center; color:var(--text); }
   #view-comic { position:relative; }
   .media-viewer-body { padding: 12px; max-height: none; overflow: auto; }
   .media-video-body { position:relative; width:100%; height:100%; padding:0; margin:0; overflow:hidden; background:#000; display:flex; align-items:center; justify-content:center; }
@@ -986,7 +990,7 @@
 
 <!-- ===== 系统设置弹窗 ===== -->
 <div class="modal-mask" id="settingsModal">
-  <div class="modal">
+  <div class="modal wide">
     <h3><span data-i18n="settingsTitle">系统设置</span><button class="close" onclick="closeModal('settingsModal')">✕</button></h3>
 
     <div class="modal-sec" data-i18n="langLbl">界面语言</div>
@@ -1021,6 +1025,10 @@
 
       <div class="modal-sec" data-i18n="monitoringLbl">NAS 监控（内置读取）</div>
       <div class="hint" data-i18n="monitoringHint">监控数据由 VaultHub 读取只读挂载的系统信息；配置请在 Compose 环境变量中修改。</div>
+      <div class="modal-sec">显卡加速</div>
+      <div class="cfg-field"><label for="hardwareAcceleration">视频兼容流硬件加速</label><select id="hardwareAcceleration" onchange="saveHardwareAcceleration()"><option value="auto">自动选择（推荐）</option><option value="cpu">CPU</option><option value="vaapi">VAAPI（Intel/AMD）</option><option value="qsv">Intel QSV</option><option value="cuda">NVIDIA CUDA/NVENC</option></select></div>
+      <div class="media-actions"><span class="badge" id="hardwareStatus">正在检测…</span><button class="btn" type="button" onclick="refreshHardwareStatus()">检测显卡</button></div>
+      <div class="hint">需要在 Docker Compose 中透传 `/dev/dri` 或配置 NVIDIA Container Toolkit。硬件不可用时会自动回退 CPU，不影响播放。</div>
   </div>
 </div>
 
@@ -1141,7 +1149,7 @@
   <div class="modal">
     <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
     <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
-    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.6.17 · Audio Compatibility</b></div>
+    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.6.18 · GPU & Long Text</b></div>
     <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>HTML / CSS / JS · 单文件</b></div>
     <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>VaultHub 内置系统监控</b></div>
     <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>
@@ -1481,6 +1489,7 @@ const LS_BG = "dwu_bgimg";
 
 let settings = {
   theme: "dark",
+  hardwareAcceleration: "auto",
   /* 容器版默认经同源 Caddy 代理；外部浏览器无需直连 192.168.x.x */
   mp: { mpUrl: "/api/mp", username: "", password: "", token: "", tokenUser: "" }
 };
@@ -1497,6 +1506,7 @@ function loadSettings() {
   try {
     const s = JSON.parse(localStorage.getItem(LS_SETTINGS) || "{}");
     if (s.theme) settings.theme = s.theme;
+    if (["auto","cpu","vaapi","qsv","cuda"].includes(s.hardwareAcceleration)) settings.hardwareAcceleration = s.hardwareAcceleration;
     if (s.mp && typeof s.mp === "object") Object.assign(settings.mp, s.mp);
     settings.mp.mpUrl = preferContainerProxy(settings.mp.mpUrl, "/api/mp");
     /* 兼容旧版本 mpInstances 数组 */
@@ -1535,6 +1545,10 @@ function setTheme(th) {
   document.body.classList.toggle("custom-bg", th === "custom");
   document.getElementById("customBgWrap").style.display = th === "custom" ? "block" : "none";
   document.querySelectorAll(".theme-opt").forEach(el => el.classList.toggle("on", el.dataset.themeOpt === th));
+  document.querySelectorAll(".media-reader-overlay").forEach(el => {
+    el.classList.remove("reader-theme-dark", "reader-theme-light", "reader-theme-custom");
+    el.classList.add(readerThemeClass());
+  });
   if (th === "custom") applyBgImage();
 }
 function applyBgImage() {
@@ -1561,6 +1575,30 @@ function clearBg() {
   localStorage.removeItem(LS_BG);
   applyBgImage();
   toast("🗑 " + (curLang === "en" ? "Background cleared" : "背景已清除"));
+}
+
+function saveHardwareAcceleration() {
+  const value = document.getElementById("hardwareAcceleration")?.value;
+  settings.hardwareAcceleration = ["auto","cpu","vaapi","qsv","cuda"].includes(value) ? value : "auto";
+  saveSettings();
+  refreshHardwareStatus();
+  toast("✅ 显卡加速设置已保存");
+}
+async function refreshHardwareStatus() {
+  const badge = document.getElementById("hardwareStatus");
+  if (!badge) return;
+  const select = document.getElementById("hardwareAcceleration");
+  if (select) select.value = settings.hardwareAcceleration || "auto";
+  try {
+    const res = await fetch(`/api/media/hardware?hw=${encodeURIComponent(settings.hardwareAcceleration || "auto")}`, { cache: "no-store" });
+    const data = await res.json();
+    const selected = data.selected || "cpu";
+    const available = Object.entries(data.available || {}).filter(([, ok]) => ok).map(([name]) => name).join(" / ");
+    badge.textContent = `当前：${selected.toUpperCase()} · 可用：${available || "CPU"}`;
+    badge.title = data.vaapi_device || "";
+  } catch (e) {
+    badge.textContent = "后端检测不可用 · 播放时回退 CPU";
+  }
 }
 
 /* ================= 导航 ================= */
@@ -1954,7 +1992,7 @@ function mediaFileUrl(lib, path) {
   return `/api/media/file?${query}`;
 }
 function mediaCompatUrl(lib, path) {
-  const query = `id=${encodeURIComponent(String(lib.id))}&path=${encodeURIComponent(String(path))}`;
+  const query = `id=${encodeURIComponent(String(lib.id))}&path=${encodeURIComponent(String(path))}&hw=${encodeURIComponent(settings.hardwareAcceleration || "auto")}`;
   return `/api/media/compat?${query}`;
 }
 function mediaProbeUrl(lib, path) {
@@ -2308,12 +2346,15 @@ function openLocalMediaButton(button) {
   openLocalMedia(button.dataset.mediaGroup, button.dataset.mediaLibrary, button.dataset.mediaPath);
 }
 function findMediaLibrary(id) { return localMediaLibraries.find(lib => lib.id === id); }
+function readerThemeClass() {
+  return settings.theme === "light" ? "reader-theme-light" : settings.theme === "custom" ? "reader-theme-custom" : "reader-theme-dark";
+}
 function viewerShell(group, lib, path, body, url, opts = {}) {
   const download = `${url}${url.includes("?") ? "&" : "?"}download=1`;
   const chapters = opts.chapters || [];
   const chapterHtml = chapters.length ? `<aside class="ebook-chapters"><h4>目录 · ${chapters.length} 章</h4>${chapters.map((ch, i) => `<button data-chapter="${i}" onclick="jumpEbookChapter(${i})">${esc(ch.title)}</button>`).join("")}</aside>` : "";
   const toolbar = opts.ebook ? `<span class="ebook-toolbar"><button title="减小字号" onclick="changeEbookFontSize(-1)">A-</button><button title="增大字号" onclick="changeEbookFontSize(1)">A+</button><button id="ebookFontStyleButton" title="正体/斜体" onclick="toggleEbookFontStyle()">正体</button></span>` : "";
-  return `<div class="media-reader-overlay"><div class="media-reader-head"><strong class="media-reader-title" title="${esc(path)}">${esc(displayBookTitle(path))}</strong><div class="media-actions">${toolbar}<button class="btn" onclick="markReaderCompleted()">✓ 标记已读</button><a class="btn" href="${esc(download)}" download>↓ 下载</a><button class="media-reader-close" title="关闭并返回书架" onclick="closeLocalViewer('${esc(group)}')">✕</button></div></div><div class="media-reader-body" data-reader-scroll onscroll="trackReaderProgress(this)">${chapterHtml}<div class="media-reader-wrap">${body}</div></div></div>`;
+  return `<div class="media-reader-overlay ${readerThemeClass()}"><div class="media-reader-head"><strong class="media-reader-title" title="${esc(path)}">${esc(displayBookTitle(path))}</strong><div class="media-actions">${toolbar}<button class="btn" onclick="markReaderCompleted()">✓ 标记已读</button><a class="btn" href="${esc(download)}" download>↓ 下载</a><button class="media-reader-close" title="关闭并返回书架" onclick="closeLocalViewer('${esc(group)}')">✕</button></div></div><div class="media-reader-body" data-reader-scroll onscroll="trackReaderProgress(this)">${chapterHtml}<div class="media-reader-wrap">${body}</div></div></div>`;
 }
 let ebookFontSize = 17;
 let ebookFontItalic = false;
@@ -2412,6 +2453,31 @@ async function initMovieCompatPlayer(root, lib, path) {
     else setMovieCompatStatus(root, `直连播放${info.audio_codec ? " · 音频 " + info.audio_codec : ""}`);
   } catch (e) {}
 }
+const TXT_CHUNK_BYTES = 1024 * 1024;
+async function fetchCompleteTextFile(url) {
+  const first = await fetch(url, { headers: { Range: `bytes=0-${TXT_CHUNK_BYTES - 1}` }, cache: "no-store" });
+  if (!first.ok && first.status !== 206) throw new Error(`HTTP ${first.status}`);
+  const firstBytes = new Uint8Array(await first.arrayBuffer());
+  const range = first.headers.get("Content-Range") || "";
+  const match = range.match(/\/([0-9]+)$/);
+  const total = match ? Number(match[1]) : (first.status === 206 ? 0 : firstBytes.byteLength);
+  if (!total || first.status !== 206 || firstBytes.byteLength >= total) return firstBytes;
+  const chunks = [firstBytes];
+  for (let offset = firstBytes.byteLength; offset < total; offset += TXT_CHUNK_BYTES) {
+    const end = Math.min(total - 1, offset + TXT_CHUNK_BYTES - 1);
+    const res = await fetch(url, { headers: { Range: `bytes=${offset}-${end}` }, cache: "no-store" });
+    if (!res.ok && res.status !== 206) throw new Error(`HTTP ${res.status}`);
+    chunks.push(new Uint8Array(await res.arrayBuffer()));
+  }
+  const bytes = new Uint8Array(chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0));
+  let offset = 0; for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  return bytes;
+}
+function decodeTextBytes(bytes) {
+  try { return new TextDecoder("utf-8", { fatal: true }).decode(bytes); }
+  catch (e) { return new TextDecoder("gb18030").decode(bytes); }
+}
+
 async function openLocalMedia(group, libId, path) {
   const lib = findMediaLibrary(libId);
   const viewer = document.getElementById("local-media-viewer-" + group);
@@ -2427,12 +2493,8 @@ async function openLocalMedia(group, libId, path) {
   else if (ext === "txt") {
     viewer.innerHTML = viewerShell(group, lib, path, '<div class="empty-tip">正在读取文本...</div>', url);
     try {
-      const res = await fetch(url, { cache: "no-store" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const bytes = new Uint8Array(await res.arrayBuffer());
-      let text;
-      try { text = new TextDecoder("utf-8", { fatal: true }).decode(bytes); }
-      catch (e) { text = new TextDecoder("gb18030").decode(bytes); }
+      const bytes = await fetchCompleteTextFile(url);
+      const text = decodeTextBytes(bytes);
       const chapters = buildEbookChapters(text);
       window.__ebookChapters = chapters;
       window.__ebookTextLength = text.length;
@@ -3417,6 +3479,7 @@ document.querySelectorAll(".theme-opt").forEach(el => el.classList.toggle("on", 
 document.getElementById("mpUrl").value = settings.mp.mpUrl || "";
 document.getElementById("mpUser").value = settings.mp.username || "";
 document.getElementById("mpPass").value = settings.mp.password || "";
+refreshHardwareStatus();
 
 applyI18n();
 bindSwitches();
