@@ -213,6 +213,33 @@ static char *json_get_string(const char *body, const char *key) {
   return out;
 }
 
+static const char *query_value(const char *path, const char *key, char *out, size_t cap) {
+  const char *q = strchr(path, '?'); if (!q) return NULL; q++;
+  size_t keylen = strlen(key);
+  while (*q) {
+    const char *eq = strchr(q, '='); if (!eq) break;
+    const char *amp = strchr(eq + 1, '&'); size_t n = amp ? (size_t)(amp - eq - 1) : strlen(eq + 1);
+    if ((size_t)(eq - q) == keylen && !strncmp(q, key, keylen) && n < cap) { memcpy(out, eq + 1, n); out[n] = 0; return out; }
+    q = amp ? amp + 1 : q + strlen(q);
+  }
+  return NULL;
+}
+
+static void docker_scan(int fd, const char *path) {
+  char host[128] = ""; query_value(path, "host", host, sizeof(host));
+  const char *nas = getenv("NAS_IP"); if (!nas || !*nas) nas = "127.0.0.1";
+  if (!host[0] || (strcmp(host, "127.0.0.1") && strcmp(host, "localhost") && strcmp(host, nas))) {
+    send_resp(fd, 400, "application/json", "{\"ok\":false,\"error\":\"remote scan requires SSH or agent authorization\"}"); return;
+  }
+  FILE *p = popen("curl -fsS --unix-socket /var/run/docker.sock 'http://localhost/containers/json?all=1' 2>/dev/null", "r");
+  if (!p) { send_resp(fd, 500, "application/json", "{\"ok\":false,\"error\":\"docker command unavailable\"}"); return; }
+  char line[8192]; size_t cap = 65536, len = 0; char *body = calloc(cap, 1); if (!body) { pclose(p); send_resp(fd, 500, "application/json", "{\"ok\":false,\"error\":\"memory unavailable\"}"); return; }
+  snprintf(body, cap, "{\"ok\":true,\"host\":\"%s\",\"containers\":", host); len = strlen(body);
+  while (fgets(line, sizeof(line), p)) { size_t n = strlen(line); if (len + n + 3 >= cap) break; memcpy(body + len, line, n); len += n; body[len] = 0; }
+  int rc = pclose(p); if (rc != 0 || len == 0 || body[len-1] == ':') { free(body); send_resp(fd, 500, "application/json", "{\"ok\":false,\"error\":\"Docker socket unavailable; mount /var/run/docker.sock read-only\"}"); return; }
+  strcat(body, "}"); send_resp(fd, 200, "application/json", body); free(body);
+}
+
 static int authorized(const char *req) {
   const char *tok = getenv(token_env);
   if (!tok || !*tok) return 1;
@@ -248,6 +275,9 @@ static void handle_client(int fd) {
 
   if (strcmp(path, "/healthz") == 0) {
     send_resp(fd, 200, "text/plain; charset=utf-8", "ok");
+  } else if (!strncmp(path, "/api/admin/docker/scan", 22) && strcmp(method, "GET") == 0) {
+    if (!authorized(req)) send_resp(fd, 401, "application/json", "{\"ok\":false,\"error\":\"unauthorized\"}");
+    else docker_scan(fd, path);
   } else if (strcmp(path, "/api/admin/caddyfile") == 0 && strcmp(method, "GET") == 0) {
     size_t len = 0; char *cfg = read_file(data_config, &len);
     if (!cfg) send_resp(fd, 500, "application/json", "{\"ok\":false,\"error\":\"read failed\"}");

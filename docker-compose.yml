@@ -34,6 +34,8 @@ services:
     #   - "${VAULTHUB_DRI_DEVICE:-/dev/dri:/dev/dri}"
     volumes:
       - ./data:/data
+      # 启用本机容器扫描；Docker socket 权限等同主机 Docker 管理权限，仅限可信环境。
+      - /var/run/docker.sock:/var/run/docker.sock:ro
       # 媒体目录：按实际宿主机目录修改，保持只读。
       - /media:/media:ro
       # 内置监控所需的少量只读系统信息。
