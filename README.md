@@ -1,10 +1,43 @@
-# VaultHub 蜀鼠之家 v0.6.17：视频音频兼容播放
+# VaultHub 蜀鼠之家 v0.6.18：GPU 加速与完整长文阅读
 
-v0.6.17 在 v0.6.16 直连播放基线上增加视频音频兼容播放：默认直连，自动判定容器/音频编码不兼容或直连失败时切换到 H.264/AAC 兼容流；播放器仅占用侧栏右侧内容区域。
+v0.6.18 在视频音频兼容播放基线上增加 GPU 硬件解码/编码配置，并修复长 TXT 只显示首屏和电子书阅读器主题不同步问题。
 
-## 变更
+## v0.6.18 更新
 
-## v0.6.17 更新
+- Docker Compose 支持 `/dev/dri` 透传，并提供 NVIDIA Container Toolkit 的 `gpus` 配置示例。
+- 系统设置新增显卡加速选项：自动、CPU、VAAPI、Intel QSV、NVIDIA CUDA/NVENC。
+- `/api/media/hardware` 检测设备和 ffmpeg 编码器；硬件不可用自动回退 CPU。
+- `/api/media/compat` 支持 `hw` 参数，响应头 `X-VaultHub-Hardware` 显示实际使用的加速模式。
+- 长 TXT 按 Range 分块读取并完整合并，不再只缓存/显示首屏。
+- TXT 继续自动识别 UTF-8，失败时回退 GB18030。
+- 电子书正文、目录、阅读背景同步系统暗色、亮色和自定义主题；切换主题时已打开阅读器即时更新。
+
+## GPU 配置
+
+Intel/AMD VAAPI 或 QSV：
+
+```yaml
+environment:
+  FFMPEG_HWACCEL: "auto"
+  VAAPI_DEVICE: "/dev/dri/renderD128"
+devices:
+  - /dev/dri:/dev/dri
+```
+
+CPU-only主机请保持默认 Compose 不映射 `/dev/dri`；需要 VAAPI/QSV 时，在服务的 `devices:` 下取消注释并重建容器。
+
+NVIDIA：宿主机安装 NVIDIA Container Toolkit 后，在 Compose 中启用：
+
+```yaml
+gpus: all
+environment:
+  FFMPEG_HWACCEL: "cuda"
+  NVIDIA_VISIBLE_DEVICES: "all"
+  NVIDIA_DRIVER_CAPABILITIES: "compute,video,utility"
+```
+
+硬件设备、权限或 ffmpeg 编码器不可用时会自动回退 CPU，不影响播放。
+
 
 - 新增 `/api/media/probe`，使用 ffprobe 判定容器和音频编码是否可能被浏览器直接支持。
 - 新增 `/api/media/compat`，直连无声或不兼容时输出 H.264 + AAC 的 MP4 兼容流。
@@ -43,7 +76,7 @@ environment:
 - 媒体列表接口只返回库配置；文件索引由后台单线程低速任务生成，带临时文件原子替换，避免页面请求阻塞。
 - 文件列表使用 `/api/media/files` 分页接口，默认每页 100 条，避免一次性构造巨型 JSON 和浏览器 DOM。
 - 扫描会跳过 `@eaDir`、`.cache`、`#recycle`，并按批次休眠降低磁盘 I/O 竞争；索引保存到 `/data/media-index`。
-- TXT 预览只读取首个 1MB Range，不再把超大 TXT 全部加载进浏览器内存。
+- TXT 预览按 1 MiB Range 分块读取并完整合并；不一次性请求超大正文，同时保证长文末尾和全部章节可读。
 - 媒体库路径改为任意容器内已挂载的绝对目录，不再强制要求 `/media` 前缀；仍保留真实路径和符号链接逃逸校验。
 
 - 项目名称改为 `VaultHub 蜀鼠之家`。

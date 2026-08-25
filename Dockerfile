@@ -6,7 +6,7 @@ RUN gcc -Os -static -s -Wall -Wextra -Werror -pthread media-api.c -o /out-media-
  && gcc -Os -static -s -Wall -Wextra -Werror -pthread vaulthub-manager.c -o /out-vaulthub-manager
 
 FROM alpine:3.22
-RUN apk add --no-cache ca-certificates curl ffmpeg
+RUN apk add --no-cache ca-certificates curl ffmpeg libva mesa-va-gallium intel-media-driver
 COPY --chmod=755 caddy /usr/bin/caddy
 COPY --from=build --chmod=755 /out-vaulthub-manager /usr/bin/vaulthub-manager
 COPY --from=build --chmod=755 /out-media-api /usr/bin/media-api

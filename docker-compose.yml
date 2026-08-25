@@ -21,6 +21,17 @@ services:
       SYSTEM_MONITOR_SYS_ROOT: "/host/sys"
       # 可选：配置后影视本地库启用 TMDB 刮削；未配置时默认豆瓣/文件名兜底。
       TMDB_API_KEY: ""
+      # 硬件转码：auto 会优先尝试 NVIDIA CUDA，其次 VAAPI/QSV，失败自动回退 CPU。
+      FFMPEG_HWACCEL: "${FFMPEG_HWACCEL:-auto}"
+      VAAPI_DEVICE: "${VAAPI_DEVICE:-/dev/dri/renderD128}"
+      # NVIDIA 宿主机安装 nvidia-container-toolkit 后取消注释 deploy.devices。
+      NVIDIA_VISIBLE_DEVICES: "${NVIDIA_VISIBLE_DEVICES:-all}"
+      NVIDIA_DRIVER_CAPABILITIES: "${NVIDIA_DRIVER_CAPABILITIES:-compute,video,utility}"
+    # NVIDIA 宿主机安装 nvidia-container-toolkit 后，可在 .env 设置 VAULTHUB_GPUS=all。
+    # gpus: "${VAULTHUB_GPUS:-all}"
+    # GPU 主机启用 VAAPI/QSV 时取消注释；默认不映射不存在的设备，保证 CPU 主机可启动。
+    # devices:
+    #   - "${VAULTHUB_DRI_DEVICE:-/dev/dri:/dev/dri}"
     volumes:
       - ./data:/data
       # 媒体目录：按实际宿主机目录修改，保持只读。
