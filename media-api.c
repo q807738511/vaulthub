@@ -393,7 +393,9 @@ static int valid_hardware_accel(const char *value) {
   return value && (!strcmp(value,"auto")||!strcmp(value,"cpu")||!strcmp(value,"vaapi")||!strcmp(value,"qsv")||!strcmp(value,"cuda"));
 }
 static int ffmpeg_has_encoder(const char *encoder) {
-  char cmd[256]; if(!encoder||snprintf(cmd,sizeof(cmd),"ffmpeg -hide_banner -loglevel error -h encoder=%s >/dev/null 2>&1",encoder)<0)return 0;
+  char cmd[512];
+  if(!encoder || (strcmp(encoder,"h264_nvenc") && strcmp(encoder,"h264_qsv") && strcmp(encoder,"h264_vaapi")))return 0;
+  if(snprintf(cmd,sizeof(cmd),"ffmpeg -hide_banner -encoders 2>/dev/null | grep -Eq '[[:space:]]%s([[:space:]]|$)'",encoder)<0)return 0;
   int rc=system(cmd); return rc!=-1&&WIFEXITED(rc)&&WEXITSTATUS(rc)==0;
 }
 static int dri_available(void) {
@@ -444,7 +446,7 @@ static void compat_media(int fd, const char *method, const char *query) {
   char extra[256]; snprintf(extra,sizeof(extra),"Accept-Ranges: none\r\nX-VaultHub-Compat: audio-aac\r\nX-VaultHub-Hardware: %s\r\n",hardware);
   if(!strcmp(method,"HEAD")){send_stream_headers(fd,200,"video/mp4",extra);return;}
   char q_file[8192], cmd[16000]; if(shell_quote(canonical,q_file,sizeof(q_file))){json_error(fd,400,"path too long");return;}
-  if(!strcmp(hardware,"cuda")) snprintf(cmd,sizeof(cmd),"ffmpeg -hide_banner -loglevel error -hwaccel cuda -hwaccel_output_format cuda -i %s -map 0:v:0 -map 0:a:0? -c:v h264_nvenc -preset p4 -cq 23 -c:a aac -b:a 160k -ac 2 -movflags frag_keyframe+empty_moov+default_base_moof -f mp4 pipe:1 2>/dev/null",q_file);
+  if(!strcmp(hardware,"cuda")) snprintf(cmd,sizeof(cmd),"ffmpeg -hide_banner -loglevel error -i %s -map 0:v:0 -map 0:a:0? -c:v h264_nvenc -preset p4 -cq 23 -pix_fmt yuv420p -c:a aac -b:a 160k -ac 2 -movflags frag_keyframe+empty_moov+default_base_moof -f mp4 pipe:1 2>/dev/null",q_file);
   else if(!strcmp(hardware,"qsv")) snprintf(cmd,sizeof(cmd),"ffmpeg -hide_banner -loglevel error -hwaccel qsv -qsv_device '%s' -i %s -map 0:v:0 -map 0:a:0? -vf 'scale_qsv=format=nv12' -c:v h264_qsv -global_quality 23 -c:a aac -b:a 160k -ac 2 -movflags frag_keyframe+empty_moov+default_base_moof -f mp4 pipe:1 2>/dev/null",getenv("VAAPI_DEVICE")&&*getenv("VAAPI_DEVICE")?getenv("VAAPI_DEVICE"):"/dev/dri/renderD128",q_file);
   else if(!strcmp(hardware,"vaapi")) snprintf(cmd,sizeof(cmd),"ffmpeg -hide_banner -loglevel error -hwaccel vaapi -hwaccel_device '%s' -hwaccel_output_format vaapi -i %s -map 0:v:0 -map 0:a:0? -vf 'scale_vaapi=format=nv12' -c:v h264_vaapi -qp 23 -c:a aac -b:a 160k -ac 2 -movflags frag_keyframe+empty_moov+default_base_moof -f mp4 pipe:1 2>/dev/null",getenv("VAAPI_DEVICE")&&*getenv("VAAPI_DEVICE")?getenv("VAAPI_DEVICE"):"/dev/dri/renderD128",q_file);
   else snprintf(cmd,sizeof(cmd),"ffmpeg -hide_banner -loglevel error -i %s -map 0:v:0 -map 0:a:0? -c:v libx264 -preset veryfast -crf 23 -pix_fmt yuv420p -c:a aac -b:a 160k -ac 2 -movflags frag_keyframe+empty_moov+default_base_moof -f mp4 pipe:1 2>/dev/null",q_file);

@@ -30,7 +30,7 @@ for marker in [
     'NVIDIA_DRIVER_CAPABILITIES:',
 ]:
     assert marker in compose, f"missing Docker GPU configuration: {marker}"
-assert 'libva' in dockerfile and 'mesa-va-gallium' in dockerfile
+assert ('libva' in dockerfile and 'mesa-va-gallium' in dockerfile) or 'nvidia/cuda:' in dockerfile
 assert '#   - "${VAULTHUB_DRI_DEVICE:-/dev/dri:/dev/dri}"' in compose
 
 # Long TXT files must be read through complete bounded ranges, not a single first-screen fetch.

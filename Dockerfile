@@ -5,8 +5,10 @@ COPY media-api.c vaulthub-manager.c /src/
 RUN gcc -Os -static -s -Wall -Wextra -Werror -pthread media-api.c -o /out-media-api \
  && gcc -Os -static -s -Wall -Wextra -Werror -pthread vaulthub-manager.c -o /out-vaulthub-manager
 
-FROM alpine:3.22
-RUN apk add --no-cache ca-certificates curl ffmpeg libva mesa-va-gallium intel-media-driver
+FROM nvidia/cuda:12.4.1-base-ubuntu22.04
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl ffmpeg \
+ && rm -rf /var/lib/apt/lists/*
 COPY --chmod=755 caddy /usr/bin/caddy
 COPY --from=build --chmod=755 /out-vaulthub-manager /usr/bin/vaulthub-manager
 COPY --from=build --chmod=755 /out-media-api /usr/bin/media-api

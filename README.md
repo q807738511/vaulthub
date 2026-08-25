@@ -1,4 +1,4 @@
-# VaultHub 蜀鼠之家 v0.6.18：GPU 加速与完整长文阅读
+# VaultHub 蜀鼠之家 v0.6.19：NVIDIA NVENC 修复
 
 v0.6.18 在视频音频兼容播放基线上增加 GPU 硬件解码/编码配置，并修复长 TXT 只显示首屏和电子书阅读器主题不同步问题。
 
@@ -24,7 +24,7 @@ devices:
   - /dev/dri:/dev/dri
 ```
 
-CPU-only主机请保持默认 Compose 不映射 `/dev/dri`；需要 VAAPI/QSV 时，在服务的 `devices:` 下取消注释并重建容器。
+CPU-only主机请保持默认 Compose 不映射 `/dev/dri`；需要 VAAPI/QSV 时，在服务的 `devices:` 下取消注释并重建容器。NVIDIA 主机使用 `gpus: all`，并使用带 NVENC 支持的 CUDA 运行时镜像。
 
 NVIDIA：宿主机安装 NVIDIA Container Toolkit 后，在 Compose 中启用：
 
