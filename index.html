@@ -130,6 +130,13 @@
   /* 边栏收起时，媒体操作按钮必须一并缩回，避免悬浮在 iframe 上方 */
   body.sidebar-hidden .nav-tools { display: none !important; }
   body.sidebar-hidden .add-board-btn { margin: 8px 6px 10px; padding: 9px 0; border: none; }
+  body.module-hidden-pt .nav-item[data-view="pt"], body.module-hidden-docker .nav-item[data-view="docker"],
+  body.module-hidden-pt #view-pt, body.module-hidden-docker #view-docker { display:none !important; }
+  .video-status-panel { position:absolute; left:12px; right:12px; bottom:12px; z-index:3; display:flex; align-items:center; gap:8px; flex-wrap:wrap; color:#fff; font-size:12px; padding:8px 10px; border-radius:8px; background:rgba(0,0,0,.62); pointer-events:none; }
+  .video-status-panel .status-main { font-weight:700; }
+  .video-status-panel .status-detail { color:rgba(255,255,255,.78); }
+  .docker-scan-bar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+  .docker-scan-bar input { flex:1 1 260px; min-width:0; }
   body.topbar-hidden .topbar { height: 0; padding-top: 0; padding-bottom: 0; overflow: hidden; border-bottom: 0; transform: translateY(-56px); }
   body.topbar-hidden .content { padding-top: 12px; --media-chrome-offset: 36px; }
   .chrome-controls {
@@ -447,6 +454,19 @@
   .audio-track-head strong { font-size:15px; }
   @media (max-width:768px) { .audio-player,.audio-player.maximized { left:50%; bottom:12px; transform:translateX(-50%); width:calc(100vw - 24px); min-height:82px; } .audio-player.maximized { bottom:50%; transform:translate(-50%,50%); flex-wrap:wrap; } .audio-player.maximized .audio-player-cover { width:120px; height:120px; flex-basis:120px; } .audio-player { padding:12px 10px; } .audio-player-cover { width:42px; height:42px; flex-basis:42px; } .audio-player-controls button { min-width:30px; padding:0 6px; } }
   @media (max-width: 768px) {
+    body:not(.sidebar-hidden) .sidebar { width:min(86vw,280px); transform:none; box-shadow:12px 0 30px rgba(0,0,0,.35); }
+    body:not(.sidebar-hidden) .main { margin-left:0; }
+    body.sidebar-hidden .sidebar { width:0; transform:translateX(-100%); overflow:hidden; border:0; }
+    body.sidebar-hidden .main { margin-left:0; }
+    .main { margin-left:0; width:100%; }
+    .topbar { padding:0 12px; }
+    .topbar .actions { gap:4px; flex-wrap:wrap; justify-content:flex-end; }
+    .topbar .actions .btn { padding:6px 8px; }
+    .content { padding-left:12px; padding-right:12px; }
+    .media-reader-overlay { left:0; }
+    .video-status-panel { bottom:54px; left:8px; right:8px; }
+    .docker-scan-bar { display:grid; grid-template-columns:1fr; }
+    .docker-scan-bar .btn { width:100%; }
     .media-login-grid { grid-template-columns: 1fr; }
     .media-modebar { align-items: stretch; flex-direction: column; }
     .media-modes { width: 100%; }
@@ -515,14 +535,7 @@
 
   @media (max-width: 1100px) { .g-4 { grid-template-columns: repeat(2, 1fr); } .g-3 { grid-template-columns: 1fr 1fr; } }
   @media (max-width: 768px) {
-    .sidebar { width: 60px; --sidebar-w: 60px; }
-    .sidebar .logo span.txt, .sidebar .nav-item span.txt, .sidebar .nav-group, .sidebar-foot, .add-board-btn span { display: none; }
-    .add-board-btn { border: none; }
-    .main { margin-left: 60px; }
-    .nav-item { justify-content: center; }
-    .nav-item .del { display: none; }
     .g-4, .g-3, .g-2 { grid-template-columns: 1fr; }
-    .content { padding: 14px; }
     .form-2col { grid-template-columns: 1fr; }
   }
 </style>
@@ -569,7 +582,7 @@
   <div class="add-board-btn" onclick="openModuleModal()">
     <span>＋</span><span data-i18n="addBoardNav">添加模块</span>
   </div>
-  <div class="sidebar-foot">v0.6.17 · Audio Compatibility</div>
+  <div class="sidebar-foot">v0.6.20 · Responsive Dashboard</div>
 </aside>
 
 <!-- ===== 主区域 ===== -->
@@ -959,7 +972,9 @@
 
     <!-- ============ 容器管理 ============ -->
     <section class="view" id="view-docker">
-      <div class="section-title"><span data-i18n="secDocker">Docker 容器</span> <span class="badge" id="containerCount">共 24 个</span></div>
+      <div class="section-title"><span data-i18n="secDocker">Docker 容器</span> <span class="badge" id="containerCount">未扫描</span></div>
+      <div class="docker-scan-bar"><input class="search" id="dockerServerIp" type="text" value="127.0.0.1" placeholder="服务器 IP，例如 192.168.112.3"><button class="btn btn-primary" type="button" onclick="scanDockerServer()">扫描容器</button></div>
+      <div class="hint" id="dockerScanStatus">请输入服务器 IP 后扫描，不展示静态容器数据。</div>
       <input class="search" id="dockerSearch" type="text" placeholder="🔍 搜索容器名称 / 镜像 / 状态…" data-i18n-ph="searchPh">
       <div id="dockerGraphic" class="docker-servers"></div>
     </section>
@@ -1149,7 +1164,7 @@
   <div class="modal">
     <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
     <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
-    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.6.19 · NVIDIA NVENC</b></div>
+    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.6.20 · Responsive Dashboard</b></div>
     <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>HTML / CSS / JS · 单文件</b></div>
     <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>VaultHub 内置系统监控</b></div>
     <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>
@@ -1531,7 +1546,12 @@ function saveBoards() {
 let hiddenModules = [];
 const LS_HIDDEN_MODULES = "dwu_hidden_modules";
 function loadHiddenModules() {
-  try { hiddenModules = JSON.parse(localStorage.getItem(LS_HIDDEN_MODULES) || "[]") || []; } catch (e) { hiddenModules = []; }
+  try {
+    const saved = localStorage.getItem(LS_HIDDEN_MODULES);
+    hiddenModules = saved === null ? ["pt", "docker"] : (JSON.parse(saved) || []);
+  } catch (e) { hiddenModules = ["pt", "docker"]; }
+  document.body.classList.toggle("module-hidden-pt", hiddenModules.includes("pt"));
+  document.body.classList.toggle("module-hidden-docker", hiddenModules.includes("docker"));
 }
 function saveHiddenModules() {
   try { localStorage.setItem(LS_HIDDEN_MODULES, JSON.stringify(hiddenModules)); } catch (e) {}
@@ -2421,6 +2441,24 @@ function setMovieCompatStatus(root, text) {
   const el = root?.querySelector(".movie-compat-status");
   if (el) el.textContent = text;
 }
+function formatMediaTime(value) {
+  if (!Number.isFinite(value)) return "--:--";
+  const sec=Math.max(0,Math.floor(value)), m=Math.floor(sec/60), s=sec%60;
+  return `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+}
+function updateVideoStatus(root, video, state) {
+  const main=root?.querySelector("[data-video-status]"); const detail=root?.querySelector("[data-video-detail]");
+  if (!main || !detail || !video) return;
+  main.textContent=state;
+  const mode=(video.dataset.currentSrc||"").includes("/api/media/compat") ? `兼容流 · ${settings.hardwareAcceleration}` : "原片直连";
+  const size=video.videoWidth ? `${video.videoWidth}×${video.videoHeight}` : "分辨率待获取";
+  detail.textContent=`${formatMediaTime(video.currentTime)} / ${formatMediaTime(video.duration)} · ${size} · ${mode}`;
+}
+function bindVideoStatus(root, video) {
+  [["loadstart","正在连接"],["waiting","正在缓冲"],["playing","正在播放"],["pause","已暂停"],["ended","播放完成"],["stalled","网络等待"],["error","播放错误"]].forEach(([ev,label])=>video.addEventListener(ev,()=>updateVideoStatus(root,video,label)));
+  video.addEventListener("timeupdate",()=>updateVideoStatus(root,video,video.paused?"已暂停":"正在播放"));
+  video.addEventListener("loadedmetadata",()=>updateVideoStatus(root,video,"媒体信息已载入"));
+}
 function switchMovieSource(video, url) {
   if (!video || video.dataset.currentSrc === url) return;
   const wasPaused = video.paused;
@@ -2436,6 +2474,7 @@ async function initMovieCompatPlayer(root, lib, path) {
   if (!video) return;
   const direct = mediaFileUrl(lib, path);
   const compat = mediaCompatUrl(lib, path);
+  bindVideoStatus(root, video);
   const useDirect = () => { setMovieCompatStatus(root, "直连播放"); switchMovieSource(video, direct); };
   const useCompat = reason => { setMovieCompatStatus(root, reason || "音频兼容流：AAC 输出"); switchMovieSource(video, compat); };
   root.querySelector("[data-movie-direct]")?.addEventListener("click", useDirect);
@@ -2487,7 +2526,7 @@ async function openLocalMedia(group, libId, path) {
   activeReader = { group, libId, path };
   let body = "";
   if (["mp3","flac","m4a","ogg","wav"].includes(ext)) body = `<div class="media-viewer-body"><audio controls autoplay preload="metadata" src="${esc(url)}"></audio></div>`;
-  else if (MEDIA_FORMATS.movie.includes(ext)) body = `<div class="media-viewer-body media-video-body"><div class="movie-compat-bar"><button class="btn" type="button" data-movie-direct>直连原片</button><button class="btn" type="button" data-movie-compat>音频兼容</button><span class="movie-compat-status">正在判定播放方式...</span></div><video data-movie-player controls playsinline preload="metadata" onloadedmetadata="this.muted=false;this.volume=1" onvolumechange="this.dataset.volume=String(this.volume)"></video></div>`;
+  else if (MEDIA_FORMATS.movie.includes(ext)) body = `<div class="media-viewer-body media-video-body"><div class="movie-compat-bar"><button class="btn" type="button" data-movie-direct>直连原片</button><button class="btn" type="button" data-movie-compat>音频兼容</button><span class="movie-compat-status">正在判定播放方式...</span></div><video data-movie-player controls playsinline preload="metadata" onloadedmetadata="this.muted=false;this.volume=1" onvolumechange="this.dataset.volume=String(this.volume)"></video><div class="video-status-panel"><span class="status-main" data-video-status>准备播放</span><span class="status-detail" data-video-detail>--:-- / --:-- · 分辨率待获取</span></div></div>`;
   else if (["jpg","jpeg","png","webp","gif","bmp","avif"].includes(ext)) body = `<img src="${esc(url)}" alt="${esc(path)}">`;
   else if (ext === "pdf") body = `<iframe src="${esc(url)}#view=FitH" title="${esc(path)}"></iframe>`;
   else if (ext === "txt") {
@@ -2604,32 +2643,7 @@ async function deleteMediaLibrary(id) {
 }
 
 /* ================= Docker 模拟数据 ================= */
-const containers = [
-  { name: "glances", image: "nicolargo/glances:latest-full", status: "up", ports: "61208", health: "healthy" },
-  { name: "moviepilot", image: "jxxghp/moviepilot:latest", status: "up", ports: "3000, 3001", health: "healthy" },
-  { name: "navidrome", image: "deluan/navidrome:latest", status: "up", ports: "4533", health: "healthy" },
-  { name: "emby", image: "emby/embyserver:latest", status: "up", ports: "8096", health: "healthy" },
-  { name: "plex", image: "plexinc/pms-docker:latest", status: "up", ports: "32400", health: "healthy" },
-  { name: "jellyfin", image: "lscr.io/linuxserver/jellyfin:latest", status: "up", ports: "8096", health: "healthy" },
-  { name: "transmission", image: "lscr.io/linuxserver/transmission:latest", status: "up", ports: "9091", health: "healthy" },
-  { name: "komga", image: "gotson/komga:latest", status: "up", ports: "25600", health: "healthy" },
-  { name: "kavita", image: "kavitarepo/kavita:latest", status: "stopped", ports: "8085", health: "unhealthy" },
-  { name: "calibre-web", image: "lscr.io/linuxserver/calibre-web:latest", status: "up", ports: "8083", health: "healthy" },
-  { name: "cwa", image: "ghcr.io/crowbarz/docker-calibre-web-automated:latest", status: "up", ports: "8084", health: "healthy" },
-  { name: "cloudflared", image: "cloudflare/cloudflared:latest", status: "up", ports: "-", health: "healthy" },
-  { name: "lucky", image: "gdy666/lucky:latest", status: "up", ports: "16601", health: "healthy" },
-  { name: "halo", image: "halohub/halo:latest", status: "up", ports: "8090", health: "healthy" },
-  { name: "siyuan", image: "b3log/siyuan:latest", status: "up", ports: "6806", health: "healthy" },
-  { name: "homepage", image: "ghcr.io/gethomepage/homepage:latest", status: "up", ports: "3100", health: "healthy" },
-  { name: "nginx-proxy-manager", image: "jc21/nginx-proxy-manager:latest", status: "up", ports: "80, 81, 443", health: "healthy" },
-  { name: "hermes-agent", image: "hermes-agent:latest", status: "up", ports: "8642", health: "healthy" },
-  { name: "hermes-webui", image: "ekkoye8888/hermes-web-ui:latest", status: "up", ports: "6060", health: "healthy" },
-  { name: "astrbot", image: "soulter/astrbot:latest", status: "up", ports: "6185", health: "healthy" },
-  { name: "lsky", image: "lsky-org/lsky-pro:latest", status: "up", ports: "40027", health: "healthy" },
-  { name: "readarr", image: "lscr.io/linuxserver/readarr:develop", status: "stopped", ports: "8787", health: "unhealthy" },
-  { name: "bitwarden", image: "vaultwarden/server:latest", status: "up", ports: "80", health: "healthy" },
-  { name: "drawio", image: "jgraph/drawio:latest", status: "up", ports: "8080", health: "healthy" }
-];
+const containers = [];
 
 const SERVER_META = {
   "192.168.112.3": { name: "飞牛 NAS · 主机", note: "媒体 / PT / 下载 / Hermes", icon: "🖥️" },
@@ -2656,6 +2670,19 @@ function containerIcon(c) {
   return "🐳";
 }
 
+async function scanDockerServer() {
+  const input=document.getElementById("dockerServerIp"), status=document.getElementById("dockerScanStatus");
+  const host=(input?.value||"").trim(); if(!host){ status.textContent="请输入服务器 IP"; return; }
+  status.textContent=`正在扫描 ${host} ...`;
+  try {
+    const res=await fetch(`/api/admin/docker/scan?host=${encodeURIComponent(host)}`,{cache:"no-store"});
+    const data=await res.json();
+    if(!res.ok||!data.ok) throw new Error(data.error||`HTTP ${res.status}`);
+    containers.splice(0,containers.length,...(data.containers||[]).map(c=>({name:(c.Names?.[0]||c.Name||"").replace(/^\//,""),image:c.Image||"",status:c.State==="running"?"up":"stopped",ports:(c.Ports||[]).map(p=>p.PublicPort?`${p.PublicPort}:${p.PrivatePort}`:`${p.PrivatePort}`).join(", ")||"-",health:c.State==="running"?"healthy":"unknown",serverIp:host})));
+    status.textContent=`已扫描 ${host}，发现 ${containers.length} 个容器`;
+    renderDocker();
+  } catch(e) { containers.splice(0); renderDocker(); status.textContent=`扫描失败：${e.message}`; }
+}
 function renderDocker() {
   const q = (document.getElementById("dockerSearch").value || "").toLowerCase();
   const list = containers.map(c => ({ ...c, serverIp: c.serverIp || inferServerIp(c) })).filter(c =>
@@ -3284,6 +3311,8 @@ function toggleModule(id) {
 
 /* 根据隐藏模块列表应用侧边栏可见性 */
 function applyModuleVisibility() {
+  document.body.classList.toggle("module-hidden-pt", hiddenModules.includes("pt"));
+  document.body.classList.toggle("module-hidden-docker", hiddenModules.includes("docker"));
   document.querySelectorAll(".nav-item[data-module]").forEach(item => {
     item.style.display = hiddenModules.includes(item.dataset.module) ? "none" : "";
   });
