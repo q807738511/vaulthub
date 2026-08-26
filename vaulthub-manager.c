@@ -91,20 +91,23 @@ static void ensure_data_config(void) {
   char *cfg = read_file(data_config, &len);
   const char *marker = "handle /api/media/*";
   const char *system_marker = "handle /api/system/*";
-  const char *admin = "\thandle /api/admin/* {";
-  if (cfg && (!strstr(cfg, marker) || !strstr(cfg, system_marker))) {
+  const char *subtitle_marker = "/api/media/subtitles/download";
+  const char *admin = "	handle /api/admin/* {";
+  if (cfg && (!strstr(cfg, marker) || !strstr(cfg, system_marker) || !strstr(cfg, subtitle_marker))) {
     char *pos = strstr(cfg, admin);
     if (pos) {
-      const char *system_block = strstr(cfg, system_marker) ? "" : "\n\t# VaultHub 内置系统监控 API。\n\thandle /api/system/* {\n\t\treverse_proxy http://127.0.0.1:9100 {\n\t\t\tflush_interval -1\n\t\t}\n\t}\n";
-      const char *media_block = strstr(cfg, marker) ? "" : "\n\t# 本地媒体库 API，仅由同容器内绑定回环地址的进程处理。\n\thandle /api/media/* {\n\t\treverse_proxy http://127.0.0.1:9100 {\n\t\t\tflush_interval -1\n\t\t}\n\t}\n";
+      const char *subtitle_block = strstr(cfg, subtitle_marker) ? "" : "\n	# Go 在线字幕下载代理。\n	handle /api/media/subtitles/download {\n		reverse_proxy http://127.0.0.1:9120\n	}\n";
+      const char *system_block = strstr(cfg, system_marker) ? "" : "\n	# VaultHub 内置系统监控 API。\n	handle /api/system/* {\n		reverse_proxy http://127.0.0.1:9100 {\n			flush_interval -1\n		}\n	}\n";
+      const char *media_block = strstr(cfg, marker) ? "" : "\n	# 本地媒体库 API，仅由同容器内绑定回环地址的进程处理。\n	handle /api/media/* {\n		reverse_proxy http://127.0.0.1:9100 {\n			flush_interval -1\n		}\n	}\n";
       size_t prefix = (size_t)(pos - cfg);
-      size_t extra_len = strlen(system_block) + strlen(media_block);
+      size_t extra_len = strlen(subtitle_block) + strlen(system_block) + strlen(media_block);
       size_t out_len = len + extra_len;
       char *out = malloc(out_len + 1);
       if (!out) { free(cfg); logmsg("failed to allocate caddy migration buffer"); exit(1); }
       memcpy(out, cfg, prefix);
-      memcpy(out + prefix, system_block, strlen(system_block));
-      memcpy(out + prefix + strlen(system_block), media_block, strlen(media_block));
+      memcpy(out + prefix, subtitle_block, strlen(subtitle_block));
+      memcpy(out + prefix + strlen(subtitle_block), system_block, strlen(system_block));
+      memcpy(out + prefix + strlen(subtitle_block) + strlen(system_block), media_block, strlen(media_block));
       memcpy(out + prefix + extra_len, cfg + prefix, len - prefix);
       out[out_len] = 0;
       if (write_file_atomic(data_config, out, out_len) != 0) {

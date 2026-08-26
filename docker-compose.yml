@@ -25,8 +25,8 @@ services:
       MEDIA_ROOT: "/media"
       # 在线 provider 预留标准 JSON 适配端点；留空时仅使用本地字幕。
       SUBTITLE_SHOOTER_ENDPOINT: ""
-      SUBTITLE_ZIMUKU_ENDPOINT: ""
-      SUBTITLE_SUBHD_ENDPOINT: ""
+      SUBTITLE_ZIMUKU_BASE: ""
+      SUBTITLE_SUBHD_BASE: ""
       # 硬件转码：auto 会优先尝试 NVIDIA CUDA，其次 VAAPI/QSV，失败自动回退 CPU。
       FFMPEG_HWACCEL: "${FFMPEG_HWACCEL:-auto}"
       VAAPI_DEVICE: "${VAAPI_DEVICE:-/dev/dri/renderD128}"

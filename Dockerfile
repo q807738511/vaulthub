@@ -14,10 +14,11 @@ FROM nvidia/cuda:12.4.1-base-ubuntu22.04
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl ffmpeg \
  && rm -rf /var/lib/apt/lists/*
-COPY --chmod=755 caddy /usr/bin/caddy
-COPY --from=build --chmod=755 /out-vaulthub-manager /usr/bin/vaulthub-manager
-COPY --from=build --chmod=755 /out-media-api /usr/bin/media-api
-COPY --from=go-build --chmod=755 /out-subtitle-api /usr/bin/subtitle-api
+COPY caddy /usr/bin/caddy
+COPY --from=build /out-vaulthub-manager /usr/bin/vaulthub-manager
+COPY --from=build /out-media-api /usr/bin/media-api
+COPY --from=go-build /out-subtitle-api /usr/bin/subtitle-api
+RUN chmod 755 /usr/bin/caddy /usr/bin/vaulthub-manager /usr/bin/media-api /usr/bin/subtitle-api
 COPY Caddyfile /etc/caddy/Caddyfile
 COPY index.html /srv/index.html
 
@@ -27,8 +28,8 @@ ENV NAS_IP=192.168.112.3 \
     MEDIA_ROOT=/media \
     SUBTITLE_API_ADDR=127.0.0.1:9120 \
     SUBTITLE_SHOOTER_ENDPOINT= \
-    SUBTITLE_ZIMUKU_ENDPOINT= \
-    SUBTITLE_SUBHD_ENDPOINT= \
+    SUBTITLE_ZIMUKU_BASE= \
+    SUBTITLE_SUBHD_BASE= \
     ADMIN_TOKEN= \
     TMDB_API_KEY=
 
