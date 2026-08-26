@@ -2457,7 +2457,7 @@ function viewerShell(group, lib, path, body, url, opts = {}) {
   const chapters = opts.chapters || [];
   const chapterHtml = chapters.length ? `<aside class="ebook-chapters"><h4>目录 · ${chapters.length} 章</h4>${chapters.map((ch, i) => `<button data-chapter="${i}" onclick="jumpEbookChapter(${i})">${esc(ch.title)}</button>`).join("")}</aside>` : "";
   const toolbar = opts.ebook ? `<span class="ebook-toolbar"><button title="减小字号" onclick="changeEbookFontSize(-1)">A-</button><button title="增大字号" onclick="changeEbookFontSize(1)">A+</button><button id="ebookFontStyleButton" title="正体/斜体" onclick="toggleEbookFontStyle()">正体</button></span>` : "";
-  return `<div class="media-reader-overlay ${readerThemeClass()}"><div class="media-reader-head"><strong class="media-reader-title" title="${esc(path)}">${esc(displayBookTitle(path))}</strong><div class="media-actions">${toolbar}<button class="btn" title="系统设置" onclick="openModal('settingsModal')">⚙ 设置</button><button class="btn" onclick="markReaderCompleted()">✓ 标记已读</button><a class="btn" href="${esc(download)}" download>↓ 下载</a><button class="media-reader-close" title="关闭并返回书架" onclick="closeLocalViewer('${esc(group)}')">✕</button></div></div><div class="media-reader-body" data-reader-scroll onscroll="trackReaderProgress(this)">${chapterHtml}<div class="media-reader-wrap">${body}</div></div></div>`;
+  return `<div class="media-reader-overlay ${readerThemeClass()}"><div class="media-reader-head"><strong class="media-reader-title" title="${esc(path)}">${esc(displayBookTitle(path))}</strong><div class="media-actions">${toolbar}<button class="btn" title="系统设置" onclick="guardProtectedAction(()=>openModal('settingsModal'))()">⚙ 设置</button><button class="btn" onclick="markReaderCompleted()">✓ 标记已读</button><a class="btn" href="${esc(download)}" download>↓ 下载</a><button class="media-reader-close" title="关闭并返回书架" onclick="closeLocalViewer('${esc(group)}')">✕</button></div></div><div class="media-reader-body" data-reader-scroll onscroll="trackReaderProgress(this)">${chapterHtml}<div class="media-reader-wrap">${body}</div></div></div>`;
 }
 let ebookFontSize = 17;
 let ebookFontItalic = false;
@@ -3642,6 +3642,7 @@ function setLang(l) {
 loadSettings();
 loadBoards();
 loadHiddenModules();
+requireVaultHubLogin();
 
 document.body.dataset.theme = settings.theme === "light" ? "light" : "dark";
 document.body.classList.toggle("custom-bg", settings.theme === "custom");
