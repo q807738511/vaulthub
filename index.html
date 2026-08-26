@@ -56,6 +56,12 @@
   ::-webkit-scrollbar-track { background: transparent; }
 
   /* ===== 侧边栏 ===== */
+  .auth-mask { position:fixed; inset:0; z-index:1000; display:flex; align-items:center; justify-content:center; background:rgba(5,9,15,.82); backdrop-filter:blur(8px); }
+  .auth-mask.hidden { display:none; }
+  .auth-card { width:min(390px,calc(100vw - 32px)); padding:24px; border:1px solid var(--border); border-radius:14px; background:var(--bg2); box-shadow:0 20px 70px rgba(0,0,0,.45); }
+  .auth-card h2 { margin:0 0 8px; }
+  .auth-card p { color:var(--text2); font-size:13px; line-height:1.6; }
+  .auth-error { min-height:20px; color:var(--red); font-size:12px; margin-top:8px; }
   .sidebar {
     width: 220px; background: var(--bg2); border-right: 1px solid var(--border);
     display: flex; flex-direction: column; position: fixed; top: 0; bottom: 0; left: 0; z-index: 50;
@@ -577,6 +583,18 @@
 </head>
 <body data-theme="dark">
 
+<!-- ===== 登录遮罩 ===== -->
+<div class="auth-mask" id="authMask">
+  <div class="auth-card">
+    <h2>VaultHub 登录</h2>
+    <p>登录后才能编辑 Caddy、系统配置及访问受保护的媒体信息。</p>
+    <input id="vaultHubUsername" type="text" placeholder="登录用户名" autocomplete="username" style="width:100%;box-sizing:border-box;margin-top:12px;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--card2);color:var(--text);">
+    <input id="vaultHubPassword" type="password" placeholder="登录密码" autocomplete="current-password" style="width:100%;box-sizing:border-box;margin-top:8px;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--card2);color:var(--text);">
+    <button class="btn btn-primary" style="width:100%;margin-top:12px;" onclick="vaultHubLogin()">🔐 登录</button>
+    <div class="auth-error" id="authError"></div>
+  </div>
+</div>
+
 <!-- ===== 侧边栏 ===== -->
 <aside class="sidebar">
   <div class="logo">
@@ -627,8 +645,8 @@
       <h1 id="pageTitle">首页</h1>
     </div>
     <div class="actions">
-      <button class="btn" onclick="openModal('settingsModal')">⚙️ <span data-i18n="settings">系统设置</span></button>
-      <button class="btn" onclick="openCaddyModal()">🔀 <span data-i18n="caddySettings">Caddy 配置</span></button>
+      <button class="btn" onclick="guardProtectedAction(()=>openModal('settingsModal'))()">⚙️ <span data-i18n="settings">系统设置</span></button>
+      <button class="btn" onclick="guardProtectedAction(openCaddyModal)()">🔀 <span data-i18n="caddySettings">Caddy 配置</span></button>
       <button class="btn" onclick="openModal('aboutModal')">ℹ️ <span data-i18n="about">关于</span></button>
     </div>
   </div>
@@ -1253,6 +1271,32 @@
 <div class="toast" id="toast"></div>
 
 <script>
+
+async function vaultHubLogin() {
+  const username=document.getElementById('vaultHubUsername').value.trim();
+  const password=document.getElementById('vaultHubPassword').value;
+  const error=document.getElementById('authError');
+  error.textContent='';
+  try {
+    const res=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password})});
+    const data=await res.json();
+    if(!res.ok||!data.ok){error.textContent=data.error||'登录失败';return;}
+    document.getElementById('authMask').classList.add('hidden');
+    document.getElementById('vaultHubPassword').value='';
+  } catch (_) { error.textContent='登录服务不可用'; }
+}
+async function requireVaultHubLogin() {
+  try {
+    const res=await fetch('/api/system/runtime',{cache:'no-store'});
+    const logged=res.ok;
+    document.getElementById('authMask')?.classList.toggle('hidden',logged);
+    return logged;
+  } catch (_) {
+    document.getElementById('authMask')?.classList.remove('hidden');
+    return false;
+  }
+}
+function guardProtectedAction(fn) { return async (...args)=>{if(await requireVaultHubLogin()) return fn(...args);}; }
 
 function openCaddyModal() {
   loadCaddyConfig();
@@ -2413,7 +2457,7 @@ function viewerShell(group, lib, path, body, url, opts = {}) {
   const chapters = opts.chapters || [];
   const chapterHtml = chapters.length ? `<aside class="ebook-chapters"><h4>目录 · ${chapters.length} 章</h4>${chapters.map((ch, i) => `<button data-chapter="${i}" onclick="jumpEbookChapter(${i})">${esc(ch.title)}</button>`).join("")}</aside>` : "";
   const toolbar = opts.ebook ? `<span class="ebook-toolbar"><button title="减小字号" onclick="changeEbookFontSize(-1)">A-</button><button title="增大字号" onclick="changeEbookFontSize(1)">A+</button><button id="ebookFontStyleButton" title="正体/斜体" onclick="toggleEbookFontStyle()">正体</button></span>` : "";
-  return `<div class="media-reader-overlay ${readerThemeClass()}"><div class="media-reader-head"><strong class="media-reader-title" title="${esc(path)}">${esc(displayBookTitle(path))}</strong><div class="media-actions">${toolbar}<button class="btn" onclick="markReaderCompleted()">✓ 标记已读</button><a class="btn" href="${esc(download)}" download>↓ 下载</a><button class="media-reader-close" title="关闭并返回书架" onclick="closeLocalViewer('${esc(group)}')">✕</button></div></div><div class="media-reader-body" data-reader-scroll onscroll="trackReaderProgress(this)">${chapterHtml}<div class="media-reader-wrap">${body}</div></div></div>`;
+  return `<div class="media-reader-overlay ${readerThemeClass()}"><div class="media-reader-head"><strong class="media-reader-title" title="${esc(path)}">${esc(displayBookTitle(path))}</strong><div class="media-actions">${toolbar}<button class="btn" title="系统设置" onclick="openModal('settingsModal')">⚙ 设置</button><button class="btn" onclick="markReaderCompleted()">✓ 标记已读</button><a class="btn" href="${esc(download)}" download>↓ 下载</a><button class="media-reader-close" title="关闭并返回书架" onclick="closeLocalViewer('${esc(group)}')">✕</button></div></div><div class="media-reader-body" data-reader-scroll onscroll="trackReaderProgress(this)">${chapterHtml}<div class="media-reader-wrap">${body}</div></div></div>`;
 }
 let ebookFontSize = 17;
 let ebookFontItalic = false;

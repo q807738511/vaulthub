@@ -6,8 +6,11 @@ services:
     ports:
       - "8088:8088"
     environment:
-      # 管理接口令牌；留空表示不启用鉴权。
-      ADMIN_TOKEN: ""
+      # 兼容旧版令牌登录；设置非空时可继续使用 token 字段。
+      ADMIN_TOKEN: "${ADMIN_TOKEN:-}"
+      # WebUI 用户名密码登录；未设置时默认为 ADMIN / ADMIN123。
+      ADMIN_USERNAME: "${ADMIN_USERNAME:-ADMIN}"
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD:-ADMIN123}"
       # 内置 NAS 监控开关，不需要 Glances 容器。
       SYSTEM_MONITOR_ENABLED: "true"
       # 采样间隔示例，当前接口按请求即时读取。
