@@ -24,6 +24,7 @@ static const char *default_config = "/etc/caddy/Caddyfile";
 static const char *token_env = "ADMIN_TOKEN";
 static pid_t caddy_pid = -1;
 static pid_t media_pid = -1;
+static pid_t subtitle_pid = -1;
 
 static const char *caddy_bin(void) {
   const char *p = getenv("CADDY_BIN");
@@ -156,10 +157,20 @@ static void start_media_api(void) {
   }
 }
 
+static void start_subtitle_api(void) {
+  subtitle_pid = fork();
+  if (subtitle_pid < 0) { logmsg("failed to fork subtitle API: %s", strerror(errno)); exit(1); }
+  if (subtitle_pid == 0) {
+    const char *bin = getenv("SUBTITLE_API_BIN"); if (!bin || !*bin) bin = "/usr/bin/subtitle-api";
+    char *argv[] = {(char*)bin, NULL}; execv(argv[0], argv); _exit(127);
+  }
+}
+
 static void stop_caddy(int sig) {
   (void)sig;
   if (caddy_pid > 0) kill(caddy_pid, SIGTERM);
   if (media_pid > 0) kill(media_pid, SIGTERM);
+  if (subtitle_pid > 0) kill(subtitle_pid, SIGTERM);
 }
 
 static void send_resp(int fd, int code, const char *ctype, const char *body) {
@@ -315,6 +326,7 @@ int main(void) {
   signal(SIGTERM, stop_caddy);
   ensure_data_config();
   start_media_api();
+  start_subtitle_api();
   start_caddy();
   int s = socket(AF_INET, SOCK_STREAM, 0);
   int yes = 1; setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));

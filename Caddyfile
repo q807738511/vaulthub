@@ -19,6 +19,11 @@
 		}
 	}
 
+	# Go 字幕服务：本地自动扫描及可插拔在线字幕源。
+	handle /api/media/subtitles/search {
+		reverse_proxy http://127.0.0.1:9120
+	}
+
 	# 本地媒体库 API，仅由同容器内绑定回环地址的进程处理。
 	handle /api/media/* {
 		reverse_proxy http://127.0.0.1:9100 {

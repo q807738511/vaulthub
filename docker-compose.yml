@@ -21,6 +21,12 @@ services:
       SYSTEM_MONITOR_SYS_ROOT: "/host/sys"
       # 可选：配置后影视本地库启用 TMDB 刮削；未配置时默认豆瓣/文件名兜底。
       TMDB_API_KEY: ""
+      # Go 字幕服务无需 Python/额外容器；默认自动扫描视频同目录字幕。
+      MEDIA_ROOT: "/media"
+      # 在线 provider 预留标准 JSON 适配端点；留空时仅使用本地字幕。
+      SUBTITLE_SHOOTER_ENDPOINT: ""
+      SUBTITLE_ZIMUKU_ENDPOINT: ""
+      SUBTITLE_SUBHD_ENDPOINT: ""
       # 硬件转码：auto 会优先尝试 NVIDIA CUDA，其次 VAAPI/QSV，失败自动回退 CPU。
       FFMPEG_HWACCEL: "${FFMPEG_HWACCEL:-auto}"
       VAAPI_DEVICE: "${VAAPI_DEVICE:-/dev/dri/renderD128}"
