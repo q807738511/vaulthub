@@ -7,7 +7,16 @@
 		respond "ok" 200
 	}
 
-	# VaultHub 配置管理 API，仅由同容器内的管理进程处理。
+	# Go 管理服务 API。
+	handle /api/health {
+		reverse_proxy http://127.0.0.1:9099
+	}
+	handle /api/login {
+		reverse_proxy http://127.0.0.1:9099
+	}
+	handle /api/system/runtime {
+		reverse_proxy http://127.0.0.1:9099
+	}
 	handle /api/admin/* {
 		reverse_proxy http://127.0.0.1:9099
 	}
