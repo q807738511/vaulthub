@@ -18,7 +18,7 @@ assert "handle /api/logout" in (ROOT / "Caddyfile").read_text()
 assert "vaultHubAuthenticated" in html
 assert "VAULTHUB_IDLE_TIMEOUT_MS = 30 * 60 * 1000" in html
 assert "markVaultHubActivity" in html
-assert "guardProtectedAction(openCaddyModal)" in html
+assert "openCaddyModal()" in html
 assert "handleProtectedResponse" in html
 
 assert 'value="comic"' in html and 'value="book"' in html

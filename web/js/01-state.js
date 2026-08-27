@@ -45,10 +45,6 @@ function openCaddyModal() {
   loadCaddyConfig();
   openModal('caddyModal');
 }
-function caddyApiHeaders() {
-  const tok = (document.getElementById('caddyToken')?.value || '').trim();
-  return tok ? { 'X-VaultHub-Token': tok } : {};
-}
 async function loadCaddyConfig() {
   const res = await fetch('/api/admin/caddyfile', { cache: 'no-store' });
   if (!await handleProtectedResponse(res)) return;
@@ -59,7 +55,7 @@ async function saveCaddyConfig() {
   const caddyfile = document.getElementById('caddyFile').value;
   const res = await fetch('/api/admin/caddyfile', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...caddyApiHeaders() },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ caddyfile })
   });
   if (!await handleProtectedResponse(res)) return;

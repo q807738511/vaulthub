@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 	"unicode/utf8"
 
@@ -843,24 +844,210 @@ func commandJSON(w http.ResponseWriter, r *http.Request, name string, args ...st
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(out)
 }
+// cpuSample is the last /proc/stat total/idle snapshot, used to compute the
+// busy percentage between two scrapes (the front-end polls every 5s).
+type cpuSample struct {
+	total, idle uint64
+}
+
+var (
+	metricsMu    sync.Mutex
+	lastCPU      cpuSample
+	lastCPUValid bool
+)
+
+// readCPU parses the aggregate "cpu" line of /proc/stat into total and idle
+// jiffies. idle = idle + iowait.
+func readCPU(proc string) (cpuSample, int, bool) {
+	b, e := os.ReadFile(filepath.Join(proc, "stat"))
+	if e != nil {
+		return cpuSample{}, 0, false
+	}
+	cores := 0
+	var s cpuSample
+	for _, line := range strings.Split(string(b), "\n") {
+		if strings.HasPrefix(line, "cpu ") {
+			fields := strings.Fields(line)[1:]
+			for i, f := range fields {
+				v, _ := strconv.ParseUint(f, 10, 64)
+				s.total += v
+				if i == 3 || i == 4 { // idle + iowait
+					s.idle += v
+				}
+			}
+		} else if len(line) > 3 && strings.HasPrefix(line, "cpu") && line[3] >= '0' && line[3] <= '9' {
+			cores++
+		}
+	}
+	return s, cores, true
+}
+
+// hwmonTemps walks /host/sys/class/hwmon and returns every tempN_input reading
+// (in °C), grouped by sensor name. Drive/NVMe sensors are separated so the
+// front-end can show real disk temperatures when they exist.
+func hwmonTemps(sysRoot string) (cpuTemp float64, disks []map[string]any, sensors []map[string]any) {
+	dirs, _ := filepath.Glob(filepath.Join(sysRoot, "class/hwmon/hwmon*"))
+	for _, d := range dirs {
+		nb, _ := os.ReadFile(filepath.Join(d, "name"))
+		name := strings.TrimSpace(string(nb))
+		inputs, _ := filepath.Glob(filepath.Join(d, "temp*_input"))
+		sort.Strings(inputs)
+		isDrive := name == "drivetemp" || strings.HasPrefix(name, "nvme")
+		for _, in := range inputs {
+			vb, e := os.ReadFile(in)
+			if e != nil {
+				continue
+			}
+			milli, e := strconv.ParseFloat(strings.TrimSpace(string(vb)), 64)
+			if e != nil {
+				continue
+			}
+			c := milli / 1000.0
+			label := name
+			if lb, e := os.ReadFile(strings.TrimSuffix(in, "_input") + "_label"); e == nil {
+				if s := strings.TrimSpace(string(lb)); s != "" {
+					label = s
+				}
+			}
+			entry := map[string]any{"name": label, "temp": c}
+			sensors = append(sensors, entry)
+			if isDrive {
+				disks = append(disks, entry)
+			}
+			// coretemp "Package id 0" (or first coretemp reading) is the CPU temp.
+			if cpuTemp == 0 && (name == "coretemp" || name == "k10temp" || name == "cpu_thermal") {
+				cpuTemp = c
+			}
+		}
+	}
+	return
+}
+
+// pickInterface returns the network interface to report. Honours
+// SYSTEM_MONITOR_INTERFACE, otherwise picks the physical interface (skipping
+// lo/veth/br/docker/ovs) carrying the most received bytes.
+func pickInterface(proc, forced string) (name string, rx, tx uint64) {
+	b, e := os.ReadFile(filepath.Join(proc, "net/dev"))
+	if e != nil {
+		return "", 0, 0
+	}
+	best := uint64(0)
+	for _, line := range strings.Split(string(b), "\n") {
+		i := strings.IndexByte(line, ':')
+		if i < 0 {
+			continue
+		}
+		iface := strings.TrimSpace(line[:i])
+		fields := strings.Fields(line[i+1:])
+		if len(fields) < 16 {
+			continue
+		}
+		r, _ := strconv.ParseUint(fields[0], 10, 64)
+		t, _ := strconv.ParseUint(fields[8], 10, 64)
+		if forced != "" {
+			if iface == forced {
+				return iface, r, t
+			}
+			continue
+		}
+		if iface == "lo" || strings.HasPrefix(iface, "veth") || strings.HasPrefix(iface, "br-") ||
+			strings.HasPrefix(iface, "docker") || strings.HasPrefix(iface, "ovs") || strings.HasSuffix(iface, "-ovs") {
+			continue
+		}
+		if r > best {
+			best, name, rx, tx = r, iface, r, t
+		}
+	}
+	return name, rx, tx
+}
+
 func systemMetrics(w http.ResponseWriter, r *http.Request) {
 	if v := strings.ToLower(os.Getenv("SYSTEM_MONITOR_ENABLED")); v == "0" || v == "false" {
 		writeJSON(w, 200, map[string]any{"enabled": false})
 		return
 	}
 	proc := env("SYSTEM_MONITOR_PROC_ROOT", "/host/proc")
+	sysRoot := env("SYSTEM_MONITOR_SYS_ROOT", "/host/sys")
+	volRoot := env("SYSTEM_MONITOR_VOL_ROOT", "/host")
+
 	load := 0.0
 	if b, e := os.ReadFile(filepath.Join(proc, "loadavg")); e == nil {
 		fmt.Sscanf(string(b), "%f", &load)
 	}
-	var total, avail uint64
+
+	var memTotal, memAvail, swapTotal, swapFree uint64
 	if b, e := os.ReadFile(filepath.Join(proc, "meminfo")); e == nil {
 		for _, line := range strings.Split(string(b), "\n") {
-			fmt.Sscanf(line, "MemTotal: %d kB", &total)
-			fmt.Sscanf(line, "MemAvailable: %d kB", &avail)
+			fmt.Sscanf(line, "MemTotal: %d kB", &memTotal)
+			fmt.Sscanf(line, "MemAvailable: %d kB", &memAvail)
+			fmt.Sscanf(line, "SwapTotal: %d kB", &swapTotal)
+			fmt.Sscanf(line, "SwapFree: %d kB", &swapFree)
 		}
 	}
-	writeJSON(w, 200, map[string]any{"enabled": true, "cpu": map[string]any{"percent": 0, "load1": load}, "memory": map[string]uint64{"total": total * 1024, "used": (total - avail) * 1024, "available": avail * 1024}, "network": map[string]int{"rx_bytes": 0, "tx_bytes": 0}, "filesystems": []any{}})
+
+	// CPU busy percentage from the delta between this and the previous scrape.
+	cpuPercent := 0.0
+	sample, cores, ok := readCPU(proc)
+	if ok {
+		metricsMu.Lock()
+		if lastCPUValid && sample.total > lastCPU.total {
+			dTotal := sample.total - lastCPU.total
+			dIdle := sample.idle - lastCPU.idle
+			if dTotal > 0 {
+				cpuPercent = float64(dTotal-dIdle) / float64(dTotal) * 100.0
+			}
+		}
+		lastCPU = sample
+		lastCPUValid = true
+		metricsMu.Unlock()
+	}
+	if cpuPercent < 0 {
+		cpuPercent = 0
+	}
+
+	cpuTemp, diskTemps, allSensors := hwmonTemps(sysRoot)
+
+	iface, rx, tx := pickInterface(proc, os.Getenv("SYSTEM_MONITOR_INTERFACE"))
+
+	// Filesystem capacity: statfs each configured volume, mounted read-only at
+	// volRoot/<name> (e.g. /host/vol1). Absolute paths are used verbatim.
+	fslist := []map[string]any{}
+	for _, name := range strings.Split(env("SYSTEM_MONITOR_FILESYSTEMS", ""), ",") {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		mount := name
+		if !filepath.IsAbs(mount) {
+			mount = filepath.Join(volRoot, name)
+		}
+		var st syscall.Statfs_t
+		if syscall.Statfs(mount, &st) != nil {
+			continue
+		}
+		bsize := uint64(st.Bsize)
+		total := st.Blocks * bsize
+		free := st.Bavail * bsize
+		used := total - st.Bfree*bsize
+		pct := 0
+		if total > 0 {
+			pct = int(float64(used) / float64(total) * 100.0)
+		}
+		fslist = append(fslist, map[string]any{"path": name, "total": total, "used": used, "free": free, "percent": pct})
+	}
+
+	writeJSON(w, 200, map[string]any{
+		"enabled": true,
+		"cpu":     map[string]any{"percent": int(cpuPercent + 0.5), "load1": load, "cores": cores, "temp": cpuTemp},
+		"memory": map[string]uint64{
+			"total": memTotal * 1024, "used": (memTotal - memAvail) * 1024, "available": memAvail * 1024,
+			"swap_total": swapTotal * 1024, "swap_used": (swapTotal - swapFree) * 1024,
+		},
+		"network":           map[string]any{"interface": iface, "rx_bytes": rx, "tx_bytes": tx},
+		"filesystems":       fslist,
+		"disk_temperatures": diskTemps,
+		"temperatures":      allSensors,
+	})
 }
 func probe(w http.ResponseWriter, r *http.Request, a *App) {
 	l, ok := a.find(r.URL.Query().Get("id"))
@@ -912,30 +1099,97 @@ func streams(w http.ResponseWriter, r *http.Request, a *App) {
 		errJSON(w, 404, "invalid media path")
 		return
 	}
-	b, e := exec.CommandContext(r.Context(), "ffprobe", "-v", "error", "-select_streams", "a", "-show_entries", "stream=index:stream_tags=language,title", "-of", "json", p).Output()
+	b, e := exec.CommandContext(r.Context(), "ffprobe", "-v", "error", "-show_entries", "stream=index,codec_type,codec_name:stream_tags=language,title", "-of", "json", p).Output()
 	if e != nil {
-		writeJSON(w, 200, map[string]any{"audio_tracks": []any{}})
+		writeJSON(w, 200, map[string]any{"audio_tracks": []any{}, "subtitle_tracks": []any{}})
 		return
 	}
 	var x struct {
 		Streams []struct {
-			Index int               `json:"index"`
-			Tags  map[string]string `json:"tags"`
+			Index     int               `json:"index"`
+			CodecType string            `json:"codec_type"`
+			CodecName string            `json:"codec_name"`
+			Tags      map[string]string `json:"tags"`
 		} `json:"streams"`
 	}
 	_ = json.Unmarshal(b, &x)
-	tracks := make([]map[string]any, 0, len(x.Streams))
-	for i, s := range x.Streams {
-		label := s.Tags["title"]
-		if label == "" {
-			label = fmt.Sprintf("音源 %d", i+1)
+	tracks := make([]map[string]any, 0)
+	subs := make([]map[string]any, 0)
+	ai, si := 0, 0
+	for _, s := range x.Streams {
+		switch s.CodecType {
+		case "audio":
+			label := s.Tags["title"]
+			if label == "" {
+				label = fmt.Sprintf("音源 %d", ai+1)
+			}
+			if lang := s.Tags["language"]; lang != "" {
+				label += " · " + lang
+			}
+			tracks = append(tracks, map[string]any{"index": ai, "stream_index": s.Index, "label": label})
+			ai++
+		case "subtitle":
+			// Only text-based subtitles can be extracted to WebVTT for the
+			// browser. Bitmap subtitles (pgs/dvdsub) are skipped.
+			if s.CodecName == "hdmv_pgs_subtitle" || s.CodecName == "dvd_subtitle" || s.CodecName == "dvb_subtitle" {
+				si++
+				continue
+			}
+			label := s.Tags["title"]
+			if label == "" {
+				label = fmt.Sprintf("内嵌字幕 %d", si+1)
+			}
+			if lang := s.Tags["language"]; lang != "" {
+				label += " · " + lang
+			}
+			subs = append(subs, map[string]any{
+				"index": si, "label": label, "codec": s.CodecName,
+				"url": "/api/media/subtitles/extract?id=" + url.QueryEscape(l.ID) + "&path=" + url.QueryEscape(r.URL.Query().Get("path")) + "&track=" + strconv.Itoa(si),
+			})
+			si++
 		}
-		if lang := s.Tags["language"]; lang != "" {
-			label += " · " + lang
-		}
-		tracks = append(tracks, map[string]any{"index": i, "stream_index": s.Index, "label": label})
 	}
-	writeJSON(w, 200, map[string]any{"audio_tracks": tracks})
+	writeJSON(w, 200, map[string]any{"audio_tracks": tracks, "subtitle_tracks": subs})
+}
+
+// probeVideoCodec returns the codec name of the first video stream (e.g.
+// "h264", "hevc"). Used to decide whether the compat stream can copy the video
+// instead of re-encoding it.
+func probeVideoCodec(ctx context.Context, p string) (string, error) {
+	b, e := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=codec_name", "-of", "default=nk=1:nw=1", p).Output()
+	if e != nil {
+		return "", e
+	}
+	return strings.TrimSpace(string(b)), nil
+}
+
+// extractSubtitle pulls one embedded text subtitle track out of a video and
+// converts it to WebVTT so the browser <track> element can display it.
+func (a *App) extractSubtitle(w http.ResponseWriter, r *http.Request) {
+	l, ok := a.find(r.URL.Query().Get("id"))
+	if !ok {
+		errJSON(w, 404, "invalid media path")
+		return
+	}
+	p, _, e := safeFile(l, r.URL.Query().Get("path"))
+	if e != nil {
+		errJSON(w, 404, "invalid media path")
+		return
+	}
+	track := 0
+	if n, err := strconv.Atoi(r.URL.Query().Get("track")); err == nil && n >= 0 {
+		track = n
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "ffmpeg", "-hide_banner", "-loglevel", "error", "-i", p, "-map", fmt.Sprintf("0:s:%d", track), "-f", "webvtt", "pipe:1")
+	out, e := cmd.Output()
+	if e != nil || len(out) == 0 {
+		errJSON(w, 500, "subtitle extract failed")
+		return
+	}
+	w.Header().Set("Content-Type", "text/vtt; charset=utf-8")
+	w.Write(out)
 }
 func cancelTask(w http.ResponseWriter, r *http.Request, a *App) {
 	id := r.URL.Query().Get("id")
@@ -982,6 +1236,7 @@ func main() {
 	mux.HandleFunc("/api/media/streams", func(w http.ResponseWriter, r *http.Request) { streams(w, r, a) })
 	mux.HandleFunc("/api/media/tasks/cancel", func(w http.ResponseWriter, r *http.Request) { cancelTask(w, r, a) })
 	mux.HandleFunc("/api/media/subtitles/search", a.subtitle)
+	mux.HandleFunc("/api/media/subtitles/extract", a.extractSubtitle)
 	mux.HandleFunc("/api/media/subtitles/proxy", a.serve)
 	mux.HandleFunc("/api/media/tmdb", a.tmdb)
 	mux.HandleFunc("/api/media/compat", a.compat)
@@ -1046,7 +1301,11 @@ func (a *App) compat(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, 404, "invalid media path")
 		return
 	}
-	cache := cacheKey(fmt.Sprintf("%s:%d:%d:%s", p, st.Size(), st.ModTime().UnixNano(), r.URL.Query().Get("hw")))
+	// audio_track selects which audio stream to keep (index into the file's
+	// audio streams). It is part of the cache key so different tracks cache
+	// separately and never collide.
+	audioTrack := r.URL.Query().Get("audio_track")
+	cache := cacheKey(fmt.Sprintf("%s:%d:%d:%s:a%s", p, st.Size(), st.ModTime().UnixNano(), r.URL.Query().Get("hw"), audioTrack))
 	if f, e := os.Open(cache); e == nil {
 		defer f.Close()
 		info, _ := f.Stat()
@@ -1070,7 +1329,26 @@ func (a *App) compat(w http.ResponseWriter, r *http.Request) {
 		defer cancel()
 	}
 	tmp := cache + fmt.Sprintf(".tmp-%d", os.Getpid())
-	cmd := exec.CommandContext(ctx, "ffmpeg", "-hide_banner", "-loglevel", "error", "-i", p, "-c:v", "libx264", "-c:a", "aac", "-movflags", "+faststart", "-f", "mp4", tmp)
+	// Only remux/transcode what the browser can't play. If the video is
+	// already H.264 we copy the stream (fast, no CPU transcode); otherwise we
+	// re-encode to H.264. Audio is always transcoded to AAC. The chosen audio
+	// track is mapped when audio_track is supplied.
+	vcodec := "libx264"
+	if vc, _ := probeVideoCodec(ctx, p); vc == "h264" {
+		vcodec = "copy"
+	}
+	args := []string{"-hide_banner", "-loglevel", "error", "-i", p, "-map", "0:v:0"}
+	if audioTrack != "" {
+		if n, err := strconv.Atoi(audioTrack); err == nil && n >= 0 {
+			args = append(args, "-map", fmt.Sprintf("0:a:%d?", n))
+		} else {
+			args = append(args, "-map", "0:a:0?")
+		}
+	} else {
+		args = append(args, "-map", "0:a:0?")
+	}
+	args = append(args, "-c:v", vcodec, "-c:a", "aac", "-ac", "2", "-movflags", "+faststart", "-f", "mp4", tmp)
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 	if out, e := cmd.CombinedOutput(); e != nil {
 		_ = os.Remove(tmp)
 		if ctx.Err() != nil {
