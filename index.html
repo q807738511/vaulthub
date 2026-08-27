@@ -1046,7 +1046,7 @@
     <div class="modal-sec">添加媒体库</div>
     <div class="form-2col">
       <div class="cfg-field"><label>库名称</label><input id="mediaLibName" type="text" placeholder="例如：家庭音乐"></div>
-      <div class="cfg-field"><label>媒体类型</label><select id="mediaLibType"><option value="audio">音乐</option><option value="comic">漫画</option><option value="book">电子书</option><option value="movie">影视</option></select></div>
+      <div class="cfg-field"><label>媒体类型</label><select id="mediaLibType"><option value="comic">漫画</option><option value="book">电子书</option><option value="movie">电影</option><option value="series">电视剧集</option><option value="audio">音乐</option><option value="musicvideo">音乐视频（歌曲 MV）</option></select></div>
     </div>
     <div class="cfg-field"><label>容器路径</label><div id="mediaLibPaths"></div><button class="btn" type="button" onclick="addMediaPath()">＋ 添加路径</button></div>
     <div class="cfg-field"><label>管理令牌（如后端启用）</label><input id="mediaAdminToken" type="password" placeholder="X-VaultHub-Token" autocomplete="off"></div>
@@ -1272,6 +1272,18 @@
 
 <script>
 
+const VAULTHUB_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+let vaultHubAuthenticated = false;
+let vaultHubIdleTimer = null;
+function showVaultHubLogin() { document.getElementById('authMask')?.classList.remove('hidden'); }
+function markVaultHubActivity() {
+  if (!vaultHubAuthenticated) return;
+  clearTimeout(vaultHubIdleTimer);
+  vaultHubIdleTimer=setTimeout(async()=>{ vaultHubAuthenticated=false; try { await fetch('/api/logout',{method:'POST',credentials:'same-origin'}); } catch (_) {} showVaultHubLogin(); }, VAULTHUB_IDLE_TIMEOUT_MS);
+}
+['click','keydown','pointerdown','touchstart','scroll'].forEach(type=>document.addEventListener(type,markVaultHubActivity,{passive:true}));
+function handleVaultHubAuthResult(logged) { vaultHubAuthenticated=!!logged; document.getElementById('authMask')?.classList.toggle('hidden',!logged); if(logged) markVaultHubActivity(); else clearTimeout(vaultHubIdleTimer); return !!logged; }
+
 async function vaultHubLogin() {
   const username=document.getElementById('vaultHubUsername').value.trim();
   const password=document.getElementById('vaultHubPassword').value;
@@ -1281,7 +1293,7 @@ async function vaultHubLogin() {
     const res=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password})});
     const data=await res.json();
     if(!res.ok||!data.ok){error.textContent=data.error||'登录失败';return;}
-    document.getElementById('authMask').classList.add('hidden');
+    handleVaultHubAuthResult(true);
     document.getElementById('vaultHubPassword').value='';
   } catch (_) { error.textContent='登录服务不可用'; }
 }
@@ -1289,14 +1301,14 @@ async function requireVaultHubLogin() {
   try {
     const res=await fetch('/api/system/runtime',{cache:'no-store'});
     const logged=res.ok;
-    document.getElementById('authMask')?.classList.toggle('hidden',logged);
-    return logged;
+    return handleVaultHubAuthResult(logged);
   } catch (_) {
-    document.getElementById('authMask')?.classList.remove('hidden');
+    handleVaultHubAuthResult(false);
     return false;
   }
 }
-function guardProtectedAction(fn) { return async (...args)=>{if(await requireVaultHubLogin()) return fn(...args);}; }
+async function handleProtectedResponse(res) { if (res.status === 401) { handleVaultHubAuthResult(false); return false; } markVaultHubActivity(); return true; }
+function guardProtectedAction(fn) { return async (...args)=>{if(vaultHubAuthenticated || await requireVaultHubLogin()) return fn(...args);}; }
 
 function openCaddyModal() {
   loadCaddyConfig();
@@ -1308,6 +1320,7 @@ function caddyApiHeaders() {
 }
 async function loadCaddyConfig() {
   const res = await fetch('/api/admin/caddyfile', { cache: 'no-store' });
+  if (!await handleProtectedResponse(res)) return;
   const data = await res.json();
   if (data.ok) document.getElementById('caddyFile').value = data.caddyfile || '';
 }
@@ -1318,6 +1331,7 @@ async function saveCaddyConfig() {
     headers: { 'Content-Type': 'application/json', ...caddyApiHeaders() },
     body: JSON.stringify({ caddyfile })
   });
+  if (!await handleProtectedResponse(res)) return;
   const data = await res.json();
   if (data.ok) toast('✅ Caddy 配置已保存并应用');
   else toast('⚠️ ' + (data.error || '保存失败'));
@@ -2017,7 +2031,8 @@ async function scrapeMovieMetadata(host, lib, files) {
       if (item) { all[path] = { ...fallback, title:item.title || fallback.title, year:item.year || fallback.year, poster:item.img || "", provider:"豆瓣", checkedAt:Date.now() }; writeMovieMetadata(all); renderMovieLibraryContent(host, lib, files); continue; }
     } catch(e) {}
     if (scraperStatus.tmdb_enabled) try {
-      const tmdb = await fetch(`/api/media/tmdb?query=${encodeURIComponent(title)}`, { cache:"force-cache" });
+      const mediaType = lib?.type === "series" ? "series" : "movie";
+      const tmdb = await fetch(`/api/media/tmdb?query=${encodeURIComponent(title)}&type=${encodeURIComponent(mediaType)}`, { cache:"force-cache" });
       const data = tmdb.ok ? await tmdb.json() : null;
       const item = data?.results?.find(x => x.poster_path || x.overview || x.title || x.name);
       if (item) { all[path] = { ...fallback, title:item.title || item.name || fallback.title, year:String(item.release_date || item.first_air_date || fallback.year).slice(0,4), poster:item.poster_path ? `https://image.tmdb.org/t/p/w342${item.poster_path}` : "", overview:item.overview || "", provider:"TMDB", checkedAt:Date.now() }; writeMovieMetadata(all); renderMovieLibraryContent(host, lib, files); }
@@ -2065,8 +2080,10 @@ function setAudioView(view) {
   const lib = findMediaLibrary(localMediaSelection.audio);
   if (lib) loadLocalFiles("audio", lib, 0);
 }
-function mediaTypeForGroup(group) { return group === "audio" ? "audio" : group === "movie" ? "movie" : "comic"; }
-function mediaTypeName(type) { return ({ audio: "音乐", comic: "漫画", book: "电子书", movie: "影视" })[type] || type; }
+let mediaLibraryConfigGroup = "comic";
+function mediaTypesForGroup(group) { return group === "comic" ? ["comic","book"] : group === "movie" ? ["movie","series"] : ["audio","musicvideo"]; }
+function mediaTypeForGroup(group) { return mediaTypesForGroup(group)[0]; }
+function mediaTypeName(type) { return ({ audio: "音乐", musicvideo: "音乐视频（歌曲 MV）", comic: "漫画", book: "电子书", movie: "电影", series: "电视剧集" })[type] || type; }
 const MEDIA_FORMATS = {
   comic: ["epub","mobi","zip","cbz","pdf","rar","cbr","7z","cb7","jpg","jpeg","png","webp","gif","bmp","avif","cpg","lzh","cbl","tar","cbt"],
   book: ["epub","pdf","mobi","azw","azw3","chm","exe","umd","jar","jad","caj","pdg","djvu","djv","ceb","doc","docx","xps","txt"],
@@ -2134,7 +2151,7 @@ async function refreshMediaLibraries(notify) {
   }
 }
 function librariesForGroup(group) {
-  return localMediaLibraries.filter(lib => group === "audio" ? lib.type === "audio" : group === "movie" ? lib.type === "movie" : (lib.type === "comic" || lib.type === "book"));
+  return localMediaLibraries.filter(lib => mediaTypesForGroup(group).includes(lib.type));
 }
 function renderLocalMedia(group) {
   const host = document.getElementById("media-wide-" + group);
@@ -2669,6 +2686,18 @@ async function openLocalMedia(group, libId, path) {
   const url = mediaFileUrl(lib, path);
   activeReader = { group, libId, path };
   let body = "";
+  if (group === "comic" && ["zip","cbz"].includes(ext)) {
+    viewer.innerHTML = viewerShell(group, lib, path, '<div class="empty-tip">正在读取压缩包图片...</div>', url);
+    try {
+      const res = await fetch(`/api/media/archive/zip?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}`, { cache:"no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const entries = data.entries || data.items || [];
+      body = entries.length ? `<div class="comic-archive-pages">${entries.map((entry,index)=>`<img loading="lazy" src="${esc(entry.url || `/api/media/archive/zip/register?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}&entry=${encodeURIComponent(entry.name)}`)}" alt="第 ${index+1} 页">`).join("")}</div>` : '<div class="media-error">压缩包中没有可读取的图片</div>';
+      viewer.innerHTML = viewerShell(group, lib, path, body, url);
+      return;
+    } catch (err) { viewer.innerHTML = viewerShell(group, lib, path, `<div class="media-error">ZIP 漫画读取失败：${esc(err.message)}</div>`, url); return; }
+  }
   if (["mp3","flac","m4a","ogg","wav"].includes(ext)) body = `<div class="media-viewer-body"><audio controls autoplay preload="metadata" src="${esc(url)}"></audio></div>`;
   else if (MEDIA_FORMATS.movie.includes(ext)) body = `<div class="media-viewer-body media-video-body" data-video-controls-visible="true"><div class="movie-compat-bar"><button class="btn" type="button" data-movie-direct>直连原片</button><button class="btn" type="button" data-movie-compat>音频兼容</button><span class="movie-compat-status">正在判定播放方式...</span></div><button class="video-menu-button" type="button" title="字幕和音轨" aria-label="字幕和音轨" onclick="toggleVideoTrackMenu(this)">☷</button><button class="video-info-button" type="button" title="播放状态信息" aria-label="播放状态信息" aria-expanded="false" onclick="toggleVideoStatusPanel(this)">!</button><video data-movie-player controls playsinline preload="metadata" onloadedmetadata="this.muted=false;this.volume=1" onvolumechange="this.dataset.volume=String(this.volume)"></video><div class="video-timeline"><span class="video-time-label">00:00 / 00:00</span><div class="video-progress-shell" role="slider" aria-label="播放进度" onclick="seekVideoTimeline(event,this)"><span class="video-buffered-range"></span><span class="video-played-range"></span></div></div><div class="video-track-menu video-audio-menu" data-video-track-menu><h4>音源</h4><div class="video-audio-options" data-video-audio-options>读取音源中...</div><h4>字幕</h4><div class="video-subtitle-menu" data-video-subtitle-options>暂无外挂字幕</div><button type="button" onclick="searchVideoSubtitles(this)">搜索并挂载字幕</button></div><div class="video-status-panel"><span class="status-main" data-video-status>准备播放</span><span class="status-detail" data-video-detail>--:-- / --:-- · 分辨率待获取</span></div></div>`;
   else if (["jpg","jpeg","png","webp","gif","bmp","avif"].includes(ext)) body = `<img src="${esc(url)}" alt="${esc(path)}">`;
@@ -2711,9 +2740,10 @@ function closeLocalViewer(group) {
   }
 }
 function showMediaLibraryConfig(group) {
+  mediaLibraryConfigGroup = group;
   const modal = document.getElementById("mediaLibraryModal");
   const type = document.getElementById("mediaLibType");
-  if (type) type.value = mediaTypeForGroup(group);
+  if (type) { const allowed = mediaTypesForGroup(group); type.innerHTML = allowed.map(x => `<option value="${esc(x)}">${esc(mediaTypeName(x))}</option>`).join(""); type.value = allowed[0]; }
   const token = document.getElementById("mediaAdminToken");
   try { if (token) token.value = localStorage.getItem("dwu_media_admin_token") || ""; } catch (e) {}
   renderMediaLibraryConfigList();
@@ -2773,8 +2803,9 @@ async function saveMediaLibraries() {
 function renderMediaLibraryConfigList() {
   const host = document.getElementById("mediaLibraryConfigList");
   if (!host) return;
-  if (!localMediaLibraries.length) { host.innerHTML = '<div class="empty-tip">尚未配置本地媒体库</div>'; return; }
-  host.innerHTML = `<div class="media-file-list">${localMediaLibraries.map(lib => `<div class="media-file-row"><div class="media-file-name"><strong>${esc(lib.name)}</strong><div class="hint">${esc((lib.paths || []).join(" · ") || lib.path)}</div></div><span class="badge">${esc(mediaTypeName(lib.type))}</span><button class="btn btn-danger" onclick="deleteMediaLibrary('${esc(lib.id)}')">删除</button></div>`).join("")}</div>`;
+  const visibleLibraries = localMediaLibraries.filter(lib => mediaTypesForGroup(mediaLibraryConfigGroup).includes(lib.type));
+  if (!visibleLibraries.length) { host.innerHTML = '<div class="empty-tip">当前栏目尚未配置本地媒体库</div>'; return; }
+  host.innerHTML = `<div class="media-file-list">${visibleLibraries.map(lib => `<div class="media-file-row"><div class="media-file-name"><strong>${esc(lib.name)}</strong><div class="hint">${esc((lib.paths || []).join(" · ") || lib.path)}</div></div><span class="badge">${esc(mediaTypeName(lib.type))}</span><button class="btn btn-danger" onclick="deleteMediaLibrary('${esc(lib.id)}')">删除</button></div>`).join("")}</div>`;
 }
 async function deleteMediaLibrary(id) {
   if (!confirm("确定删除这个本地媒体库配置？媒体文件不会被删除。")) return;
