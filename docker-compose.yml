@@ -47,6 +47,10 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       # 媒体目录：按实际宿主机目录修改，保持只读。
       - /media:/media:ro
+      # 兼容现有 NAS 媒体目录；应用通过容器内固定路径访问。
+      - /vol3/1000/komga/音乐:/yy:ro
+      - /vol3/1000/komga/漫画/mh:/mh:ro
+      - /vol3/1000/komga/BOOK:/txt:ro
       # 内置监控所需的少量只读系统信息。
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
@@ -58,4 +62,4 @@ services:
       - /tmp:size=32m,mode=1777
     security_opt:
       - no-new-privileges:true
-    restart: unless-stopped
+    restart: "on-failure:1"
