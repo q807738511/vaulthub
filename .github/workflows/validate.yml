@@ -13,16 +13,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+          cache: false
+
       - name: Check shell scripts
         run: |
           sh -n scripts/install.sh
           sh -n scripts/upgrade.sh
           sh -n scripts/rollback.sh
 
-      - name: Check manager source
+      - name: Check Go services
+        run: |
+          cd manager
+          go test ./...
+          go vet ./...
+          go build ./...
+          cd ../media-go
+          go test ./...
+          go vet ./...
+          go build ./...
+
+      - name: Check legacy C sources
         run: |
           gcc -Wall -Wextra -Werror -fsyntax-only vaulthub-manager.c
-          gcc -Wall -Wextra -Werror -pthread -fsyntax-only media-api.c
+          gcc -Wall -Wextra -Werror -pthread -fsyntax-only tests/fixtures/media-api_legacy.c
 
       - name: Check JavaScript syntax
         run: |
@@ -38,7 +55,7 @@ jobs:
       - name: Validate Compose model
         run: |
           cp .env.example .env
-          docker compose config --quiet
+          docker compose config >/dev/null
 
       - name: Validate bundled Caddyfile
         run: |
