@@ -1,4 +1,4 @@
-# VaultHub v0.6.25
+# VaultHub v0.6.26
 
 ## 本次更新
 
