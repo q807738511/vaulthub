@@ -2,7 +2,10 @@
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
-html = (root / "index.html").read_text()
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.dirname(__file__))
+from _frontend import frontend_source as _fs
+html = _fs()
 source = (root / "tests" / "fixtures" / "media-api_legacy.c").read_text()
 
 comic_required = ["epub", "mobi", "zip", "cbz", "pdf", "rar", "cbr", "7z", "cb7", "jpg", "jpeg", "png", "cpg", "lzh", "cbl", "tar", "cbt"]

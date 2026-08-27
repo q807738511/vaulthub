@@ -6,7 +6,10 @@ import pathlib
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 media_go = (ROOT / "media-go" / "main.go").read_text()
 manager = (ROOT / "manager" / "main.go").read_text()
-html = (ROOT / "index.html").read_text()
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.dirname(__file__))
+from _frontend import frontend_source as _fs
+html = _fs()
 compose = (ROOT / "docker-compose.yml").read_text()
 
 # 1. 媒体库写接口必须经过会话鉴权，且 ADMIN_TOKEN 为空时不得放行。

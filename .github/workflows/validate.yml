@@ -43,14 +43,19 @@ jobs:
 
       - name: Check JavaScript syntax
         run: |
+          for f in web/js/*.js; do
+            node --check "$f"
+          done
+          # Any remaining inline scripts in index.html must also parse.
           python3 - <<'PY'
           import re
           from pathlib import Path
           html = Path('index.html').read_text(encoding='utf-8')
           scripts = re.findall(r'<script(?![^>]*src)[^>]*>(.*?)</script>', html, re.S)
-          Path('/tmp/vaulthub-inline.js').write_text('\n;\n'.join(scripts), encoding='utf-8')
+          body = '\n;\n'.join(s for s in scripts if s.strip())
+          Path('/tmp/vaulthub-inline.js').write_text(body, encoding='utf-8')
           PY
-          node --check /tmp/vaulthub-inline.js
+          if [ -s /tmp/vaulthub-inline.js ]; then node --check /tmp/vaulthub-inline.js; fi
 
       - name: Validate Compose model
         run: |

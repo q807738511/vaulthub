@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 from pathlib import Path
 
-html = (Path(__file__).resolve().parents[1] / "index.html").read_text()
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.dirname(__file__))
+from _frontend import frontend_source as _fs
+html = _fs()
 
 assert 'function jsArg(value) { return JSON.stringify(String(value)); }' in html, "missing JS string literal encoder"
 assert 'function jsAttrArg(value) { return esc(jsArg(value)); }' in html, "missing HTML-attribute-safe JS literal encoder"

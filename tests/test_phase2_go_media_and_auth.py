@@ -3,7 +3,10 @@ import pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 manager = (ROOT / "manager" / "main.go").read_text()
-html = (ROOT / "index.html").read_text()
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.dirname(__file__))
+from _frontend import frontend_source as _fs
+html = _fs()
 compose = (ROOT / "docker-compose.yml").read_text()
 dockerfile = (ROOT / "Dockerfile").read_text()
 
@@ -39,6 +42,6 @@ assert 'mux.HandleFunc("/api/media/file/", a.serveLegacy)' in media_go
 assert "tasks/cancel" in media_go
 assert '"-f", "mp4"' in media_go
 assert "media-api.c" not in dockerfile
-assert "COPY media-go/go.mod media-go/main.go" in dockerfile
+assert "COPY media-go/go.mod" in dockerfile and "COPY media-go/main.go" in dockerfile
 
 print("PASS: idle auth, scoped media libraries, ZIP comics, TMDB and Go media API are wired")

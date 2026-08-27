@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 from pathlib import Path
 p=Path(__file__).resolve().parents[1]/'index.html'
-s=p.read_text()
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.dirname(__file__))
+from _frontend import frontend_source as _fs
+s=_fs()
 checks={
  'responsive sidebar toggle':'@media (max-width: 768px)' in s and 'toggleBars()' in s and 'sidebar-hidden' in s,
  'video status element':'data-video-status' in s,

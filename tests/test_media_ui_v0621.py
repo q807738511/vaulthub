@@ -1,6 +1,9 @@
 from pathlib import Path
 
-html = (Path(__file__).parents[1] / "index.html").read_text(encoding="utf-8")
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.dirname(__file__))
+from _frontend import frontend_source as _fs
+html = _fs()
 checks = {
     "brand title": '<strong class="brand-title">VaultHub</strong>' in html,
     "brand subtitle": '蜀鼠之家，承包你的所有休闲内容' in html,

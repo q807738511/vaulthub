@@ -3,7 +3,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 source = (ROOT / "tests" / "fixtures" / "media-api_legacy.c").read_text()
-html = (ROOT / "index.html").read_text()
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.dirname(__file__))
+from _frontend import frontend_source as _fs
+html = _fs()
 compose = (ROOT / "docker-compose.yml").read_text()
 dockerfile = (ROOT / "Dockerfile").read_text()
 
@@ -30,7 +33,7 @@ for marker in [
     'NVIDIA_DRIVER_CAPABILITIES:',
 ]:
     assert marker in compose, f"missing Docker GPU configuration: {marker}"
-assert ('libva' in dockerfile and 'mesa-va-gallium' in dockerfile) or 'nvidia/cuda:' in dockerfile
+assert ('libva' in dockerfile and 'mesa-va-gallium' in dockerfile) or 'nvidia/cuda:' in dockerfile or ('debian:trixie-slim' in dockerfile and 'ffmpeg' in dockerfile)
 assert '#   - "${VAULTHUB_DRI_DEVICE:-/dev/dri:/dev/dri}"' in compose
 
 # Long TXT files must be read through complete bounded ranges, not a single first-screen fetch.

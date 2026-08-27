@@ -2,7 +2,10 @@
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
-html = (root / "index.html").read_text()
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.dirname(__file__))
+from _frontend import frontend_source as _fs
+html = _fs()
 media = (root / "tests" / "fixtures" / "media-api_legacy.c").read_text()
 
 # Audio page must be a real local music library, not only a flat file list.

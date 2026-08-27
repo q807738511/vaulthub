@@ -1,7 +1,10 @@
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-html = (ROOT / "index.html").read_text(encoding="utf-8")
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.dirname(__file__))
+from _frontend import frontend_source as _fs
+html = _fs()
 media = (ROOT / "tests" / "fixtures" / "media-api_legacy.c").read_text(encoding="utf-8")
 
 for forbidden in [

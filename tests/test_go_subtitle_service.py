@@ -1,13 +1,16 @@
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
-html = (root / "index.html").read_text(encoding="utf-8")
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.dirname(__file__))
+from _frontend import frontend_source as _fs
+html = _fs()
 go = (root / "subtitle-api" / "main.go").read_text(encoding="utf-8")
 dockerfile = (root / "Dockerfile").read_text(encoding="utf-8")
 caddy = (root / "Caddyfile").read_text(encoding="utf-8")
 checks = {
     "Go subtitle service": "subtitle-api/main.go" in dockerfile and "start_subtitle_api" in (root / "vaulthub-manager.c").read_text(),
-    "single container build": "FROM golang:1.23-alpine AS go-build" in dockerfile and "COPY --from=go-build" in dockerfile,
+    "single container build": ("AS go-build" in dockerfile and "GO_IMAGE=golang:1.23-alpine" in dockerfile and "COPY --from=go-build" in dockerfile),
     "local subtitle scan": "localProvider" in go and ".srt" in go and ".vtt" in go,
     "provider adapters": "shooter" in go and "zimuku" in go and "subhd" in go and "https://www.shooter.cn/api/subapi.php" in go,
     "safe relative path": "path outside media root" in go and "filepath.Rel" in go,

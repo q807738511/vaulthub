@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -19,9 +20,12 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	_ "modernc.org/sqlite"
 )
 
-// VaultHub media API replacement. It deliberately uses only the Go standard library.
+// VaultHub media API replacement. Beyond the standard library it uses only the
+// pure-Go SQLite driver modernc.org/sqlite (no cgo), keeping static builds.
 type Library struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
@@ -31,9 +35,11 @@ type Library struct {
 type App struct {
 	mu               sync.RWMutex
 	libs             []Library
-	indexes          map[string][]FileEntry
-	jobs             map[string]bool
-	tasks            map[string]context.CancelFunc
+	jobs             map[string]bool               // library id -> scan in progress
+	scanCancel       map[string]context.CancelFunc // library id -> cancel its running scan
+	tasks            map[string]context.CancelFunc // transcode task id -> cancel
+	db               *sql.DB
+	scanGate         chan struct{} // size-1 semaphore: only one scan writes at a time
 	config, indexDir string
 }
 type FileEntry struct {
@@ -55,14 +61,85 @@ func (a *App) load() {
 	if e == nil {
 		_ = json.Unmarshal(b, &a.libs)
 	}
-	a.indexes = map[string][]FileEntry{}
 	a.jobs = map[string]bool{}
+	a.scanCancel = map[string]context.CancelFunc{}
 	a.tasks = map[string]context.CancelFunc{}
+	a.scanGate = make(chan struct{}, 1)
+	a.openDB()
+}
+
+// openDB opens (creating if needed) the SQLite index database and applies the
+// schema. Pragmas are set in the DSN so every pooled connection inherits WAL
+// mode and a busy timeout, which lets read queries proceed while a rebuild
+// writes in the background.
+func (a *App) openDB() {
+	_ = os.MkdirAll(a.indexDir, 0755)
+	path := filepath.Join(a.indexDir, "index.db")
+	dsn := "file:" + path + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=foreign_keys(ON)"
+	db, e := sql.Open("sqlite", dsn)
+	if e != nil {
+		fmt.Println("index db open failed:", e)
+		return
+	}
+	db.SetMaxOpenConns(4)
+	if _, e := db.Exec(`
+CREATE TABLE IF NOT EXISTS files(
+  lib   TEXT NOT NULL,
+  path  TEXT NOT NULL,
+  size  INTEGER NOT NULL,
+  mtime INTEGER NOT NULL,
+  PRIMARY KEY(lib, path)
+);
+CREATE INDEX IF NOT EXISTS idx_files_lib ON files(lib);
+CREATE TABLE IF NOT EXISTS index_status(
+  lib        TEXT PRIMARY KEY,
+  state      TEXT NOT NULL,   -- idle | scanning | ready | error | cancelled
+  scanned    INTEGER NOT NULL DEFAULT 0,
+  total      INTEGER NOT NULL DEFAULT 0,
+  started_at INTEGER NOT NULL DEFAULT 0,
+  ended_at   INTEGER NOT NULL DEFAULT 0,
+  message    TEXT NOT NULL DEFAULT ''
+);`); e != nil {
+		fmt.Println("index db schema failed:", e)
+		return
+	}
+	a.db = db
+	a.migrateLegacyIndexes()
+}
+
+// migrateLegacyIndexes imports pre-SQLite per-library JSON snapshots so an
+// upgraded container serves cached listings immediately, before any rescan.
+func (a *App) migrateLegacyIndexes() {
 	for _, l := range a.libs {
-		var xs []FileEntry
-		if b, e := os.ReadFile(filepath.Join(a.indexDir, l.ID+".json")); e == nil && json.Unmarshal(b, &xs) == nil {
-			a.indexes[l.ID] = xs
+		var n int
+		a.db.QueryRow(`SELECT count(*) FROM files WHERE lib=?`, l.ID).Scan(&n)
+		if n > 0 {
+			continue
 		}
+		b, e := os.ReadFile(filepath.Join(a.indexDir, l.ID+".json"))
+		if e != nil {
+			continue
+		}
+		var xs []FileEntry
+		if json.Unmarshal(b, &xs) != nil || len(xs) == 0 {
+			continue
+		}
+		tx, e := a.db.Begin()
+		if e != nil {
+			continue
+		}
+		st, e := tx.Prepare(`INSERT OR REPLACE INTO files(lib,path,size,mtime) VALUES(?,?,?,?)`)
+		if e != nil {
+			tx.Rollback()
+			continue
+		}
+		for _, x := range xs {
+			st.Exec(l.ID, x.Path, x.Size, x.Mtime)
+		}
+		st.Close()
+		tx.Commit()
+		a.db.Exec(`INSERT OR REPLACE INTO index_status(lib,state,scanned,total,started_at,ended_at,message) VALUES(?,?,?,?,?,?,?)`,
+			l.ID, "ready", len(xs), len(xs), time.Now().Unix(), time.Now().Unix(), "migrated from legacy json")
 	}
 }
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -246,33 +323,249 @@ func (a *App) libraries(w http.ResponseWriter, r *http.Request) {
 	}
 	errJSON(w, 405, "method not allowed")
 }
+
+// start launches a background rescan for a library unless one is already
+// running. The scan streams results into SQLite in batches so /api/media/files
+// stays responsive, and it honours a per-library cancel func.
 func (a *App) start(l Library) {
 	a.mu.Lock()
 	if a.jobs[l.ID] {
 		a.mu.Unlock()
 		return
 	}
+	ctx, cancel := context.WithCancel(context.Background())
 	a.jobs[l.ID] = true
+	a.scanCancel[l.ID] = cancel
 	a.mu.Unlock()
+
 	go func() {
-		var out []FileEntry
-		filepath.Walk(l.Path, func(p string, st os.FileInfo, e error) error {
-			if e == nil && st.Mode().IsRegular() {
+		start := time.Now().Unix()
+		a.setStatus(l.ID, "scanning", 0, 0, start, 0, "")
+
+		// Phase 1: walk the filesystem WITHOUT holding a DB write lock, so a
+		// long scan of one library never blocks scans/writes for another. The
+		// path strings are cheap to hold in memory even for large libraries.
+		type row struct {
+			path  string
+			size  int64
+			mtime int64
+		}
+		var rows []row
+		cancelled := false
+		walkErr := filepath.Walk(l.Path, func(p string, fi os.FileInfo, e error) error {
+			if ctx.Err() != nil {
+				cancelled = true
+				return io.EOF
+			}
+			if e == nil && fi.Mode().IsRegular() {
 				rel, _ := filepath.Rel(l.Path, p)
-				out = append(out, FileEntry{rel, st.Size(), st.ModTime().Unix()})
+				rows = append(rows, row{rel, fi.Size(), fi.ModTime().Unix()})
+				if len(rows)%5000 == 0 {
+					a.setStatus(l.ID, "scanning", len(rows), 0, start, 0, "")
+				}
 			}
 			return nil
 		})
-		_ = os.MkdirAll(a.indexDir, 0755)
-		if b, e := json.Marshal(out); e == nil {
-			_ = os.WriteFile(filepath.Join(a.indexDir, l.ID+".json"), b, 0644)
+		if cancelled {
+			a.finishScan(l.ID, "cancelled", len(rows), "scan cancelled")
+			return
 		}
-		a.mu.Lock()
-		a.indexes[l.ID] = out
-		a.jobs[l.ID] = false
-		a.mu.Unlock()
+		if walkErr != nil && walkErr != io.EOF {
+			a.finishScan(l.ID, "error", len(rows), walkErr.Error())
+			return
+		}
+
+		// Phase 2: swap the index under a single-writer gate, committing in
+		// bounded batches so the write lock is released frequently and other
+		// libraries' scans can interleave. Readers keep serving old rows via
+		// WAL until each batch commits.
+		a.scanGate <- struct{}{}
+		defer func() { <-a.scanGate }()
+		if ctx.Err() != nil {
+			a.finishScan(l.ID, "cancelled", 0, "scan cancelled")
+			return
+		}
+		if _, e := a.db.Exec(`DELETE FROM files WHERE lib=?`, l.ID); e != nil {
+			a.finishScan(l.ID, "error", 0, e.Error())
+			return
+		}
+		const batch = 2000
+		written := 0
+		for off := 0; off < len(rows); off += batch {
+			if ctx.Err() != nil {
+				a.finishScan(l.ID, "cancelled", written, "scan cancelled")
+				return
+			}
+			end := off + batch
+			if end > len(rows) {
+				end = len(rows)
+			}
+			tx, e := a.db.Begin()
+			if e != nil {
+				a.finishScan(l.ID, "error", written, e.Error())
+				return
+			}
+			st, e := tx.Prepare(`INSERT OR REPLACE INTO files(lib,path,size,mtime) VALUES(?,?,?,?)`)
+			if e != nil {
+				tx.Rollback()
+				a.finishScan(l.ID, "error", written, e.Error())
+				return
+			}
+			for _, x := range rows[off:end] {
+				st.Exec(l.ID, x.path, x.size, x.mtime)
+			}
+			st.Close()
+			if e := tx.Commit(); e != nil {
+				a.finishScan(l.ID, "error", written, e.Error())
+				return
+			}
+			written = end
+			a.setStatus(l.ID, "scanning", written, len(rows), start, 0, "")
+		}
+		a.finishScan(l.ID, "ready", len(rows), "")
 	}()
 }
+
+func (a *App) setStatus(lib, state string, scanned, total int, started, ended int64, msg string) {
+	if a.db == nil {
+		return
+	}
+	a.db.Exec(`INSERT INTO index_status(lib,state,scanned,total,started_at,ended_at,message)
+VALUES(?,?,?,?,?,?,?)
+ON CONFLICT(lib) DO UPDATE SET state=excluded.state, scanned=excluded.scanned,
+  total=CASE WHEN excluded.total>0 THEN excluded.total ELSE index_status.total END,
+  started_at=CASE WHEN excluded.started_at>0 THEN excluded.started_at ELSE index_status.started_at END,
+  ended_at=excluded.ended_at, message=excluded.message`,
+		lib, state, scanned, total, started, ended, msg)
+}
+
+func (a *App) finishScan(lib, state string, scanned int, msg string) {
+	a.setStatus(lib, state, scanned, scanned, 0, time.Now().Unix(), msg)
+	a.mu.Lock()
+	a.jobs[lib] = false
+	delete(a.scanCancel, lib)
+	a.mu.Unlock()
+}
+
+// rebuild handles POST /api/media/index/rebuild. It creates (or restarts) scan
+// jobs and returns immediately; the heavy walk runs in the background.
+func (a *App) rebuild(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		errJSON(w, 405, "method not allowed")
+		return
+	}
+	if !writeAuth(r) {
+		errJSON(w, 401, "login required")
+		return
+	}
+	id := r.URL.Query().Get("id")
+	started := []string{}
+	if id != "" {
+		l, ok := a.find(id)
+		if !ok {
+			errJSON(w, 404, "library not found")
+			return
+		}
+		a.start(l)
+		started = append(started, l.ID)
+	} else {
+		a.mu.RLock()
+		libs := append([]Library(nil), a.libs...)
+		a.mu.RUnlock()
+		for _, l := range libs {
+			a.start(l)
+			started = append(started, l.ID)
+		}
+	}
+	writeJSON(w, 202, map[string]any{"ok": true, "status": "scheduled", "libraries": started})
+}
+
+// indexCancel handles POST /api/media/index/cancel[?id=], stopping in-flight
+// scans. Without id it cancels every running scan.
+func (a *App) indexCancel(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		errJSON(w, 405, "method not allowed")
+		return
+	}
+	if !writeAuth(r) {
+		errJSON(w, 401, "login required")
+		return
+	}
+	id := r.URL.Query().Get("id")
+	cancelled := []string{}
+	a.mu.Lock()
+	for lib, cancel := range a.scanCancel {
+		if id == "" || lib == id {
+			cancel()
+			cancelled = append(cancelled, lib)
+		}
+	}
+	a.mu.Unlock()
+	writeJSON(w, 200, map[string]any{"ok": true, "cancelled": cancelled})
+}
+
+// indexStatus handles GET /api/media/index/status, reporting per-library scan
+// progress straight from SQLite without touching the filesystem.
+func (a *App) indexStatus(w http.ResponseWriter, r *http.Request) {
+	if a.db == nil {
+		errJSON(w, 503, "index database unavailable")
+		return
+	}
+	a.mu.RLock()
+	jobs := map[string]bool{}
+	for k, v := range a.jobs {
+		jobs[k] = v
+	}
+	libs := append([]Library(nil), a.libs...)
+	a.mu.RUnlock()
+
+	type st struct {
+		Lib       string `json:"lib"`
+		Name      string `json:"name"`
+		State     string `json:"state"`
+		Scanned   int    `json:"scanned"`
+		Total     int    `json:"total"`
+		StartedAt int64  `json:"started_at"`
+		EndedAt   int64  `json:"ended_at"`
+		Message   string `json:"message"`
+		Running   bool   `json:"running"`
+	}
+	rows := map[string]*st{}
+	for _, l := range libs {
+		rows[l.ID] = &st{Lib: l.ID, Name: l.Name, State: "idle"}
+	}
+	rs, e := a.db.Query(`SELECT lib,state,scanned,total,started_at,ended_at,message FROM index_status`)
+	if e == nil {
+		for rs.Next() {
+			var s st
+			rs.Scan(&s.Lib, &s.State, &s.Scanned, &s.Total, &s.StartedAt, &s.EndedAt, &s.Message)
+			if r0, ok := rows[s.Lib]; ok {
+				name := r0.Name
+				*r0 = s
+				r0.Name = name
+			}
+		}
+		rs.Close()
+	}
+	out := make([]st, 0, len(rows))
+	anyRunning := false
+	for id, s := range rows {
+		s.Running = jobs[id]
+		if s.Running {
+			anyRunning = true
+			if s.State != "scanning" {
+				s.State = "scanning"
+			}
+		}
+		out = append(out, *s)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Lib < out[j].Lib })
+	writeJSON(w, 200, map[string]any{"ok": true, "running": anyRunning, "libraries": out})
+}
+
+// files serves paginated listings straight from SQLite. It never walks the
+// filesystem, so it stays fast even during a rebuild. If a library has never
+// been indexed it kicks off a background scan and returns an empty page.
 func (a *App) files(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
 	l, ok := a.find(id)
@@ -280,15 +573,28 @@ func (a *App) files(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, 400, "invalid id")
 		return
 	}
+	if a.db == nil {
+		errJSON(w, 503, "index database unavailable")
+		return
+	}
 	a.mu.RLock()
-	xs, ready := a.indexes[id]
 	busy := a.jobs[id]
 	a.mu.RUnlock()
-	if !ready && !busy {
+
+	var total int
+	a.db.QueryRow(`SELECT count(*) FROM files WHERE lib=?`, id).Scan(&total)
+
+	var state string
+	if e := a.db.QueryRow(`SELECT state FROM index_status WHERE lib=?`, id).Scan(&state); e != nil {
+		state = ""
+	}
+	// Never indexed and nothing running: schedule a scan and report indexing.
+	if total == 0 && !busy && state == "" {
 		a.start(l)
 		writeJSON(w, 200, map[string]any{"status": "indexing", "total": 0, "offset": 0, "limit": 100, "has_more": false, "files": []FileEntry{}})
 		return
 	}
+
 	off, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 	lim, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	if lim <= 0 || lim > 500 {
@@ -297,14 +603,21 @@ func (a *App) files(w http.ResponseWriter, r *http.Request) {
 	if off < 0 {
 		off = 0
 	}
-	end := off + lim
-	if end > len(xs) {
-		end = len(xs)
+	files := make([]FileEntry, 0, lim)
+	rows, e := a.db.Query(`SELECT path,size,mtime FROM files WHERE lib=? ORDER BY path LIMIT ? OFFSET ?`, id, lim, off)
+	if e == nil {
+		for rows.Next() {
+			var fe FileEntry
+			rows.Scan(&fe.Path, &fe.Size, &fe.Mtime)
+			files = append(files, fe)
+		}
+		rows.Close()
 	}
-	if off > len(xs) {
-		off = len(xs)
+	status := "ready"
+	if busy {
+		status = "indexing"
 	}
-	writeJSON(w, 200, map[string]any{"status": map[bool]string{true: "indexing", false: "ready"}[busy], "total": len(xs), "offset": off, "limit": lim, "has_more": end < len(xs), "files": xs[off:end]})
+	writeJSON(w, 200, map[string]any{"status": status, "total": total, "offset": off, "limit": lim, "has_more": off+len(files) < total, "files": files})
 }
 
 func (a *App) serve(w http.ResponseWriter, r *http.Request) {
@@ -644,6 +957,9 @@ func main() {
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "ok") })
 	mux.HandleFunc("/api/system/metrics", systemMetrics)
 	mux.HandleFunc("/api/media/libraries", a.libraries)
+	mux.HandleFunc("/api/media/index/rebuild", a.rebuild)
+	mux.HandleFunc("/api/media/index/cancel", a.indexCancel)
+	mux.HandleFunc("/api/media/index/status", a.indexStatus)
 	mux.HandleFunc("/api/media/files", a.files)
 	mux.HandleFunc("/api/media/file", a.serve)
 	mux.HandleFunc("/api/media/file/", a.serveLegacy)
