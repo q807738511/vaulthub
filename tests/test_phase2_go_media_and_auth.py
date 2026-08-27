@@ -33,7 +33,9 @@ for marker in [
     'search/movie', 'search/tv', 'context.WithCancel',
 ]:
     assert marker in media_go, f"missing Go media API marker: {marker}"
+assert "http.ServeContent" in media_go
 assert "transcode-cache" in media_go
+assert 'mux.HandleFunc("/api/media/file/", a.serveLegacy)' in media_go
 assert "tasks/cancel" in media_go
 assert '"-f", "mp4"' in media_go
 assert "media-api.c" not in dockerfile

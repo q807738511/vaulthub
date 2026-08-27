@@ -291,6 +291,21 @@ func (a *App) serve(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Accept-Ranges", "bytes")
 	http.ServeContent(w, r, st.Name(), st.ModTime(), f)
 }
+
+func (a *App) serveLegacy(w http.ResponseWriter, r *http.Request) {
+	const prefix = "/api/media/file/"
+	rest := strings.TrimPrefix(r.URL.Path, prefix)
+	slash := strings.IndexByte(rest, '/')
+	if slash <= 0 || slash == len(rest)-1 {
+		errJSON(w, http.StatusBadRequest, "file path required")
+		return
+	}
+	query := r.URL.Query()
+	query.Set("id", rest[:slash])
+	query.Set("path", rest[slash+1:])
+	r.URL.RawQuery = query.Encode()
+	a.serve(w, r)
+}
 func (a *App) archive(w http.ResponseWriter, r *http.Request) {
 	l, ok := a.find(r.URL.Query().Get("id"))
 	if !ok {
@@ -481,6 +496,7 @@ func main() {
 	mux.HandleFunc("/api/media/libraries", a.libraries)
 	mux.HandleFunc("/api/media/files", a.files)
 	mux.HandleFunc("/api/media/file", a.serve)
+	mux.HandleFunc("/api/media/file/", a.serveLegacy)
 	mux.HandleFunc("/api/media/archive/zip", a.archive)
 	mux.HandleFunc("/api/media/archive/zip/register", a.archive)
 	mux.HandleFunc("/api/media/archive", a.archive)
