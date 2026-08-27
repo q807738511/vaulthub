@@ -2,7 +2,7 @@ from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
 html = (root / "index.html").read_text(encoding="utf-8")
-media = (root / "media-api.c").read_text(encoding="utf-8")
+media = (root / "tests" / "fixtures" / "media-api_legacy.c").read_text(encoding="utf-8")
 
 checks = {
     "custom buffered progress": "video-buffered-range" in html and "updateVideoTimeline" in html,

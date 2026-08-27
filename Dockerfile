@@ -1,11 +1,7 @@
-FROM alpine:3.22 AS build
-RUN apk add --no-cache build-base linux-headers
-WORKDIR /src
-COPY media-api.c vaulthub-manager.c /src/
-RUN gcc -Os -static -s -Wall -Wextra -Werror -pthread media-api.c -o /out-media-api \
- && gcc -Os -static -s -Wall -Wextra -Werror -pthread vaulthub-manager.c -o /out-vaulthub-manager
-
 FROM golang:1.23-alpine AS go-build
+WORKDIR /src/media
+COPY media-go/go.mod media-go/main.go ./
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out-media-api .
 WORKDIR /src/subtitle
 COPY subtitle-api/go.mod subtitle-api/main.go ./
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out-subtitle-api .
@@ -18,7 +14,7 @@ RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl ffmpeg \
  && rm -rf /var/lib/apt/lists/*
 COPY caddy /usr/bin/caddy
-COPY --from=build /out-media-api /usr/bin/media-api
+COPY --from=go-build /out-media-api /usr/bin/media-api
 COPY --from=go-build /out-subtitle-api /usr/bin/subtitle-api
 COPY --from=go-build /out-vaulthub-manager /usr/bin/vaulthub-manager
 RUN chmod 755 /usr/bin/caddy /usr/bin/vaulthub-manager /usr/bin/media-api /usr/bin/subtitle-api
@@ -36,7 +32,9 @@ ENV NAS_IP=192.168.112.3 \
     ADMIN_TOKEN= \
     ADMIN_USERNAME=ADMIN \
     ADMIN_PASSWORD=ADMIN123 \
-    TMDB_API_KEY=
+    TMDB_API_KEY= \
+    TMDB_API_BASE=https://api.themoviedb.org/3 \
+    TMDB_IMAGE_BASE=https://image.tmdb.org/t/p
 
 EXPOSE 8088
 WORKDIR /srv

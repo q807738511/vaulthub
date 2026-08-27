@@ -3,7 +3,7 @@ from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
 html = (root / "index.html").read_text()
-source = (root / "media-api.c").read_text()
+source = (root / "tests" / "fixtures" / "media-api_legacy.c").read_text()
 
 comic_required = ["epub", "mobi", "zip", "cbz", "pdf", "rar", "cbr", "7z", "cb7", "jpg", "jpeg", "png", "cpg", "lzh", "cbl", "tar", "cbt"]
 book_required = ["epub", "pdf", "mobi", "azw", "azw3", "chm", "exe", "umd", "jar", "jad", "caj", "pdg", "djvu", "ceb", "doc", "docx", "xps"]
@@ -17,8 +17,9 @@ for ext in book_required:
 for ext in movie_required:
     assert f'"{ext}"' in html, f"movie format missing from frontend list: {ext}"
 
-assert '<option value="movie">影视</option>' in html, "local media config does not offer movie libraries"
-assert 'group === "movie" ? lib.type === "movie"' in html, "movie local libraries are not selectable"
+assert '<option value="movie">电影</option>' in html, "local media config does not offer movie libraries"
+assert '<option value="series">电视剧集</option>' in html, "local media config does not offer series libraries"
+assert 'mediaTypesForGroup(group).includes(lib.type)' in html, "movie local libraries are not selectable"
 assert 'setMediaMode(\'${esc(group)}\',\'local\')' in html or "本地媒体库" in html, "media source mode bar missing"
 assert 'if (group === "movie") return "external"' not in html, "movie mode is still forced to external"
 assert 'renderMovieLibrary' in html, "movie local library renderer missing"

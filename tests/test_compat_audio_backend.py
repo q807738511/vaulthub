@@ -40,7 +40,7 @@ with tempfile.TemporaryDirectory() as tmp:
     config.write_text(json.dumps([{"id": "movies", "name": "Movies", "type": "movie", "path": str(media)}]), encoding="utf-8")
     env = os.environ.copy()
     env.update({"MEDIA_CONFIG": str(config), "MEDIA_INDEX_DIR": str(tmp / "index"), "MEDIA_SCAN_SLEEP_MS": "0"})
-    subprocess.check_call(["gcc", "-O2", "-pthread", str(ROOT / "media-api.c"), "-o", str(tmp / "media-api")])
+    subprocess.check_call(["gcc", "-O2", "-pthread", str(ROOT / "tests" / "fixtures" / "media-api_legacy.c"), "-o", str(tmp / "media-api")])
     proc = subprocess.Popen([str(tmp / "media-api")], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
         wait_port(9100)

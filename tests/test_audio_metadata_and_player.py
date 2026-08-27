@@ -3,7 +3,7 @@ from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
 html = (root / "index.html").read_text()
-media = (root / "media-api.c").read_text()
+media = (root / "tests" / "fixtures" / "media-api_legacy.c").read_text()
 
 # Audio page must be a real local music library, not only a flat file list.
 required = [

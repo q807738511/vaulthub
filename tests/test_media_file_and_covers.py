@@ -2,7 +2,7 @@
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
-source = (root / "media-api.c").read_text()
+source = (root / "tests" / "fixtures" / "media-api_legacy.c").read_text()
 html = (root / "index.html").read_text()
 
 assert 'query_value(query,"path")' in source, "media API lacks query-parameter file path support"

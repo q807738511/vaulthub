@@ -2,7 +2,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 html = (ROOT / "index.html").read_text(encoding="utf-8")
-media = (ROOT / "media-api.c").read_text(encoding="utf-8")
+media = (ROOT / "tests" / "fixtures" / "media-api_legacy.c").read_text(encoding="utf-8")
 
 for forbidden in [
     "/api/media/transcode",

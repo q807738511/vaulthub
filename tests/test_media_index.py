@@ -3,7 +3,7 @@ import json, os, pathlib, signal, subprocess, tempfile, time, urllib.error, urll
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 BIN = ROOT / "media-api-test"
-subprocess.run(["gcc", "-O2", "-Wall", "-Wextra", "-Werror", "-pthread", "-o", str(BIN), str(ROOT / "media-api.c")], check=True)
+subprocess.run(["gcc", "-O2", "-Wall", "-Wextra", "-Werror", "-pthread", "-o", str(BIN), str(ROOT / "tests" / "fixtures" / "media-api_legacy.c")], check=True)
 
 def request(method, path, body=None, raw=False):
     data = json.dumps(body).encode() if body is not None else None

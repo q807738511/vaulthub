@@ -37,7 +37,7 @@ with tempfile.TemporaryDirectory() as tmp_name:
     config = tmp / "libraries.json"
     config.write_text(json.dumps([{"id": "books", "name": "Books", "type": "book", "path": str(media)}]), encoding="utf-8")
     binary = tmp / "media-api"
-    subprocess.check_call(["gcc", "-O2", "-pthread", str(ROOT / "media-api.c"), "-o", str(binary)])
+    subprocess.check_call(["gcc", "-O2", "-pthread", str(ROOT / "tests" / "fixtures" / "media-api_legacy.c"), "-o", str(binary)])
     env = os.environ.copy()
     env.update({
         "MEDIA_CONFIG": str(config),

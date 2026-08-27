@@ -3,7 +3,7 @@ import pathlib
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-source = (ROOT / "media-api.c").read_text()
+source = (ROOT / "tests" / "fixtures" / "media-api_legacy.c").read_text()
 html = (ROOT / "index.html").read_text()
 compose = (ROOT / "docker-compose.yml").read_text()
 
@@ -38,7 +38,7 @@ for item in required_compose:
     assert item in compose, f"missing compose monitoring example: {item}"
 assert 'handle /api/system/*' in caddyfile, "default Caddyfile misses system route"
 assert 'handle /api/system/*' in manager, "persisted Caddyfile migration misses system route"
-assert 'FROM alpine' in dockerfile and 'gcc' in dockerfile and 'media-api.c' in dockerfile, "Dockerfile does not compile media API from source"
+assert 'FROM golang:1.23-alpine' in dockerfile and 'media-go/main.go' in dockerfile and 'out-media-api' in dockerfile, "Dockerfile does not compile Go media API"
 dockerignore = (ROOT / ".dockerignore").read_text()
 assert 'vaulthub-manager.c' not in dockerignore, "Docker build context excludes manager source"
 

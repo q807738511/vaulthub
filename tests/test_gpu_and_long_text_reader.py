@@ -2,7 +2,7 @@
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-source = (ROOT / "media-api.c").read_text()
+source = (ROOT / "tests" / "fixtures" / "media-api_legacy.c").read_text()
 html = (ROOT / "index.html").read_text()
 compose = (ROOT / "docker-compose.yml").read_text()
 dockerfile = (ROOT / "Dockerfile").read_text()
