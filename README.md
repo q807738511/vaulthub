@@ -82,6 +82,51 @@ environment:
 - 项目名称改为 `VaultHub 蜀鼠之家`。
 - Compose 服务名为 `vaulthub`，容器名为 `VaultHub`。
 - ~~本地镜像名为 `vaulthub:0.6.0-local`。~~（旧的本地构建方式，保留兼容；当前推荐直接使用 `ghcr.io/q807738511/vaulthub:latest` 或固定版本标签。）
+
+## 镜像拉取与加速站
+
+镜像发布在 GitHub Container Registry：
+
+```
+ghcr.io/q807738511/vaulthub:<版本标签>   # 例如 v0.6.29
+ghcr.io/q807738511/vaulthub:latest        # 随 main 漂移，生产不建议
+```
+
+**建议固定版本标签部署（如 `v0.6.29`），不要用 `latest`**：`latest` 会随每次推送变化，出问题难回滚。
+
+### 中国网络：直连 GHCR 拉不动怎么办
+
+部分网络（含家庭 NAS）直连 `ghcr.io` 会在大层（约 175MB 的 Debian + ffmpeg 层）卡住，表现为 Docker 反复 `Retrying`、镜像拉不全、容器起不来后被 `unless-stopped` 反复重启。**这不是镜像或构建问题，是拉取线路对 GHCR 限速。** 换加速站即可，镜像内容完全一致（digest 相同）。
+
+可用加速站（实测拉取本仓库镜像成功，digest 与官方一致）：
+
+| 加速站 | 前缀 | 备注 |
+|--------|------|------|
+| 南京大学 | `ghcr.nju.edu.cn` | 稳定，推荐 |
+| 1ms.run | `ghcr.1ms.run` | 可用，偶发 `unknown blob`，重试一次即可 |
+
+> 加速站可能随时失效或限流；若某个不可用，换另一个或稍后重试。`ghcr.m.daocloud.io` 不支持本仓库路径转发（`pull access denied`），请勿使用。
+
+用法一——compose 直接写加速站地址（最简单）：
+
+```yaml
+services:
+  vaulthub:
+    image: ghcr.nju.edu.cn/q807738511/vaulthub:v0.6.29
+```
+
+> 注意只有一个冒号：`vaulthub:v0.6.29`，不是 `vaulthub::v0.6.29`。
+
+用法二——保持 compose 用官方名，手动拉取后打回原名（便于随时切回直连）：
+
+```bash
+docker pull ghcr.nju.edu.cn/q807738511/vaulthub:v0.6.29
+docker tag  ghcr.nju.edu.cn/q807738511/vaulthub:v0.6.29 ghcr.io/q807738511/vaulthub:v0.6.29
+# compose 仍写 image: ghcr.io/q807738511/vaulthub:v0.6.29
+docker compose up -d
+```
+
+用法三——给 Docker daemon 配 registry 镜像（一劳永逸，需重启 Docker）：编辑 `/etc/docker/daemon.json` 后 `systemctl restart docker`（会短暂影响所有容器）。
 - 左上角页面名改为 `蜀鼠之家`，图标改为动画中华鼠图标。
 - 电子书和漫画合并为 `超漫画`，统一包含 Komga / Kavita / Calibre-Web。
 - 新增 WebUI 的 `Caddy 配置` 页面，可读取、保存并热加载容器内 Caddyfile。
