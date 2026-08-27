@@ -60,7 +60,7 @@
   <div class="add-board-btn" onclick="openModuleModal()">
     <span>＋</span><span data-i18n="addBoardNav">添加模块</span>
   </div>
-  <div class="sidebar-foot">v0.6.22 · Go Subtitle & Player Tracks</div>
+  <div class="sidebar-foot">v0.6.30 · Metrics, Compat & Embedded Subs</div>
 </aside>
 
 <!-- ===== 主区域 ===== -->
@@ -70,8 +70,8 @@
       <h1 id="pageTitle">首页</h1>
     </div>
     <div class="actions">
-      <button class="btn" onclick="guardProtectedAction(()=>openModal('settingsModal'))()">⚙️ <span data-i18n="settings">系统设置</span></button>
-      <button class="btn" onclick="guardProtectedAction(openCaddyModal)()">🔀 <span data-i18n="caddySettings">Caddy 配置</span></button>
+      <button class="btn" onclick="openModal('settingsModal')">⚙️ <span data-i18n="settings">系统设置</span></button>
+      <button class="btn" onclick="openCaddyModal()">🔀 <span data-i18n="caddySettings">Caddy 配置</span></button>
       <button class="btn" onclick="openModal('aboutModal')">ℹ️ <span data-i18n="about">关于</span></button>
     </div>
   </div>
@@ -122,7 +122,7 @@
         </div>
 
         <div class="card">
-          <div class="card-h"><span class="t" data-i18n="network">网络</span><span class="dot"></span></div>
+          <div class="card-h"><span class="t" data-i18n="network">网络</span><span class="badge" id="netInterface" style="font-size:10px;"></span></div>
           <div class="net-num"><span id="netDown">--</span> <small style="color:var(--text2);font-size:12px;font-weight:400;">MB/s</small></div>
           <div class="net-sub" data-i18n="netDownLbl">↓ 下行</div>
           <div class="net-num" style="color:var(--green);margin-top:8px;"><span id="netUp">--</span> <small style="color:var(--text2);font-size:12px;font-weight:400;">MB/s</small></div>
@@ -620,16 +620,8 @@
   <div class="modal wide">
     <h3><span data-i18n="caddySettings">Caddy 配置</span><button class="close" onclick="closeModal('caddyModal')">✕</button></h3>
     <div class="cfg-field">
-      <label data-i18n="caddyOrigin">WebUI 外部域名</label>
-      <input id="caddyOrigin" type="text" placeholder="https://home.enged.top">
-    </div>
-    <div class="cfg-field">
-      <label data-i18n="caddyAdminToken">管理令牌</label>
-      <input id="caddyToken" type="password" placeholder="可留空，留空表示无鉴权">
-    </div>
-    <div class="cfg-field">
       <label data-i18n="caddyFile">Caddyfile</label>
-      <textarea id="caddyFile" style="width:100%;min-height:300px;border:1px solid var(--border);border-radius:8px;background:var(--card2);color:var(--text);padding:10px;font:12px/1.6 ui-monospace, monospace;"></textarea>
+      <textarea id="caddyFile" style="width:100%;min-height:340px;border:1px solid var(--border);border-radius:8px;background:var(--card2);color:var(--text);padding:10px;font:12px/1.6 ui-monospace, monospace;"></textarea>
     </div>
     <button class="btn btn-primary" onclick="saveCaddyConfig()">💾 <span data-i18n="caddySave">保存并应用</span></button>
     <button class="btn" onclick="loadCaddyConfig()">🔄 <span data-i18n="caddyReload">重新载入</span></button>
@@ -642,8 +634,8 @@
   <div class="modal">
     <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
     <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
-    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.6.22 · Go Subtitle & Player Tracks</b></div>
-    <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>HTML / CSS / JS · 单文件</b></div>
+    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.6.30 · Metrics, Compat & Embedded Subs</b></div>
+    <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>Go (media/manager/subtitle) · Caddy · FFmpeg · SQLite · HTML/CSS/JS</b></div>
     <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>VaultHub 内置系统监控</b></div>
     <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>
     <div class="about-row"><span data-i18n="aboutAuthor">生成</span><b>Hermes Agent</b></div>

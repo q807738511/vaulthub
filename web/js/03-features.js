@@ -204,8 +204,11 @@ async function tickMetrics() {
     const pct = total ? Math.round(used * 100 / total) : 0;
     const cpu = data.cpu || {};
     const net = data.network || {};
-    setCpu(Number(cpu.percent || 0), "--", cpu.load1 != null ? Number(cpu.load1).toFixed(2) : "--", "--");
-    setMem(pct, (used / 1073741824).toFixed(1), (total / 1073741824).toFixed(1), "--");
+    const cores = cpu.cores != null && Number(cpu.cores) > 0 ? String(cpu.cores) : "--";
+    const cpuTemp = Number(cpu.temp) > 0 ? Number(cpu.temp).toFixed(0) + "°C" : "--";
+    setCpu(Number(cpu.percent || 0), cores, cpu.load1 != null ? Number(cpu.load1).toFixed(2) : "--", cpuTemp);
+    const swapUsed = Number(mem.swap_used || 0);
+    setMem(pct, (used / 1073741824).toFixed(1), (total / 1073741824).toFixed(1), (swapUsed / 1073741824).toFixed(1));
     const now = performance.now();
     let down = 0, up = 0;
     if (previousNetworkSample) {
@@ -215,6 +218,9 @@ async function tickMetrics() {
     }
     previousNetworkSample = { rx: Number(net.rx_bytes || 0), tx: Number(net.tx_bytes || 0), time: now };
     setNet(down, up);
+    const netLabel = document.getElementById("netInterface");
+    if (netLabel) netLabel.textContent = net.interface ? net.interface : "";
+    renderDiskTemps(data.disk_temperatures, data.temperatures);
     const disks = data.filesystems || [];
     document.getElementById("diskCard").innerHTML = disks.map(d => {
       const p = Math.min(Number(d.percent || 0), 100);
@@ -226,9 +232,31 @@ async function tickMetrics() {
     setCpu(0, "--", "--", "--");
     setMem(0, "--", "--", "--");
     setNet(0, 0);
+    renderDiskTemps([], []);
     document.getElementById("diskSource").textContent = t("diskSourceOffline");
   }
   setNasBadge(ok);
+}
+
+// renderDiskTemps fills the disk-temperature card. It prefers real drive/NVMe
+// sensors; when the host exposes none (common on NAS boxes without drivetemp),
+// it falls back to the hottest available sensor (usually the CPU package) so
+// the card shows a live reading instead of a permanent "--".
+function renderDiskTemps(diskTemps, allTemps) {
+  const main = document.getElementById("tempMain");
+  const list = document.getElementById("tempList");
+  if (!main || !list) return;
+  let entries = Array.isArray(diskTemps) ? diskTemps.slice() : [];
+  let usingFallback = false;
+  if (!entries.length && Array.isArray(allTemps) && allTemps.length) {
+    entries = allTemps.slice().sort((a, b) => Number(b.temp) - Number(a.temp));
+    usingFallback = true;
+  }
+  if (!entries.length) { main.textContent = "--"; list.innerHTML = ""; return; }
+  const hottest = entries.reduce((m, x) => Number(x.temp) > Number(m.temp) ? x : m, entries[0]);
+  main.textContent = Number(hottest.temp).toFixed(0);
+  list.innerHTML = entries.slice(0, 6).map(x => `<div class="temp-item"><span>${esc(x.name)}</span><b>${Number(x.temp).toFixed(0)}°C</b></div>`).join("")
+    + (usingFallback ? `<div class="hint" style="margin-top:6px;">${curLang === "en" ? "No dedicated drive sensor; showing system sensors." : "未检测到独立硬盘温度传感器，显示系统传感器读数。"}</div>` : "");
 }
 
 function fmtSize(bytes) {
