@@ -2025,22 +2025,31 @@ async function scrapeMovieMetadata(host, lib, files) {
   writeMovieMetadata(all); if (pending.length) renderMovieLibraryContent(host, lib, files);
   for (const file of pending) {
     const path = String(file.path), fallback = all[path], title = fallback.title;
+    const mediaType = lib?.type === "series" ? "series" : "movie";
+    // TMDB 已配置时优先使用官方刮削（电影走 search/movie，剧集走 search/tv），
+    // 未配置或无结果时回落豆瓣，最后回落文件名展示。
+    if (scraperStatus.tmdb_enabled) try {
+      const tmdb = await fetch(`/api/media/tmdb?query=${encodeURIComponent(title)}&type=${encodeURIComponent(mediaType)}`, { cache:"force-cache" });
+      const data = tmdb.ok ? await tmdb.json() : null;
+      const item = data?.results?.find(x => x.poster_path || x.overview || x.title || x.name);
+      if (item) {
+        const base = scraperStatus.tmdb_image_base || "https://image.tmdb.org/t/p";
+        all[path] = { ...fallback, title:item.title || item.name || fallback.title, year:String(item.release_date || item.first_air_date || fallback.year).slice(0,4), poster:item.poster_path ? `${base}/w342${item.poster_path}` : "", overview:item.overview || "", provider:mediaType === "series" ? "TMDB · 剧集" : "TMDB · 电影", checkedAt:Date.now() };
+        writeMovieMetadata(all); renderMovieLibraryContent(host, lib, files); continue;
+      }
+    } catch(e) {}
     try {
       const douban = await fetch(`https://movie.douban.com/j/subject_suggest?q=${encodeURIComponent(title)}`, { cache:"force-cache" });
       const item = douban.ok ? (await douban.json())?.[0] : null;
       if (item) { all[path] = { ...fallback, title:item.title || fallback.title, year:item.year || fallback.year, poster:item.img || "", provider:"豆瓣", checkedAt:Date.now() }; writeMovieMetadata(all); renderMovieLibraryContent(host, lib, files); continue; }
     } catch(e) {}
-    if (scraperStatus.tmdb_enabled) try {
-      const mediaType = lib?.type === "series" ? "series" : "movie";
-      const tmdb = await fetch(`/api/media/tmdb?query=${encodeURIComponent(title)}&type=${encodeURIComponent(mediaType)}`, { cache:"force-cache" });
-      const data = tmdb.ok ? await tmdb.json() : null;
-      const item = data?.results?.find(x => x.poster_path || x.overview || x.title || x.name);
-      if (item) { all[path] = { ...fallback, title:item.title || item.name || fallback.title, year:String(item.release_date || item.first_air_date || fallback.year).slice(0,4), poster:item.poster_path ? `https://image.tmdb.org/t/p/w342${item.poster_path}` : "", overview:item.overview || "", provider:"TMDB", checkedAt:Date.now() }; writeMovieMetadata(all); renderMovieLibraryContent(host, lib, files); }
-    } catch(e) {}
+    all[path] = { ...fallback, provider:"文件名展示", checkedAt:Date.now() };
+    writeMovieMetadata(all); renderMovieLibraryContent(host, lib, files);
   }
 }
 function renderMovieLibraryContent(host, lib, files) {
-  const status = scraperStatus.tmdb_enabled ? "默认豆瓣刮削 · TMDB 已启用" : "默认豆瓣刮削 · TMDB 未配置（设置 TMDB_API_KEY 后启用）";
+  const kindName = lib?.type === "series" ? "电视剧集" : "电影";
+  const status = scraperStatus.tmdb_enabled ? `${kindName} · TMDB 刮削已启用` : `${kindName} · TMDB 未配置（设置 TMDB_API_KEY 后启用，当前豆瓣/文件名兜底）`;
   const body = mediaResourceView === "poster" ? `<div class="media-poster-grid">${files.map(file => renderMoviePoster(lib, file)).join("")}</div>` : `<div class="media-file-list">${files.map(file => renderMovieRow(lib, file)).join("")}</div>`;
   host.innerHTML = `<div class="comic-shelf-toolbar"><strong>本地影视库</strong><div class="media-actions"><span class="badge">${esc(status)}</span><button class="btn media-view-toggle" onclick="toggleMediaResourceView('movie')">${mediaResourceView === "poster" ? "☷ 列表视图" : "▦ 海报视图"}</button><button class="btn" onclick="refreshMovieMetadata()">↻ 重新刮削</button></div></div>${body}`;
 }
@@ -2094,6 +2103,8 @@ function supportedLocalMediaFile(group, lib, path) {
   const ext = fileExt(path);
   if (!ext) return false;
   if (group === "comic") return (lib?.type === "book" ? MEDIA_FORMATS.book : MEDIA_FORMATS.comic).includes(ext);
+  // 音乐视频（歌曲 MV）库存放的是视频文件，因此按影视扩展名判定。
+  if (group === "audio") return (lib?.type === "musicvideo" ? MEDIA_FORMATS.movie : MEDIA_FORMATS.audio).includes(ext);
   return (MEDIA_FORMATS[group] || []).includes(ext);
 }
 function mediaAdminHeaders() {
@@ -2686,14 +2697,14 @@ async function openLocalMedia(group, libId, path) {
   const url = mediaFileUrl(lib, path);
   activeReader = { group, libId, path };
   let body = "";
-  if (group === "comic" && ["zip","cbz"].includes(ext)) {
+  if ((group === "comic" || group === "movie" || group === "audio") && ["zip","cbz"].includes(ext)) {
     viewer.innerHTML = viewerShell(group, lib, path, '<div class="empty-tip">正在读取压缩包图片...</div>', url);
     try {
       const res = await fetch(`/api/media/archive/zip?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}`, { cache:"no-store" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const entries = data.entries || data.items || [];
-      body = entries.length ? `<div class="comic-archive-pages">${entries.map((entry,index)=>`<img loading="lazy" src="${esc(entry.url || `/api/media/archive/zip/register?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}&entry=${encodeURIComponent(entry.name)}`)}" alt="第 ${index+1} 页">`).join("")}</div>` : '<div class="media-error">压缩包中没有可读取的图片</div>';
+      body = entries.length ? `<div class="comic-archive-pages">${entries.map((entry,index)=>`<img loading="lazy" src="${esc(entry.url || `/api/media/archive/zip/register?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}&entry=${encodeURIComponent(entry.raw || entry.name)}`)}" alt="${esc(entry.name || ("第 " + (index+1) + " 页"))}">`).join("")}</div>` : '<div class="media-error">压缩包中没有可读取的图片</div>';
       viewer.innerHTML = viewerShell(group, lib, path, body, url);
       return;
     } catch (err) { viewer.innerHTML = viewerShell(group, lib, path, `<div class="media-error">ZIP 漫画读取失败：${esc(err.message)}</div>`, url); return; }
@@ -2782,7 +2793,8 @@ async function saveMediaLibraries() {
     let skipped = 0;
     for (let i = 0; i < paths.length; i++) {
       const body = { id: libraryId(name, type, paths[i], i), name: paths.length > 1 ? `${name} ${i + 1}` : name, type, path: paths[i] };
-      const res = await fetch("/api/media/libraries", { method: "POST", headers: { "Content-Type": "application/json", ...mediaAdminHeaders() }, body: JSON.stringify(body) });
+      const res = await fetch("/api/media/libraries", { method: "POST", headers: { "Content-Type": "application/json", ...mediaAdminHeaders() }, credentials: "same-origin", body: JSON.stringify(body) });
+      if (!await handleProtectedResponse(res)) { toast("⚠️ 会话已过期，请重新登录后再保存"); return; }
       if (!res.ok) {
         let detail = "";
         try { detail = (await res.json()).error || ""; } catch (e) {}
@@ -2810,7 +2822,8 @@ function renderMediaLibraryConfigList() {
 async function deleteMediaLibrary(id) {
   if (!confirm("确定删除这个本地媒体库配置？媒体文件不会被删除。")) return;
   try {
-    const res = await fetch(`/api/media/libraries?id=${encodeURIComponent(id)}`, { method: "DELETE", headers: mediaAdminHeaders() });
+    const res = await fetch(`/api/media/libraries?id=${encodeURIComponent(id)}`, { method: "DELETE", headers: mediaAdminHeaders(), credentials: "same-origin" });
+    if (!await handleProtectedResponse(res)) { toast("⚠️ 会话已过期，请重新登录后再删除"); return; }
     if (!res.ok) { let detail = ""; try { detail = (await res.json()).error || ""; } catch (e) {} throw new Error(detail || `HTTP ${res.status}`); }
     await refreshMediaLibraries(false);
     toast("✅ 媒体库配置已删除");
