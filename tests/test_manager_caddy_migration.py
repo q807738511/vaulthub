@@ -1,28 +1,37 @@
 #!/usr/bin/env python3
+"""Caddyfile 迁移回归。
+
+真正的语法与幂等断言已迁移到 `manager/main_test.go`，那里直接调用
+`normalizeCaddyfile` 并用仓库自带 caddy 二进制校验生成结果。本文件只保留
+Compose 层面的防回归项，并确认 Go 侧断言仍然存在。
+"""
 import pathlib
+import subprocess
+import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 manager = (ROOT / "manager" / "main.go").read_text()
+manager_test = (ROOT / "manager" / "main_test.go").read_text()
 compose = (ROOT / "docker-compose.yml").read_text()
 
-for route in [
-    "/api/health",
-    "/api/login",
-    "/api/system/runtime",
-    "/api/admin/*",
-]:
-    multiline = (
-        f'handle {route} {{\\n'
-        '\\t\\treverse_proxy http://127.0.0.1:9099\\n'
-        '\\t}'
-    )
-    assert multiline in manager, f"Caddy migration route is not a multiline block: {route}"
-    assert f'handle {route} {{ reverse_proxy' not in manager, (
-        f"invalid single-line Caddy migration route remains: {route}"
-    )
+assert "var managerRoutes = []string{" in manager, "manager routes are not declared once"
+assert "CombinedOutput()" in manager, "Caddy validation errors are not captured"
+assert "TestNormalizeCaddyfileInjectsMultilineBlocks" in manager_test
+assert "TestNormalizeCaddyfileIsIdempotent" in manager_test
+assert "TestMigratedCaddyfileValidates" in manager_test
 
-assert 'CombinedOutput()' in manager, "Caddy validation errors are not captured"
 assert 'restart: "on-failure:1"' in compose, "Compose can still restart forever"
-assert '/vol3/1000/komga/漫画/mh:/mh:ro' in compose, "comic bind mount has no target"
+assert "/vol3/1000/komga/漫画/mh:/mh:ro" in compose, "comic bind mount has no target"
 
-print("PASS: Caddy migration emits valid multiline routes and restart retries once")
+proc = subprocess.run(
+    ["go", "test", "./..."],
+    cwd=ROOT / "manager",
+    capture_output=True,
+    text=True,
+)
+if proc.returncode != 0:
+    sys.stdout.write(proc.stdout)
+    sys.stdout.write(proc.stderr)
+    raise SystemExit("manager Go tests failed")
+
+print("PASS: Caddy migration is covered by Go tests and restart retries once")

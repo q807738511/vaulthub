@@ -23,7 +23,7 @@ services:
       SYSTEM_MONITOR_PROC_ROOT: "/host/proc"
       SYSTEM_MONITOR_SYS_ROOT: "/host/sys"
       # 可选：配置后影视本地库启用 TMDB 刮削；未配置时默认豆瓣/文件名兜底。
-      TMDB_API_KEY: ""
+      TMDB_API_KEY: "${TMDB_API_KEY:-}"
       TMDB_API_BASE: "${TMDB_API_BASE:-https://api.themoviedb.org/3}"
       TMDB_IMAGE_BASE: "${TMDB_IMAGE_BASE:-https://image.tmdb.org/t/p}"
       # Go 字幕服务无需 Python/额外容器；默认自动扫描视频同目录字幕。

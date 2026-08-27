@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -169,6 +170,25 @@ func (m *manager) logout(w http.ResponseWriter, r *http.Request) {
 func (m *manager) health(w http.ResponseWriter, r *http.Request) {
 	m.reply(w, 200, map[string]any{"ok": true, "service": "go-manager", "time": time.Now().UTC()})
 }
+
+// sessionCheck is the loopback authority used by sibling services (media API) to
+// verify a browser session. It also slides the idle timeout, so authenticated
+// media traffic keeps the 30-minute window alive exactly like manager traffic.
+func (m *manager) sessionCheck(w http.ResponseWriter, r *http.Request) {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	if ip := net.ParseIP(host); ip == nil || !ip.IsLoopback() {
+		m.reply(w, 403, map[string]any{"ok": false, "error": "loopback only"})
+		return
+	}
+	if !m.logged(r) {
+		m.reply(w, 401, map[string]any{"ok": false, "error": "login required"})
+		return
+	}
+	m.reply(w, 200, map[string]any{"ok": true, "idle_timeout_seconds": int(sessionIdleTimeout.Seconds())})
+}
 func (m *manager) runtime(w http.ResponseWriter, r *http.Request) {
 	if !m.require(w, r) {
 		return
@@ -266,6 +286,7 @@ func routes(m *manager) http.Handler {
 	mux.HandleFunc("/api/health", m.health)
 	mux.HandleFunc("/api/login", m.login)
 	mux.HandleFunc("/api/logout", m.logout)
+	mux.HandleFunc("/api/session/check", m.sessionCheck)
 	mux.HandleFunc("/api/system/runtime", m.runtime)
 	mux.HandleFunc("/api/admin/docker/scan", m.docker)
 	mux.HandleFunc("/api/admin/caddyfile", m.caddyConfigHandler)
@@ -289,22 +310,38 @@ func validateCaddy(path string) error {
 	}
 	return nil
 }
+
+// managerRoutes are the reverse-proxy blocks the Go manager must own. They are
+// injected into legacy Caddyfiles that predate the Go manager.
+var managerRoutes = []string{
+	"handle /api/health",
+	"handle /api/login",
+	"handle /api/logout",
+	"handle /api/system/runtime",
+	"handle /api/admin/*",
+}
+
+// normalizeCaddyfile migrates an older Caddyfile in place. It is idempotent:
+// only genuinely missing manager routes are inserted, so repeated container
+// starts never accumulate duplicate handle blocks.
 func normalizeCaddyfile(b []byte) []byte {
 	s := strings.ReplaceAll(string(b), "\r\n", "\n")
-	required := []string{"handle /api/health", "handle /api/login", "handle /api/logout", "handle /api/system/runtime", "handle /api/admin/*"}
-	missing := false
-	for _, x := range required {
-		if !strings.Contains(s, x) {
-			missing = true
-			break
+	var missing []string
+	for _, x := range managerRoutes {
+		if !strings.Contains(s, x+" {") && !strings.Contains(s, x+"\t{") {
+			missing = append(missing, x)
 		}
 	}
-	if !missing {
+	if len(missing) == 0 {
 		return []byte(s)
 	}
-	routes := "\n\thandle /api/health {\n\t\treverse_proxy http://127.0.0.1:9099\n\t}\n\thandle /api/login {\n\t\treverse_proxy http://127.0.0.1:9099\n\t}\n\thandle /api/logout {\n\t\treverse_proxy http://127.0.0.1:9099\n\t}\n\thandle /api/system/runtime {\n\t\treverse_proxy http://127.0.0.1:9099\n\t}\n\thandle /api/admin/* {\n\t\treverse_proxy http://127.0.0.1:9099\n\t}\n"
+	var sb strings.Builder
+	sb.WriteString("\n")
+	for _, x := range missing {
+		sb.WriteString("\t" + x + " {\n\t\treverse_proxy http://127.0.0.1:9099\n\t}\n")
+	}
 	if i := strings.Index(s, "{"); i >= 0 {
-		s = s[:i+1] + routes + s[i+1:]
+		s = s[:i+1] + sb.String() + s[i+1:]
 	}
 	return []byte(s)
 }
