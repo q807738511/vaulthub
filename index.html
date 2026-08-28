@@ -80,7 +80,7 @@
     <span>＋</span><span data-i18n="addBoardNav">添加模块</span>
   </div>
   <div class="sidebar-foot">
-    <span class="ver">v0.6.30.Branch-update · Plex-style UI</span>
+    <span class="ver">v0.6.31 · Plex UI, Session & Fast Cache</span>
     <button class="rail-btn" onclick="toggleBars()" title="折叠 / 展开侧栏" aria-label="折叠或展开侧栏">⇤</button>
   </div>
 </aside>
@@ -591,22 +591,19 @@
       <div class="settab on" data-settab="caddy" onclick="switchSetTab('caddy')">🔀 <span data-i18n="caddySettings">Caddy 配置</span></div>
       <div class="settab" data-settab="look" onclick="switchSetTab('look')">🎨 <span data-i18n="setLook">外观主题</span></div>
       <div class="settab" data-settab="scrape" onclick="switchSetTab('scrape')">🔍 <span data-i18n="setScrape">刮削与硬件</span></div>
+      <div class="settab" data-settab="account" onclick="switchSetTab('account')">👤 <span data-i18n="setAccount">账户与登录</span></div>
     </div>
 
-    <!-- Caddy 配置面板 -->
+    <!-- Caddy 配置面板：仅作入口，真正的编辑在独立整页 #caddyPage 中 -->
     <div class="setpanel on" id="setpanel-caddy">
       <div class="setblock">
         <h4>🔀 <span data-i18n="caddyRoutes">反向代理服务域名</span></h4>
         <p data-i18n="caddyRoutesHint">维护服务域名与内网上游地址的映射，保存后由内置 Caddy 校验并热加载，失败会自动回滚。</p>
-        <div class="cfg-field">
-          <label data-i18n="caddyFile">Caddyfile</label>
-          <textarea id="caddyFile" style="width:100%;min-height:320px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg);color:var(--text);padding:11px 12px;font:11px/1.75 ui-monospace, Consolas, monospace;"></textarea>
+        <div class="media-actions">
+          <button class="btn btn-primary" onclick="openCaddyPage()">🔀 <span data-i18n="caddyOpenPage">打开 Caddy 配置页面</span></button>
+          <span class="badge" id="caddyRouteCount">--</span>
         </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <button class="btn btn-primary" onclick="saveCaddyConfig()">💾 <span data-i18n="caddySave">保存并应用</span></button>
-          <button class="btn" onclick="loadCaddyConfig()">🔄 <span data-i18n="caddyReload">重新载入</span></button>
-        </div>
-        <div class="hint" data-i18n="caddyHint">保存后会校验并热加载容器内的 Caddy 配置；失败时会回滚。</div>
+        <div class="hint" data-i18n="caddyPageHint">Caddyfile 内容较长，单独占用一整页编辑，避免在弹窗里挤成一团。</div>
       </div>
     </div>
 
@@ -666,10 +663,46 @@
       <div class="setblock">
         <h4>🎞 <span data-i18n="setHw">显卡加速</span></h4>
         <div class="cfg-field"><label for="hardwareAcceleration" data-i18n="setHwLbl">视频兼容流硬件加速</label><select id="hardwareAcceleration" onchange="saveHardwareAcceleration()"><option value="auto" data-i18n="hwAuto">自动选择（推荐）</option><option value="cpu" data-i18n="hwCpu">CPU</option><option value="vaapi" data-i18n="hwVaapi">VAAPI（Intel/AMD）</option><option value="qsv" data-i18n="hwQsv">Intel QSV</option><option value="cuda" data-i18n="hwCuda">NVIDIA CUDA/NVENC</option></select></div>
-        <div class="media-actions"><span class="badge" id="hardwareStatus">正在检测…</span><button class="btn" type="button" onclick="refreshHardwareStatus()" data-i18n="setHwDetect">检测显卡</button></div>
-        <div class="hint" data-i18n="setHwHint">需要在 Docker Compose 中透传 /dev/dri 或配置 NVIDIA Container Toolkit。硬件不可用时会自动回退 CPU，不影响播放。</div>
+        <div class="media-actions"><span class="badge" id="hardwareStatus">正在检测…</span><button class="btn" type="button" onclick="refreshHardwareStatus(true)" data-i18n="setHwDetect">检测显卡</button></div>
+        <div class="hint" id="hardwareDetail" data-i18n="setHwHint">需要在 Docker Compose 中透传 /dev/dri 或配置 NVIDIA Container Toolkit。硬件不可用时会自动回退 CPU，不影响播放。</div>
       </div>
     </div>
+
+    <!-- 账户与登录面板 -->
+    <div class="setpanel" id="setpanel-account">
+      <div class="setblock">
+        <h4>👤 <span data-i18n="setAccountTitle">当前登录状态</span></h4>
+        <div class="media-actions">
+          <span class="badge" id="sessionStatusBadge" data-i18n="sessionChecking">正在检查登录状态…</span>
+          <button class="btn" type="button" onclick="refreshSessionStatus(true)" data-i18n="sessionRefresh">刷新状态</button>
+        </div>
+        <div class="hint" id="sessionStatusHint" data-i18n="sessionHint">会话在最后一次操作后 30 分钟空闲自动失效；增删媒体库等写操作需要有效登录。</div>
+      </div>
+      <div class="setblock">
+        <h4>🚪 <span data-i18n="setLogoutTitle">退出登录</span></h4>
+        <p data-i18n="setLogoutHint">退出后会立即失效服务端会话并返回登录页，本机保存的界面偏好不会被清除。</p>
+        <button class="btn btn-danger" type="button" onclick="logoutVaultHub()">🚪 <span data-i18n="setLogout">退出登录</span></button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Caddy 配置独立整页 ===== -->
+<div class="fullpage" id="caddyPage">
+  <div class="fullpage-head">
+    <div>
+      <h3>🔀 <span data-i18n="caddyPageTitle">Caddy 反向代理配置</span></h3>
+      <div class="hint" data-i18n="caddyHint">保存后会校验并热加载容器内的 Caddy 配置；失败时会回滚。</div>
+    </div>
+    <div class="media-actions">
+      <span class="badge" id="caddyPageStatus">--</span>
+      <button class="btn btn-primary" type="button" onclick="saveCaddyConfig()">💾 <span data-i18n="caddySave">保存并应用</span></button>
+      <button class="btn" type="button" onclick="loadCaddyConfig()">🔄 <span data-i18n="caddyReload">重新载入</span></button>
+      <button class="btn" type="button" onclick="closeCaddyPage()">✕ <span data-i18n="caddyPageClose">关闭</span></button>
+    </div>
+  </div>
+  <div class="fullpage-body">
+    <textarea id="caddyFile" spellcheck="false" aria-label="Caddyfile"></textarea>
   </div>
 </div>
 
@@ -768,7 +801,7 @@
   <div class="modal">
     <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
     <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
-    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.6.30.Branch-update · Plex-style UI</b></div>
+    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.6.31 · Plex UI, Session & Fast Cache</b></div>
     <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>Go (media/manager/subtitle) · Caddy · FFmpeg · SQLite · HTML/CSS/JS</b></div>
     <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>VaultHub 内置系统监控</b></div>
     <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>

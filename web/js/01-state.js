@@ -40,10 +40,67 @@ async function requireVaultHubLogin() {
     return false;
   }
 }
-async function handleProtectedResponse(res) { if (res.status === 401) { handleVaultHubAuthResult(false); return false; } markVaultHubActivity(); return true; }
+async function handleProtectedResponse(res) { if (res.status === 401) { handleVaultHubAuthResult(false); renderSessionStatus(false); return false; } markVaultHubActivity(); renderSessionStatus(true); return true; }
 function guardProtectedAction(fn) { return async (...args)=>{if(vaultHubAuthenticated || await requireVaultHubLogin()) return fn(...args);}; }
 
-/* Caddy 配置已并入系统设置弹窗的第一个标签页 */
+/* ---------- 退出登录 ---------- */
+/* 主动退出：先让服务端销毁 Session，再复位前端状态并显示登录遮罩。
+   本地界面偏好（主题/语言/侧栏宽度）保留，不做清理。 */
+async function logoutVaultHub() {
+  try { await fetch('/api/logout', { method: 'POST', credentials: 'same-origin' }); } catch (_) {}
+  clearTimeout(vaultHubIdleTimer);
+  vaultHubAuthenticated = false;
+  renderSessionStatus(false);
+  closeCaddyPage();
+  closeModal('settingsModal');
+  showVaultHubLogin();
+  const pass = document.getElementById('vaultHubPassword');
+  if (pass) pass.value = '';
+  toast('🚪 ' + t('loggedOutToast'));
+}
+
+/* ---------- 登录状态监测 ---------- */
+/* 服务端会话是唯一权威来源：/api/system/runtime 需要有效 Session，
+   200 = 已登录，401 = 会话失效。增删媒体库前会调用它给出明确提示，
+   避免用户点了按钮却只看到静默失败。 */
+function renderSessionStatus(logged, note) {
+  const badge = document.getElementById('sessionStatusBadge');
+  const hint = document.getElementById('sessionStatusHint');
+  if (badge) {
+    badge.textContent = logged ? '✅ ' + t('sessionOk') : '⚠️ ' + t('sessionBad');
+    badge.className = logged ? 'badge green' : 'badge red';
+  }
+  if (hint && note) hint.textContent = note;
+  const dot = document.getElementById('sessionDot');
+  if (dot) dot.classList.toggle('red', !logged);
+}
+async function refreshSessionStatus(notify) {
+  let logged = false;
+  try {
+    const res = await fetch('/api/system/runtime', { cache: 'no-store' });
+    logged = res.ok;
+  } catch (_) { logged = false; }
+  vaultHubAuthenticated = logged;
+  renderSessionStatus(logged, t(logged ? 'sessionOkHint' : 'sessionBadHint'));
+  if (notify) toast(logged ? '✅ ' + t('sessionOk') : '⚠️ ' + t('sessionReloginToast'));
+  return logged;
+}
+/* 写操作前的守卫：状态异常时给出明确 toast 并弹出登录遮罩，返回 false 让调用方中止。 */
+async function ensureSessionForWrite(action) {
+  if (await refreshSessionStatus(false)) return true;
+  toast('⚠️ ' + tf('sessionWriteBlocked', { action: action || '' }));
+  showVaultHubLogin();
+  return false;
+}
+
+/* ---------- Caddy 配置：独立整页 ---------- */
+/* 从系统设置的 Caddy 标签页进入，铺满视口编辑 Caddyfile。 */
+function openCaddyPage() {
+  document.getElementById('caddyPage')?.classList.add('show');
+  loadCaddyConfig();
+}
+function closeCaddyPage() { document.getElementById('caddyPage')?.classList.remove('show'); }
+/* 顶栏 🔀 按钮：打开系统设置并直接跳到 Caddy 标签页 */
 function openCaddyModal() {
   openModal('settingsModal');
   switchSetTab('caddy');
@@ -51,12 +108,30 @@ function openCaddyModal() {
 async function loadCaddyConfig() {
   const box = document.getElementById('caddyFile');
   if (!box) return;
+  const status = document.getElementById('caddyPageStatus');
+  if (status) status.textContent = t('caddyLoading');
   try {
     const res = await fetch('/api/admin/caddyfile', { cache: 'no-store' });
-    if (!await handleProtectedResponse(res)) return;
+    if (!await handleProtectedResponse(res)) {
+      if (status) status.textContent = t('sessionBad');
+      return;
+    }
     const data = await res.json();
-    if (data.ok) box.value = data.caddyfile || '';
-  } catch (_) { /* 未登录或后端不可用时保持文本框原样 */ }
+    if (data.ok) {
+      box.value = data.caddyfile || '';
+      updateCaddyRouteCount(box.value);
+      if (status) status.textContent = tf('caddyLines', { n: box.value.split('\n').length });
+    }
+  } catch (_) {
+    if (status) status.textContent = t('caddyBackendDown');
+  }
+}
+/* 统计 handle 块数量，作为"已配置多少条路由"的粗略提示 */
+function updateCaddyRouteCount(text) {
+  const badge = document.getElementById('caddyRouteCount');
+  if (!badge) return;
+  const routes = (String(text || '').match(/^\s*handle(_path)?\b/gm) || []).length;
+  badge.textContent = routes ? tf('caddyRouteFmt', { n: routes }) : '--';
 }
 
 async function saveCaddyConfig() {
@@ -66,10 +141,10 @@ async function saveCaddyConfig() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ caddyfile })
   });
-  if (!await handleProtectedResponse(res)) return;
+  if (!await handleProtectedResponse(res)) { toast('⚠️ ' + t('caddySaveBlocked')); return; }
   const data = await res.json();
-  if (data.ok) toast('✅ Caddy 配置已保存并应用');
-  else toast('⚠️ ' + (data.error || '保存失败'));
+  if (data.ok) { toast('✅ ' + t('caddySavedToast')); updateCaddyRouteCount(caddyfile); }
+  else toast('⚠️ ' + (data.error || t('caddySaveFail')));
 }
 /* ================= i18n ================= */
 const I18N = {
@@ -80,8 +155,13 @@ const I18N = {
     navGroupBook: "电子书刊", navGroupVideo: "影视作品", navGroupAudio: "音视作品",
     navGroupSys: "系统",
     navGroupCustom: "自定义", addBoardNav: "添加模块",
-    settings: "系统设置", about: "关于", settingsLead: "反向代理、外观主题、刮削与硬件设置集中在此，Caddy 配置已内置为其中一个标签页。",
+    settings: "系统设置", about: "关于", settingsLead: "反向代理、外观主题、刮削与硬件、账户与登录集中在此，Caddy 配置有独立整页。",
     setLook: "外观主题", setScrape: "刮削与硬件", caddyRoutes: "反向代理服务域名",
+    setAccount: "账户与登录", setAccountTitle: "当前登录状态", sessionChecking: "正在检查登录状态…", sessionRefresh: "刷新状态",
+    sessionHint: "会话在最后一次操作后 30 分钟空闲自动失效；增删媒体库等写操作需要有效登录。",
+    setLogoutTitle: "退出登录", setLogout: "退出登录", setLogoutHint: "退出后会立即失效服务端会话并返回登录页，本机保存的界面偏好不会被清除。",
+    caddyOpenPage: "打开 Caddy 配置页面", caddyPageHint: "Caddyfile 内容较长，单独占用一整页编辑，避免在弹窗里挤成一团。",
+    caddyPageTitle: "Caddy 反向代理配置", caddyPageClose: "关闭",
     caddyRoutesHint: "维护服务域名与内网上游地址的映射，保存后由内置 Caddy 校验并热加载，失败会自动回滚。",
     setSidebar: "侧栏", setSidebarMem: "侧栏宽度记忆", setSidebarMemSub: "拖拽侧栏右边缘调整宽度，自动写入本浏览器", setSidebarReset: "恢复默认宽度",
     setScrapeSrc: "刮削来源", setScrapeHint: "媒体库按大类使用不同刮削源：电子书刊用 Google Books / Bangumi，影视作品用 TMDB / 豆瓣，音视作品用 MusicBrainz / 网易云。",
@@ -186,7 +266,20 @@ const I18N = {
     hwAuto: "自动选择（推荐）", hwCpu: "CPU", hwVaapi: "VAAPI（Intel/AMD）",
     hwQsv: "Intel QSV", hwCuda: "NVIDIA CUDA/NVENC",
     diskFreeShort: "剩余", noVolumes: "未配置监控卷",
-    hwBadgeFmt: "当前：{selected} · 可用：{available}", hwBadgeFail: "后端检测不可用 · 播放时回退 CPU"
+    hwBadgeFmt: "当前：{selected} · 可用：{available}", hwBadgeFail: "后端检测不可用 · 播放时回退 CPU",
+    hwDrmFound: "DRM 设备：{device}", hwDrmMissing: "未检测到 /dev/dri 渲染节点",
+    hwNvidiaFound: "已检测到 NVIDIA 设备节点", hwNvidiaMissing: "未检测到 NVIDIA 设备节点",
+    hwEncoders: "FFmpeg 编码器：{list}", hwEncodersFail: "无法枚举 FFmpeg 编码器",
+    hwFallbackNote: "硬件不可用时自动回退 CPU，不影响播放。",
+    hwNoneToast: "未检测到可用显卡加速，将使用 CPU", hwFoundToast: "检测到 {selected} 硬件加速",
+    hwProbeError: "显卡检测失败：{error}",
+    sessionOk: "登录状态正常", sessionBad: "登录状态异常",
+    sessionOkHint: "服务端会话有效，可以执行增删媒体库等写操作。",
+    sessionBadHint: "服务端会话已失效或不存在，请重新登录后再执行写操作。",
+    sessionReloginToast: "登录状态异常，请重新登录", sessionWriteBlocked: "登录状态异常，请重新登录后再{action}",
+    loggedOutToast: "已退出登录", caddySavedToast: "Caddy 配置已保存并应用", caddySaveFail: "保存失败",
+    caddyLoading: "正在载入…", caddyLines: "{n} 行", caddyRouteFmt: "{n} 条路由", caddyBackendDown: "后端不可用",
+    writeAddLibrary: "添加媒体库", writeDeleteLibrary: "删除媒体库", caddySaveBlocked: "登录状态异常，请重新登录后再保存"
   },
   "zh-TW": {
     caddySettings: "Caddy 設定", caddyOrigin: "WebUI 外部網域", caddyAdminToken: "管理權杖", caddyFile: "Caddyfile", caddySave: "儲存並套用", caddyReload: "重新載入", caddyHint: "儲存後會驗證並熱載入容器內的 Caddy 設定；失敗時會回滾。", superComicTitle: "Komga / Kavita / Calibre-Web · 統一書庫", appName: "蜀鼠之家", appSub: "VaultHub · 家庭 NAS 控制台 · 預覽版",
@@ -195,6 +288,11 @@ const I18N = {
     navGroupSys: "系統",
     navGroupCustom: "自訂", addBoardNav: "新增模組",
     settings: "系統設定", about: "關於",
+    setAccount: "帳戶與登入", setAccountTitle: "目前登入狀態", sessionChecking: "正在檢查登入狀態…", sessionRefresh: "重新檢查",
+    sessionHint: "工作階段在最後一次操作後 30 分鐘閒置自動失效；新增或刪除媒體庫等寫入操作需要有效登入。",
+    setLogoutTitle: "登出", setLogout: "登出", setLogoutHint: "登出後會立即失效伺服器工作階段並回到登入頁，本機儲存的介面偏好不會被清除。",
+    caddyOpenPage: "開啟 Caddy 設定頁面", caddyPageHint: "Caddyfile 內容較長，單獨佔用一整頁編輯。",
+    caddyPageTitle: "Caddy 反向代理設定", caddyPageClose: "關閉",
     secNas: "NAS 監控", cpu: "CPU", memory: "記憶體", network: "網路", diskTemp: "硬碟溫度",
     used: "使用率", cores: "核心數", load: "負載", temp: "溫度",
     memUsed: "已用", memTotal: "總計", swap: "交換",
@@ -308,7 +406,20 @@ const I18N = {
     hwAuto: "自動選擇（推薦）", hwCpu: "CPU", hwVaapi: "VAAPI（Intel/AMD）",
     hwQsv: "Intel QSV", hwCuda: "NVIDIA CUDA/NVENC",
     diskFreeShort: "剩餘", noVolumes: "未設定監控卷",
-    hwBadgeFmt: "目前：{selected} · 可用：{available}", hwBadgeFail: "後端偵測不可用 · 播放時回退 CPU"
+    hwBadgeFmt: "目前：{selected} · 可用：{available}", hwBadgeFail: "後端偵測不可用 · 播放時回退 CPU",
+    hwDrmFound: "DRM 裝置：{device}", hwDrmMissing: "未偵測到 /dev/dri 轉譯節點",
+    hwNvidiaFound: "已偵測到 NVIDIA 裝置節點", hwNvidiaMissing: "未偵測到 NVIDIA 裝置節點",
+    hwEncoders: "FFmpeg 編碼器：{list}", hwEncodersFail: "無法列舉 FFmpeg 編碼器",
+    hwFallbackNote: "硬體不可用時自動回退 CPU，不影響播放。",
+    hwNoneToast: "未偵測到可用顯卡加速，將使用 CPU", hwFoundToast: "偵測到 {selected} 硬體加速",
+    hwProbeError: "顯卡偵測失敗：{error}",
+    sessionOk: "登入狀態正常", sessionBad: "登入狀態異常",
+    sessionOkHint: "伺服器工作階段有效，可以執行新增或刪除媒體庫等寫入操作。",
+    sessionBadHint: "伺服器工作階段已失效或不存在，請重新登入後再執行寫入操作。",
+    sessionReloginToast: "登入狀態異常，請重新登入", sessionWriteBlocked: "登入狀態異常，請重新登入後再{action}",
+    loggedOutToast: "已登出", caddySavedToast: "Caddy 設定已儲存並套用", caddySaveFail: "儲存失敗",
+    caddyLoading: "正在載入…", caddyLines: "{n} 行", caddyRouteFmt: "{n} 條路由", caddyBackendDown: "後端不可用",
+    writeAddLibrary: "新增媒體庫", writeDeleteLibrary: "刪除媒體庫", caddySaveBlocked: "登入狀態異常，請重新登入後再儲存"
   },
   "en": {
     caddySettings: "Caddy Config", caddyOrigin: "WebUI public domain", caddyAdminToken: "Admin token", caddyFile: "Caddyfile", caddySave: "Save & apply", caddyReload: "Reload", caddyHint: "Save will validate and hot-reload the container Caddy config; failures roll back.", superComicTitle: "Komga / Kavita / Calibre-Web · Unified Library", appName: "VaultHub", appSub: "VaultHub · Home NAS console · Preview",
@@ -317,6 +428,11 @@ const I18N = {
     navGroupSys: "System",
     navGroupCustom: "Custom", addBoardNav: "Add Module",
     settings: "Settings", about: "About",
+    setAccount: "Account & Sign-in", setAccountTitle: "Current session", sessionChecking: "Checking session…", sessionRefresh: "Refresh",
+    sessionHint: "Sessions expire after 30 minutes of inactivity; adding or removing libraries requires a valid sign-in.",
+    setLogoutTitle: "Sign out", setLogout: "Sign out", setLogoutHint: "Signing out invalidates the server session immediately and returns to the login screen. Local UI preferences are kept.",
+    caddyOpenPage: "Open Caddy config page", caddyPageHint: "The Caddyfile is long, so it gets a dedicated full page instead of a cramped dialog.",
+    caddyPageTitle: "Caddy reverse proxy config", caddyPageClose: "Close",
     secNas: "NAS Monitor", cpu: "CPU", memory: "Memory", network: "Network", diskTemp: "Disk Temp",
     used: "used", cores: "Cores", load: "Load", temp: "Temp",
     memUsed: "Used", memTotal: "Total", swap: "Swap",
@@ -430,7 +546,20 @@ const I18N = {
     hwAuto: "Auto (recommended)", hwCpu: "CPU", hwVaapi: "VAAPI (Intel/AMD)",
     hwQsv: "Intel QSV", hwCuda: "NVIDIA CUDA/NVENC",
     diskFreeShort: "free", noVolumes: "No configured volumes",
-    hwBadgeFmt: "Active: {selected} · available: {available}", hwBadgeFail: "Backend detection unavailable · falls back to CPU"
+    hwBadgeFmt: "Active: {selected} · available: {available}", hwBadgeFail: "Backend detection unavailable · falls back to CPU",
+    hwDrmFound: "DRM device: {device}", hwDrmMissing: "No /dev/dri render node detected",
+    hwNvidiaFound: "NVIDIA device nodes detected", hwNvidiaMissing: "No NVIDIA device nodes detected",
+    hwEncoders: "FFmpeg encoders: {list}", hwEncodersFail: "Could not enumerate FFmpeg encoders",
+    hwFallbackNote: "Falls back to CPU automatically when hardware is unavailable; playback is unaffected.",
+    hwNoneToast: "No usable GPU acceleration detected — using CPU", hwFoundToast: "{selected} hardware acceleration detected",
+    hwProbeError: "GPU detection failed: {error}",
+    sessionOk: "Signed in", sessionBad: "Session invalid",
+    sessionOkHint: "Server session is valid; write operations are allowed.",
+    sessionBadHint: "Server session expired or missing — sign in again before writing.",
+    sessionReloginToast: "Session invalid — please sign in again", sessionWriteBlocked: "Session invalid — sign in again before you {action}",
+    loggedOutToast: "Signed out", caddySavedToast: "Caddy config saved and applied", caddySaveFail: "Save failed",
+    caddyLoading: "Loading…", caddyLines: "{n} lines", caddyRouteFmt: "{n} routes", caddyBackendDown: "Backend unavailable",
+    writeAddLibrary: "add a library", writeDeleteLibrary: "delete a library", caddySaveBlocked: "Session invalid — sign in again before saving"
   }
 };
 
@@ -581,20 +710,39 @@ function saveHardwareAcceleration() {
   refreshHardwareStatus();
   toast("✅ 显卡加速设置已保存");
 }
-async function refreshHardwareStatus() {
+/* 显卡检测：后端会枚举 /dev/dri、NVIDIA 设备节点和 ffmpeg 实际编译进的编码器，
+   这里把结果显示成"当前 / 可用 / 设备"三段，并在 notify 时给出 toast 反馈，
+   避免点了「检测显卡」看不出任何变化。 */
+async function refreshHardwareStatus(notify) {
   const badge = document.getElementById("hardwareStatus");
   if (!badge) return;
+  const detail = document.getElementById("hardwareDetail");
   const select = document.getElementById("hardwareAcceleration");
   if (select) select.value = settings.hardwareAcceleration || "auto";
+  badge.textContent = curLang === "en" ? "Detecting…" : "正在检测…";
   try {
     const res = await fetch(`/api/media/hardware?hw=${encodeURIComponent(settings.hardwareAcceleration || "auto")}`, { cache: "no-store" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
     const data = await res.json();
     const selected = data.selected || "cpu";
-    const available = Object.entries(data.available || {}).filter(([, ok]) => ok).map(([name]) => name).join(" / ");
-    badge.textContent = tf("hwBadgeFmt", { selected: selected.toUpperCase(), available: available || "CPU" });
-    badge.title = data.vaapi_device || "";
+    const available = Object.entries(data.available || {}).filter(([, ok]) => ok).map(([name]) => name.toUpperCase());
+    badge.textContent = tf("hwBadgeFmt", { selected: selected.toUpperCase(), available: available.join(" / ") || "CPU" });
+    badge.className = selected === "cpu" ? "badge" : "badge green";
+    if (detail) {
+      const parts = [];
+      parts.push(data.vaapi_device ? tf("hwDrmFound", { device: data.vaapi_device }) : t("hwDrmMissing"));
+      parts.push(data.nvidia_device ? t("hwNvidiaFound") : t("hwNvidiaMissing"));
+      if (Array.isArray(data.encoders) && data.encoders.length) parts.push(tf("hwEncoders", { list: data.encoders.join(", ") }));
+      if (!data.ffmpeg) parts.push(t("hwEncodersFail"));
+      parts.push(t("hwFallbackNote"));
+      detail.textContent = parts.join(" · ");
+    }
+    if (notify) toast(selected === "cpu" ? "ℹ️ " + t("hwNoneToast") : "✅ " + tf("hwFoundToast", { selected: selected.toUpperCase() }));
   } catch (e) {
     badge.textContent = t("hwBadgeFail");
+    badge.className = "badge red";
+    if (detail) detail.textContent = tf("hwProbeError", { error: e.message });
+    if (notify) toast("⚠️ " + tf("hwProbeError", { error: e.message }));
   }
 }
 
@@ -681,6 +829,8 @@ function switchSetTab(key) {
   document.querySelectorAll(".settab[data-settab]").forEach(el => el.classList.toggle("on", el.dataset.settab === key));
   document.querySelectorAll(".setpanel").forEach(el => el.classList.toggle("on", el.id === "setpanel-" + key));
   if (key === "caddy") loadCaddyConfig();
+  if (key === "scrape") refreshHardwareStatus();
+  if (key === "account") refreshSessionStatus(false);
 }
 
 

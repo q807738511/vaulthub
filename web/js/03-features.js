@@ -49,6 +49,8 @@ async function saveMediaLibraries() {
   const token = document.getElementById("mediaAdminToken")?.value.trim() || "";
   if (!name || !type || !paths.length) { toast("⚠️ 请填写库名称、类型和至少一个路径"); return; }
   if (paths.some(path => !path.startsWith("/"))) { toast("⚠️ 路径必须是容器内已挂载的绝对路径"); return; }
+  // 写操作前先确认服务端会话有效，避免点了保存只看到静默失败。
+  if (!await ensureSessionForWrite(t("writeAddLibrary"))) return;
   try { localStorage.setItem("dwu_media_admin_token", token); } catch (e) {}
   try {
     let saved = 0;
@@ -56,7 +58,7 @@ async function saveMediaLibraries() {
     for (let i = 0; i < paths.length; i++) {
       const body = { id: libraryId(name, type, paths[i], i), name: paths.length > 1 ? `${name} ${i + 1}` : name, type, path: paths[i] };
       const res = await fetch("/api/media/libraries", { method: "POST", headers: { "Content-Type": "application/json", ...mediaAdminHeaders() }, credentials: "same-origin", body: JSON.stringify(body) });
-      if (!await handleProtectedResponse(res)) { toast("⚠️ 会话已过期，请重新登录后再保存"); return; }
+      if (!await handleProtectedResponse(res)) { toast("⚠️ " + t("caddySaveBlocked")); return; }
       if (!res.ok) {
         let detail = "";
         try { detail = (await res.json()).error || ""; } catch (e) {}
@@ -83,9 +85,11 @@ function renderMediaLibraryConfigList() {
 }
 async function deleteMediaLibrary(id) {
   if (!confirm("确定删除这个本地媒体库配置？媒体文件不会被删除。")) return;
+  // 写操作前先确认服务端会话有效，异常时明确提示而不是静默失败。
+  if (!await ensureSessionForWrite(t("writeDeleteLibrary"))) return;
   try {
     const res = await fetch(`/api/media/libraries?id=${encodeURIComponent(id)}`, { method: "DELETE", headers: mediaAdminHeaders(), credentials: "same-origin" });
-    if (!await handleProtectedResponse(res)) { toast("⚠️ 会话已过期，请重新登录后再删除"); return; }
+    if (!await handleProtectedResponse(res)) { toast("⚠️ " + tf("sessionWriteBlocked", { action: t("writeDeleteLibrary") })); return; }
     if (!res.ok) { let detail = ""; try { detail = (await res.json()).error || ""; } catch (e) {} throw new Error(detail || `HTTP ${res.status}`); }
     await refreshMediaLibraries(false);
     toast("✅ 媒体库配置已删除");
@@ -898,6 +902,10 @@ function setLang(l) {
   if (typeof renderNowPlaying === "function") renderNowPlaying();
   /* 硬件徽标文案由 JS 拼装（当前/可用），也要跟随语言重绘。 */
   if (typeof refreshHardwareStatus === "function") refreshHardwareStatus();
+  /* 登录状态徽标与提示同样是 JS 拼装的动态文案。 */
+  if (typeof refreshSessionStatus === "function") refreshSessionStatus(false);
+  /* Caddy 页面的行数/路由数徽标带语言后缀。 */
+  if (typeof updateCaddyRouteCount === "function") updateCaddyRouteCount(document.getElementById("caddyFile")?.value || "");
   if (settings.mp.token) loadPtAll(); else renderPtMock();
   saveSettings();
 }

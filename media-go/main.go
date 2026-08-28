@@ -850,6 +850,7 @@ func commandJSON(w http.ResponseWriter, r *http.Request, name string, args ...st
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(out)
 }
+
 // cpuSample is the last /proc/stat total/idle snapshot, used to compute the
 // busy percentage between two scrapes (the front-end polls every 5s).
 type cpuSample struct {
@@ -1169,6 +1170,131 @@ func probeVideoCodec(ctx context.Context, p string) (string, error) {
 	return strings.TrimSpace(string(b)), nil
 }
 
+// hwCache memoises the detection result: probing ffmpeg encoders spawns a
+// process, and the settings page polls this endpoint on every open.
+var (
+	hwMu    sync.Mutex
+	hwProbe map[string]bool
+)
+
+// ffmpegEncoders returns the set of encoder names ffmpeg was built with.
+func ffmpegEncoders(ctx context.Context) map[string]bool {
+	hwMu.Lock()
+	defer hwMu.Unlock()
+	if hwProbe != nil {
+		return hwProbe
+	}
+	found := map[string]bool{}
+	if b, e := exec.CommandContext(ctx, "ffmpeg", "-hide_banner", "-loglevel", "error", "-encoders").Output(); e == nil {
+		for _, line := range strings.Split(string(b), "\n") {
+			f := strings.Fields(strings.TrimSpace(line))
+			if len(f) >= 2 {
+				found[f[1]] = true
+			}
+		}
+		hwProbe = found
+	}
+	return found
+}
+
+// vaapiDevice returns the first usable DRM render node, or "" when the
+// container has no /dev/dri passed through.
+func vaapiDevice() string {
+	if d := os.Getenv("VAAPI_DEVICE"); d != "" {
+		if _, e := os.Stat(d); e == nil {
+			return d
+		}
+	}
+	ents, e := os.ReadDir("/dev/dri")
+	if e != nil {
+		return ""
+	}
+	for _, x := range ents {
+		if strings.HasPrefix(x.Name(), "renderD") {
+			return "/dev/dri/" + x.Name()
+		}
+	}
+	return ""
+}
+
+// nvidiaPresent reports whether an NVIDIA device node is visible, which is what
+// the NVIDIA Container Toolkit injects.
+func nvidiaPresent() bool {
+	for _, p := range []string{"/dev/nvidiactl", "/dev/nvidia0", "/dev/nvidia-uvm"} {
+		if _, e := os.Stat(p); e == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// detectHardware inspects device nodes plus the encoders ffmpeg actually has
+// and reports what acceleration is usable. "选择" resolves the requested mode
+// (auto/cpu/vaapi/qsv/cuda) against availability, falling back to CPU.
+func detectHardware(ctx context.Context, requested string) map[string]any {
+	enc := ffmpegEncoders(ctx)
+	dev := vaapiDevice()
+	nvidia := nvidiaPresent()
+	available := map[string]bool{
+		"cpu":   true,
+		"vaapi": dev != "" && enc["h264_vaapi"],
+		"qsv":   dev != "" && enc["h264_qsv"],
+		"cuda":  nvidia && enc["h264_nvenc"],
+	}
+	if requested == "" {
+		requested = env("FFMPEG_HWACCEL", "auto")
+	}
+	selected := "cpu"
+	switch requested {
+	case "vaapi", "qsv", "cuda":
+		if available[requested] {
+			selected = requested
+		}
+	default: // auto: prefer the vendor-specific encoders before generic VAAPI
+		for _, c := range []string{"qsv", "cuda", "vaapi"} {
+			if available[c] {
+				selected = c
+				break
+			}
+		}
+	}
+	encoders := []string{}
+	for _, name := range []string{"h264_vaapi", "h264_qsv", "h264_nvenc", "libx264"} {
+		if enc[name] {
+			encoders = append(encoders, name)
+		}
+	}
+	return map[string]any{
+		"configured":    requested,
+		"selected":      selected,
+		"available":     available,
+		"vaapi_device":  dev,
+		"nvidia_device": nvidia,
+		"encoders":      encoders,
+		"ffmpeg":        len(enc) > 0,
+	}
+}
+
+// hwEncodeArgs maps a resolved acceleration mode to the ffmpeg input/output
+// flags needed to encode H.264 on that device. CPU falls back to libx264 with
+// a fast preset so software transcodes still start quickly.
+func hwEncodeArgs(mode, device string) (pre []string, vcodec string, post []string) {
+	switch mode {
+	case "vaapi":
+		if device != "" {
+			return []string{"-hwaccel", "vaapi", "-hwaccel_device", device, "-hwaccel_output_format", "vaapi"},
+				"h264_vaapi", []string{"-vf", "scale_vaapi=format=nv12"}
+		}
+	case "qsv":
+		if device != "" {
+			return []string{"-hwaccel", "qsv", "-qsv_device", device}, "h264_qsv", []string{"-global_quality", "23"}
+		}
+	case "cuda":
+		return []string{"-hwaccel", "cuda"}, "h264_nvenc", []string{"-preset", "p4", "-cq", "23"}
+	}
+	return nil, "libx264", []string{"-preset", "veryfast", "-crf", "23", "-tune", "zerolatency"}
+}
+
 // extractSubtitle pulls one embedded text subtitle track out of a video and
 // converts it to WebVTT so the browser <track> element can display it.
 func (a *App) extractSubtitle(w http.ResponseWriter, r *http.Request) {
@@ -1236,7 +1362,7 @@ func main() {
 		})
 	})
 	mux.HandleFunc("/api/media/hardware", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"configured": env("FFMPEG_HWACCEL", "auto"), "selected": "cpu", "available": map[string]bool{"cpu": true, "vaapi": false, "qsv": false, "cuda": false}})
+		writeJSON(w, 200, detectHardware(r.Context(), r.URL.Query().Get("hw")))
 	})
 	mux.HandleFunc("/api/media/probe", func(w http.ResponseWriter, r *http.Request) { probe(w, r, a) })
 	mux.HandleFunc("/api/media/streams", func(w http.ResponseWriter, r *http.Request) { streams(w, r, a) })
@@ -1296,6 +1422,71 @@ func (a *App) tmdb(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(res.StatusCode)
 	io.Copy(w, res.Body)
 }
+
+// compatBuilds tracks which cache keys already have a background build running
+// so a burst of requests never starts the same transcode twice.
+var (
+	compatMu     sync.Mutex
+	compatBuilds = map[string]bool{}
+)
+
+// compatArgs assembles the ffmpeg arguments shared by the live stream and the
+// background cache build: pick the video codec (copy when the source is already
+// H.264), map the requested audio track, and always deliver stereo AAC.
+func compatArgs(ctx context.Context, p, audioTrack, hw string) (pre []string, mid []string) {
+	vcodec := ""
+	var post []string
+	if vc, _ := probeVideoCodec(ctx, p); vc == "h264" {
+		vcodec = "copy" // stream copy: no CPU transcode, starts instantly
+	} else {
+		hwInfo := detectHardware(ctx, hw)
+		mode, _ := hwInfo["selected"].(string)
+		dev, _ := hwInfo["vaapi_device"].(string)
+		pre, vcodec, post = hwEncodeArgs(mode, dev)
+	}
+	mid = []string{"-map", "0:v:0"}
+	if n, err := strconv.Atoi(audioTrack); audioTrack != "" && err == nil && n >= 0 {
+		mid = append(mid, "-map", fmt.Sprintf("0:a:%d?", n))
+	} else {
+		mid = append(mid, "-map", "0:a:0?")
+	}
+	mid = append(mid, "-c:v", vcodec)
+	mid = append(mid, post...)
+	mid = append(mid, "-c:a", "aac", "-ac", "2", "-b:a", "160k")
+	return pre, mid
+}
+
+// buildCompatCache produces the seekable (faststart) MP4 in the background so
+// the *next* open is a plain cache hit with full Range support. It deliberately
+// uses a detached context: the user closing the tab must not abort it.
+func (a *App) buildCompatCache(p, cache, audioTrack, hw string) {
+	compatMu.Lock()
+	if compatBuilds[cache] {
+		compatMu.Unlock()
+		return
+	}
+	compatBuilds[cache] = true
+	compatMu.Unlock()
+	go func() {
+		defer func() { compatMu.Lock(); delete(compatBuilds, cache); compatMu.Unlock() }()
+		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Hour)
+		defer cancel()
+		tmp := cache + fmt.Sprintf(".bg-%d", os.Getpid())
+		pre, mid := compatArgs(ctx, p, audioTrack, hw)
+		args := append([]string{"-hide_banner", "-loglevel", "error"}, pre...)
+		args = append(args, "-i", p)
+		args = append(args, mid...)
+		args = append(args, "-movflags", "+faststart", "-f", "mp4", "-y", tmp)
+		if e := exec.CommandContext(ctx, "ffmpeg", args...).Run(); e != nil {
+			_ = os.Remove(tmp)
+			return
+		}
+		if e := os.Rename(tmp, cache); e != nil {
+			_ = os.Remove(tmp)
+		}
+	}()
+}
+
 func (a *App) compat(w http.ResponseWriter, r *http.Request) {
 	l, ok := a.find(r.URL.Query().Get("id"))
 	if !ok {
@@ -1311,12 +1502,15 @@ func (a *App) compat(w http.ResponseWriter, r *http.Request) {
 	// audio streams). It is part of the cache key so different tracks cache
 	// separately and never collide.
 	audioTrack := r.URL.Query().Get("audio_track")
-	cache := cacheKey(fmt.Sprintf("%s:%d:%d:%s:a%s", p, st.Size(), st.ModTime().UnixNano(), r.URL.Query().Get("hw"), audioTrack))
+	hw := r.URL.Query().Get("hw")
+	cache := cacheKey(fmt.Sprintf("%s:%d:%d:%s:a%s", p, st.Size(), st.ModTime().UnixNano(), hw, audioTrack))
+	// Fully built cache: serve it with byte ranges so seeking works.
 	if f, e := os.Open(cache); e == nil {
 		defer f.Close()
 		info, _ := f.Stat()
 		w.Header().Set("Content-Type", "video/mp4")
 		w.Header().Set("Accept-Ranges", "bytes")
+		w.Header().Set("X-VaultHub-Compat", "cache")
 		http.ServeContent(w, r, info.Name(), info.ModTime(), f)
 		return
 	}
@@ -1334,50 +1528,55 @@ func (a *App) compat(w http.ResponseWriter, r *http.Request) {
 	} else {
 		defer cancel()
 	}
-	tmp := cache + fmt.Sprintf(".tmp-%d", os.Getpid())
-	// Only remux/transcode what the browser can't play. If the video is
-	// already H.264 we copy the stream (fast, no CPU transcode); otherwise we
-	// re-encode to H.264. Audio is always transcoded to AAC. The chosen audio
-	// track is mapped when audio_track is supplied.
-	vcodec := "libx264"
-	if vc, _ := probeVideoCodec(ctx, p); vc == "h264" {
-		vcodec = "copy"
-	}
-	args := []string{"-hide_banner", "-loglevel", "error", "-i", p, "-map", "0:v:0"}
-	if audioTrack != "" {
-		if n, err := strconv.Atoi(audioTrack); err == nil && n >= 0 {
-			args = append(args, "-map", fmt.Sprintf("0:a:%d?", n))
-		} else {
-			args = append(args, "-map", "0:a:0?")
-		}
-	} else {
-		args = append(args, "-map", "0:a:0?")
-	}
-	args = append(args, "-c:v", vcodec, "-c:a", "aac", "-ac", "2", "-movflags", "+faststart", "-f", "mp4", tmp)
+	// Cache miss: stream a fragmented MP4 straight to the browser instead of
+	// waiting for the whole transcode to land on disk. empty_moov+frag_keyframe
+	// makes the output playable from the first fragment, so playback starts in
+	// about a second even for a multi-gigabyte source. Range is intentionally
+	// not honoured here (we answer 200 with the full stream); the seekable copy
+	// is produced in the background for the next open.
+	pre, mid := compatArgs(ctx, p, audioTrack, hw)
+	args := append([]string{"-hide_banner", "-loglevel", "error"}, pre...)
+	args = append(args, "-i", p)
+	args = append(args, mid...)
+	args = append(args, "-movflags", "+frag_keyframe+empty_moov+default_base_moof", "-f", "mp4", "pipe:1")
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
-	if out, e := cmd.CombinedOutput(); e != nil {
-		_ = os.Remove(tmp)
-		if ctx.Err() != nil {
-			return
-		}
-		errJSON(w, 500, "compat playback unavailable: "+strings.TrimSpace(string(out)))
-		return
-	}
-	if e := os.Rename(tmp, cache); e != nil {
-		_ = os.Remove(tmp)
-		errJSON(w, 500, "cache write failed")
-		return
-	}
-	f, e := os.Open(cache)
+	stdout, e := cmd.StdoutPipe()
 	if e != nil {
-		errJSON(w, 500, "cache read failed")
+		errJSON(w, 500, "compat playback unavailable")
 		return
 	}
-	defer f.Close()
-	info, _ := f.Stat()
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	if e := cmd.Start(); e != nil {
+		errJSON(w, 500, "compat playback unavailable")
+		return
+	}
+	if env("COMPAT_PRECACHE", "1") != "0" {
+		a.buildCompatCache(p, cache, audioTrack, hw)
+	}
 	w.Header().Set("Content-Type", "video/mp4")
-	w.Header().Set("Accept-Ranges", "bytes")
-	http.ServeContent(w, r, info.Name(), info.ModTime(), f)
+	w.Header().Set("Accept-Ranges", "none")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-VaultHub-Compat", "live")
+	w.WriteHeader(200)
+	flusher, _ := w.(http.Flusher)
+	buf := make([]byte, 256*1024)
+	for {
+		n, re := stdout.Read(buf)
+		if n > 0 {
+			if _, we := w.Write(buf[:n]); we != nil {
+				cancel()
+				break
+			}
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+		if re != nil {
+			break
+		}
+	}
+	_ = cmd.Wait()
 }
 
 var _ = time.Now

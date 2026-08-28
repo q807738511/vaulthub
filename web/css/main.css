@@ -646,6 +646,22 @@
   .setblock { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 13px 14px; margin-bottom: 11px; }
   .setblock h4 { font-size: 12.5px; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
   .setblock p { font-size: 11px; color: var(--text3); line-height: 1.65; margin-bottom: 10px; }
+
+  /* Caddy 配置独立整页：铺满视口，textarea 吃掉全部剩余高度 */
+  .fullpage { position: fixed; inset: 0; z-index: 1200; display: none; flex-direction: column; background: var(--bg); }
+  .fullpage.show { display: flex; animation: fadeIn .18s ease; }
+  .fullpage-head {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+    padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--card);
+  }
+  .fullpage-head h3 { font-size: 14px; display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }
+  .fullpage-body { flex: 1; min-height: 0; padding: 14px 20px 20px; display: flex; }
+  .fullpage-body textarea {
+    flex: 1; width: 100%; resize: none; border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--card2); color: var(--text); padding: 13px 15px;
+    font: 12px/1.8 ui-monospace, SFMono-Regular, Consolas, monospace; tab-size: 2;
+  }
+  .fullpage-body textarea:focus { outline: none; border-color: var(--accent); }
   .lang-opt, .theme-opt {
     display: flex; align-items: center; gap: 10px; padding: 11px 13px; border: 1px solid var(--border);
     border-radius: var(--radius-sm); cursor: pointer; margin-bottom: 8px; font-size: 13px; transition: all .15s;
