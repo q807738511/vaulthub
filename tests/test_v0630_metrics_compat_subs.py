@@ -50,7 +50,12 @@ assert "netInterface" in html
 # --- Frontend: settings/Caddy buttons open directly (guard removed) ---
 assert "guardProtectedAction(openCaddyModal)" not in html, "Caddy button must not be guard-wrapped"
 assert "guardProtectedAction(()=>openModal('settingsModal'))" not in html, "settings button must not be guard-wrapped"
-assert 'onclick="openCaddyModal()"' in html
+# v0.6.30.Branch-update relocated the Caddy editor into the settings modal as a
+# tab, so the standalone toolbar button is gone. The entry point must still be
+# reachable without a guard wrapper: openCaddyModal() opens settings on the
+# Caddy tab, and the settings modal itself opens from the top bar.
+assert "function openCaddyModal(" in state, "openCaddyModal must still exist as the Caddy entry point"
+assert "switchSetTab('caddy')" in html, "settings modal must expose the Caddy tab"
 assert 'onclick="openModal(\'settingsModal\')"' in html
 # Dead Caddy fields removed
 assert 'id="caddyToken"' not in html, "obsolete Caddy token field must be removed"

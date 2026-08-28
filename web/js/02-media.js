@@ -235,7 +235,22 @@ const movieMetadataCache = "vaulthub_movie_metadata_v1";
 let scraperStatus = { default: "douban", tmdb_enabled: false };
 function readMovieMetadata() { try { return JSON.parse(localStorage.getItem(movieMetadataCache) || "{}") || {}; } catch (e) { return {}; } }
 function writeMovieMetadata(data) { try { localStorage.setItem(movieMetadataCache, JSON.stringify(data)); } catch (e) {} }
-function movieTitleFromPath(path) { return displayBookTitle(path).replace(/\b(19|20)\d{2}\b/g, " ").replace(/[._]+/g, " ").replace(/\s+/g, " ").trim() || displayBookTitle(path); }
+/* 影视文件名常见的发布组/规格标记，展示标题时剔除 */
+const MOVIE_NOISE_RE = /\b(2160p|1080p|1080i|720p|480p|4k|8k|uhd|hdr10\+?|hdr|dv|dolby[\s.]?vision|remux|bluray|blu-ray|bdrip|brrip|webrip|web-?dl|hdtv|dvdrip|x264|x265|h\.?264|h\.?265|hevc|avc|aac|ac3|eac3|dts(?:-hd)?|truehd|atmos|flac|10bit|8bit|s\d{1,2}e\d{1,3}|s\d{1,2}|e\d{1,3}|repack|proper|extended|imax|cn|chs|cht|zh|eng)\b/gi;
+function movieTitleFromPath(path) {
+  /* 先在原始文件名上剔除年份与发布规格，再做分隔符归一化：
+     displayBookTitle 会把 WEB-DL 这类连字符换成空格，先跑它会导致噪声词漏匹配。 */
+  const raw = String(path).split("/").pop().replace(/\.[^.]+$/, "");
+  const base = raw
+    .replace(/\b(19|20)\d{2}\b/g, " ")
+    .replace(MOVIE_NOISE_RE, " ")
+    .replace(/[\[\]()【】]/g, " ")
+    .replace(/[._-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return base || displayBookTitle(path);
+}
+
 function movieYearFromPath(path) { const m = String(path).match(/\b(19|20)\d{2}\b/); return m ? m[0] : ""; }
 function movieBaseMetadata(path) { return { title: movieTitleFromPath(path), year: movieYearFromPath(path), poster: "", overview: "", provider: "文件名展示", checkedAt: 0 }; }
 function movieMetadataFor(path) { const all = readMovieMetadata(); return { ...movieBaseMetadata(path), ...(all[path] || {}) }; }
@@ -469,10 +484,17 @@ function writeAudioMetadata(data) {
   try { localStorage.setItem(audioMetadataCache, JSON.stringify(data)); } catch (e) {}
 }
 function audioBaseMetadata(path) {
+  /* 先用原始文件名解析「歌手 - 歌名」，displayBookTitle 会把连字符换成空格，
+     直接拿它切分会丢掉歌手信息。 */
+  const raw = String(path).split("/").pop().replace(/\.[^.]+$/, "").trim();
+  const parts = raw.split(/\s+-\s+|\s*-\s*/).map(x => x.trim()).filter(Boolean);
   const stem = displayBookTitle(path);
-  const parts = stem.split(" - ");
-  return { title: parts.length > 1 ? parts[parts.length - 1].trim() : stem, artist: parts.length > 1 ? parts[0].trim() : "未知歌手", album: "未知专辑", cover: "", lyrics: "" };
+  if (parts.length > 1) {
+    return { title: parts.slice(1).join(" - "), artist: parts[0], album: "未知专辑", cover: "", lyrics: "" };
+  }
+  return { title: stem, artist: "未知歌手", album: "未知专辑", cover: "", lyrics: "" };
 }
+
 function audioMetadataFor(path) {
   const all = readAudioMetadata();
   return { ...audioBaseMetadata(path), ...(all[path] || {}) };

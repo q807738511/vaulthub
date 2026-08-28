@@ -1,0 +1,420 @@
+/* VaultHub 首页（V4 Plex 风格）—— 四栏内容渲染。
+   依赖 01-state.js / 02-media.js 里的全局函数（t、esc、localMediaLibraries、
+   mediaTypesForGroup、mediaTypeName、coverGradient、displayBookTitle、
+   movieMetadataFor、audioMetadataFor、readingState、findMediaLibrary…），
+   因此必须在它们之后加载。 */
+
+const HOME_GROUPS = ["comic", "movie", "audio"];
+const HOME_GROUP_LABEL = { comic: "电子书刊", movie: "影视作品", audio: "音视作品" };
+const HOME_GROUP_ICON = { comic: "📖", movie: "🎬", audio: "🎵" };
+const HOME_TYPE_ICON = { book: "📖", comic: "📚", movie: "🎬", series: "📺", audio: "🎵", musicvideo: "🎤" };
+const HOME_FILTER_GROUPS = { all: HOME_GROUPS, book: ["comic"], video: ["movie"], audio: ["audio"] };
+let homeFilter = "all";
+let homeIndexStatus = {};
+
+function homeGroupOfType(type) {
+  if (type === "comic" || type === "book") return "comic";
+  if (type === "movie" || type === "series") return "movie";
+  return "audio";
+}
+
+/* ---------- 侧栏：每个媒体库一项，名称即刮削用的手动命名 ---------- */
+function renderHomeLibraryNav() {
+  const hosts = { comic: "libNavComic", movie: "libNavMovie", audio: "libNavAudio" };
+  HOME_GROUPS.forEach(group => {
+    const host = document.getElementById(hosts[group]);
+    if (!host) return;
+    const libs = (typeof librariesForGroup === "function" ? librariesForGroup(group) : []) || [];
+    host.innerHTML = libs.map(lib => {
+      const icon = HOME_TYPE_ICON[lib.type] || HOME_GROUP_ICON[group];
+      const count = Number(homeIndexStatus[lib.id]?.total || 0);
+      return `<div class="nav-item" data-view="${esc(group)}" onclick="openHomeLibrary('${esc(group)}','${esc(lib.id)}')">`
+        + `<span class="ic">${icon}</span><span class="txt" title="${esc(lib.name)}">${esc(lib.name)}</span>`
+        + `<span class="cnt">${count ? formatHomeCount(count) : ""}</span></div>`;
+    }).join("");
+  });
+}
+function openHomeLibrary(group, libId) {
+  localMediaSelection[group] = libId;
+  switchView(group);
+  if (typeof setMediaMode === "function") setMediaMode(group, "local");
+  else renderLocalMedia(group);
+}
+function formatHomeCount(n) {
+  const v = Number(n) || 0;
+  return v >= 1000 ? (v / 1000).toFixed(1).replace(/\.0$/, "") + "k" : String(v);
+}
+
+/* ---------- 筛选条与统计 ---------- */
+function initHomeFilters() {
+  document.querySelectorAll(".fchip[data-home-filter]").forEach(chip => {
+    chip.addEventListener("click", () => {
+      homeFilter = chip.dataset.homeFilter || "all";
+      document.querySelectorAll(".fchip[data-home-filter]").forEach(x => x.classList.toggle("on", x === chip));
+      applyHomeFilter();
+      renderHomeRecent();
+    });
+  });
+}
+function applyHomeFilter() {
+  const show = HOME_FILTER_GROUPS[homeFilter] || HOME_GROUPS;
+  const map = { comic: ["recentBook"], movie: ["recentVideo"], audio: ["recentAudio"] };
+  HOME_GROUPS.forEach(group => {
+    const visible = show.includes(group);
+    map[group].forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.style.display = visible ? "" : "none";
+      /* 同时隐藏它上方紧邻的区块标题 */
+      const title = el.previousElementSibling;
+      if (title && title.classList.contains("section-title")) title.style.display = visible ? "" : "none";
+    });
+  });
+}
+function renderHomeCount() {
+  const el = document.getElementById("homeCount");
+  if (!el) return;
+  const libs = localMediaLibraries || [];
+  const items = libs.reduce((sum, lib) => sum + Number(homeIndexStatus[lib.id]?.total || 0), 0);
+  el.textContent = libs.length
+    ? `共 ${items.toLocaleString("zh-CN")} 项 · ${libs.length} 个媒体库`
+    : "尚未添加媒体库";
+  HOME_GROUPS.forEach(group => {
+    const cnt = document.getElementById("kindCount" + group.charAt(0).toUpperCase() + group.slice(1));
+    if (cnt) cnt.textContent = `${(librariesForGroup(group) || []).length} 个库`;
+  });
+}
+
+/* ---------- 第一栏补充：硬盘剩余容量（复用 /api/system/metrics 的 disks） ---------- */
+function renderHomeDiskSummary(disks) {
+  const text = document.getElementById("diskFreeText");
+  const bar = document.getElementById("diskFreeBar");
+  if (!text || !bar) return;
+  const list = Array.isArray(disks) ? disks : [];
+  if (!list.length) { text.textContent = "--"; bar.style.width = "0%"; return; }
+  let total = 0, used = 0;
+  list.forEach(d => { total += Number(d.total || 0); used += Number(d.used || 0); });
+  if (total <= 0) { text.textContent = "--"; bar.style.width = "0%"; return; }
+  const free = total - used;
+  const pct = Math.round(used / total * 100);
+  text.textContent = `${formatHomeBytes(free)} / ${formatHomeBytes(total)}`;
+  bar.style.width = pct + "%";
+  bar.className = pct >= 90 ? "hot" : pct >= 75 ? "warn" : "";
+}
+function formatHomeBytes(n) {
+  const v = Number(n) || 0;
+  if (v >= 1099511627776) return (v / 1099511627776).toFixed(1) + " TB";
+  if (v >= 1073741824) return (v / 1073741824).toFixed(1) + " GB";
+  if (v >= 1048576) return (v / 1048576).toFixed(0) + " MB";
+  return v + " B";
+}
+
+/* ---------- 第二栏：正在进行中的操作（视频 / 音乐播放 + 刮削信息） ---------- */
+function renderNowPlaying() {
+  const host = document.getElementById("nowPlayingList");
+  if (!host) return;
+  const rows = [];
+
+  /* 音乐：来自底部播放器的实时状态 */
+  const player = document.getElementById("audioPlayerElement");
+  if (activeAudio && player && player.src) {
+    const lib = findMediaLibrary(activeAudio.libId);
+    const meta = audioMetadataFor(activeAudio.path);
+    const dur = Number.isFinite(player.duration) ? player.duration : 0;
+    const pct = dur ? Math.min(100, player.currentTime / dur * 100) : 0;
+    const ext = fileExt(activeAudio.path).toUpperCase() || "AUDIO";
+    const isMv = lib?.type === "musicvideo";
+    rows.push({
+      cls: isMv ? "" : "audio",
+      icon: isMv ? "🎤" : "🎵",
+      cover: meta.cover || "",
+      grad: coverGradient(meta.title || "audio"),
+      title: meta.title,
+      yr: `${meta.artist} · 《${meta.album}》`,
+      meta: `${lib ? lib.name : "音乐库"} · ${ext}${dur ? " · " + formatMediaTime(dur) : ""}`,
+      tags: [
+        { c: "src", v: isMv ? "音乐 MV" : "MusicBrainz" },
+        { c: "lib", v: lib ? lib.name : "音视作品" },
+        { c: "", v: ext },
+        { c: "", v: meta.lyrics ? "歌词已刮削" : "无歌词" },
+        { c: "", v: meta.cover ? "封面已刮削" : "封面待刮削" }
+      ],
+      plot: meta.lyrics ? String(meta.lyrics).replace(/\[[^\]]*\]/g, " ").replace(/\s+/g, " ").trim().slice(0, 120) : "暂无歌词，可在「文件」视图手动适配歌曲信息。",
+      pct,
+      kind: player.paused ? "♪ 已暂停" : "♪ 音乐播放",
+      tm: `${formatMediaTime(player.currentTime)} / ${formatMediaTime(dur)}`,
+      note: [isMv ? "音乐 MV 播放" : "Navidrome · 原码直传", lib ? lib.name : ""]
+    });
+  }
+
+  /* 视频：读取 vaulthub_video_<lib>_<path> 播放进度，取最近 2 条未看完的 */
+  const vids = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key || !key.startsWith("vaulthub_video_")) continue;
+      const saved = JSON.parse(localStorage.getItem(key) || "null");
+      if (!saved || !Number.isFinite(saved.time) || saved.time < 5) continue;
+      const rest = key.slice("vaulthub_video_".length);
+      const lib = (localMediaLibraries || []).find(l => rest.startsWith(l.id + "_"));
+      if (!lib) continue;
+      vids.push({ lib, path: rest.slice(lib.id.length + 1), time: saved.time, at: Number(saved.updatedAt || 0) });
+    }
+  } catch (e) {}
+  vids.sort((a, b) => b.at - a.at);
+  vids.slice(0, 2).forEach(v => {
+    const meta = movieMetadataFor(v.path);
+    const ext = fileExt(v.path).toUpperCase() || "VIDEO";
+    rows.push({
+      cls: "",
+      icon: v.lib.type === "series" ? "📺" : "🎬",
+      cover: meta.poster || "",
+      grad: coverGradient(meta.title || v.path),
+      title: meta.title || displayBookTitle(v.path),
+      yr: meta.year ? `(${meta.year})` : "",
+      meta: `${v.lib.name} · ${mediaTypeName(v.lib.type)} · ${ext}`,
+      tags: [
+        meta.rating ? { c: "rate", v: "★ " + meta.rating } : null,
+        { c: "src", v: meta.provider || "文件名展示" },
+        { c: "lib", v: v.lib.name },
+        { c: "", v: ext },
+        { c: "", v: meta.poster ? "海报已刮削" : "海报待刮削" }
+      ].filter(Boolean),
+      plot: meta.overview || "暂无简介，刮削完成后会自动补齐。",
+      pct: 0,
+      kind: "▶ 视频播放",
+      tm: `已看到 ${formatMediaTime(v.time)}`,
+      note: ["上次播放位置已记忆", v.lib.name]
+    });
+  });
+
+  if (!rows.length) {
+    host.innerHTML = `<div class="card"><div class="empty-tip">${esc(t("nowEmpty"))}</div></div>`;
+    return;
+  }
+  host.innerHTML = rows.map(r => `<div class="now-row ${r.cls}">
+    <div class="now-th" style="background:${r.cover ? "#1b1f28" : r.grad}">
+      ${r.cover ? `<img src="${esc(r.cover)}" alt="" onerror="this.remove()">` : `<span>${r.icon}</span>`}
+      ${r.pct ? `<div class="prog"><i style="width:${r.pct.toFixed(1)}%"></i></div>` : ""}
+    </div>
+    <div class="now-body">
+      <div class="now-ttl">${esc(r.title)}${r.yr ? `<span class="yr">${esc(r.yr)}</span>` : ""}</div>
+      <div class="now-meta">${esc(r.meta)}</div>
+      <div class="scrape">${r.tags.map(x => `<span class="${x.c}">${esc(x.v)}</span>`).join("")}</div>
+      <div class="plot">${esc(r.plot)}</div>
+      <div class="now-line"><i style="width:${(r.pct || 0).toFixed(1)}%"></i></div>
+    </div>
+    <div class="now-rt">
+      <b>${esc(r.kind)}</b>
+      <span class="tm">${esc(r.tm)}</span>
+      ${r.note.filter(Boolean).map(x => `<span>${esc(x)}</span>`).join("")}
+    </div>
+  </div>`).join("");
+}
+function formatMediaTime(sec) {
+  const s = Math.max(0, Math.floor(Number(sec) || 0));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
+  return (h ? h + ":" + String(m).padStart(2, "0") : String(m)) + ":" + String(r).padStart(2, "0");
+}
+
+/* ---------- 第三 / 四栏：最近入库（按 mtime 倒序取每库前 N 条） ---------- */
+async function recentFilesForGroup(group, limit) {
+  const libs = librariesForGroup(group) || [];
+  const out = [];
+  for (const lib of libs) {
+    try {
+      const res = await fetch(`/api/media/files?id=${encodeURIComponent(lib.id)}&sort=mtime&limit=${limit}`, { cache: "no-store" });
+      if (!res.ok) continue;
+      const data = await res.json();
+      (data.files || []).forEach(f => {
+        const path = String(f.path || "");
+        if (!path || !supportedLocalMediaFile(group, lib, path)) return;
+        out.push({ lib, path, mtime: Number(f.mtime || 0), size: Number(f.size || 0) });
+      });
+    } catch (e) {}
+  }
+  out.sort((a, b) => b.mtime - a.mtime);
+  return out.slice(0, limit);
+}
+function homePosterCard(group, item, square) {
+  const { lib, path } = item;
+  const isAudioAlbum = lib.type === "audio";
+  const isVideoish = lib.type === "movie" || lib.type === "series" || lib.type === "musicvideo";
+  const meta = isVideoish ? movieMetadataFor(path) : isAudioAlbum ? audioMetadataFor(path) : null;
+  const title = isVideoish ? (meta.title || displayBookTitle(path))
+    : isAudioAlbum ? (meta.title || displayBookTitle(path))
+    : displayBookTitle(path);
+  const cover = isVideoish ? (meta.poster || "") : isAudioAlbum ? (meta.cover || "") : "";
+  const ext = fileExt(path).toUpperCase() || "FILE";
+  const icon = HOME_TYPE_ICON[lib.type] || "📄";
+  const sub = isVideoish && meta.year ? `${mediaTypeName(lib.type)} · ${meta.year}`
+    : isAudioAlbum ? `${mediaTypeName(lib.type)} · ${meta.artist || "未知歌手"}`
+    : `${mediaTypeName(lib.type)} · ${formatHomeBytes(item.size)}`;
+  const prog = Number(readingState(lib.id, path).progress || 0);
+  return `<div class="hp ${square ? "sq" : ""}" onclick="openLocalMedia('${esc(group)}','${esc(lib.id)}',${jsAttrArg(path)})" title="${esc(path)}">
+    <div class="img" style="${cover ? "" : "background:" + coverGradient(title)}">
+      ${cover ? `<img src="${esc(cover)}" alt="" loading="lazy" onerror="this.remove()">` : `<div class="fake">${icon}</div>`}
+      <div class="tag">${esc(ext)}</div>
+      <div class="lib">${esc(lib.name)}</div>
+      <div class="play">▶</div>
+      ${prog > 0 && prog < 99.9 ? `<div class="prog"><i style="width:${prog.toFixed(1)}%"></i></div>` : ""}
+    </div>
+    <div class="nm">${esc(title)}</div>
+    <div class="st">${esc(sub)}</div>
+  </div>`;
+}
+async function renderHomeRecent() {
+  const show = HOME_FILTER_GROUPS[homeFilter] || HOME_GROUPS;
+  const targets = { comic: "recentBook", movie: "recentVideo", audio: "recentAudio" };
+  for (const group of HOME_GROUPS) {
+    const host = document.getElementById(targets[group]);
+    if (!host || !show.includes(group)) continue;
+    const libs = librariesForGroup(group) || [];
+    if (!libs.length) {
+      host.innerHTML = `<div class="card" style="grid-column:1/-1"><div class="empty-tip">尚未添加${HOME_GROUP_LABEL[group]}媒体库</div></div>`;
+      continue;
+    }
+    host.innerHTML = `<div class="card" style="grid-column:1/-1"><div class="empty-tip">正在读取最近入库…</div></div>`;
+    const items = await recentFilesForGroup(group, 10);
+    host.innerHTML = items.length
+      ? items.map(item => homePosterCard(group, item, group === "audio")).join("")
+      : `<div class="card" style="grid-column:1/-1"><div class="empty-tip">该分类暂无已索引的媒体文件</div></div>`;
+  }
+}
+
+/* ---------- 媒体库路径管理 ---------- */
+function syncHomeLibTypes() {
+  const group = document.getElementById("homeLibGroup")?.value || "comic";
+  const sel = document.getElementById("homeLibType");
+  if (!sel) return;
+  const types = mediaTypesForGroup(group);
+  sel.innerHTML = types.map(x => `<option value="${esc(x)}">${esc(mediaTypeName(x))}</option>`).join("");
+}
+async function addHomeMediaLibrary() {
+  const group = document.getElementById("homeLibGroup")?.value || "comic";
+  const type = document.getElementById("homeLibType")?.value || mediaTypeForGroup(group);
+  const path = (document.getElementById("homeLibPath")?.value || "").trim().replace(/\/$/, "");
+  const name = (document.getElementById("homeLibName")?.value || "").trim();
+  if (!name || !path) { toast("⚠️ 请填写媒体路径与库名称"); return; }
+  if (!path.startsWith("/")) { toast("⚠️ 路径必须是容器内已挂载的绝对路径"); return; }
+  const body = { id: libraryId(name, type, path, 0), name, type, path };
+  try {
+    const res = await fetch("/api/media/libraries", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...mediaAdminHeaders() },
+      credentials: "same-origin",
+      body: JSON.stringify(body)
+    });
+    if (!await handleProtectedResponse(res)) { toast("⚠️ 会话已过期，请重新登录后再保存"); return; }
+    if (!res.ok) {
+      let detail = "";
+      try { detail = (await res.json()).error || ""; } catch (e) {}
+      if (/id already exists/i.test(detail)) { toast("✅ 该媒体路径已添加"); return; }
+      throw new Error(detail || `HTTP ${res.status}`);
+    }
+    document.getElementById("homeLibPath").value = "";
+    document.getElementById("homeLibName").value = "";
+    await refreshMediaLibraries(false);
+    await refreshHomeData();
+    toast(`✅ 媒体库「${name}」已添加，开始刮削`);
+  } catch (err) { toast("⚠️ 添加失败：" + err.message); }
+}
+async function rebuildAllLibraries() {
+  try {
+    const res = await fetch("/api/media/index/rebuild", { method: "POST", headers: mediaAdminHeaders(), credentials: "same-origin" });
+    if (!await handleProtectedResponse(res)) { toast("⚠️ 会话已过期，请重新登录"); return; }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    toast("🔄 已触发全部媒体库重新刮削");
+    setTimeout(refreshHomeData, 1500);
+  } catch (err) { toast("⚠️ 触发失败：" + err.message); }
+}
+async function rebuildOneLibrary(id) {
+  try {
+    const res = await fetch(`/api/media/index/rebuild?id=${encodeURIComponent(id)}`, { method: "POST", headers: mediaAdminHeaders(), credentials: "same-origin" });
+    if (!await handleProtectedResponse(res)) { toast("⚠️ 会话已过期，请重新登录"); return; }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    toast("🔄 已触发重新刮削");
+    setTimeout(refreshHomeData, 1500);
+  } catch (err) { toast("⚠️ 触发失败：" + err.message); }
+}
+async function loadHomeIndexStatus() {
+  try {
+    const res = await fetch("/api/media/index/status", { cache: "no-store" });
+    if (!res.ok) return;
+    const data = await res.json();
+    const map = {};
+    (data.libraries || []).forEach(s => { map[s.lib] = s; });
+    homeIndexStatus = map;
+  } catch (e) {}
+}
+function homeLibStatePill(st) {
+  if (!st) return '<span class="pill info">待扫描</span>';
+  if (st.running || st.state === "scanning") {
+    const pct = st.total ? Math.min(99, Math.round(st.scanned / st.total * 100)) : 0;
+    return `<span class="pill warn">刮削中${pct ? " " + pct + "%" : ""}</span>`;
+  }
+  if (st.state === "error") return `<span class="pill bad" title="${esc(st.message || "")}">失败</span>`;
+  if (st.state === "cancelled") return '<span class="pill bad">已取消</span>';
+  if (st.state === "ready") return '<span class="pill ok">已完成</span>';
+  return '<span class="pill info">待扫描</span>';
+}
+function renderHomeLibTable() {
+  const body = document.getElementById("homeLibBody");
+  if (!body) return;
+  const libs = localMediaLibraries || [];
+  if (!libs.length) {
+    body.innerHTML = `<tr><td colspan="6"><div class="empty-tip">${esc(t("libEmpty"))}</div></td></tr>`;
+    return;
+  }
+  body.innerHTML = libs.map(lib => {
+    const group = homeGroupOfType(lib.type);
+    const st = homeIndexStatus[lib.id];
+    const paths = (lib.paths && lib.paths.length ? lib.paths : [lib.path]).filter(Boolean);
+    return `<tr>
+      <td><div class="lib-name-cell"><span>${HOME_TYPE_ICON[lib.type] || "📄"}</span>${esc(lib.name)}</div></td>
+      <td>${esc(HOME_GROUP_LABEL[group])} · ${esc(mediaTypeName(lib.type))}</td>
+      <td class="mono">${paths.map(esc).join("<br>")}</td>
+      <td>${st ? Number(st.total || 0).toLocaleString("zh-CN") : "--"}</td>
+      <td>${homeLibStatePill(st)}</td>
+      <td><div class="row-acts">
+        <button class="icon-btn" title="重新刮削" onclick="rebuildOneLibrary('${esc(lib.id)}')">🔄</button>
+        <button class="icon-btn" title="打开媒体库" onclick="openHomeLibrary('${esc(group)}','${esc(lib.id)}')">↗</button>
+        <button class="icon-btn" title="移除" onclick="deleteMediaLibrary('${esc(lib.id)}')">✕</button>
+      </div></td>
+    </tr>`;
+  }).join("");
+}
+function initLibKindCards() {
+  document.querySelectorAll(".lib-kind[data-lib-group]").forEach(card => {
+    card.addEventListener("click", () => {
+      document.querySelectorAll(".lib-kind").forEach(x => x.classList.toggle("on", x === card));
+      const sel = document.getElementById("homeLibGroup");
+      if (sel) { sel.value = card.dataset.libGroup; syncHomeLibTypes(); }
+    });
+  });
+}
+
+/* ---------- 汇总刷新 ---------- */
+async function refreshHomeData() {
+  await loadHomeIndexStatus();
+  renderHomeCount();
+  renderHomeLibraryNav();
+  renderHomeLibTable();
+  renderNowPlaying();
+  await renderHomeRecent();
+}
+function initHome() {
+  syncHomeLibTypes();
+  initHomeFilters();
+  initLibKindCards();
+  applyHomeFilter();
+  refreshHomeData();
+  /* 播放状态每 5s 跟随监控刷新；索引状态每 20s 拉一次 */
+  setInterval(renderNowPlaying, 5000);
+  setInterval(async () => {
+    await loadHomeIndexStatus();
+    renderHomeCount();
+    renderHomeLibraryNav();
+    renderHomeLibTable();
+  }, 20000);
+}

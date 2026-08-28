@@ -9,9 +9,13 @@ checks={
  'responsive sidebar toggle':'@media (max-width: 768px)' in s and 'toggleBars()' in s and 'sidebar-hidden' in s,
  'video status element':'data-video-status' in s,
  'video status events':'waiting' in s and 'timeupdate' in s and 'loadedmetadata' in s,
- 'docker scan input':'dockerServerIp' in s and 'scanDockerServer()' in s,
- 'docker scan endpoint':'/api/admin/docker/scan' in s,
- 'hidden pt docker defaults':'module-hidden-pt' in s and 'module-hidden-docker' in s,
+ # v0.6.30.Branch-update removed 容器管理 (Docker scan) entirely: the view, the
+ # renderer, the #dockerSearch listener and the module entry are all gone, so
+ # the UI must no longer reference any of it. Leaving dead hooks behind would
+ # throw a null reference at load and kill the whole script.
+ 'docker scan UI removed':'dockerServerIp' not in s and 'scanDockerServer' not in s,
+ 'docker module entry removed':'module-hidden-docker' not in s and 'view-docker' not in s,
+ 'hidden pt default kept':'module-hidden-pt' in s,
 }
 for k,v in checks.items(): assert v,k
-print('PASS: responsive shell, video status, hidden modules, and Docker scan UI are present')
+print('PASS: responsive shell, video status, hidden modules, and Docker removal are consistent')

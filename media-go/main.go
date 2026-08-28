@@ -605,7 +605,13 @@ func (a *App) files(w http.ResponseWriter, r *http.Request) {
 		off = 0
 	}
 	files := make([]FileEntry, 0, lim)
-	rows, e := a.db.Query(`SELECT path,size,mtime FROM files WHERE lib=? ORDER BY path LIMIT ? OFFSET ?`, id, lim, off)
+	// sort=mtime powers the home page "recently added" rails; default stays
+	// path order so the file browser keeps its stable alphabetical listing.
+	order := "path"
+	if r.URL.Query().Get("sort") == "mtime" {
+		order = "mtime DESC, path"
+	}
+	rows, e := a.db.Query(`SELECT path,size,mtime FROM files WHERE lib=? ORDER BY `+order+` LIMIT ? OFFSET ?`, id, lim, off)
 	if e == nil {
 		for rows.Next() {
 			var fe FileEntry

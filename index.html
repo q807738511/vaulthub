@@ -20,8 +20,8 @@
   </div>
 </div>
 
-<!-- ===== 侧边栏 ===== -->
-<aside class="sidebar">
+<!-- ===== 顶栏：logo + 横向主导航 + 工具（V4 Plex 双层导航） ===== -->
+<header class="topbar">
   <div class="logo">
     <div class="logo-icon" aria-label="中华鼠图标">
       <svg class="mouse-logo" viewBox="0 0 32 32" role="img" aria-hidden="true">
@@ -36,80 +36,102 @@
         <path class="whisker" d="M9 20H3m20 0h6M10 22l-5 2m17-2 5 2" fill="none" stroke="#5a3218" stroke-width="1" stroke-linecap="round"/>
       </svg>
     </div>
-    <div class="brand-copy">
+    <div class="brand-copy" title="蜀鼠之家，承包你的所有休闲内容">
       <strong class="brand-title">VaultHub</strong>
-      <small>蜀鼠之家，承包你的所有休闲内容</small>
+      <small data-i18n="appName">蜀鼠之家</small>
     </div>
   </div>
+  <nav class="topnav" id="topNav">
+    <div class="topnav-item active" data-view="home"><span>🏠</span><span data-i18n="navHome">首页</span></div>
+    <div class="topnav-item" data-view="comic"><span>📂</span><span data-i18n="navLibrary">资料库</span></div>
+    <div class="topnav-item" data-view="pt"><span>🌊</span><span data-i18n="navPt">PT 管理</span></div>
+  </nav>
+  <div class="actions">
+    <button class="ibtn" onclick="openModal('settingsModal')" title="系统设置（含 Caddy 配置）" aria-label="系统设置">⚙</button>
+    <button class="ibtn" onclick="openModal('aboutModal')" title="关于" aria-label="关于">ℹ</button>
+    <div class="tb-avatar" title="已登录">Q</div>
+  </div>
+</header>
+
+<!-- ===== 侧边栏：顶栏下方，可拖拽自适应宽度 ===== -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-resizer" id="sidebarResizer"></div>
   <nav class="nav" id="mainNav">
-    <div class="chrome-controls">
-      <button class="btn chrome-toggle" onclick="toggleBars()" title="边栏隐藏/显示" aria-label="边栏隐藏/显示"><span>☰</span><span class="toggle-label">边栏隐藏/显示</span></button>
-    </div>
     <div class="nav-group" data-nav-group="main" data-i18n="navGroupMain">主导航</div>
     <div class="nav-item active" data-view="home" data-module="home"><span class="ic">🏠</span><span class="txt" data-i18n="navHome">首页</span></div>
     <div class="nav-item" data-view="pt" data-module="pt"><span class="ic">🌊</span><span class="txt" data-i18n="navPt">PT 管理</span></div>
-    <div class="nav-group" data-nav-group="media" data-i18n="navGroupMedia">媒体</div>
-    <div class="nav-item" data-view="comic" data-module="comic"><span class="ic">📚</span><span class="txt" data-i18n="navComic">超漫画</span><span class="nav-tools"><button class="icon-btn" title="配置服务器" onclick="event.stopPropagation(); showMediaConfig('comic')">⚙</button><button class="icon-btn" title="新窗口打开" onclick="event.stopPropagation(); openActiveMediaExternal('comic')">↗</button></span></div>
-    <div class="nav-item" data-view="movie" data-module="movie"><span class="ic">🎬</span><span class="txt" data-i18n="navMovie">影视</span><span class="nav-tools"><button class="icon-btn" title="配置服务器" onclick="event.stopPropagation(); showMediaConfig('movie')">⚙</button><button class="icon-btn" title="新窗口打开" onclick="event.stopPropagation(); openActiveMediaExternal('movie')">↗</button></span></div>
-    <div class="nav-item" data-view="audio" data-module="audio"><span class="ic">🎵</span><span class="txt" data-i18n="navAudio">音频</span><span class="nav-tools"><button class="icon-btn" title="配置服务器" onclick="event.stopPropagation(); showMediaConfig('audio')">⚙</button><button class="icon-btn" title="新窗口打开" onclick="event.stopPropagation(); openActiveMediaExternal('audio')">↗</button></span></div>
-    <div class="nav-group" data-nav-group="sys" data-i18n="navGroupSys">系统</div>
-    <div class="nav-item" data-view="docker" data-module="docker"><span class="ic">🐳</span><span class="txt" data-i18n="navDocker">容器管理</span></div>
+
+    <div class="nav-group" data-nav-group="book"><span data-i18n="navGroupBook">电子书刊</span><span class="g-more" onclick="showMediaLibraryConfig('comic')" data-i18n="navMore">更多 ›</span></div>
+    <div class="nav-item" data-view="comic" data-module="comic"><span class="ic">📖</span><span class="txt" data-i18n="navComic">电子书刊</span><span class="nav-tools"><button class="icon-btn" title="媒体库路径" onclick="event.stopPropagation(); showMediaLibraryConfig('comic')">⚙</button><button class="icon-btn" title="新窗口打开" onclick="event.stopPropagation(); openActiveMediaExternal('comic')">↗</button></span></div>
+    <div id="libNavComic"></div>
+
+    <div class="nav-group" data-nav-group="video"><span data-i18n="navGroupVideo">影视作品</span><span class="g-more" onclick="showMediaLibraryConfig('movie')" data-i18n="navMore">更多 ›</span></div>
+    <div class="nav-item" data-view="movie" data-module="movie"><span class="ic">🎬</span><span class="txt" data-i18n="navMovie">影视作品</span><span class="nav-tools"><button class="icon-btn" title="媒体库路径" onclick="event.stopPropagation(); showMediaLibraryConfig('movie')">⚙</button><button class="icon-btn" title="新窗口打开" onclick="event.stopPropagation(); openActiveMediaExternal('movie')">↗</button></span></div>
+    <div id="libNavMovie"></div>
+
+    <div class="nav-group" data-nav-group="audio"><span data-i18n="navGroupAudio">音视作品</span><span class="g-more" onclick="showMediaLibraryConfig('audio')" data-i18n="navMore">更多 ›</span></div>
+    <div class="nav-item" data-view="audio" data-module="audio"><span class="ic">🎵</span><span class="txt" data-i18n="navAudio">音视作品</span><span class="nav-tools"><button class="icon-btn" title="媒体库路径" onclick="event.stopPropagation(); showMediaLibraryConfig('audio')">⚙</button><button class="icon-btn" title="新窗口打开" onclick="event.stopPropagation(); openActiveMediaExternal('audio')">↗</button></span></div>
+    <div id="libNavAudio"></div>
+
     <div class="nav-group" data-nav-group="custom" data-i18n="navGroupCustom">自定义</div>
     <div id="customNav"></div>
   </nav>
   <div class="add-board-btn" onclick="openModuleModal()">
     <span>＋</span><span data-i18n="addBoardNav">添加模块</span>
   </div>
-  <div class="sidebar-foot">v0.6.30 · Metrics, Compat & Embedded Subs</div>
+  <div class="sidebar-foot">
+    <span class="ver">v0.6.30.Branch-update · Plex-style UI</span>
+    <button class="rail-btn" onclick="toggleBars()" title="折叠 / 展开侧栏" aria-label="折叠或展开侧栏">⇤</button>
+  </div>
 </aside>
 
 <!-- ===== 主区域 ===== -->
 <div class="main">
-  <div class="topbar">
-    <div class="title-area">
-      <h1 id="pageTitle">首页</h1>
-    </div>
-    <div class="actions">
-      <button class="btn" onclick="openModal('settingsModal')">⚙️ <span data-i18n="settings">系统设置</span></button>
-      <button class="btn" onclick="openCaddyModal()">🔀 <span data-i18n="caddySettings">Caddy 配置</span></button>
-      <button class="btn" onclick="openModal('aboutModal')">ℹ️ <span data-i18n="about">关于</span></button>
-    </div>
-  </div>
-
   <div class="content">
 
-    <!-- ============ 首页：NAS 监控 + 硬盘 ============ -->
+    <!-- ============ 首页 ============ -->
     <section class="view active" id="view-home">
+
+      <div class="filterbar">
+        <span class="fchip on" data-home-filter="all" data-i18n="filterAll">全部</span>
+        <span class="fchip" data-home-filter="book" data-i18n="navGroupBook">电子书刊</span>
+        <span class="fchip" data-home-filter="video" data-i18n="navGroupVideo">影视作品</span>
+        <span class="fchip" data-home-filter="audio" data-i18n="navGroupAudio">音视作品</span>
+        <span class="fcount" id="homeCount">正在统计媒体库…</span>
+      </div>
+
+      <!-- ---- 第一栏：服务器监控 ---- -->
       <div class="section-title">
-        <span data-i18n="secNas">NAS 监控</span>
+        <span class="idx">1</span>
+        <span data-i18n="secServer">服务器监控</span>
         <span class="badge" id="nasBadge">内置监控 · 每 5s 刷新</span>
       </div>
       <div class="grid g-4">
-        <div class="card">
-          <div class="card-h"><span class="t" data-i18n="cpu">CPU</span><span class="dot" id="cpuDot"></span></div>
+        <div class="card k-metric">
+          <div class="card-h"><span class="t" data-i18n="cpuUsage">CPU 使用率</span><span class="dot" id="cpuDot"></span></div>
           <div class="gauge-wrap">
             <div class="gauge">
-              <svg width="76" height="76">
-                <circle cx="38" cy="38" r="32" stroke="var(--track)" stroke-width="8" fill="none"/>
-                <circle id="cpuArc" cx="38" cy="38" r="32" stroke="var(--accent)" stroke-width="8" fill="none" stroke-linecap="round" stroke-dasharray="201" stroke-dashoffset="60" />
+              <svg width="70" height="70">
+                <circle cx="35" cy="35" r="29" stroke="var(--track)" stroke-width="6" fill="none"/>
+                <circle id="cpuArc" cx="35" cy="35" r="29" stroke="var(--accent)" stroke-width="6" fill="none" stroke-linecap="round" stroke-dasharray="182" stroke-dashoffset="110" />
               </svg>
               <div class="val"><b id="cpuVal">--</b><span data-i18n="used">使用率</span></div>
             </div>
             <div class="gauge-info">
-              <div class="row"><span data-i18n="cores">核心数</span><b id="cpuCores">--</b></div>
+              <div class="row"><span data-i18n="cores">核心数量</span><b id="cpuCores">--</b></div>
               <div class="row"><span data-i18n="load">负载</span><b id="cpuLoad">--</b></div>
               <div class="row"><span data-i18n="temp">温度</span><b id="cpuTemp">--</b></div>
             </div>
           </div>
         </div>
 
-        <div class="card">
-          <div class="card-h"><span class="t" data-i18n="memory">内存</span><span class="dot"></span></div>
+        <div class="card k-metric k2">
+          <div class="card-h"><span class="t" data-i18n="memUsage">内存使用率</span><span class="dot"></span></div>
           <div class="gauge-wrap">
             <div class="gauge">
-              <svg width="76" height="76">
-                <circle cx="38" cy="38" r="32" stroke="var(--track)" stroke-width="8" fill="none"/>
-                <circle id="memArc" cx="38" cy="38" r="32" stroke="var(--green)" stroke-width="8" fill="none" stroke-linecap="round" stroke-dasharray="201" stroke-dashoffset="80" />
+              <svg width="70" height="70">
+                <circle cx="35" cy="35" r="29" stroke="var(--track)" stroke-width="6" fill="none"/>
+                <circle id="memArc" cx="35" cy="35" r="29" stroke="var(--green)" stroke-width="6" fill="none" stroke-linecap="round" stroke-dasharray="182" stroke-dashoffset="73" />
               </svg>
               <div class="val"><b id="memVal">--</b><span data-i18n="used">使用率</span></div>
             </div>
@@ -121,25 +143,112 @@
           </div>
         </div>
 
-        <div class="card">
-          <div class="card-h"><span class="t" data-i18n="network">网络</span><span class="badge" id="netInterface" style="font-size:10px;"></span></div>
-          <div class="net-num"><span id="netDown">--</span> <small style="color:var(--text2);font-size:12px;font-weight:400;">MB/s</small></div>
+        <div class="card k-metric k3">
+          <div class="card-h"><span class="t" data-i18n="netSpeed">网络速度</span><span class="badge" id="netInterface"></span></div>
+          <div class="net-num"><span id="netDown">--</span> <small style="color:var(--text3);font-size:11px;font-weight:400;">MB/s</small></div>
           <div class="net-sub" data-i18n="netDownLbl">↓ 下行</div>
-          <div class="net-num" style="color:var(--green);margin-top:8px;"><span id="netUp">--</span> <small style="color:var(--text2);font-size:12px;font-weight:400;">MB/s</small></div>
+          <div class="net-num" style="color:var(--accent);margin-top:6px;"><span id="netUp">--</span> <small style="color:var(--text3);font-size:11px;font-weight:400;">MB/s</small></div>
           <div class="net-sub" data-i18n="netUpLbl">↑ 上行</div>
           <div class="spark" id="netSpark"></div>
         </div>
 
-        <div class="card">
-          <div class="card-h"><span class="t" data-i18n="diskTemp">硬盘温度</span><span class="dot"></span></div>
-          <div class="temp"><span id="tempMain">--</span><small>°C</small></div>
+        <div class="card k-metric k4">
+          <div class="card-h"><span class="t" data-i18n="diskUsage">硬盘使用率</span><span class="dot"></span></div>
+          <div class="temp"><span id="tempMain">--</span><small data-i18n="avgTemp"> °C 均温</small></div>
           <div class="temp-list" id="tempList"></div>
+          <div class="mini-disk">
+            <div class="mrow"><span data-i18n="diskFree">容量剩余</span><b id="diskFreeText">--</b></div>
+            <div class="bar"><i id="diskFreeBar" style="width:0%"></i></div>
+          </div>
         </div>
       </div>
 
       <div class="section-title"><span data-i18n="secDisk">硬盘容量</span><span class="badge" id="diskSource">内置监控 · statvfs</span></div>
       <div class="card" id="diskCard"></div>
+
+      <!-- ---- 第二栏：正在进行中的操作 ---- -->
+      <div class="section-title">
+        <span class="idx">2</span>
+        <span data-i18n="secNow">正在进行中的操作</span>
+        <span class="badge" id="nowBadge">视频 / 音乐播放 · 含刮削信息</span>
+      </div>
+      <div id="nowPlayingList"></div>
+
+      <!-- ---- 第三栏：最近入库 · 电子书刊 / 影视作品 ---- -->
+      <div class="section-title">
+        <span class="idx">3</span>
+        <span data-i18n="secRecentBook">最近入库 · 电子书刊</span>
+        <span class="badge" data-i18n="secRecentBookSub">电子书 / 漫画</span>
+        <span class="more" onclick="switchView('comic')" data-i18n="navMore">更多 ›</span>
+      </div>
+      <div class="home-poster-grid" id="recentBook"></div>
+
+      <div class="section-title">
+        <span data-i18n="secRecentVideo">最近入库 · 影视作品</span>
+        <span class="badge" data-i18n="secRecentVideoSub">电视剧集 / 电影</span>
+        <span class="more" onclick="switchView('movie')" data-i18n="navMore">更多 ›</span>
+      </div>
+      <div class="home-poster-grid" id="recentVideo"></div>
+
+      <!-- ---- 第四栏：最近入库 · 音视作品 ---- -->
+      <div class="section-title">
+        <span class="idx">4</span>
+        <span data-i18n="secRecentAudio">最近入库 · 音视作品</span>
+        <span class="badge" data-i18n="secRecentAudioSub">音乐 / 音乐 MV</span>
+        <span class="more" onclick="switchView('audio')" data-i18n="navMore">更多 ›</span>
+      </div>
+      <div class="home-poster-grid sq" id="recentAudio"></div>
+
+      <!-- ---- 媒体库路径管理 ---- -->
+      <div class="section-title">
+        <span data-i18n="secLibPaths">媒体库路径管理</span>
+        <span class="badge" data-i18n="secLibPathsSub">添加后以手动命名作为媒体库刮削</span>
+      </div>
+      <div class="lib-kinds" id="libKinds">
+        <div class="lib-kind on" data-lib-group="comic">
+          <div class="kh"><span class="e">📖</span><span data-i18n="navGroupBook">电子书刊</span><span class="n" id="kindCountComic">0 个库</span></div>
+          <div class="kd" data-i18n="kindBookDesc">子类型：电子书 / 漫画 · 刮削源 Google Books、Bangumi</div>
+        </div>
+        <div class="lib-kind" data-lib-group="movie">
+          <div class="kh"><span class="e">🎬</span><span data-i18n="navGroupVideo">影视作品</span><span class="n" id="kindCountMovie">0 个库</span></div>
+          <div class="kd" data-i18n="kindVideoDesc">子类型：电视剧集 / 电影 · 刮削源 TMDB、豆瓣</div>
+        </div>
+        <div class="lib-kind" data-lib-group="audio">
+          <div class="kh"><span class="e">🎵</span><span data-i18n="navGroupAudio">音视作品</span><span class="n" id="kindCountAudio">0 个库</span></div>
+          <div class="kd" data-i18n="kindAudioDesc">子类型：音乐 / 音乐 MV · 刮削源 MusicBrainz、网易云</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="lib-form">
+          <div class="cfg-field"><label data-i18n="libKind">媒体大类</label>
+            <select id="homeLibGroup" onchange="syncHomeLibTypes()">
+              <option value="comic">电子书刊</option>
+              <option value="movie">影视作品</option>
+              <option value="audio">音视作品</option>
+            </select></div>
+          <div class="cfg-field"><label data-i18n="libSubType">子类型</label><select id="homeLibType"></select></div>
+          <div class="cfg-field"><label data-i18n="libPath">媒体路径（容器内绝对路径）</label><input id="homeLibPath" type="text" placeholder="/vol2/1000/Books/技术书籍"></div>
+          <div class="cfg-field"><label data-i18n="libName">库名称（手动命名，用于刮削）</label><input id="homeLibName" type="text" placeholder="例：技术藏书"></div>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+          <button class="btn btn-primary" type="button" onclick="addHomeMediaLibrary()">＋ <span data-i18n="libAdd">添加媒体库</span></button>
+          <button class="btn" type="button" onclick="refreshMediaLibraries(true)">↻ <span data-i18n="libRefresh">刷新</span></button>
+          <button class="btn" type="button" onclick="rebuildAllLibraries()">🔄 <span data-i18n="libRescrape">全部重新刮削</span></button>
+        </div>
+        <table>
+          <thead><tr>
+            <th data-i18n="colLibName">库名称</th>
+            <th data-i18n="colLibKind">大类 / 子类型</th>
+            <th data-i18n="colLibPath">媒体路径</th>
+            <th data-i18n="colLibItems">项目</th>
+            <th data-i18n="colLibState">刮削状态</th>
+            <th style="text-align:right" data-i18n="colLibActs">操作</th>
+          </tr></thead>
+          <tbody id="homeLibBody"></tbody>
+        </table>
+      </div>
     </section>
+
 
     <!-- ============ PT 管理（主导航） ============ -->
     <section class="view" id="view-pt">
@@ -448,15 +557,6 @@
       <div class="media-wide-host" id="media-wide-audio"></div>
     </section>
 
-    <!-- ============ 容器管理 ============ -->
-    <section class="view" id="view-docker">
-      <div class="section-title"><span data-i18n="secDocker">Docker 容器</span> <span class="badge" id="containerCount">未扫描</span></div>
-      <div class="docker-scan-bar"><input class="search" id="dockerServerIp" type="text" value="127.0.0.1" placeholder="服务器 IP，例如 192.168.112.3"><button class="btn btn-primary" type="button" onclick="scanDockerServer()">扫描容器</button></div>
-      <div class="hint" id="dockerScanStatus">请输入服务器 IP 后扫描，不展示静态容器数据。</div>
-      <input class="search" id="dockerSearch" type="text" placeholder="🔍 搜索容器名称 / 镜像 / 状态…" data-i18n-ph="searchPh">
-      <div id="dockerGraphic" class="docker-servers"></div>
-    </section>
-
     <!-- ============ 动态自定义模块（JS 注入） ============ -->
     <div id="customViews"></div>
 
@@ -481,47 +581,95 @@
   </div>
 </div>
 
-<!-- ===== 系统设置弹窗 ===== -->
+<!-- ===== 系统设置弹窗（Caddy 配置已内置为标签页） ===== -->
 <div class="modal-mask" id="settingsModal">
   <div class="modal wide">
     <h3><span data-i18n="settingsTitle">系统设置</span><button class="close" onclick="closeModal('settingsModal')">✕</button></h3>
+    <div class="lead" data-i18n="settingsLead">反向代理、外观主题、刮削与硬件设置集中在此，Caddy 配置已内置为其中一个标签页。</div>
 
-    <div class="modal-sec" data-i18n="langLbl">界面语言</div>
-    <div class="lang-opt on" data-lang="zh-CN" onclick="setLang('zh-CN')">
-      <span class="radio"></span>简体中文
-    </div>
-    <div class="lang-opt" data-lang="zh-TW" onclick="setLang('zh-TW')">
-      <span class="radio"></span>繁體中文
-    </div>
-    <div class="lang-opt" data-lang="en" onclick="setLang('en')">
-      <span class="radio"></span>English
+    <div class="settabs">
+      <div class="settab on" data-settab="caddy" onclick="switchSetTab('caddy')">🔀 <span data-i18n="caddySettings">Caddy 配置</span></div>
+      <div class="settab" data-settab="look" onclick="switchSetTab('look')">🎨 <span data-i18n="setLook">外观主题</span></div>
+      <div class="settab" data-settab="scrape" onclick="switchSetTab('scrape')">🔍 <span data-i18n="setScrape">刮削与硬件</span></div>
     </div>
 
-    <div class="modal-sec" data-i18n="themeLbl">主题</div>
-    <div class="theme-opt" data-theme-opt="dark" onclick="setTheme('dark')">
-      <span class="radio"></span><span data-i18n="themeDark">晚上（暗色）</span>
-    </div>
-    <div class="theme-opt" data-theme-opt="light" onclick="setTheme('light')">
-      <span class="radio"></span><span data-i18n="themeLight">白天（亮色）</span>
-    </div>
-    <div class="theme-opt" data-theme-opt="custom" onclick="setTheme('custom')">
-      <span class="radio"></span><span data-i18n="themeCustom">自定义（上传背景图片）</span>
-    </div>
-    <div id="customBgWrap" style="display:none;">
-      <div class="cfg-field">
-        <label data-i18n="bgUpload">上传背景图片</label>
-        <input id="bgFile" type="file" accept="image/*" onchange="uploadBg(this)">
+    <!-- Caddy 配置面板 -->
+    <div class="setpanel on" id="setpanel-caddy">
+      <div class="setblock">
+        <h4>🔀 <span data-i18n="caddyRoutes">反向代理服务域名</span></h4>
+        <p data-i18n="caddyRoutesHint">维护服务域名与内网上游地址的映射，保存后由内置 Caddy 校验并热加载，失败会自动回滚。</p>
+        <div class="cfg-field">
+          <label data-i18n="caddyFile">Caddyfile</label>
+          <textarea id="caddyFile" style="width:100%;min-height:320px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg);color:var(--text);padding:11px 12px;font:11px/1.75 ui-monospace, Consolas, monospace;"></textarea>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-primary" onclick="saveCaddyConfig()">💾 <span data-i18n="caddySave">保存并应用</span></button>
+          <button class="btn" onclick="loadCaddyConfig()">🔄 <span data-i18n="caddyReload">重新载入</span></button>
+        </div>
+        <div class="hint" data-i18n="caddyHint">保存后会校验并热加载容器内的 Caddy 配置；失败时会回滚。</div>
       </div>
-      <button class="btn btn-danger" onclick="clearBg()" style="margin-bottom:8px;">🗑 <span data-i18n="bgClear">清除自定义背景</span></button>
-      <div class="hint" data-i18n="bgHint">提示：图片仅保存在本浏览器 localStorage，不经过服务器。</div>
     </div>
 
-      <div class="modal-sec" data-i18n="monitoringLbl">NAS 监控（内置读取）</div>
-      <div class="hint" data-i18n="monitoringHint">监控数据由 VaultHub 读取只读挂载的系统信息；配置请在 Compose 环境变量中修改。</div>
-      <div class="modal-sec">显卡加速</div>
-      <div class="cfg-field"><label for="hardwareAcceleration">视频兼容流硬件加速</label><select id="hardwareAcceleration" onchange="saveHardwareAcceleration()"><option value="auto">自动选择（推荐）</option><option value="cpu">CPU</option><option value="vaapi">VAAPI（Intel/AMD）</option><option value="qsv">Intel QSV</option><option value="cuda">NVIDIA CUDA/NVENC</option></select></div>
-      <div class="media-actions"><span class="badge" id="hardwareStatus">正在检测…</span><button class="btn" type="button" onclick="refreshHardwareStatus()">检测显卡</button></div>
-      <div class="hint">需要在 Docker Compose 中透传 `/dev/dri` 或配置 NVIDIA Container Toolkit。硬件不可用时会自动回退 CPU，不影响播放。</div>
+    <!-- 外观主题面板 -->
+    <div class="setpanel" id="setpanel-look">
+      <div class="modal-sec" data-i18n="langLbl">界面语言</div>
+      <div class="lang-opt on" data-lang="zh-CN" onclick="setLang('zh-CN')">
+        <span class="radio"></span>简体中文
+      </div>
+      <div class="lang-opt" data-lang="zh-TW" onclick="setLang('zh-TW')">
+        <span class="radio"></span>繁體中文
+      </div>
+      <div class="lang-opt" data-lang="en" onclick="setLang('en')">
+        <span class="radio"></span>English
+      </div>
+
+      <div class="modal-sec" data-i18n="themeLbl">主题</div>
+      <div class="theme-opt" data-theme-opt="dark" onclick="setTheme('dark')">
+        <span class="radio"></span><span data-i18n="themeDark">黑暗（暗色）</span>
+      </div>
+      <div class="theme-opt" data-theme-opt="light" onclick="setTheme('light')">
+        <span class="radio"></span><span data-i18n="themeLight">明亮（亮色）</span>
+      </div>
+      <div class="theme-opt" data-theme-opt="custom" onclick="setTheme('custom')">
+        <span class="radio"></span><span data-i18n="themeCustom">自定义背景（上传图片）</span>
+      </div>
+      <div id="customBgWrap" style="display:none;">
+        <div class="cfg-field">
+          <label data-i18n="bgUpload">上传背景图片</label>
+          <input id="bgFile" type="file" accept="image/*" onchange="uploadBg(this)">
+        </div>
+        <button class="btn btn-danger" onclick="clearBg()" style="margin-bottom:8px;">🗑 <span data-i18n="bgClear">清除自定义背景</span></button>
+        <div class="hint" data-i18n="bgHint">提示：图片仅保存在本浏览器 localStorage，不经过服务器。</div>
+      </div>
+
+      <div class="modal-sec" data-i18n="setSidebar">侧栏</div>
+      <div class="toggle-row">
+        <div class="l"><span data-i18n="setSidebarMem">侧栏宽度记忆</span><small data-i18n="setSidebarMemSub">拖拽侧栏右边缘调整宽度，自动写入本浏览器</small></div>
+        <button class="btn" type="button" onclick="resetSidebarWidth()" data-i18n="setSidebarReset">恢复默认宽度</button>
+      </div>
+    </div>
+
+    <!-- 刮削与硬件面板 -->
+    <div class="setpanel" id="setpanel-scrape">
+      <div class="setblock">
+        <h4>🔍 <span data-i18n="setScrapeSrc">刮削来源</span></h4>
+        <p data-i18n="setScrapeHint">媒体库按大类使用不同刮削源：电子书刊用 Google Books / Bangumi，影视作品用 TMDB / 豆瓣，音视作品用 MusicBrainz / 网易云。</p>
+        <div class="media-actions">
+          <button class="btn" type="button" onclick="rebuildAllLibraries()">🔄 <span data-i18n="libRescrape">全部重新刮削</span></button>
+          <button class="btn" type="button" onclick="refreshMediaLibraries(true)">↻ <span data-i18n="libRefresh">刷新</span></button>
+        </div>
+      </div>
+      <div class="setblock">
+        <h4>🖥 <span data-i18n="monitoringLbl">NAS 监控（内置读取）</span></h4>
+        <p data-i18n="monitoringHint">监控数据由 VaultHub 读取只读挂载的系统信息；配置请在 Compose 环境变量中修改。</p>
+      </div>
+      <div class="setblock">
+        <h4>🎞 <span data-i18n="setHw">显卡加速</span></h4>
+        <div class="cfg-field"><label for="hardwareAcceleration" data-i18n="setHwLbl">视频兼容流硬件加速</label><select id="hardwareAcceleration" onchange="saveHardwareAcceleration()"><option value="auto">自动选择（推荐）</option><option value="cpu">CPU</option><option value="vaapi">VAAPI（Intel/AMD）</option><option value="qsv">Intel QSV</option><option value="cuda">NVIDIA CUDA/NVENC</option></select></div>
+        <div class="media-actions"><span class="badge" id="hardwareStatus">正在检测…</span><button class="btn" type="button" onclick="refreshHardwareStatus()" data-i18n="setHwDetect">检测显卡</button></div>
+        <div class="hint" data-i18n="setHwHint">需要在 Docker Compose 中透传 /dev/dri 或配置 NVIDIA Container Toolkit。硬件不可用时会自动回退 CPU，不影响播放。</div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -615,26 +763,12 @@
   </div>
 </div>
 
-<!-- ===== Caddy 配置弹窗 ===== -->
-<div class="modal-mask" id="caddyModal">
-  <div class="modal wide">
-    <h3><span data-i18n="caddySettings">Caddy 配置</span><button class="close" onclick="closeModal('caddyModal')">✕</button></h3>
-    <div class="cfg-field">
-      <label data-i18n="caddyFile">Caddyfile</label>
-      <textarea id="caddyFile" style="width:100%;min-height:340px;border:1px solid var(--border);border-radius:8px;background:var(--card2);color:var(--text);padding:10px;font:12px/1.6 ui-monospace, monospace;"></textarea>
-    </div>
-    <button class="btn btn-primary" onclick="saveCaddyConfig()">💾 <span data-i18n="caddySave">保存并应用</span></button>
-    <button class="btn" onclick="loadCaddyConfig()">🔄 <span data-i18n="caddyReload">重新载入</span></button>
-    <div class="hint" data-i18n="caddyHint">保存后会校验并热加载容器内的 Caddy 配置；失败时会回滚。</div>
-  </div>
-</div>
-
 <!-- ===== 关于弹窗 ===== -->
 <div class="modal-mask" id="aboutModal">
   <div class="modal">
     <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
     <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
-    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.6.30 · Metrics, Compat & Embedded Subs</b></div>
+    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.6.30.Branch-update · Plex-style UI</b></div>
     <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>Go (media/manager/subtitle) · Caddy · FFmpeg · SQLite · HTML/CSS/JS</b></div>
     <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>VaultHub 内置系统监控</b></div>
     <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>
@@ -690,6 +824,7 @@
 <script src="/web/js/01-state.js"></script>
 <script src="/web/js/02-media.js"></script>
 <script src="/web/js/03-features.js"></script>
+<script src="/web/js/05-home.js"></script>
 <script src="/web/js/04-boot.js"></script>
 </body>
 </html>

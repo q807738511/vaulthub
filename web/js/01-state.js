@@ -13,7 +13,9 @@ function markVaultHubActivity() {
   vaultHubIdleTimer=setTimeout(async()=>{ vaultHubAuthenticated=false; try { await fetch('/api/logout',{method:'POST',credentials:'same-origin'}); } catch (_) {} showVaultHubLogin(); }, VAULTHUB_IDLE_TIMEOUT_MS);
 }
 ['click','keydown','pointerdown','touchstart','scroll'].forEach(type=>document.addEventListener(type,markVaultHubActivity,{passive:true}));
-function handleVaultHubAuthResult(logged) { vaultHubAuthenticated=!!logged; document.getElementById('authMask')?.classList.toggle('hidden',!logged); if(logged) markVaultHubActivity(); else clearTimeout(vaultHubIdleTimer); return !!logged; }
+/* 已登录时给遮罩加上 .hidden（CSS 里 .auth-mask.hidden{display:none}），
+   未登录时移除，遮住页面要求登录。 */
+function handleVaultHubAuthResult(logged) { vaultHubAuthenticated=!!logged; document.getElementById('authMask')?.classList.toggle('hidden',!!logged); if(logged) markVaultHubActivity(); else clearTimeout(vaultHubIdleTimer); return !!logged; }
 
 async function vaultHubLogin() {
   const username=document.getElementById('vaultHubUsername').value.trim();
@@ -41,16 +43,22 @@ async function requireVaultHubLogin() {
 async function handleProtectedResponse(res) { if (res.status === 401) { handleVaultHubAuthResult(false); return false; } markVaultHubActivity(); return true; }
 function guardProtectedAction(fn) { return async (...args)=>{if(vaultHubAuthenticated || await requireVaultHubLogin()) return fn(...args);}; }
 
+/* Caddy 配置已并入系统设置弹窗的第一个标签页 */
 function openCaddyModal() {
-  loadCaddyConfig();
-  openModal('caddyModal');
+  openModal('settingsModal');
+  switchSetTab('caddy');
 }
 async function loadCaddyConfig() {
-  const res = await fetch('/api/admin/caddyfile', { cache: 'no-store' });
-  if (!await handleProtectedResponse(res)) return;
-  const data = await res.json();
-  if (data.ok) document.getElementById('caddyFile').value = data.caddyfile || '';
+  const box = document.getElementById('caddyFile');
+  if (!box) return;
+  try {
+    const res = await fetch('/api/admin/caddyfile', { cache: 'no-store' });
+    if (!await handleProtectedResponse(res)) return;
+    const data = await res.json();
+    if (data.ok) box.value = data.caddyfile || '';
+  } catch (_) { /* 未登录或后端不可用时保持文本框原样 */ }
 }
+
 async function saveCaddyConfig() {
   const caddyfile = document.getElementById('caddyFile').value;
   const res = await fetch('/api/admin/caddyfile', {
@@ -67,16 +75,39 @@ async function saveCaddyConfig() {
 const I18N = {
   "zh-CN": {
     caddySettings: "Caddy 配置", caddyOrigin: "WebUI 外部域名", caddyAdminToken: "管理令牌", caddyFile: "Caddyfile", caddySave: "保存并应用", caddyReload: "重新载入", caddyHint: "保存后会校验并热加载容器内的 Caddy 配置；失败时会回滚。", superComicTitle: "Komga / Kavita / Calibre-Web · 统一书库", appName: "蜀鼠之家", appSub: "VaultHub · 家庭 NAS 控制台 · 预览版",
-    navGroupMain: "主导航", navHome: "首页", navPt: "PT 管理",
-    navGroupMedia: "媒体", navComic: "超漫画", navMovie: "影视", navAudio: "音频",
-    navGroupSys: "系统", navDocker: "容器管理",
+    navGroupMain: "主导航", navHome: "首页", navPt: "PT 管理", navLibrary: "资料库", navMore: "更多 ›",
+    navGroupMedia: "媒体", navComic: "电子书刊", navMovie: "影视作品", navAudio: "音视作品",
+    navGroupBook: "电子书刊", navGroupVideo: "影视作品", navGroupAudio: "音视作品",
+    navGroupSys: "系统",
     navGroupCustom: "自定义", addBoardNav: "添加模块",
-    settings: "系统设置", about: "关于",
-    secNas: "NAS 监控", cpu: "CPU", memory: "内存", network: "网络", diskTemp: "硬盘温度",
-    used: "使用率", cores: "核心数", load: "负载", temp: "温度",
+    settings: "系统设置", about: "关于", settingsLead: "反向代理、外观主题、刮削与硬件设置集中在此，Caddy 配置已内置为其中一个标签页。",
+    setLook: "外观主题", setScrape: "刮削与硬件", caddyRoutes: "反向代理服务域名",
+    caddyRoutesHint: "维护服务域名与内网上游地址的映射，保存后由内置 Caddy 校验并热加载，失败会自动回滚。",
+    setSidebar: "侧栏", setSidebarMem: "侧栏宽度记忆", setSidebarMemSub: "拖拽侧栏右边缘调整宽度，自动写入本浏览器", setSidebarReset: "恢复默认宽度",
+    setScrapeSrc: "刮削来源", setScrapeHint: "媒体库按大类使用不同刮削源：电子书刊用 Google Books / Bangumi，影视作品用 TMDB / 豆瓣，音视作品用 MusicBrainz / 网易云。",
+    setHw: "显卡加速", setHwLbl: "视频兼容流硬件加速", setHwDetect: "检测显卡",
+    setHwHint: "需要在 Docker Compose 中透传 /dev/dri 或配置 NVIDIA Container Toolkit。硬件不可用时会自动回退 CPU，不影响播放。",
+    secServer: "服务器监控", secNas: "NAS 监控", cpu: "CPU", memory: "内存", network: "网络", diskTemp: "硬盘温度",
+    cpuUsage: "CPU 使用率", memUsage: "内存使用率", netSpeed: "网络速度", diskUsage: "硬盘使用率",
+    avgTemp: " °C 均温", diskFree: "容量剩余",
+    used: "使用率", cores: "核心数量", load: "负载", temp: "温度",
     memUsed: "已用", memTotal: "总计", swap: "交换",
     netDownLbl: "↓ 下行", netUpLbl: "↑ 上行",
     secDisk: "硬盘容量",
+    secNow: "正在进行中的操作", nowEmpty: "当前没有正在播放的视频或音乐",
+    secRecentBook: "最近入库 · 电子书刊", secRecentBookSub: "电子书 / 漫画",
+    secRecentVideo: "最近入库 · 影视作品", secRecentVideoSub: "电视剧集 / 电影",
+    secRecentAudio: "最近入库 · 音视作品", secRecentAudioSub: "音乐 / 音乐 MV",
+    secLibPaths: "媒体库路径管理", secLibPathsSub: "添加后以手动命名作为媒体库刮削",
+    filterAll: "全部",
+    kindBookDesc: "子类型：电子书 / 漫画 · 刮削源 Google Books、Bangumi",
+    kindVideoDesc: "子类型：电视剧集 / 电影 · 刮削源 TMDB、豆瓣",
+    kindAudioDesc: "子类型：音乐 / 音乐 MV · 刮削源 MusicBrainz、网易云",
+    libKind: "媒体大类", libSubType: "子类型", libPath: "媒体路径（容器内绝对路径）", libName: "库名称（手动命名，用于刮削）",
+    libAdd: "添加媒体库", libRefresh: "刷新", libRescrape: "全部重新刮削",
+    colLibName: "库名称", colLibKind: "大类 / 子类型", colLibPath: "媒体路径", colLibItems: "项目", colLibState: "刮削状态", colLibActs: "操作",
+    libEmpty: "尚未添加媒体库，填写上方表单即可开始刮削",
+
     secPt: "PT 管理", ptRefresh: "刷新", mpConn: "MoviePilot 登录", mpSettings: "设置",
     mpAddr: "MoviePilot 访问地址", mpUser: "登录账号", mpPass: "登录密码",
     btnLogin: "登录并获取数据", btnLogout: "退出",
@@ -309,13 +340,22 @@ function applyI18n() {
 function toggleBars() {
   const willHide = !document.body.classList.contains("sidebar-hidden");
   document.body.classList.toggle("sidebar-hidden", willHide);
-  document.body.classList.toggle("topbar-hidden", willHide);
-  const btn = document.querySelector(".chrome-toggle");
+  const btn = document.querySelector(".rail-btn");
   if (btn) {
-    btn.title = willHide ? "边栏显示" : "边栏隐藏";
+    btn.textContent = willHide ? "⇥" : "⇤";
+    btn.title = willHide ? "展开侧栏" : "折叠侧栏";
     btn.setAttribute("aria-label", btn.title);
   }
+  try { localStorage.setItem("vaulthub_sidebar_rail", willHide ? "1" : "0"); } catch (e) {}
 }
+function loadSidebarRail() {
+  let rail = false;
+  try { rail = localStorage.getItem("vaulthub_sidebar_rail") === "1"; } catch (e) {}
+  document.body.classList.toggle("sidebar-hidden", rail);
+  const btn = document.querySelector(".rail-btn");
+  if (btn) btn.textContent = rail ? "⇥" : "⇤";
+}
+
 
 /* ================= 状态持久化 ================= */
 const LS_SETTINGS = "dwu_settings";
@@ -368,11 +408,13 @@ const LS_HIDDEN_MODULES = "dwu_hidden_modules";
 function loadHiddenModules() {
   try {
     const saved = localStorage.getItem(LS_HIDDEN_MODULES);
-    hiddenModules = saved === null ? ["pt", "docker"] : (JSON.parse(saved) || []);
-  } catch (e) { hiddenModules = ["pt", "docker"]; }
+    hiddenModules = saved === null ? ["pt"] : (JSON.parse(saved) || []);
+  } catch (e) { hiddenModules = ["pt"]; }
+  /* 容器管理已下线，历史配置里的 docker 项一并丢弃 */
+  hiddenModules = hiddenModules.filter(x => x !== "docker");
   document.body.classList.toggle("module-hidden-pt", hiddenModules.includes("pt"));
-  document.body.classList.toggle("module-hidden-docker", hiddenModules.includes("docker"));
 }
+
 function saveHiddenModules() {
   try { localStorage.setItem(LS_HIDDEN_MODULES, JSON.stringify(hiddenModules)); } catch (e) {}
 }
@@ -442,16 +484,19 @@ async function refreshHardwareStatus() {
 }
 
 /* ================= 导航 ================= */
-const titleMap = { home: "navHome", pt: "navPt", comic: "navComic", movie: "navMovie", audio: "navAudio", docker: "navDocker" };
+const titleMap = { home: "navHome", pt: "navPt", comic: "navComic", movie: "navMovie", audio: "navAudio" };
+/* 顶栏横向导航把「资料库」映射到媒体视图，用于高亮回写 */
+const TOPNAV_FOR_VIEW = { home: "home", pt: "pt", comic: "comic", movie: "comic", audio: "comic" };
 
 function switchView(v) {
   document.querySelectorAll(".nav-item[data-view]").forEach(n => n.classList.remove("active"));
   const navItem = document.querySelector(`.nav-item[data-view="${v}"]`);
   if (navItem) navItem.classList.add("active");
+  const topKey = TOPNAV_FOR_VIEW[v] || (String(v).startsWith("custom-") ? null : "home");
+  document.querySelectorAll(".topnav-item[data-view]").forEach(n => n.classList.toggle("active", n.dataset.view === topKey));
   document.querySelectorAll(".view").forEach(s => s.classList.remove("active"));
   const view = document.getElementById("view-" + v);
   if (view) view.classList.add("active");
-  document.getElementById("pageTitle").textContent = t(titleMap[v] || "navHome");
   const player = document.getElementById("audio-bottom-player");
   if (player) player.classList.toggle("show", v === "audio");
   window.scrollTo(0, 0);
@@ -464,6 +509,65 @@ document.querySelectorAll(".nav-item[data-view]").forEach(item => {
     switchView(v);
   });
 });
+document.querySelectorAll(".topnav-item[data-view]").forEach(item => {
+  item.addEventListener("click", () => switchView(item.dataset.view));
+});
+
+/* ================= 侧栏宽度：拖拽自适应 + 记忆 ================= */
+const LS_SIDEBAR_W = "vaulthub_sidebar_w";
+const SIDEBAR_DEFAULT_W = 236;
+const SIDEBAR_MIN_W = 62;
+const SIDEBAR_MAX_W = 340;
+function applySidebarWidth(px) {
+  const w = Math.min(SIDEBAR_MAX_W, Math.max(SIDEBAR_MIN_W, Number(px) || SIDEBAR_DEFAULT_W));
+  document.documentElement.style.setProperty("--sidebar-w", w + "px");
+  return w;
+}
+function loadSidebarWidth() {
+  try {
+    const saved = localStorage.getItem(LS_SIDEBAR_W);
+    if (saved) applySidebarWidth(saved);
+  } catch (e) {}
+}
+function resetSidebarWidth() {
+  applySidebarWidth(SIDEBAR_DEFAULT_W);
+  try { localStorage.removeItem(LS_SIDEBAR_W); } catch (e) {}
+  document.body.classList.remove("sidebar-hidden");
+  toast("✅ 侧栏宽度已恢复默认");
+}
+function initSidebarResizer() {
+  const bar = document.getElementById("sidebarResizer");
+  const side = document.getElementById("sidebar");
+  if (!bar || !side) return;
+  let dragging = false;
+  const move = e => {
+    if (!dragging) return;
+    const x = e.touches ? e.touches[0].clientX : e.clientX;
+    applySidebarWidth(x);
+  };
+  const stop = () => {
+    if (!dragging) return;
+    dragging = false;
+    side.classList.remove("dragging");
+    const w = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--sidebar-w"), 10);
+    try { localStorage.setItem(LS_SIDEBAR_W, String(w)); } catch (e) {}
+  };
+  const start = e => { dragging = true; side.classList.add("dragging"); e.preventDefault(); };
+  bar.addEventListener("mousedown", start);
+  bar.addEventListener("touchstart", start, { passive: false });
+  window.addEventListener("mousemove", move);
+  window.addEventListener("touchmove", move, { passive: true });
+  window.addEventListener("mouseup", stop);
+  window.addEventListener("touchend", stop);
+}
+
+/* ================= 设置弹窗内的标签页（含 Caddy 配置） ================= */
+function switchSetTab(key) {
+  document.querySelectorAll(".settab[data-settab]").forEach(el => el.classList.toggle("on", el.dataset.settab === key));
+  document.querySelectorAll(".setpanel").forEach(el => el.classList.toggle("on", el.id === "setpanel-" + key));
+  if (key === "caddy") loadCaddyConfig();
+}
+
 
 /* ================= Tabs ================= */
 document.querySelectorAll(".tab[data-tab]").forEach(tab => {

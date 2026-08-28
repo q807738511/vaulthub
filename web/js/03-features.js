@@ -92,91 +92,6 @@ async function deleteMediaLibrary(id) {
   } catch (err) { toast("⚠️ 删除失败：" + err.message); }
 }
 
-/* ================= Docker 模拟数据 ================= */
-const containers = [];
-
-const SERVER_META = {
-  "192.168.112.3": { name: "飞牛 NAS · 主机", note: "媒体 / PT / 下载 / Hermes", icon: "🖥️" },
-  "192.168.112.2": { name: "服务节点 · 反代", note: "网关 / 博客 / 思源", icon: "🌐" },
-  "cloudflare": { name: "Cloudflare Tunnel", note: "外网入口", icon: "☁️" }
-};
-function inferServerIp(c) {
-  const n = c.name.toLowerCase();
-  if (["siyuan", "homepage", "halo", "lsky", "lucky", "nginx-proxy-manager"].some(x => n.includes(x))) return "192.168.112.2";
-  if (n.includes("cloudflared")) return "cloudflare";
-  return "192.168.112.3";
-}
-function containerIcon(c) {
-  const n = c.name.toLowerCase();
-  if (n.includes("moviepilot")) return "🎞️";
-  if (n.includes("navidrome") || n.includes("audio")) return "🎵";
-  if (n.includes("emby") || n.includes("plex") || n.includes("jellyfin")) return "🎬";
-  if (n.includes("transmission")) return "⬇️";
-  if (n.includes("komga") || n.includes("kavita") || n.includes("calibre")) return "📚";
-  if (n.includes("cloudflared")) return "☁️";
-  if (n.includes("nginx") || n.includes("lucky")) return "🔀";
-  if (n.includes("hermes") || n.includes("astrbot")) return "🤖";
-  if (n.includes("glances")) return "📈";
-  return "🐳";
-}
-
-async function scanDockerServer() {
-  const input=document.getElementById("dockerServerIp"), status=document.getElementById("dockerScanStatus");
-  const host=(input?.value||"").trim(); if(!host){ status.textContent="请输入服务器 IP"; return; }
-  status.textContent=`正在扫描 ${host} ...`;
-  try {
-    const res=await fetch(`/api/admin/docker/scan?host=${encodeURIComponent(host)}`,{cache:"no-store"});
-    const data=await res.json();
-    if(!res.ok||!data.ok) throw new Error(data.error||`HTTP ${res.status}`);
-    containers.splice(0,containers.length,...(data.containers||[]).map(c=>({name:(c.Names?.[0]||c.Name||"").replace(/^\//,""),image:c.Image||"",status:c.State==="running"?"up":"stopped",ports:(c.Ports||[]).map(p=>p.PublicPort?`${p.PublicPort}:${p.PrivatePort}`:`${p.PrivatePort}`).join(", ")||"-",health:c.State==="running"?"healthy":"unknown",serverIp:host})));
-    status.textContent=`已扫描 ${host}，发现 ${containers.length} 个容器`;
-    renderDocker();
-  } catch(e) { containers.splice(0); renderDocker(); status.textContent=`扫描失败：${e.message}`; }
-}
-function renderDocker() {
-  const q = (document.getElementById("dockerSearch").value || "").toLowerCase();
-  const list = containers.map(c => ({ ...c, serverIp: c.serverIp || inferServerIp(c) })).filter(c =>
-    c.name.toLowerCase().includes(q) ||
-    c.image.toLowerCase().includes(q) ||
-    c.status.toLowerCase().includes(q) ||
-    c.serverIp.toLowerCase().includes(q)
-  );
-  document.getElementById("containerCount").textContent = curLang === "en" ? `Total ${containers.length}` : `共 ${containers.length} 个`;
-  const grouped = list.reduce((acc, c) => {
-    (acc[c.serverIp] ||= []).push(c);
-    return acc;
-  }, {});
-  const host = document.getElementById("dockerGraphic");
-  host.innerHTML = Object.entries(grouped).map(([ip, items]) => {
-    const meta = SERVER_META[ip] || { name: ip, note: "Docker Host", icon: "🖥️" };
-    const running = items.filter(x => x.status === "up").length;
-    const stopped = items.filter(x => x.status !== "up").length;
-    return `<div class="server-card">
-      <div class="server-head">
-        <div class="server-title"><span style="font-size:22px;">${meta.icon}</span><div>${esc(meta.name)}<div class="hint" style="margin-top:2px;">${esc(meta.note)}</div></div></div>
-        <div class="server-meta">
-          <span class="server-ip">${esc(ip)}</span>
-          <span>${running} ${curLang === "en" ? "running" : "运行"}</span>
-          <span>${stopped} ${curLang === "en" ? "stopped" : "停止"}</span>
-        </div>
-      </div>
-      <div class="container-grid">
-        ${items.map(c => {
-          const st = c.status === "up" ? t("up") : c.status === "stopped" ? t("stopped") : t("restarting");
-          const cls = c.status === "up" ? "up" : c.status === "stopped" ? "stopped" : "restarting";
-          const hc = c.health === "healthy" ? `<span style="color:var(--green)">${t("healthy")}</span>` : `<span style="color:var(--red)">${t("unhealthy")}</span>`;
-          return `<div class="container-card ${cls}">
-            <div class="container-top"><span class="container-icon">${containerIcon(c)}</span><span class="container-name">${esc(c.name)}</span><span class="status ${cls === "up" ? "" : cls}">${st}</span></div>
-            <div class="container-image">${esc(c.image)}</div>
-            <div class="container-foot"><span class="port-pill">:${esc(c.ports)}</span><span>${hc}</span></div>
-          </div>`;
-        }).join("")}
-      </div>
-    </div>`;
-  }).join("") || `<div class="empty-tip">${curLang === "en" ? "No containers matched" : "没有匹配的容器"}</div>`;
-}
-document.getElementById("dockerSearch").addEventListener("input", renderDocker);
-
 /* ================= 内置系统监控 ================= */
 
 async function fetchJson(url, timeout = 4000, headers = {}) {
@@ -224,17 +139,22 @@ async function tickMetrics() {
     const disks = data.filesystems || [];
     document.getElementById("diskCard").innerHTML = disks.map(d => {
       const p = Math.min(Number(d.percent || 0), 100);
-      return `<div class="disk-row"><div class="disk-top"><span class="name">${esc(d.path)}</span><span>${fmtSize(d.used)} / ${fmtSize(d.total)} · ${p}%</span></div><div class="bar"><i class="${p > 80 ? "warn" : ""}" style="width:${p}%"></i></div></div>`;
+      const free = Math.max(0, Number(d.total || 0) - Number(d.used || 0));
+      return `<div class="disk-row"><div class="disk-top"><span class="name">${esc(d.path)}</span><span>${fmtSize(d.used)} / ${fmtSize(d.total)} · 剩余 ${fmtSize(free)} · ${p}%</span></div><div class="bar"><i class="${p > 90 ? "hot" : p > 75 ? "warn" : ""}" style="width:${p}%"></i></div></div>`;
     }).join("") || `<div class="empty-tip">${curLang === "en" ? "No configured volumes" : "未配置监控卷"}</div>`;
     document.getElementById("diskSource").textContent = t("diskSourceReal");
+    /* 首页第一栏「硬盘使用率」卡内的容量剩余汇总 */
+    if (typeof renderHomeDiskSummary === "function") renderHomeDiskSummary(disks);
     ok = true;
   } catch (e) {
     setCpu(0, "--", "--", "--");
     setMem(0, "--", "--", "--");
     setNet(0, 0);
     renderDiskTemps([], []);
+    if (typeof renderHomeDiskSummary === "function") renderHomeDiskSummary([]);
     document.getElementById("diskSource").textContent = t("diskSourceOffline");
   }
+
   setNasBadge(ok);
 }
 
@@ -269,20 +189,23 @@ function esc(s) {
   return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+/* 仪表半径 29 → 周长 2πr ≈ 182，与 index.html 的 stroke-dasharray 保持一致 */
+const GAUGE_CIRCUMFERENCE = 182;
 function setCpu(pct, cores, load, temp) {
   document.getElementById("cpuVal").textContent = Math.round(pct) + "%";
-  document.getElementById("cpuArc").style.strokeDashoffset = 201 - (201 * Math.min(pct, 100) / 100);
+  document.getElementById("cpuArc").style.strokeDashoffset = GAUGE_CIRCUMFERENCE - (GAUGE_CIRCUMFERENCE * Math.min(pct, 100) / 100);
   document.getElementById("cpuCores").textContent = cores;
   document.getElementById("cpuLoad").textContent = load;
   document.getElementById("cpuTemp").textContent = temp;
 }
 function setMem(pct, used, total, swap) {
   document.getElementById("memVal").textContent = pct + "%";
-  document.getElementById("memArc").style.strokeDashoffset = 201 - (201 * Math.min(pct, 100) / 100);
+  document.getElementById("memArc").style.strokeDashoffset = GAUGE_CIRCUMFERENCE - (GAUGE_CIRCUMFERENCE * Math.min(pct, 100) / 100);
   document.getElementById("memUsed").textContent = used + " GB";
   document.getElementById("memTotal").textContent = total + " GB";
   document.getElementById("memSwap").textContent = swap + " GB";
 }
+
 function setNet(down, up) {
   document.getElementById("netDown").textContent = down.toFixed(1);
   document.getElementById("netUp").textContent = up.toFixed(1);
@@ -735,13 +658,12 @@ const BOARD_TYPE_NAV = { comic: "navComic", movie: "navMovie", audio: "navAudio"
 const BUILTIN_MODULES = [
   { id: "home", icon: "🏠", type: "web", nameKey: "navHome" },
   { id: "pt", icon: "🌊", type: "pt", nameKey: "navPt" },
-  { id: "comic", icon: "📚", type: "comic", nameKey: "navComic" },
-
+  { id: "comic", icon: "📖", type: "comic", nameKey: "navComic" },
   { id: "movie", icon: "🎬", type: "movie", nameKey: "navMovie" },
-  { id: "audio", icon: "🎵", type: "audio", nameKey: "navAudio" },
-  { id: "docker", icon: "🐳", type: "web", nameKey: "navDocker" }
+  { id: "audio", icon: "🎵", type: "audio", nameKey: "navAudio" }
 ];
-const MODULE_GROUP = { home: "main", pt: "main", comic: "media", movie: "media", audio: "media", docker: "sys" };
+const MODULE_GROUP = { home: "main", pt: "main", comic: "book", movie: "video", audio: "audio" };
+
 
 function openModuleModal(preType) {
   renderBoardList();
@@ -790,11 +712,10 @@ function toggleModule(id) {
 /* 根据隐藏模块列表应用侧边栏可见性 */
 function applyModuleVisibility() {
   document.body.classList.toggle("module-hidden-pt", hiddenModules.includes("pt"));
-  document.body.classList.toggle("module-hidden-docker", hiddenModules.includes("docker"));
   document.querySelectorAll(".nav-item[data-module]").forEach(item => {
     item.style.display = hiddenModules.includes(item.dataset.module) ? "none" : "";
   });
-  ["main", "media", "sys"].forEach(g => {
+  ["main", "book", "video", "audio"].forEach(g => {
     const ids = Object.keys(MODULE_GROUP).filter(k => MODULE_GROUP[k] === g);
     const allHidden = ids.length && ids.every(id => hiddenModules.includes(id));
     const header = document.querySelector(`.nav-group[data-nav-group="${g}"]`);
@@ -803,6 +724,7 @@ function applyModuleVisibility() {
   const customHeader = document.querySelector(`.nav-group[data-nav-group="custom"]`);
   if (customHeader) customHeader.style.display = customBoards.length ? "" : "none";
 }
+
 
 function boardTypeChanged() {
   /* 媒体类型添加时提示将映射到内置功能页面 */
@@ -932,7 +854,6 @@ function openCustomBoard(id) {
     document.getElementById("customViews").appendChild(view);
   }
   view.classList.add("active");
-  document.getElementById("pageTitle").textContent = b.name;
   view.innerHTML = `
     <div class="section-title">
       <span>${esc(b.icon)} ${esc(b.name)}</span>
@@ -964,12 +885,14 @@ function toast(msg) {
 function setLang(l) {
   curLang = l;
   applyI18n();
-  document.getElementById("pageTitle").textContent = t(titleMap[document.querySelector(".nav-item.active[data-view]")?.dataset.view] || "navHome");
-  renderDocker();
   renderBoardList();
   renderCustomNav();
+  if (typeof renderHomeLibraryNav === "function") renderHomeLibraryNav();
+  if (typeof renderHomeLibTable === "function") renderHomeLibTable();
+  if (typeof renderHomeCount === "function") renderHomeCount();
   if (settings.mp.token) loadPtAll(); else renderPtMock();
   saveSettings();
 }
+
 
 /* ================= 初始化 ================= */

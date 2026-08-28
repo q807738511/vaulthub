@@ -36,7 +36,13 @@ assert "func (a *App) indexStatus(" in media
 assert "func (a *App) indexCancel(" in media
 
 # files() must query SQLite (LIMIT/OFFSET), not walk the filesystem inline.
-assert "SELECT path,size,mtime FROM files WHERE lib=? ORDER BY path LIMIT ? OFFSET ?" in media
+# v0.6.30.Branch-update made the ORDER BY switchable (path default, mtime DESC
+# for the home page "recently added" rails), so the clause is now interpolated
+# from a whitelisted constant rather than baked into the literal.
+assert "SELECT path,size,mtime FROM files WHERE lib=? ORDER BY `+order+` LIMIT ? OFFSET ?" in media
+assert 'order := "path"' in media, "default listing order must stay path"
+assert 'if r.URL.Query().Get("sort") == "mtime"' in media, "mtime sort must be opt-in via ?sort=mtime"
+assert 'order = "mtime DESC, path"' in media
 # The in-memory index map is gone.
 assert "a.indexes" not in media, "legacy in-memory index map must be removed"
 

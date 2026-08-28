@@ -20,9 +20,14 @@ for f in js_files:
     p = ROOT / "web" / "js" / f
     assert p.exists() and p.stat().st_size > 0, f"missing {f}"
 
-# Load order in index.html must match the numeric file order (boot last).
+# Load order in index.html must be numerically ascending with boot (04) LAST, so
+# every function and global is defined before the init calls run.
+# v0.6.30.Branch-update inserted 05-home.js (home page renderers) before
+# 04-boot.js: it only defines functions, and boot must stay the final script.
 order = re.findall(r'/web/js/(0\d-[a-z]+\.js)', index)
-assert order == js_files, f"script load order wrong: {order}"
+assert order[-1] == "04-boot.js", f"boot script must load last: {order}"
+assert order[: len(js_files) - 1] == js_files[:-1], f"script load order wrong: {order}"
+assert sorted(order) == sorted(set(order)), f"duplicate script tags: {order}"
 
 # Boot statements (init calls) must live in the LAST file so all functions and
 # globals from earlier files are defined before they run.
