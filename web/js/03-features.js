@@ -5,6 +5,7 @@
 function closeLocalViewer(group) {
   const prior = activeReader;
   const el = document.getElementById("local-media-viewer-" + group);
+  if (el) el.querySelectorAll(".media-video-body").forEach(terminateWasmVideo);
   if (el) el.innerHTML = "";
   activeReader = null;
   if (group === "comic") {
@@ -16,8 +17,6 @@ function closeLocalViewer(group) {
    group 可选，用于把「媒体库增加」表单预置成对应大类。 */
 function showMediaLibraryConfig(group) {
   if (group) mediaLibraryConfigGroup = group;
-  const token = document.getElementById("mediaAdminToken");
-  try { if (token) token.value = localStorage.getItem("dwu_media_admin_token") || ""; } catch (e) {}
   openModal("settingsModal");
   switchSetTab("library");
   if (group) {
@@ -40,7 +39,7 @@ async function deleteMediaLibrary(id) {
   // 写操作前先确认服务端会话有效，异常时明确提示而不是静默失败。
   if (!await ensureSessionForWrite(t("writeDeleteLibrary"))) return;
   try {
-    const res = await fetch(`/api/media/libraries?id=${encodeURIComponent(id)}`, { method: "DELETE", headers: mediaAdminHeaders(), credentials: "same-origin" });
+    const res = await fetch(`/api/media/libraries?id=${encodeURIComponent(id)}`, { method: "DELETE", headers: sessionWriteHeaders(), credentials: "same-origin" });
     if (!await handleProtectedResponse(res)) { toast("⚠️ " + tf("sessionWriteBlocked", { action: t("writeDeleteLibrary") })); return; }
     if (!res.ok) { let detail = ""; try { detail = (await res.json()).error || ""; } catch (e) {} throw new Error(detail || `HTTP ${res.status}`); }
     await refreshMediaLibraries(false);
@@ -756,10 +755,8 @@ function applyBoardToView(b) {
     saveExternalServices();
     if (typeof renderExternalServiceList === "function") renderExternalServiceList();
   }
-  try { localStorage.setItem("dwu_media_mode_" + group, "external"); } catch (e) {}
   externalSelection[group] = "board-" + b.id;
-  switchView(group);
-  renderMediaHome(group);
+  openExternalService("board-" + b.id);
 }
 
 function deleteBoard(id) {
