@@ -49,6 +49,8 @@ async function saveMediaLibraries() {
   const token = document.getElementById("mediaAdminToken")?.value.trim() || "";
   if (!name || !type || !paths.length) { toast("⚠️ 请填写库名称、类型和至少一个路径"); return; }
   if (paths.some(path => !path.startsWith("/"))) { toast("⚠️ 路径必须是容器内已挂载的绝对路径"); return; }
+  // 写操作前先确认服务端会话有效，避免点了保存只看到静默失败。
+  if (!await ensureSessionForWrite(t("writeAddLibrary"))) return;
   try { localStorage.setItem("dwu_media_admin_token", token); } catch (e) {}
   try {
     let saved = 0;
@@ -56,7 +58,7 @@ async function saveMediaLibraries() {
     for (let i = 0; i < paths.length; i++) {
       const body = { id: libraryId(name, type, paths[i], i), name: paths.length > 1 ? `${name} ${i + 1}` : name, type, path: paths[i] };
       const res = await fetch("/api/media/libraries", { method: "POST", headers: { "Content-Type": "application/json", ...mediaAdminHeaders() }, credentials: "same-origin", body: JSON.stringify(body) });
-      if (!await handleProtectedResponse(res)) { toast("⚠️ 会话已过期，请重新登录后再保存"); return; }
+      if (!await handleProtectedResponse(res)) { toast("⚠️ " + t("caddySaveBlocked")); return; }
       if (!res.ok) {
         let detail = "";
         try { detail = (await res.json()).error || ""; } catch (e) {}
@@ -83,99 +85,16 @@ function renderMediaLibraryConfigList() {
 }
 async function deleteMediaLibrary(id) {
   if (!confirm("确定删除这个本地媒体库配置？媒体文件不会被删除。")) return;
+  // 写操作前先确认服务端会话有效，异常时明确提示而不是静默失败。
+  if (!await ensureSessionForWrite(t("writeDeleteLibrary"))) return;
   try {
     const res = await fetch(`/api/media/libraries?id=${encodeURIComponent(id)}`, { method: "DELETE", headers: mediaAdminHeaders(), credentials: "same-origin" });
-    if (!await handleProtectedResponse(res)) { toast("⚠️ 会话已过期，请重新登录后再删除"); return; }
+    if (!await handleProtectedResponse(res)) { toast("⚠️ " + tf("sessionWriteBlocked", { action: t("writeDeleteLibrary") })); return; }
     if (!res.ok) { let detail = ""; try { detail = (await res.json()).error || ""; } catch (e) {} throw new Error(detail || `HTTP ${res.status}`); }
     await refreshMediaLibraries(false);
     toast("✅ 媒体库配置已删除");
   } catch (err) { toast("⚠️ 删除失败：" + err.message); }
 }
-
-/* ================= Docker 模拟数据 ================= */
-const containers = [];
-
-const SERVER_META = {
-  "192.168.112.3": { name: "飞牛 NAS · 主机", note: "媒体 / PT / 下载 / Hermes", icon: "🖥️" },
-  "192.168.112.2": { name: "服务节点 · 反代", note: "网关 / 博客 / 思源", icon: "🌐" },
-  "cloudflare": { name: "Cloudflare Tunnel", note: "外网入口", icon: "☁️" }
-};
-function inferServerIp(c) {
-  const n = c.name.toLowerCase();
-  if (["siyuan", "homepage", "halo", "lsky", "lucky", "nginx-proxy-manager"].some(x => n.includes(x))) return "192.168.112.2";
-  if (n.includes("cloudflared")) return "cloudflare";
-  return "192.168.112.3";
-}
-function containerIcon(c) {
-  const n = c.name.toLowerCase();
-  if (n.includes("moviepilot")) return "🎞️";
-  if (n.includes("navidrome") || n.includes("audio")) return "🎵";
-  if (n.includes("emby") || n.includes("plex") || n.includes("jellyfin")) return "🎬";
-  if (n.includes("transmission")) return "⬇️";
-  if (n.includes("komga") || n.includes("kavita") || n.includes("calibre")) return "📚";
-  if (n.includes("cloudflared")) return "☁️";
-  if (n.includes("nginx") || n.includes("lucky")) return "🔀";
-  if (n.includes("hermes") || n.includes("astrbot")) return "🤖";
-  if (n.includes("glances")) return "📈";
-  return "🐳";
-}
-
-async function scanDockerServer() {
-  const input=document.getElementById("dockerServerIp"), status=document.getElementById("dockerScanStatus");
-  const host=(input?.value||"").trim(); if(!host){ status.textContent="请输入服务器 IP"; return; }
-  status.textContent=`正在扫描 ${host} ...`;
-  try {
-    const res=await fetch(`/api/admin/docker/scan?host=${encodeURIComponent(host)}`,{cache:"no-store"});
-    const data=await res.json();
-    if(!res.ok||!data.ok) throw new Error(data.error||`HTTP ${res.status}`);
-    containers.splice(0,containers.length,...(data.containers||[]).map(c=>({name:(c.Names?.[0]||c.Name||"").replace(/^\//,""),image:c.Image||"",status:c.State==="running"?"up":"stopped",ports:(c.Ports||[]).map(p=>p.PublicPort?`${p.PublicPort}:${p.PrivatePort}`:`${p.PrivatePort}`).join(", ")||"-",health:c.State==="running"?"healthy":"unknown",serverIp:host})));
-    status.textContent=`已扫描 ${host}，发现 ${containers.length} 个容器`;
-    renderDocker();
-  } catch(e) { containers.splice(0); renderDocker(); status.textContent=`扫描失败：${e.message}`; }
-}
-function renderDocker() {
-  const q = (document.getElementById("dockerSearch").value || "").toLowerCase();
-  const list = containers.map(c => ({ ...c, serverIp: c.serverIp || inferServerIp(c) })).filter(c =>
-    c.name.toLowerCase().includes(q) ||
-    c.image.toLowerCase().includes(q) ||
-    c.status.toLowerCase().includes(q) ||
-    c.serverIp.toLowerCase().includes(q)
-  );
-  document.getElementById("containerCount").textContent = curLang === "en" ? `Total ${containers.length}` : `共 ${containers.length} 个`;
-  const grouped = list.reduce((acc, c) => {
-    (acc[c.serverIp] ||= []).push(c);
-    return acc;
-  }, {});
-  const host = document.getElementById("dockerGraphic");
-  host.innerHTML = Object.entries(grouped).map(([ip, items]) => {
-    const meta = SERVER_META[ip] || { name: ip, note: "Docker Host", icon: "🖥️" };
-    const running = items.filter(x => x.status === "up").length;
-    const stopped = items.filter(x => x.status !== "up").length;
-    return `<div class="server-card">
-      <div class="server-head">
-        <div class="server-title"><span style="font-size:22px;">${meta.icon}</span><div>${esc(meta.name)}<div class="hint" style="margin-top:2px;">${esc(meta.note)}</div></div></div>
-        <div class="server-meta">
-          <span class="server-ip">${esc(ip)}</span>
-          <span>${running} ${curLang === "en" ? "running" : "运行"}</span>
-          <span>${stopped} ${curLang === "en" ? "stopped" : "停止"}</span>
-        </div>
-      </div>
-      <div class="container-grid">
-        ${items.map(c => {
-          const st = c.status === "up" ? t("up") : c.status === "stopped" ? t("stopped") : t("restarting");
-          const cls = c.status === "up" ? "up" : c.status === "stopped" ? "stopped" : "restarting";
-          const hc = c.health === "healthy" ? `<span style="color:var(--green)">${t("healthy")}</span>` : `<span style="color:var(--red)">${t("unhealthy")}</span>`;
-          return `<div class="container-card ${cls}">
-            <div class="container-top"><span class="container-icon">${containerIcon(c)}</span><span class="container-name">${esc(c.name)}</span><span class="status ${cls === "up" ? "" : cls}">${st}</span></div>
-            <div class="container-image">${esc(c.image)}</div>
-            <div class="container-foot"><span class="port-pill">:${esc(c.ports)}</span><span>${hc}</span></div>
-          </div>`;
-        }).join("")}
-      </div>
-    </div>`;
-  }).join("") || `<div class="empty-tip">${curLang === "en" ? "No containers matched" : "没有匹配的容器"}</div>`;
-}
-document.getElementById("dockerSearch").addEventListener("input", renderDocker);
 
 /* ================= 内置系统监控 ================= */
 
@@ -224,17 +143,22 @@ async function tickMetrics() {
     const disks = data.filesystems || [];
     document.getElementById("diskCard").innerHTML = disks.map(d => {
       const p = Math.min(Number(d.percent || 0), 100);
-      return `<div class="disk-row"><div class="disk-top"><span class="name">${esc(d.path)}</span><span>${fmtSize(d.used)} / ${fmtSize(d.total)} · ${p}%</span></div><div class="bar"><i class="${p > 80 ? "warn" : ""}" style="width:${p}%"></i></div></div>`;
-    }).join("") || `<div class="empty-tip">${curLang === "en" ? "No configured volumes" : "未配置监控卷"}</div>`;
+      const free = Math.max(0, Number(d.total || 0) - Number(d.used || 0));
+      return `<div class="disk-row"><div class="disk-top"><span class="name">${esc(d.path)}</span><span>${fmtSize(d.used)} / ${fmtSize(d.total)} · ${esc(t("diskFreeShort"))} ${fmtSize(free)} · ${p}%</span></div><div class="bar"><i class="${p > 90 ? "hot" : p > 75 ? "warn" : ""}" style="width:${p}%"></i></div></div>`;
+    }).join("") || `<div class="empty-tip">${esc(t("noVolumes"))}</div>`;
     document.getElementById("diskSource").textContent = t("diskSourceReal");
+    /* 首页第一栏「硬盘使用率」卡内的容量剩余汇总 */
+    if (typeof renderHomeDiskSummary === "function") renderHomeDiskSummary(disks);
     ok = true;
   } catch (e) {
     setCpu(0, "--", "--", "--");
     setMem(0, "--", "--", "--");
     setNet(0, 0);
     renderDiskTemps([], []);
+    if (typeof renderHomeDiskSummary === "function") renderHomeDiskSummary([]);
     document.getElementById("diskSource").textContent = t("diskSourceOffline");
   }
+
   setNasBadge(ok);
 }
 
@@ -269,20 +193,23 @@ function esc(s) {
   return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+/* 仪表半径 29 → 周长 2πr ≈ 182，与 index.html 的 stroke-dasharray 保持一致 */
+const GAUGE_CIRCUMFERENCE = 182;
 function setCpu(pct, cores, load, temp) {
   document.getElementById("cpuVal").textContent = Math.round(pct) + "%";
-  document.getElementById("cpuArc").style.strokeDashoffset = 201 - (201 * Math.min(pct, 100) / 100);
+  document.getElementById("cpuArc").style.strokeDashoffset = GAUGE_CIRCUMFERENCE - (GAUGE_CIRCUMFERENCE * Math.min(pct, 100) / 100);
   document.getElementById("cpuCores").textContent = cores;
   document.getElementById("cpuLoad").textContent = load;
   document.getElementById("cpuTemp").textContent = temp;
 }
 function setMem(pct, used, total, swap) {
   document.getElementById("memVal").textContent = pct + "%";
-  document.getElementById("memArc").style.strokeDashoffset = 201 - (201 * Math.min(pct, 100) / 100);
+  document.getElementById("memArc").style.strokeDashoffset = GAUGE_CIRCUMFERENCE - (GAUGE_CIRCUMFERENCE * Math.min(pct, 100) / 100);
   document.getElementById("memUsed").textContent = used + " GB";
   document.getElementById("memTotal").textContent = total + " GB";
   document.getElementById("memSwap").textContent = swap + " GB";
 }
+
 function setNet(down, up) {
   document.getElementById("netDown").textContent = down.toFixed(1);
   document.getElementById("netUp").textContent = up.toFixed(1);
@@ -735,13 +662,12 @@ const BOARD_TYPE_NAV = { comic: "navComic", movie: "navMovie", audio: "navAudio"
 const BUILTIN_MODULES = [
   { id: "home", icon: "🏠", type: "web", nameKey: "navHome" },
   { id: "pt", icon: "🌊", type: "pt", nameKey: "navPt" },
-  { id: "comic", icon: "📚", type: "comic", nameKey: "navComic" },
-
+  { id: "comic", icon: "📖", type: "comic", nameKey: "navComic" },
   { id: "movie", icon: "🎬", type: "movie", nameKey: "navMovie" },
-  { id: "audio", icon: "🎵", type: "audio", nameKey: "navAudio" },
-  { id: "docker", icon: "🐳", type: "web", nameKey: "navDocker" }
+  { id: "audio", icon: "🎵", type: "audio", nameKey: "navAudio" }
 ];
-const MODULE_GROUP = { home: "main", pt: "main", comic: "media", movie: "media", audio: "media", docker: "sys" };
+const MODULE_GROUP = { home: "main", pt: "main", comic: "book", movie: "video", audio: "audio" };
+
 
 function openModuleModal(preType) {
   renderBoardList();
@@ -790,11 +716,10 @@ function toggleModule(id) {
 /* 根据隐藏模块列表应用侧边栏可见性 */
 function applyModuleVisibility() {
   document.body.classList.toggle("module-hidden-pt", hiddenModules.includes("pt"));
-  document.body.classList.toggle("module-hidden-docker", hiddenModules.includes("docker"));
   document.querySelectorAll(".nav-item[data-module]").forEach(item => {
     item.style.display = hiddenModules.includes(item.dataset.module) ? "none" : "";
   });
-  ["main", "media", "sys"].forEach(g => {
+  ["main", "book", "video", "audio"].forEach(g => {
     const ids = Object.keys(MODULE_GROUP).filter(k => MODULE_GROUP[k] === g);
     const allHidden = ids.length && ids.every(id => hiddenModules.includes(id));
     const header = document.querySelector(`.nav-group[data-nav-group="${g}"]`);
@@ -803,6 +728,7 @@ function applyModuleVisibility() {
   const customHeader = document.querySelector(`.nav-group[data-nav-group="custom"]`);
   if (customHeader) customHeader.style.display = customBoards.length ? "" : "none";
 }
+
 
 function boardTypeChanged() {
   /* 媒体类型添加时提示将映射到内置功能页面 */
@@ -932,7 +858,6 @@ function openCustomBoard(id) {
     document.getElementById("customViews").appendChild(view);
   }
   view.classList.add("active");
-  document.getElementById("pageTitle").textContent = b.name;
   view.innerHTML = `
     <div class="section-title">
       <span>${esc(b.icon)} ${esc(b.name)}</span>
@@ -964,12 +889,26 @@ function toast(msg) {
 function setLang(l) {
   curLang = l;
   applyI18n();
-  document.getElementById("pageTitle").textContent = t(titleMap[document.querySelector(".nav-item.active[data-view]")?.dataset.view] || "navHome");
-  renderDocker();
   renderBoardList();
   renderCustomNav();
+  /* 首页与媒体库表单里的动态文案（库名列、子类型 option、海报占位、
+     最近入库轨）都由 JS 生成，applyI18n 只覆盖静态 data-i18n 节点，
+     所以语言切换后必须重跑这些渲染器，否则残留上一个语言。 */
+  if (typeof renderHomeLibraryNav === "function") renderHomeLibraryNav();
+  if (typeof renderHomeLibTable === "function") renderHomeLibTable();
+  if (typeof renderHomeCount === "function") renderHomeCount();
+  if (typeof syncHomeLibTypes === "function") syncHomeLibTypes();
+  if (typeof renderHomeRecent === "function") renderHomeRecent();
+  if (typeof renderNowPlaying === "function") renderNowPlaying();
+  /* 硬件徽标文案由 JS 拼装（当前/可用），也要跟随语言重绘。 */
+  if (typeof refreshHardwareStatus === "function") refreshHardwareStatus();
+  /* 登录状态徽标与提示同样是 JS 拼装的动态文案。 */
+  if (typeof refreshSessionStatus === "function") refreshSessionStatus(false);
+  /* Caddy 页面的行数/路由数徽标带语言后缀。 */
+  if (typeof updateCaddyRouteCount === "function") updateCaddyRouteCount(document.getElementById("caddyFile")?.value || "");
   if (settings.mp.token) loadPtAll(); else renderPtMock();
   saveSettings();
 }
+
 
 /* ================= 初始化 ================= */

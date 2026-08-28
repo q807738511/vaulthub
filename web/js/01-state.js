@@ -13,7 +13,9 @@ function markVaultHubActivity() {
   vaultHubIdleTimer=setTimeout(async()=>{ vaultHubAuthenticated=false; try { await fetch('/api/logout',{method:'POST',credentials:'same-origin'}); } catch (_) {} showVaultHubLogin(); }, VAULTHUB_IDLE_TIMEOUT_MS);
 }
 ['click','keydown','pointerdown','touchstart','scroll'].forEach(type=>document.addEventListener(type,markVaultHubActivity,{passive:true}));
-function handleVaultHubAuthResult(logged) { vaultHubAuthenticated=!!logged; document.getElementById('authMask')?.classList.toggle('hidden',!logged); if(logged) markVaultHubActivity(); else clearTimeout(vaultHubIdleTimer); return !!logged; }
+/* 已登录时给遮罩加上 .hidden（CSS 里 .auth-mask.hidden{display:none}），
+   未登录时移除，遮住页面要求登录。 */
+function handleVaultHubAuthResult(logged) { vaultHubAuthenticated=!!logged; document.getElementById('authMask')?.classList.toggle('hidden',!!logged); if(logged) markVaultHubActivity(); else clearTimeout(vaultHubIdleTimer); return !!logged; }
 
 async function vaultHubLogin() {
   const username=document.getElementById('vaultHubUsername').value.trim();
@@ -38,19 +40,100 @@ async function requireVaultHubLogin() {
     return false;
   }
 }
-async function handleProtectedResponse(res) { if (res.status === 401) { handleVaultHubAuthResult(false); return false; } markVaultHubActivity(); return true; }
+async function handleProtectedResponse(res) { if (res.status === 401) { handleVaultHubAuthResult(false); renderSessionStatus(false); return false; } markVaultHubActivity(); renderSessionStatus(true); return true; }
 function guardProtectedAction(fn) { return async (...args)=>{if(vaultHubAuthenticated || await requireVaultHubLogin()) return fn(...args);}; }
 
-function openCaddyModal() {
+/* ---------- 退出登录 ---------- */
+/* 主动退出：先让服务端销毁 Session，再复位前端状态并显示登录遮罩。
+   本地界面偏好（主题/语言/侧栏宽度）保留，不做清理。 */
+async function logoutVaultHub() {
+  try { await fetch('/api/logout', { method: 'POST', credentials: 'same-origin' }); } catch (_) {}
+  clearTimeout(vaultHubIdleTimer);
+  vaultHubAuthenticated = false;
+  renderSessionStatus(false);
+  closeCaddyPage();
+  closeModal('settingsModal');
+  showVaultHubLogin();
+  const pass = document.getElementById('vaultHubPassword');
+  if (pass) pass.value = '';
+  toast('🚪 ' + t('loggedOutToast'));
+}
+
+/* ---------- 登录状态监测 ---------- */
+/* 服务端会话是唯一权威来源：/api/system/runtime 需要有效 Session，
+   200 = 已登录，401 = 会话失效。增删媒体库前会调用它给出明确提示，
+   避免用户点了按钮却只看到静默失败。 */
+function renderSessionStatus(logged, note) {
+  const badge = document.getElementById('sessionStatusBadge');
+  const hint = document.getElementById('sessionStatusHint');
+  if (badge) {
+    badge.textContent = logged ? '✅ ' + t('sessionOk') : '⚠️ ' + t('sessionBad');
+    badge.className = logged ? 'badge green' : 'badge red';
+  }
+  if (hint && note) hint.textContent = note;
+  const dot = document.getElementById('sessionDot');
+  if (dot) dot.classList.toggle('red', !logged);
+}
+async function refreshSessionStatus(notify) {
+  let logged = false;
+  try {
+    const res = await fetch('/api/system/runtime', { cache: 'no-store' });
+    logged = res.ok;
+  } catch (_) { logged = false; }
+  vaultHubAuthenticated = logged;
+  renderSessionStatus(logged, t(logged ? 'sessionOkHint' : 'sessionBadHint'));
+  if (notify) toast(logged ? '✅ ' + t('sessionOk') : '⚠️ ' + t('sessionReloginToast'));
+  return logged;
+}
+/* 写操作前的守卫：状态异常时给出明确 toast 并弹出登录遮罩，返回 false 让调用方中止。 */
+async function ensureSessionForWrite(action) {
+  if (await refreshSessionStatus(false)) return true;
+  toast('⚠️ ' + tf('sessionWriteBlocked', { action: action || '' }));
+  showVaultHubLogin();
+  return false;
+}
+
+/* ---------- Caddy 配置：独立整页 ---------- */
+/* 从系统设置的 Caddy 标签页进入，铺满视口编辑 Caddyfile。 */
+function openCaddyPage() {
+  document.getElementById('caddyPage')?.classList.add('show');
   loadCaddyConfig();
-  openModal('caddyModal');
+}
+function closeCaddyPage() { document.getElementById('caddyPage')?.classList.remove('show'); }
+/* 顶栏 🔀 按钮：打开系统设置并直接跳到 Caddy 标签页 */
+function openCaddyModal() {
+  openModal('settingsModal');
+  switchSetTab('caddy');
 }
 async function loadCaddyConfig() {
-  const res = await fetch('/api/admin/caddyfile', { cache: 'no-store' });
-  if (!await handleProtectedResponse(res)) return;
-  const data = await res.json();
-  if (data.ok) document.getElementById('caddyFile').value = data.caddyfile || '';
+  const box = document.getElementById('caddyFile');
+  if (!box) return;
+  const status = document.getElementById('caddyPageStatus');
+  if (status) status.textContent = t('caddyLoading');
+  try {
+    const res = await fetch('/api/admin/caddyfile', { cache: 'no-store' });
+    if (!await handleProtectedResponse(res)) {
+      if (status) status.textContent = t('sessionBad');
+      return;
+    }
+    const data = await res.json();
+    if (data.ok) {
+      box.value = data.caddyfile || '';
+      updateCaddyRouteCount(box.value);
+      if (status) status.textContent = tf('caddyLines', { n: box.value.split('\n').length });
+    }
+  } catch (_) {
+    if (status) status.textContent = t('caddyBackendDown');
+  }
 }
+/* 统计 handle 块数量，作为"已配置多少条路由"的粗略提示 */
+function updateCaddyRouteCount(text) {
+  const badge = document.getElementById('caddyRouteCount');
+  if (!badge) return;
+  const routes = (String(text || '').match(/^\s*handle(_path)?\b/gm) || []).length;
+  badge.textContent = routes ? tf('caddyRouteFmt', { n: routes }) : '--';
+}
+
 async function saveCaddyConfig() {
   const caddyfile = document.getElementById('caddyFile').value;
   const res = await fetch('/api/admin/caddyfile', {
@@ -58,25 +141,53 @@ async function saveCaddyConfig() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ caddyfile })
   });
-  if (!await handleProtectedResponse(res)) return;
+  if (!await handleProtectedResponse(res)) { toast('⚠️ ' + t('caddySaveBlocked')); return; }
   const data = await res.json();
-  if (data.ok) toast('✅ Caddy 配置已保存并应用');
-  else toast('⚠️ ' + (data.error || '保存失败'));
+  if (data.ok) { toast('✅ ' + t('caddySavedToast')); updateCaddyRouteCount(caddyfile); }
+  else toast('⚠️ ' + (data.error || t('caddySaveFail')));
 }
 /* ================= i18n ================= */
 const I18N = {
   "zh-CN": {
     caddySettings: "Caddy 配置", caddyOrigin: "WebUI 外部域名", caddyAdminToken: "管理令牌", caddyFile: "Caddyfile", caddySave: "保存并应用", caddyReload: "重新载入", caddyHint: "保存后会校验并热加载容器内的 Caddy 配置；失败时会回滚。", superComicTitle: "Komga / Kavita / Calibre-Web · 统一书库", appName: "蜀鼠之家", appSub: "VaultHub · 家庭 NAS 控制台 · 预览版",
-    navGroupMain: "主导航", navHome: "首页", navPt: "PT 管理",
-    navGroupMedia: "媒体", navComic: "超漫画", navMovie: "影视", navAudio: "音频",
-    navGroupSys: "系统", navDocker: "容器管理",
+    navGroupMain: "主导航", navHome: "首页", navPt: "PT 管理", navLibrary: "资料库", navMore: "更多 ›",
+    navGroupMedia: "媒体", navComic: "电子书刊", navMovie: "影视作品", navAudio: "音视作品",
+    navGroupBook: "电子书刊", navGroupVideo: "影视作品", navGroupAudio: "音视作品",
+    navGroupSys: "系统",
     navGroupCustom: "自定义", addBoardNav: "添加模块",
-    settings: "系统设置", about: "关于",
-    secNas: "NAS 监控", cpu: "CPU", memory: "内存", network: "网络", diskTemp: "硬盘温度",
-    used: "使用率", cores: "核心数", load: "负载", temp: "温度",
+    settings: "系统设置", about: "关于", settingsLead: "反向代理、外观主题、刮削与硬件、账户与登录集中在此，Caddy 配置有独立整页。",
+    setLook: "外观主题", setScrape: "刮削与硬件", caddyRoutes: "反向代理服务域名",
+    setAccount: "账户与登录", setAccountTitle: "当前登录状态", sessionChecking: "正在检查登录状态…", sessionRefresh: "刷新状态",
+    sessionHint: "会话在最后一次操作后 30 分钟空闲自动失效；增删媒体库等写操作需要有效登录。",
+    setLogoutTitle: "退出登录", setLogout: "退出登录", setLogoutHint: "退出后会立即失效服务端会话并返回登录页，本机保存的界面偏好不会被清除。",
+    caddyOpenPage: "打开 Caddy 配置页面", caddyPageHint: "Caddyfile 内容较长，单独占用一整页编辑，避免在弹窗里挤成一团。",
+    caddyPageTitle: "Caddy 反向代理配置", caddyPageClose: "关闭",
+    caddyRoutesHint: "维护服务域名与内网上游地址的映射，保存后由内置 Caddy 校验并热加载，失败会自动回滚。",
+    setSidebar: "侧栏", setSidebarMem: "侧栏宽度记忆", setSidebarMemSub: "拖拽侧栏右边缘调整宽度，自动写入本浏览器", setSidebarReset: "恢复默认宽度",
+    setScrapeSrc: "刮削来源", setScrapeHint: "媒体库按大类使用不同刮削源：电子书刊用 Google Books / Bangumi，影视作品用 TMDB / 豆瓣，音视作品用 MusicBrainz / 网易云。",
+    setHw: "显卡加速", setHwLbl: "视频兼容流硬件加速", setHwDetect: "检测显卡",
+    setHwHint: "需要在 Docker Compose 中透传 /dev/dri 或配置 NVIDIA Container Toolkit。硬件不可用时会自动回退 CPU，不影响播放。",
+    secServer: "服务器监控", secNas: "NAS 监控", cpu: "CPU", memory: "内存", network: "网络", diskTemp: "硬盘温度",
+    cpuUsage: "CPU 使用率", memUsage: "内存使用率", netSpeed: "网络速度", diskUsage: "硬盘使用率",
+    avgTemp: " °C 均温", diskFree: "容量剩余",
+    used: "使用率", cores: "核心数量", load: "负载", temp: "温度",
     memUsed: "已用", memTotal: "总计", swap: "交换",
     netDownLbl: "↓ 下行", netUpLbl: "↑ 上行",
     secDisk: "硬盘容量",
+    secNow: "正在进行中的操作", nowEmpty: "当前没有正在播放的视频或音乐",
+    secRecentBook: "最近入库 · 电子书刊", secRecentBookSub: "电子书 / 漫画",
+    secRecentVideo: "最近入库 · 影视作品", secRecentVideoSub: "电视剧集 / 电影",
+    secRecentAudio: "最近入库 · 音视作品", secRecentAudioSub: "音乐 / 音乐 MV",
+    secLibPaths: "媒体库路径管理", secLibPathsSub: "添加后以手动命名作为媒体库刮削",
+    filterAll: "全部",
+    kindBookDesc: "子类型：电子书 / 漫画 · 刮削源 Google Books、Bangumi",
+    kindVideoDesc: "子类型：电视剧集 / 电影 · 刮削源 TMDB、豆瓣",
+    kindAudioDesc: "子类型：音乐 / 音乐 MV · 刮削源 MusicBrainz、网易云",
+    libKind: "媒体大类", libSubType: "子类型", libPath: "媒体路径（容器内绝对路径）", libName: "库名称（手动命名，用于刮削）",
+    libAdd: "添加媒体库", libRefresh: "刷新", libRescrape: "全部重新刮削",
+    colLibName: "库名称", colLibKind: "大类 / 子类型", colLibPath: "媒体路径", colLibItems: "项目", colLibState: "刮削状态", colLibActs: "操作",
+    libEmpty: "尚未添加媒体库，填写上方表单即可开始刮削",
+
     secPt: "PT 管理", ptRefresh: "刷新", mpConn: "MoviePilot 登录", mpSettings: "设置",
     mpAddr: "MoviePilot 访问地址", mpUser: "登录账号", mpPass: "登录密码",
     btnLogin: "登录并获取数据", btnLogout: "退出",
@@ -139,15 +250,49 @@ const I18N = {
     up: "运行中", stopped: "已停止", restarting: "重启中",
     healthy: "healthy", unhealthy: "unhealthy",
     ptConnSaved: "✅ MoviePilot 连接已保存", ptReal: "MoviePilot API", ptMock: "模拟数据（API 不可达）",
-    testConnecting: "⏳ 正在验证…"
+    testConnecting: "⏳ 正在验证…",
+    /* v0.6.30.Branch-update：首页动态文案的模板键，供 05-home.js 使用 */
+    homeCountFmt: "共 {items} 项 · {libs} 个媒体库", homeCountEmpty: "尚未添加媒体库",
+    libCountFmt: "{n} 个库",
+    stateWait: "待扫描", stateScraping: "刮削中", stateFail: "失败",
+    stateCancelled: "已取消", stateDone: "已完成",
+    homeEmptyLib: "尚未添加{kind}媒体库", homeLoading: "正在读取最近入库…",
+    homeNoIndexed: "该分类暂无已索引的媒体文件",
+    actRescrape: "重新刮削", actOpenLib: "打开媒体库", actRemove: "移除",
+    nowBadge: "视频 / 音乐播放 · 含刮削信息",
+    /* 媒体子类型名称，供 mediaTypeName() 使用 */
+    typeAudio: "音乐", typeMusicvideo: "音乐视频（歌曲 MV）", typeComic: "漫画",
+    typeBook: "电子书", typeMovie: "电影", typeSeries: "电视剧集",
+    hwAuto: "自动选择（推荐）", hwCpu: "CPU", hwVaapi: "VAAPI（Intel/AMD）",
+    hwQsv: "Intel QSV", hwCuda: "NVIDIA CUDA/NVENC",
+    diskFreeShort: "剩余", noVolumes: "未配置监控卷",
+    hwBadgeFmt: "当前：{selected} · 可用：{available}", hwBadgeFail: "后端检测不可用 · 播放时回退 CPU",
+    hwDrmFound: "DRM 设备：{device}", hwDrmMissing: "未检测到 /dev/dri 渲染节点",
+    hwNvidiaFound: "已检测到 NVIDIA 设备节点", hwNvidiaMissing: "未检测到 NVIDIA 设备节点",
+    hwEncoders: "FFmpeg 编码器：{list}", hwEncodersFail: "无法枚举 FFmpeg 编码器",
+    hwFallbackNote: "硬件不可用时自动回退 CPU，不影响播放。",
+    hwNoneToast: "未检测到可用显卡加速，将使用 CPU", hwFoundToast: "检测到 {selected} 硬件加速",
+    hwProbeError: "显卡检测失败：{error}",
+    sessionOk: "登录状态正常", sessionBad: "登录状态异常",
+    sessionOkHint: "服务端会话有效，可以执行增删媒体库等写操作。",
+    sessionBadHint: "服务端会话已失效或不存在，请重新登录后再执行写操作。",
+    sessionReloginToast: "登录状态异常，请重新登录", sessionWriteBlocked: "登录状态异常，请重新登录后再{action}",
+    loggedOutToast: "已退出登录", caddySavedToast: "Caddy 配置已保存并应用", caddySaveFail: "保存失败",
+    caddyLoading: "正在载入…", caddyLines: "{n} 行", caddyRouteFmt: "{n} 条路由", caddyBackendDown: "后端不可用",
+    writeAddLibrary: "添加媒体库", writeDeleteLibrary: "删除媒体库", caddySaveBlocked: "登录状态异常，请重新登录后再保存"
   },
   "zh-TW": {
     caddySettings: "Caddy 設定", caddyOrigin: "WebUI 外部網域", caddyAdminToken: "管理權杖", caddyFile: "Caddyfile", caddySave: "儲存並套用", caddyReload: "重新載入", caddyHint: "儲存後會驗證並熱載入容器內的 Caddy 設定；失敗時會回滾。", superComicTitle: "Komga / Kavita / Calibre-Web · 統一書庫", appName: "蜀鼠之家", appSub: "VaultHub · 家庭 NAS 控制台 · 預覽版",
     navGroupMain: "主導覽", navHome: "首頁", navPt: "PT 管理",
     navGroupMedia: "媒體", navComic: "超漫畫", navMovie: "影視", navAudio: "音訊",
-    navGroupSys: "系統", navDocker: "容器管理",
+    navGroupSys: "系統",
     navGroupCustom: "自訂", addBoardNav: "新增模組",
     settings: "系統設定", about: "關於",
+    setAccount: "帳戶與登入", setAccountTitle: "目前登入狀態", sessionChecking: "正在檢查登入狀態…", sessionRefresh: "重新檢查",
+    sessionHint: "工作階段在最後一次操作後 30 分鐘閒置自動失效；新增或刪除媒體庫等寫入操作需要有效登入。",
+    setLogoutTitle: "登出", setLogout: "登出", setLogoutHint: "登出後會立即失效伺服器工作階段並回到登入頁，本機儲存的介面偏好不會被清除。",
+    caddyOpenPage: "開啟 Caddy 設定頁面", caddyPageHint: "Caddyfile 內容較長，單獨佔用一整頁編輯。",
+    caddyPageTitle: "Caddy 反向代理設定", caddyPageClose: "關閉",
     secNas: "NAS 監控", cpu: "CPU", memory: "記憶體", network: "網路", diskTemp: "硬碟溫度",
     used: "使用率", cores: "核心數", load: "負載", temp: "溫度",
     memUsed: "已用", memTotal: "總計", swap: "交換",
@@ -215,15 +360,79 @@ const I18N = {
     up: "運行中", stopped: "已停止", restarting: "重啟中",
     healthy: "healthy", unhealthy: "unhealthy",
     ptConnSaved: "✅ MoviePilot 連線已儲存", ptReal: "MoviePilot API", ptMock: "模擬資料（API 不可達）",
-    testConnecting: "⏳ 正在驗證…"
+    testConnecting: "⏳ 正在驗證…",
+    /* v0.6.30.Branch-update：Plex 風格改版新增的鍵 */
+    navLibrary: "資料庫", navMore: "更多 ›",
+    navGroupBook: "電子書刊", navGroupVideo: "影視作品", navGroupAudio: "音視作品",
+    settingsLead: "反向代理、外觀主題、刮削與硬體設定集中在此，Caddy 設定已內建為其中一個標籤頁。",
+    setLook: "外觀主題", setScrape: "刮削與硬體",
+    caddyRoutes: "反向代理服務網域",
+    caddyRoutesHint: "維護服務網域與內網上游位址的對應，儲存後由內建 Caddy 校驗並熱載入，失敗會自動回滾。",
+    setSidebar: "側欄", setSidebarMem: "側欄寬度記憶",
+    setSidebarMemSub: "拖曳側欄右邊緣調整寬度，自動寫入本瀏覽器",
+    setSidebarReset: "恢復預設寬度",
+    setScrapeSrc: "刮削來源",
+    setScrapeHint: "媒體庫按大類使用不同刮削源：電子書刊用 Google Books / Bangumi，影視作品用 TMDB / 豆瓣，音視作品用 MusicBrainz / 網易雲。",
+    setHw: "顯卡加速", setHwLbl: "視訊相容流硬體加速", setHwDetect: "偵測顯卡",
+    setHwHint: "需要在 Docker Compose 中透傳 /dev/dri 或設定 NVIDIA Container Toolkit。硬體不可用時會自動回退 CPU，不影響播放。",
+    secServer: "伺服器監控",
+    cpuUsage: "CPU 使用率", memUsage: "記憶體使用率", netSpeed: "網路速度", diskUsage: "硬碟使用率",
+    avgTemp: " °C 均溫", diskFree: "容量剩餘",
+    secNow: "正在進行中的操作", nowEmpty: "目前沒有正在播放的影片或音樂",
+    secRecentBook: "最近入庫 · 電子書刊", secRecentBookSub: "電子書 / 漫畫",
+    secRecentVideo: "最近入庫 · 影視作品", secRecentVideoSub: "電視劇集 / 電影",
+    secRecentAudio: "最近入庫 · 音視作品", secRecentAudioSub: "音樂 / 音樂 MV",
+    secLibPaths: "媒體庫路徑管理", secLibPathsSub: "新增後以手動命名作為媒體庫刮削",
+    filterAll: "全部",
+    kindBookDesc: "子類型：電子書 / 漫畫 · 刮削源 Google Books、Bangumi",
+    kindVideoDesc: "子類型：電視劇集 / 電影 · 刮削源 TMDB、豆瓣",
+    kindAudioDesc: "子類型：音樂 / 音樂 MV · 刮削源 MusicBrainz、網易雲",
+    libKind: "媒體大類", libSubType: "子類型",
+    libPath: "媒體路徑（容器內絕對路徑）", libName: "庫名稱（手動命名，用於刮削）",
+    libAdd: "新增媒體庫", libRefresh: "重新整理", libRescrape: "全部重新刮削",
+    colLibName: "庫名稱", colLibKind: "大類 / 子類型", colLibPath: "媒體路徑",
+    colLibItems: "項目", colLibState: "刮削狀態", colLibActs: "操作",
+    libEmpty: "尚未新增媒體庫，填寫上方表單即可開始刮削",
+    homeCountFmt: "共 {items} 項 · {libs} 個媒體庫", homeCountEmpty: "尚未新增媒體庫",
+    libCountFmt: "{n} 個庫",
+    stateWait: "待掃描", stateScraping: "刮削中", stateFail: "失敗",
+    stateCancelled: "已取消", stateDone: "已完成",
+    homeEmptyLib: "尚未新增{kind}媒體庫", homeLoading: "正在讀取最近入庫…",
+    homeNoIndexed: "該分類暫無已索引的媒體檔案",
+    actRescrape: "重新刮削", actOpenLib: "開啟媒體庫", actRemove: "移除",
+    nowBadge: "影片 / 音樂播放 · 含刮削資訊",
+    typeAudio: "音樂", typeMusicvideo: "音樂影片（歌曲 MV）", typeComic: "漫畫",
+    typeBook: "電子書", typeMovie: "電影", typeSeries: "電視劇集",
+    hwAuto: "自動選擇（推薦）", hwCpu: "CPU", hwVaapi: "VAAPI（Intel/AMD）",
+    hwQsv: "Intel QSV", hwCuda: "NVIDIA CUDA/NVENC",
+    diskFreeShort: "剩餘", noVolumes: "未設定監控卷",
+    hwBadgeFmt: "目前：{selected} · 可用：{available}", hwBadgeFail: "後端偵測不可用 · 播放時回退 CPU",
+    hwDrmFound: "DRM 裝置：{device}", hwDrmMissing: "未偵測到 /dev/dri 轉譯節點",
+    hwNvidiaFound: "已偵測到 NVIDIA 裝置節點", hwNvidiaMissing: "未偵測到 NVIDIA 裝置節點",
+    hwEncoders: "FFmpeg 編碼器：{list}", hwEncodersFail: "無法列舉 FFmpeg 編碼器",
+    hwFallbackNote: "硬體不可用時自動回退 CPU，不影響播放。",
+    hwNoneToast: "未偵測到可用顯卡加速，將使用 CPU", hwFoundToast: "偵測到 {selected} 硬體加速",
+    hwProbeError: "顯卡偵測失敗：{error}",
+    sessionOk: "登入狀態正常", sessionBad: "登入狀態異常",
+    sessionOkHint: "伺服器工作階段有效，可以執行新增或刪除媒體庫等寫入操作。",
+    sessionBadHint: "伺服器工作階段已失效或不存在，請重新登入後再執行寫入操作。",
+    sessionReloginToast: "登入狀態異常，請重新登入", sessionWriteBlocked: "登入狀態異常，請重新登入後再{action}",
+    loggedOutToast: "已登出", caddySavedToast: "Caddy 設定已儲存並套用", caddySaveFail: "儲存失敗",
+    caddyLoading: "正在載入…", caddyLines: "{n} 行", caddyRouteFmt: "{n} 條路由", caddyBackendDown: "後端不可用",
+    writeAddLibrary: "新增媒體庫", writeDeleteLibrary: "刪除媒體庫", caddySaveBlocked: "登入狀態異常，請重新登入後再儲存"
   },
   "en": {
     caddySettings: "Caddy Config", caddyOrigin: "WebUI public domain", caddyAdminToken: "Admin token", caddyFile: "Caddyfile", caddySave: "Save & apply", caddyReload: "Reload", caddyHint: "Save will validate and hot-reload the container Caddy config; failures roll back.", superComicTitle: "Komga / Kavita / Calibre-Web · Unified Library", appName: "VaultHub", appSub: "VaultHub · Home NAS console · Preview",
     navGroupMain: "Main", navHome: "Home", navPt: "PT Manager",
     navGroupMedia: "Media", navComic: "Super Comics", navMovie: "Movies", navAudio: "Audio",
-    navGroupSys: "System", navDocker: "Containers",
+    navGroupSys: "System",
     navGroupCustom: "Custom", addBoardNav: "Add Module",
     settings: "Settings", about: "About",
+    setAccount: "Account & Sign-in", setAccountTitle: "Current session", sessionChecking: "Checking session…", sessionRefresh: "Refresh",
+    sessionHint: "Sessions expire after 30 minutes of inactivity; adding or removing libraries requires a valid sign-in.",
+    setLogoutTitle: "Sign out", setLogout: "Sign out", setLogoutHint: "Signing out invalidates the server session immediately and returns to the login screen. Local UI preferences are kept.",
+    caddyOpenPage: "Open Caddy config page", caddyPageHint: "The Caddyfile is long, so it gets a dedicated full page instead of a cramped dialog.",
+    caddyPageTitle: "Caddy reverse proxy config", caddyPageClose: "Close",
     secNas: "NAS Monitor", cpu: "CPU", memory: "Memory", network: "Network", diskTemp: "Disk Temp",
     used: "used", cores: "Cores", load: "Load", temp: "Temp",
     memUsed: "Used", memTotal: "Total", swap: "Swap",
@@ -291,12 +500,78 @@ const I18N = {
     up: "running", stopped: "stopped", restarting: "restarting",
     healthy: "healthy", unhealthy: "unhealthy",
     ptConnSaved: "✅ MoviePilot connection saved", ptReal: "MoviePilot API", ptMock: "Mock (API unreachable)",
-    testConnecting: "⏳ Verifying…"
+    testConnecting: "⏳ Verifying…",
+    /* v0.6.30.Branch-update: keys added by the Plex-style redesign */
+    navLibrary: "Library", navMore: "More ›",
+    navGroupBook: "Books & Comics", navGroupVideo: "Movies & TV", navGroupAudio: "Music & MV",
+    settingsLead: "Reverse proxy, appearance and scraping/hardware settings live here; the Caddy editor is one of the tabs.",
+    setLook: "Appearance", setScrape: "Scraping & hardware",
+    caddyRoutes: "Reverse proxy hostnames",
+    caddyRoutesHint: "Maintain hostname to LAN upstream mappings. Saving validates and hot-reloads the built-in Caddy; failures roll back automatically.",
+    setSidebar: "Sidebar", setSidebarMem: "Sidebar width memory",
+    setSidebarMemSub: "Drag the sidebar's right edge to resize; the width is stored in this browser",
+    setSidebarReset: "Reset to default width",
+    setScrapeSrc: "Scraping sources",
+    setScrapeHint: "Each category uses its own scrapers: Books & Comics via Google Books / Bangumi, Movies & TV via TMDB / Douban, Music & MV via MusicBrainz / NetEase.",
+    setHw: "GPU acceleration", setHwLbl: "Hardware acceleration for compat streams", setHwDetect: "Detect GPU",
+    setHwHint: "Requires passing /dev/dri through Docker Compose or configuring the NVIDIA Container Toolkit. Falls back to CPU automatically when unavailable, playback still works.",
+    secServer: "Server monitoring",
+    cpuUsage: "CPU usage", memUsage: "Memory usage", netSpeed: "Network speed", diskUsage: "Disk usage",
+    avgTemp: " °C average", diskFree: "Free space",
+    secNow: "Operations in progress", nowEmpty: "No video or music is playing right now",
+    secRecentBook: "Recently added · Books & Comics", secRecentBookSub: "E-books / comics",
+    secRecentVideo: "Recently added · Movies & TV", secRecentVideoSub: "TV series / movies",
+    secRecentAudio: "Recently added · Music & MV", secRecentAudioSub: "Music / music videos",
+    secLibPaths: "Library path management", secLibPathsSub: "The manual name you enter is used as the scraping library name",
+    filterAll: "All",
+    kindBookDesc: "Subtypes: e-book / comic · scrapers Google Books, Bangumi",
+    kindVideoDesc: "Subtypes: TV series / movie · scrapers TMDB, Douban",
+    kindAudioDesc: "Subtypes: music / music video · scrapers MusicBrainz, NetEase",
+    libKind: "Category", libSubType: "Subtype",
+    libPath: "Media path (absolute path inside the container)", libName: "Library name (manual, used for scraping)",
+    libAdd: "Add library", libRefresh: "Refresh", libRescrape: "Rescrape all",
+    colLibName: "Library", colLibKind: "Category / subtype", colLibPath: "Media path",
+    colLibItems: "Items", colLibState: "Scraping state", colLibActs: "Actions",
+    libEmpty: "No library yet. Fill in the form above to start scraping.",
+    homeCountFmt: "{items} items · {libs} libraries", homeCountEmpty: "No library yet",
+    libCountFmt: "{n} libraries",
+    stateWait: "Pending", stateScraping: "Scraping", stateFail: "Failed",
+    stateCancelled: "Cancelled", stateDone: "Done",
+    homeEmptyLib: "No {kind} library yet", homeLoading: "Loading recently added…",
+    homeNoIndexed: "No indexed media files in this category yet",
+    actRescrape: "Rescrape", actOpenLib: "Open library", actRemove: "Remove",
+    nowBadge: "Video / music playback · includes scraped info",
+    typeAudio: "Music", typeMusicvideo: "Music video", typeComic: "Comic",
+    typeBook: "E-book", typeMovie: "Movie", typeSeries: "TV series",
+    hwAuto: "Auto (recommended)", hwCpu: "CPU", hwVaapi: "VAAPI (Intel/AMD)",
+    hwQsv: "Intel QSV", hwCuda: "NVIDIA CUDA/NVENC",
+    diskFreeShort: "free", noVolumes: "No configured volumes",
+    hwBadgeFmt: "Active: {selected} · available: {available}", hwBadgeFail: "Backend detection unavailable · falls back to CPU",
+    hwDrmFound: "DRM device: {device}", hwDrmMissing: "No /dev/dri render node detected",
+    hwNvidiaFound: "NVIDIA device nodes detected", hwNvidiaMissing: "No NVIDIA device nodes detected",
+    hwEncoders: "FFmpeg encoders: {list}", hwEncodersFail: "Could not enumerate FFmpeg encoders",
+    hwFallbackNote: "Falls back to CPU automatically when hardware is unavailable; playback is unaffected.",
+    hwNoneToast: "No usable GPU acceleration detected — using CPU", hwFoundToast: "{selected} hardware acceleration detected",
+    hwProbeError: "GPU detection failed: {error}",
+    sessionOk: "Signed in", sessionBad: "Session invalid",
+    sessionOkHint: "Server session is valid; write operations are allowed.",
+    sessionBadHint: "Server session expired or missing — sign in again before writing.",
+    sessionReloginToast: "Session invalid — please sign in again", sessionWriteBlocked: "Session invalid — sign in again before you {action}",
+    loggedOutToast: "Signed out", caddySavedToast: "Caddy config saved and applied", caddySaveFail: "Save failed",
+    caddyLoading: "Loading…", caddyLines: "{n} lines", caddyRouteFmt: "{n} routes", caddyBackendDown: "Backend unavailable",
+    writeAddLibrary: "add a library", writeDeleteLibrary: "delete a library", caddySaveBlocked: "Session invalid — sign in again before saving"
   }
 };
 
 let curLang = "zh-CN";
 const t = k => (I18N[curLang] && I18N[curLang][k]) || I18N["zh-CN"][k] || k;
+/* tf 用于带占位符的文案：t("homeCountFmt") 取回 "共 {items} 项 · {libs} 个媒体库"，
+   再把 {items}/{libs} 替换成实参。这样动态文案也能跟随语言切换，不必在 JS 里
+   拼中文字面量。缺失的占位符保持原样，便于发现漏传参数。 */
+function tf(key, vars) {
+  return String(t(key)).replace(/\{(\w+)\}/g, (m, name) =>
+    Object.prototype.hasOwnProperty.call(vars || {}, name) ? String(vars[name]) : m);
+}
 
 function applyI18n() {
   document.querySelectorAll("[data-i18n]").forEach(el => { el.textContent = t(el.dataset.i18n); });
@@ -309,13 +584,22 @@ function applyI18n() {
 function toggleBars() {
   const willHide = !document.body.classList.contains("sidebar-hidden");
   document.body.classList.toggle("sidebar-hidden", willHide);
-  document.body.classList.toggle("topbar-hidden", willHide);
-  const btn = document.querySelector(".chrome-toggle");
+  const btn = document.querySelector(".rail-btn");
   if (btn) {
-    btn.title = willHide ? "边栏显示" : "边栏隐藏";
+    btn.textContent = willHide ? "⇥" : "⇤";
+    btn.title = willHide ? "展开侧栏" : "折叠侧栏";
     btn.setAttribute("aria-label", btn.title);
   }
+  try { localStorage.setItem("vaulthub_sidebar_rail", willHide ? "1" : "0"); } catch (e) {}
 }
+function loadSidebarRail() {
+  let rail = false;
+  try { rail = localStorage.getItem("vaulthub_sidebar_rail") === "1"; } catch (e) {}
+  document.body.classList.toggle("sidebar-hidden", rail);
+  const btn = document.querySelector(".rail-btn");
+  if (btn) btn.textContent = rail ? "⇥" : "⇤";
+}
+
 
 /* ================= 状态持久化 ================= */
 const LS_SETTINGS = "dwu_settings";
@@ -368,11 +652,13 @@ const LS_HIDDEN_MODULES = "dwu_hidden_modules";
 function loadHiddenModules() {
   try {
     const saved = localStorage.getItem(LS_HIDDEN_MODULES);
-    hiddenModules = saved === null ? ["pt", "docker"] : (JSON.parse(saved) || []);
-  } catch (e) { hiddenModules = ["pt", "docker"]; }
+    hiddenModules = saved === null ? ["pt"] : (JSON.parse(saved) || []);
+  } catch (e) { hiddenModules = ["pt"]; }
+  /* 容器管理已下线，历史配置里的 docker 项一并丢弃 */
+  hiddenModules = hiddenModules.filter(x => x !== "docker");
   document.body.classList.toggle("module-hidden-pt", hiddenModules.includes("pt"));
-  document.body.classList.toggle("module-hidden-docker", hiddenModules.includes("docker"));
 }
+
 function saveHiddenModules() {
   try { localStorage.setItem(LS_HIDDEN_MODULES, JSON.stringify(hiddenModules)); } catch (e) {}
 }
@@ -424,34 +710,56 @@ function saveHardwareAcceleration() {
   refreshHardwareStatus();
   toast("✅ 显卡加速设置已保存");
 }
-async function refreshHardwareStatus() {
+/* 显卡检测：后端会枚举 /dev/dri、NVIDIA 设备节点和 ffmpeg 实际编译进的编码器，
+   这里把结果显示成"当前 / 可用 / 设备"三段，并在 notify 时给出 toast 反馈，
+   避免点了「检测显卡」看不出任何变化。 */
+async function refreshHardwareStatus(notify) {
   const badge = document.getElementById("hardwareStatus");
   if (!badge) return;
+  const detail = document.getElementById("hardwareDetail");
   const select = document.getElementById("hardwareAcceleration");
   if (select) select.value = settings.hardwareAcceleration || "auto";
+  badge.textContent = curLang === "en" ? "Detecting…" : "正在检测…";
   try {
     const res = await fetch(`/api/media/hardware?hw=${encodeURIComponent(settings.hardwareAcceleration || "auto")}`, { cache: "no-store" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
     const data = await res.json();
     const selected = data.selected || "cpu";
-    const available = Object.entries(data.available || {}).filter(([, ok]) => ok).map(([name]) => name).join(" / ");
-    badge.textContent = `当前：${selected.toUpperCase()} · 可用：${available || "CPU"}`;
-    badge.title = data.vaapi_device || "";
+    const available = Object.entries(data.available || {}).filter(([, ok]) => ok).map(([name]) => name.toUpperCase());
+    badge.textContent = tf("hwBadgeFmt", { selected: selected.toUpperCase(), available: available.join(" / ") || "CPU" });
+    badge.className = selected === "cpu" ? "badge" : "badge green";
+    if (detail) {
+      const parts = [];
+      parts.push(data.vaapi_device ? tf("hwDrmFound", { device: data.vaapi_device }) : t("hwDrmMissing"));
+      parts.push(data.nvidia_device ? t("hwNvidiaFound") : t("hwNvidiaMissing"));
+      if (Array.isArray(data.encoders) && data.encoders.length) parts.push(tf("hwEncoders", { list: data.encoders.join(", ") }));
+      if (!data.ffmpeg) parts.push(t("hwEncodersFail"));
+      parts.push(t("hwFallbackNote"));
+      detail.textContent = parts.join(" · ");
+    }
+    if (notify) toast(selected === "cpu" ? "ℹ️ " + t("hwNoneToast") : "✅ " + tf("hwFoundToast", { selected: selected.toUpperCase() }));
   } catch (e) {
-    badge.textContent = "后端检测不可用 · 播放时回退 CPU";
+    badge.textContent = t("hwBadgeFail");
+    badge.className = "badge red";
+    if (detail) detail.textContent = tf("hwProbeError", { error: e.message });
+    if (notify) toast("⚠️ " + tf("hwProbeError", { error: e.message }));
   }
 }
 
 /* ================= 导航 ================= */
-const titleMap = { home: "navHome", pt: "navPt", comic: "navComic", movie: "navMovie", audio: "navAudio", docker: "navDocker" };
+const titleMap = { home: "navHome", pt: "navPt", comic: "navComic", movie: "navMovie", audio: "navAudio" };
+/* 顶栏横向导航把「资料库」映射到媒体视图，用于高亮回写 */
+const TOPNAV_FOR_VIEW = { home: "home", pt: "pt", comic: "comic", movie: "comic", audio: "comic" };
 
 function switchView(v) {
   document.querySelectorAll(".nav-item[data-view]").forEach(n => n.classList.remove("active"));
   const navItem = document.querySelector(`.nav-item[data-view="${v}"]`);
   if (navItem) navItem.classList.add("active");
+  const topKey = TOPNAV_FOR_VIEW[v] || (String(v).startsWith("custom-") ? null : "home");
+  document.querySelectorAll(".topnav-item[data-view]").forEach(n => n.classList.toggle("active", n.dataset.view === topKey));
   document.querySelectorAll(".view").forEach(s => s.classList.remove("active"));
   const view = document.getElementById("view-" + v);
   if (view) view.classList.add("active");
-  document.getElementById("pageTitle").textContent = t(titleMap[v] || "navHome");
   const player = document.getElementById("audio-bottom-player");
   if (player) player.classList.toggle("show", v === "audio");
   window.scrollTo(0, 0);
@@ -464,6 +772,67 @@ document.querySelectorAll(".nav-item[data-view]").forEach(item => {
     switchView(v);
   });
 });
+document.querySelectorAll(".topnav-item[data-view]").forEach(item => {
+  item.addEventListener("click", () => switchView(item.dataset.view));
+});
+
+/* ================= 侧栏宽度：拖拽自适应 + 记忆 ================= */
+const LS_SIDEBAR_W = "vaulthub_sidebar_w";
+const SIDEBAR_DEFAULT_W = 236;
+const SIDEBAR_MIN_W = 62;
+const SIDEBAR_MAX_W = 340;
+function applySidebarWidth(px) {
+  const w = Math.min(SIDEBAR_MAX_W, Math.max(SIDEBAR_MIN_W, Number(px) || SIDEBAR_DEFAULT_W));
+  document.documentElement.style.setProperty("--sidebar-w", w + "px");
+  return w;
+}
+function loadSidebarWidth() {
+  try {
+    const saved = localStorage.getItem(LS_SIDEBAR_W);
+    if (saved) applySidebarWidth(saved);
+  } catch (e) {}
+}
+function resetSidebarWidth() {
+  applySidebarWidth(SIDEBAR_DEFAULT_W);
+  try { localStorage.removeItem(LS_SIDEBAR_W); } catch (e) {}
+  document.body.classList.remove("sidebar-hidden");
+  toast("✅ 侧栏宽度已恢复默认");
+}
+function initSidebarResizer() {
+  const bar = document.getElementById("sidebarResizer");
+  const side = document.getElementById("sidebar");
+  if (!bar || !side) return;
+  let dragging = false;
+  const move = e => {
+    if (!dragging) return;
+    const x = e.touches ? e.touches[0].clientX : e.clientX;
+    applySidebarWidth(x);
+  };
+  const stop = () => {
+    if (!dragging) return;
+    dragging = false;
+    side.classList.remove("dragging");
+    const w = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--sidebar-w"), 10);
+    try { localStorage.setItem(LS_SIDEBAR_W, String(w)); } catch (e) {}
+  };
+  const start = e => { dragging = true; side.classList.add("dragging"); e.preventDefault(); };
+  bar.addEventListener("mousedown", start);
+  bar.addEventListener("touchstart", start, { passive: false });
+  window.addEventListener("mousemove", move);
+  window.addEventListener("touchmove", move, { passive: true });
+  window.addEventListener("mouseup", stop);
+  window.addEventListener("touchend", stop);
+}
+
+/* ================= 设置弹窗内的标签页（含 Caddy 配置） ================= */
+function switchSetTab(key) {
+  document.querySelectorAll(".settab[data-settab]").forEach(el => el.classList.toggle("on", el.dataset.settab === key));
+  document.querySelectorAll(".setpanel").forEach(el => el.classList.toggle("on", el.id === "setpanel-" + key));
+  if (key === "caddy") loadCaddyConfig();
+  if (key === "scrape") refreshHardwareStatus();
+  if (key === "account") refreshSessionStatus(false);
+}
+
 
 /* ================= Tabs ================= */
 document.querySelectorAll(".tab[data-tab]").forEach(tab => {
