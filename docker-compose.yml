@@ -6,8 +6,6 @@ services:
     ports:
       - "8088:8088"
     environment:
-      # 兼容旧版令牌登录；设置非空时可继续使用 token 字段。
-      ADMIN_TOKEN: "${ADMIN_TOKEN:-}"
       # WebUI 用户名密码登录；未设置时默认为 ADMIN / ADMIN123。
       ADMIN_USERNAME: "${ADMIN_USERNAME:-ADMIN}"
       ADMIN_PASSWORD: "${ADMIN_PASSWORD:-ADMIN123}"

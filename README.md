@@ -1,8 +1,15 @@
-# VaultHub 蜀鼠之家 v0.7.1：索引一致性补丁
+# VaultHub 蜀鼠之家 v0.8.0：三重解码与图形媒体中心
 
-v0.7.1 延续 v0.7.0 的「以媒体库为中心」界面，并修复取消索引、删除扫描中媒体库以及同 ID 并发重建时可能造成部分索引或新索引被旧任务覆盖的问题。索引现在通过 generation 隔离的 staging 表分批写入，完整扫描成功后才原子替换正式索引；取消或失败时继续提供旧索引。
+v0.8.0 将视频播放升级为浏览器原生、服务端 FFmpeg 兼容流和 WebAssembly SIMD 软件解码三级智能降级；音乐/MV、书漫和影视页面改为直接展示扫描结果的图形化内容页。媒体来源、刮削和路径配置统一集中在“系统设置 → 媒体库管理”，所有写操作只接受登录后的 HttpOnly Session Cookie。
 
-## v0.7.1 更新
+## v0.8.0 更新
+
+- 视频播放器按“原生直连 → FFmpeg 兼容流 → WASM SIMD 软件解码”自动切换，并显示当前引擎；WASM 资产随镜像自托管，不依赖第三方 CDN。
+- 音乐/MV 页面保留“我的媒体库”“最新音乐”“喜欢”，专辑与歌手可点击进入曲目列表，歌曲和居中播放器均可收藏。
+- 电子书/漫画直接展示海报书架与已读收藏；无刮削封面时使用文件名生成封面。
+- 电影/电视剧默认使用海报与作品名展示，页面内不再出现来源切换、管理按钮和 TMDB 配置文字。
+- 删除管理令牌输入、浏览器 token 存储和 `ADMIN_TOKEN`/`X-VaultHub-Token` 旁路；管理员写操作统一由账号密码登录 Session 鉴权。
+- 索引增加启动孤儿清理、双重存储失败 tombstone 与重启恢复保护。
 
 ### 原子索引替换
 
@@ -282,11 +289,11 @@ environment:
 镜像发布在 GitHub Container Registry：
 
 ```
-ghcr.io/q807738511/vaulthub:<版本标签>   # 例如 v0.7.1
+ghcr.io/q807738511/vaulthub:<版本标签>   # 例如 v0.8.0
 ghcr.io/q807738511/vaulthub:latest        # 随 main 漂移，生产不建议
 ```
 
-**建议固定版本标签部署（如 `v0.7.1`），不要用 `latest`**：`latest` 会随每次推送变化，出问题难回滚。
+**建议固定版本标签部署（如 `v0.8.0`），不要用 `latest`**：`latest` 会随每次推送变化，出问题难回滚。
 
 ### 中国网络：直连 GHCR 拉不动怎么办
 
@@ -306,17 +313,17 @@ ghcr.io/q807738511/vaulthub:latest        # 随 main 漂移，生产不建议
 ```yaml
 services:
   vaulthub:
-    image: ghcr.nju.edu.cn/q807738511/vaulthub:v0.7.1
+    image: ghcr.nju.edu.cn/q807738511/vaulthub:v0.8.0
 ```
 
-> 注意只有一个冒号：`vaulthub:v0.7.1`，不是 `vaulthub::v0.7.1`。
+> 注意只有一个冒号：`vaulthub:v0.8.0`，不是 `vaulthub::v0.8.0`。
 
 用法二——保持 compose 用官方名，手动拉取后打回原名（便于随时切回直连）：
 
 ```bash
-docker pull ghcr.nju.edu.cn/q807738511/vaulthub:v0.7.1
-docker tag  ghcr.nju.edu.cn/q807738511/vaulthub:v0.7.1 ghcr.io/q807738511/vaulthub:v0.7.1
-# compose 仍写 image: ghcr.io/q807738511/vaulthub:v0.7.1
+docker pull ghcr.nju.edu.cn/q807738511/vaulthub:v0.8.0
+docker tag  ghcr.nju.edu.cn/q807738511/vaulthub:v0.8.0 ghcr.io/q807738511/vaulthub:v0.8.0
+# compose 仍写 image: ghcr.io/q807738511/vaulthub:v0.8.0
 docker compose up -d
 ```
 
@@ -334,11 +341,9 @@ docker compose up -d
 - ~~`WEBUI_PORT=8088`~~
 - ~~`NAS_IP=192.168.112.3`~~
 - ~~`DASHBOARD_ORIGIN=https://home.examples.top`~~
-- `ADMIN_TOKEN=`（建议保留并设置长随机值）
+- ~~`ADMIN_TOKEN`~~（v0.8.0 已删除，写接口统一使用登录 Session）
 
-端口和媒体卷可以直接写在 Compose 中。`NAS_IP`、`DASHBOARD_ORIGIN`、`WEB_ROOT`、`XDG_CONFIG_HOME`、`XDG_DATA_HOME` 已有镜像默认值；当前环境不变时无需重复声明。`ADMIN_TOKEN` 建议保留，用于保护 Caddy 和媒体库管理接口。
-
-`ADMIN_TOKEN` 留空表示管理配置不鉴权。公网环境建议填写一串长随机密码，WebUI 保存 Caddy 或媒体库配置时输入同一个令牌。
+端口和媒体卷可以直接写在 Compose 中。`NAS_IP`、`DASHBOARD_ORIGIN`、`WEB_ROOT`、`XDG_CONFIG_HOME`、`XDG_DATA_HOME` 已有镜像默认值；当前环境不变时无需重复声明。v0.8.0 起 Caddy 与媒体库写操作均要求先使用 `ADMIN_USERNAME` / `ADMIN_PASSWORD` 登录。
 
 ## 本地媒体目录
 
@@ -503,7 +508,7 @@ NPM 默认会转发原始 Host；不要在 Advanced 中覆盖成 `Host 192.168.1
 #### 5. 安全与验证
 
 - 路由器只开放反向代理的 80/443，不开放 `8088`、`4533`、`25600`、`61208` 或 `9099`。
-- 建议在 `home.examples.top` 前增加认证；VaultHub 的 `ADMIN_TOKEN` 必须设置长随机值。
+- 建议在 `home.examples.top` 前增加额外访问控制；VaultHub 管理写操作使用 HttpOnly 登录 Session。
 - `DASHBOARD_ORIGIN` 必须保持 `https://home.examples.top`。
 
 ```bash

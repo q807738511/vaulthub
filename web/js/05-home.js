@@ -51,10 +51,8 @@ function renderHomeLibraryNav() {
 }
 function openHomeLibrary(group, libId) {
   localMediaSelection[group] = libId;
-  try { localStorage.setItem("dwu_media_mode_" + group, "local"); } catch (e) {}
   switchView(group);
-  if (typeof setMediaMode === "function") setMediaMode(group, "local");
-  else renderLocalMedia(group);
+  renderLocalMedia(group);
 }
 function formatHomeCount(n) {
   const v = Number(n) || 0;
@@ -357,11 +355,10 @@ async function addHomeMediaLibrary() {
      所以写操作前的会话守卫必须在这里，而不是在已经移除的 saveMediaLibraries 里。 */
   if (!await ensureSessionForWrite(t("writeAddLibrary"))) return;
   const body = { id: libraryId(name, type, path, 0), name, type, path };
-  try { const tok = document.getElementById("mediaAdminToken")?.value.trim() || ""; localStorage.setItem("dwu_media_admin_token", tok); } catch (e) {}
   try {
     const res = await fetch("/api/media/libraries", {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...mediaAdminHeaders() },
+      headers: sessionWriteHeaders(true),
       credentials: "same-origin",
       body: JSON.stringify(body)
     });
@@ -381,7 +378,7 @@ async function addHomeMediaLibrary() {
 }
 async function rebuildAllLibraries() {
   try {
-    const res = await fetch("/api/media/index/rebuild", { method: "POST", headers: mediaAdminHeaders(), credentials: "same-origin" });
+    const res = await fetch("/api/media/index/rebuild", { method: "POST", headers: sessionWriteHeaders(), credentials: "same-origin" });
     if (!await handleProtectedResponse(res)) { toast("⚠️ 会话已过期，请重新登录"); return; }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     toast("🔄 已触发全部媒体库重新刮削");
@@ -390,7 +387,7 @@ async function rebuildAllLibraries() {
 }
 async function rebuildOneLibrary(id) {
   try {
-    const res = await fetch(`/api/media/index/rebuild?id=${encodeURIComponent(id)}`, { method: "POST", headers: mediaAdminHeaders(), credentials: "same-origin" });
+    const res = await fetch(`/api/media/index/rebuild?id=${encodeURIComponent(id)}`, { method: "POST", headers: sessionWriteHeaders(), credentials: "same-origin" });
     if (!await handleProtectedResponse(res)) { toast("⚠️ 会话已过期，请重新登录"); return; }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     toast("🔄 已触发重新刮削");

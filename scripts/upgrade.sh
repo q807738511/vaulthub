@@ -56,9 +56,6 @@ if [ ! -f "$TARGET_DIR/.env" ]; then
   cp -a "$FILES_DIR/.env.example" "$TARGET_DIR/.env"
   echo "Created default .env"
 else
-  if ! grep -q '^ADMIN_TOKEN=' "$TARGET_DIR/.env"; then
-    printf '\nADMIN_TOKEN=\n' >> "$TARGET_DIR/.env"
-  fi
   echo "Keeping existing .env"
 fi
 

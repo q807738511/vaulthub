@@ -44,9 +44,12 @@ type App struct {
 	db               *sql.DB
 	scanGate         chan struct{} // size-1 semaphore: only one scan writes at a time
 	config, indexDir string
-	// scanWriteHook is test-only instrumentation, nil in production.
-	scanWriteHook func(string, int)
-	removeHook    func(string)
+	configTrusted    bool // false when config exists but cannot be read/decoded
+	// Hooks are test-only fault/interleaving instrumentation, nil in production.
+	scanWriteHook     func(string, int)
+	removeHook        func(string)
+	removeDBHook      func(string) error
+	saveLibrariesHook func([]Library) error
 }
 type FileEntry struct {
 	Path  string `json:"path"`
@@ -65,7 +68,9 @@ func (a *App) load() {
 	a.indexDir = env("MEDIA_INDEX_DIR", "/data/media-index")
 	b, e := os.ReadFile(a.config)
 	if e == nil {
-		_ = json.Unmarshal(b, &a.libs)
+		a.configTrusted = json.Unmarshal(b, &a.libs) == nil
+	} else {
+		a.configTrusted = os.IsNotExist(e)
 	}
 	a.jobs = map[string]uint64{}
 	a.generations = map[string]uint64{}
@@ -121,7 +126,39 @@ CREATE TABLE IF NOT EXISTS index_status(
 		return
 	}
 	a.db = db
+	a.cleanupOrphanIndexes()
 	a.migrateLegacyIndexes()
+}
+
+// cleanupOrphanIndexes removes crash-only staging rows and index rows whose
+// library is no longer present in the persisted configuration. This also makes
+// a prior delete safe after a process restart during a double storage failure.
+func (a *App) cleanupOrphanIndexes() {
+	configured := map[string]bool{}
+	for _, l := range a.libs {
+		configured[l.ID] = true
+	}
+	_, _ = a.db.Exec(`DELETE FROM scan_staging`)
+	if !a.configTrusted {
+		return
+	}
+	for _, table := range []string{"files", "index_status"} {
+		rs, e := a.db.Query(`SELECT DISTINCT lib FROM ` + table)
+		if e != nil {
+			continue
+		}
+		var orphaned []string
+		for rs.Next() {
+			var id string
+			if rs.Scan(&id) == nil && !configured[id] {
+				orphaned = append(orphaned, id)
+			}
+		}
+		_ = rs.Close()
+		for _, id := range orphaned {
+			_, _ = a.db.Exec(`DELETE FROM `+table+` WHERE lib=?`, id)
+		}
+	}
 }
 
 // migrateLegacyIndexes imports pre-SQLite per-library JSON snapshots so an
@@ -168,14 +205,9 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 func errJSON(w http.ResponseWriter, c int, s string) {
 	writeJSON(w, c, map[string]any{"ok": false, "error": s})
 }
-func auth(r *http.Request) bool {
-	t := os.Getenv("ADMIN_TOKEN")
-	return t == "" || r.Header.Get("X-VaultHub-Token") == t
-}
 
 // managerSessionOK asks the co-located Go manager whether the caller's session
-// cookie is still valid. The manager owns the session store, so it stays the
-// single authority for authentication and idle-timeout sliding.
+// cookie is still valid. The manager owns the session store and idle timeout.
 func managerSessionOK(r *http.Request) bool {
 	c, e := r.Cookie("vh_session")
 	if e != nil || c.Value == "" {
@@ -198,13 +230,9 @@ func managerSessionOK(r *http.Request) bool {
 	return res.StatusCode == http.StatusOK
 }
 
-// writeAuth guards every mutating media endpoint. An explicit ADMIN_TOKEN still
-// works for legacy clients, otherwise a valid manager session is required.
-// Unlike auth(), it never fails open when ADMIN_TOKEN is empty.
+// writeAuth guards every mutating media endpoint through the manager-owned
+// HttpOnly session cookie. Password login is the only write authority.
 func writeAuth(r *http.Request) bool {
-	if t := os.Getenv("ADMIN_TOKEN"); t != "" && r.Header.Get("X-VaultHub-Token") == t {
-		return true
-	}
 	return managerSessionOK(r)
 }
 func validID(s string) bool {
@@ -219,6 +247,11 @@ func validID(s string) bool {
 	return true
 }
 func (a *App) saveLibrariesLocked(libs []Library) error {
+	if a.saveLibrariesHook != nil {
+		if e := a.saveLibrariesHook(libs); e != nil {
+			return e
+		}
+	}
 	_ = os.MkdirAll(filepath.Dir(a.config), 0755)
 	b, e := json.MarshalIndent(libs, "", "  ")
 	if e != nil {
@@ -394,6 +427,12 @@ func (a *App) removeLibrary(id string) (bool, error) {
 	}
 
 	a.scanGate <- struct{}{}
+	if a.removeDBHook != nil {
+		if e := a.removeDBHook(id); e != nil {
+			<-a.scanGate
+			return true, a.rollbackLibraryRemoval(id, previous, e)
+		}
+	}
 	tx, e := a.db.Begin()
 	if e != nil {
 		<-a.scanGate
@@ -1553,6 +1592,14 @@ func (a *App) extractSubtitle(w http.ResponseWriter, r *http.Request) {
 	w.Write(out)
 }
 func cancelTask(w http.ResponseWriter, r *http.Request, a *App) {
+	if r.Method != http.MethodPost {
+		errJSON(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if !writeAuth(r) {
+		errJSON(w, http.StatusUnauthorized, "login required")
+		return
+	}
 	id := r.URL.Query().Get("id")
 	a.mu.Lock()
 	f, ok := a.tasks[id]

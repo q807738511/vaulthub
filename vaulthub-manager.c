@@ -21,7 +21,6 @@
 
 static const char *data_config = "/data/Caddyfile";
 static const char *default_config = "/etc/caddy/Caddyfile";
-static const char *token_env = "ADMIN_TOKEN";
 static pid_t caddy_pid = -1;
 static pid_t media_pid = -1;
 static pid_t subtitle_pid = -1;
@@ -254,17 +253,12 @@ static void docker_scan(int fd, const char *path) {
   strcat(body, "}"); send_resp(fd, 200, "application/json", body); free(body);
 }
 
+/* Legacy C helper is retained only for source compatibility tests. The
+ * production Go manager owns login sessions; this helper no longer accepts a
+ * separate management token. */
 static int authorized(const char *req) {
-  const char *tok = getenv(token_env);
-  if (!tok || !*tok) return 1;
-  const char *h = strcasestr(req, "\r\nX-VaultHub-Token:");
-  if (!h) h = strcasestr(req, "\r\nx-vaulthub-token:");
-  if (!h) return 0;
-  h = strchr(h + 2, ':');
-  if (!h) return 0;
-  h++;
-  while (*h == ' ') h++;
-  return strncmp(h, tok, strlen(tok)) == 0 && (h[strlen(tok)] == '\r' || h[strlen(tok)] == '\n' || h[strlen(tok)] == ' ');
+  (void)req;
+  return 0;
 }
 
 static void handle_client(int fd) {

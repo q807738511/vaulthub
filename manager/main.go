@@ -25,13 +25,13 @@ type loginFailure struct {
 	until time.Time
 }
 type manager struct {
-	mu                        sync.RWMutex
-	configMu                  sync.Mutex
-	sessions                  map[string]time.Time
-	failures                  map[string]loginFailure
-	token, username, password string
-	caddyConfig               []byte
-	children                  []*exec.Cmd
+	mu                 sync.RWMutex
+	configMu           sync.Mutex
+	sessions           map[string]time.Time
+	failures           map[string]loginFailure
+	username, password string
+	caddyConfig        []byte
+	children           []*exec.Cmd
 }
 
 const sessionIdleTimeout = 30 * time.Minute
@@ -129,7 +129,6 @@ func (m *manager) login(w http.ResponseWriter, r *http.Request) {
 	}
 	b, _ := io.ReadAll(io.LimitReader(r.Body, 65536))
 	var x struct {
-		Token    string `json:"token"`
 		Username string `json:"username"`
 		Password string `json:"password"`
 	}
@@ -137,9 +136,8 @@ func (m *manager) login(w http.ResponseWriter, r *http.Request) {
 		m.reply(w, 400, map[string]any{"ok": false, "error": "invalid json"})
 		return
 	}
-	tokenOK := m.token != "" && len(x.Token) == len(m.token) && subtle.ConstantTimeCompare([]byte(x.Token), []byte(m.token)) == 1
 	userOK := len(x.Username) == len(m.username) && len(x.Password) == len(m.password) && subtle.ConstantTimeCompare([]byte(x.Username), []byte(m.username)) == 1 && subtle.ConstantTimeCompare([]byte(x.Password), []byte(m.password)) == 1
-	if !tokenOK && !userOK {
+	if !userOK {
 		m.loginFailed(r)
 		m.reply(w, 401, map[string]any{"ok": false, "error": "invalid credentials"})
 		return
@@ -367,7 +365,7 @@ func main() {
 	if err := os.Rename(tmp, "/data/Caddyfile"); err != nil {
 		log.Fatal(err)
 	}
-	m := &manager{sessions: map[string]time.Time{}, failures: map[string]loginFailure{}, token: os.Getenv("ADMIN_TOKEN"), username: os.Getenv("ADMIN_USERNAME"), password: os.Getenv("ADMIN_PASSWORD"), caddyConfig: b}
+	m := &manager{sessions: map[string]time.Time{}, failures: map[string]loginFailure{}, username: os.Getenv("ADMIN_USERNAME"), password: os.Getenv("ADMIN_PASSWORD"), caddyConfig: b}
 	if m.username == "" {
 		m.username = "ADMIN"
 	}

@@ -104,72 +104,19 @@ function normalizeMediaUrl(url) {
   if (/^https?:\/\//i.test(raw)) return raw;
   return "http://" + raw;
 }
-function mediaStoreKey(group) { return "dwu_media_configured_" + group; }
-function mediaMode(group) {
-  try { return localStorage.getItem("dwu_media_mode_" + group) || "local"; } catch (e) { return "local"; }
-}
-function setMediaMode(group, mode) {
-  try { localStorage.setItem("dwu_media_mode_" + group, mode); } catch (e) {}
-  renderMediaHome(group);
-}
-function mediaModeBar(group) {
-  const mode = mediaMode(group);
-  const exts = externalServicesForGroup(group);
-  return `<div class="media-modebar"><div class="media-modes" role="tablist" aria-label="媒体来源">
-    <button class="media-mode ${mode === "local" ? "active" : ""}" type="button" onclick="setMediaMode('${esc(group)}','local')">${esc(t("libSrcLocal"))}</button>
-    <button class="media-mode ${mode === "external" ? "active" : ""}" type="button" onclick="setMediaMode('${esc(group)}','external')">${esc(t("libSrcExternal"))}${exts.length ? " · " + exts.length : ""}</button>
-  </div><button class="btn" type="button" onclick="showMediaLibraryConfig('${esc(group)}')">⚙ ${esc(t("navManage"))}</button></div>`;
-}
-function setMediaConfigured(group, configured) {
-  try { localStorage.setItem(mediaStoreKey(group), configured ? "1" : "0"); } catch (e) {}
-}
-function isMediaConfigured(group) {
-  try { return localStorage.getItem(mediaStoreKey(group)) === "1"; } catch (e) { return false; }
-}
-/* 「设置」按钮统一打开系统设置的媒体库标签页，不再在页面里展开内嵌表单。 */
-function showMediaConfig(group) { showMediaLibraryConfig(group); }
-function hideMediaConfig(group) { renderMediaHome(group); }
+/* v0.8.0 内容页只展示已扫描资源；来源和刮削配置仅存在于系统设置。 */
 let externalSelection = {};
 function renderMediaHome(group) {
   const host = document.getElementById("media-wide-" + group);
   if (!host) return;
   host.classList.add("show");
-  if (mediaMode(group) === "local") {
-    renderLocalMedia(group);
-    return;
-  }
-  const services = externalServicesForGroup(group);
-  if (!services.length) {
-    host.innerHTML = `${mediaModeBar(group)}
-      <div class="media-empty">
-        <div class="big">📭</div>
-        <h3 data-i18n="mediaEmptyTitle">暂无资源</h3>
-        <p data-i18n="setLibAddHint">先选来源：本地媒体库使用容器内已挂载的绝对路径；外连服务接入 Emby / Navidrome / Komga 等现成服务器。</p>
-        <button class="btn btn-primary" onclick="showMediaLibraryConfig('${esc(group)}')">⚙️ <span data-i18n="extLibAdd">添加外连服务</span></button>
-      </div>`;
-    applyI18n();
-    return;
-  }
-  const selected = services.find(x => x.id === externalSelection[group]) || services[0];
-  externalSelection[group] = selected.id;
-  setMediaConfigured(group, true);
-  const url = serviceAccessUrl(selected);
-  host.innerHTML = `${mediaModeBar(group)}
-    <div class="library-strip">${services.map(svc => `<button class="library-chip ${svc.id === selected.id ? "active" : ""}" onclick="openExternalService(${jsAttrArg(svc.id)})">${esc(svc.name)}<small>${esc(t("libSrcExternal"))}</small></button>`).join("")}</div>
-    <div class="media-actions"><button class="btn" type="button" onclick="openExternalServiceWindow(${jsAttrArg(selected.id)})">⊞ <span data-i18n="btnOpenExternal">新窗口打开</span></button><span class="media-file-meta">${esc(url)}</span></div>
-    <div class="media-frame">
-      <iframe src="${esc(url)}" loading="lazy" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
-    </div>`;
-  applyI18n();
+  renderLocalMedia(group);
 }
 function openExternalService(id) {
   const svc = findExternalService(id);
   if (!svc) { toast("⚠️ " + t("homeOpenFail")); return; }
-  externalSelection[svc.group] = svc.id;
-  try { localStorage.setItem("dwu_media_mode_" + svc.group, "external"); } catch (e) {}
   closeModal("settingsModal");
-  switchView(svc.group);
-  renderMediaHome(svc.group);
+  openExternalServiceWindow(svc.id);
 }
 function openExternalServiceWindow(id) {
   const svc = findExternalService(id);
@@ -177,7 +124,6 @@ function openExternalServiceWindow(id) {
   window.open(serviceAccessUrl(svc), "_blank", "noopener");
 }
 function openActiveMediaExternal(group) {
-  if (mediaMode(group) === "local") { showMediaLibraryConfig(group); return; }
   const svc = findExternalService(externalSelection[group]) || externalServicesForGroup(group)[0];
   if (svc) openExternalServiceWindow(svc.id);
 }
@@ -277,10 +223,8 @@ async function scrapeMovieMetadata(host, lib, files) {
   }
 }
 function renderMovieLibraryContent(host, lib, files) {
-  const kindName = lib?.type === "series" ? "电视剧集" : "电影";
-  const status = scraperStatus.tmdb_enabled ? `${kindName} · TMDB 刮削已启用` : `${kindName} · TMDB 未配置（设置 TMDB_API_KEY 后启用，当前豆瓣/文件名兜底）`;
-  const body = mediaResourceView === "poster" ? `<div class="media-poster-grid">${files.map(file => renderMoviePoster(lib, file)).join("")}</div>` : `<div class="media-file-list">${files.map(file => renderMovieRow(lib, file)).join("")}</div>`;
-  host.innerHTML = `<div class="comic-shelf-toolbar"><strong>本地影视库</strong><div class="media-actions"><span class="badge">${esc(status)}</span><button class="btn media-view-toggle" onclick="toggleMediaResourceView('movie')">${mediaResourceView === "poster" ? "☷ 列表视图" : "▦ 海报视图"}</button><button class="btn" onclick="refreshMovieMetadata()">↻ 重新刮削</button></div></div>${body}`;
+  const body = `<div class="media-poster-grid">${files.map(file => renderMoviePoster(lib, file)).join("")}</div>`;
+  host.innerHTML = `<section class="content-collection"><div class="content-section-heading"><div><span class="eyebrow">我的媒体库</span><h3>${lib?.type === "series" ? "电视剧集" : "电影"}</h3></div><span class="badge">${files.length} 部</span></div>${body}</section>`;
 }
 function renderMovieLibrary(lib, files) { const host = document.createElement("div"); renderMovieLibraryContent(host, lib, files); return host.innerHTML; }
 function renderMovieRow(lib, file) { const path=String(file.path), meta=movieMetadataFor(path); return `<div class="media-file-row"><div class="media-file-name" title="${esc(path)}"><b>${esc(meta.title)}</b><small>${esc([meta.year, meta.provider].filter(Boolean).join(" · "))}</small></div><span class="media-file-meta">${esc(fileExt(path).toUpperCase())} · ${formatFileSize(file.size)}</span><div class="media-actions"><button class="btn" data-media-group="movie" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openLocalMediaButton(this)">▶ 播放</button></div></div>`; }
@@ -337,15 +281,7 @@ function supportedLocalMediaFile(group, lib, path) {
   if (group === "audio") return (lib?.type === "musicvideo" ? MEDIA_FORMATS.movie : MEDIA_FORMATS.audio).includes(ext);
   return (MEDIA_FORMATS[group] || []).includes(ext);
 }
-function mediaAdminHeaders() {
-  let token = document.getElementById("mediaAdminToken")?.value.trim() || "";
-  if (!token) {
-    try { token = localStorage.getItem("dwu_media_admin_token") || ""; } catch (e) {}
-  } else {
-    try { localStorage.setItem("dwu_media_admin_token", token); } catch (e) {}
-  }
-  return token ? { "X-VaultHub-Token": token } : {};
-}
+function sessionWriteHeaders(json = false) { return json ? { "Content-Type": "application/json" } : {}; }
 function jsArg(value) { return JSON.stringify(String(value)); }
 function jsAttrArg(value) { return esc(jsArg(value)); }
 function mediaFileUrl(lib, path) {
@@ -376,20 +312,19 @@ function normalizeLibraryPayload(data) {
 }
 async function refreshMediaLibraries(notify) {
   try {
-    const res = await fetch("/api/media/libraries", { headers: mediaAdminHeaders(), cache: "no-store" });
+    const res = await fetch("/api/media/libraries", { headers: sessionWriteHeaders(), cache: "no-store" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     localMediaLibraries = normalizeLibraryPayload(await res.json());
     /* 媒体库列表变化后，系统设置里的表格、侧栏条目和顶栏统计都要跟着更新。 */
     if (typeof renderHomeLibTable === "function") renderHomeLibTable();
     if (typeof renderHomeLibraryNav === "function") renderHomeLibraryNav();
     if (typeof renderHomeCount === "function") renderHomeCount();
-    ["comic", "movie", "audio"].forEach(group => { if (mediaMode(group) === "local") renderLocalMedia(group); });
+    ["comic", "movie", "audio"].forEach(group => renderLocalMedia(group));
     if (notify) toast("✅ 本地媒体库已刷新");
   } catch (err) {
     ["comic", "movie", "audio"].forEach(group => {
-      if (mediaMode(group) !== "local") return;
       const host = document.getElementById("media-wide-" + group);
-      if (host) host.innerHTML = `${mediaModeBar(group)}<div class="media-error">无法读取本地媒体库：${esc(err.message)}</div>`;
+      if (host) host.innerHTML = `<div class="media-error">无法读取本地媒体库：${esc(err.message)}</div>`;
     });
     if (notify) toast("⚠️ 无法读取媒体库配置");
   }
@@ -402,12 +337,12 @@ function renderLocalMedia(group) {
   if (!host) return;
   const libs = librariesForGroup(group);
   if (!libs.length) {
-    host.innerHTML = `${mediaModeBar(group)}<div class="media-empty"><div class="big">▤</div><h3>暂无本地媒体库</h3><p>添加容器内已挂载的绝对路径后，即可浏览音乐、漫画、电子书或影视。</p><button class="btn btn-primary" onclick="showMediaLibraryConfig('${esc(group)}')">⚙ 配置媒体库</button></div>`;
+    host.innerHTML = `<div class="media-empty"><div class="big">▤</div><h3>暂无已扫描资源</h3><p>请由管理员在系统设置的媒体库管理中添加并扫描目录。</p></div>`;
     return;
   }
   let selected = libs.find(lib => lib.id === localMediaSelection[group]) || libs[0];
   localMediaSelection[group] = selected.id;
-  host.innerHTML = `${mediaModeBar(group)}<div class="local-media">
+  host.innerHTML = `<div class="local-media">
     <div class="library-strip">${libs.map(lib => `<button class="library-chip ${lib.id === selected.id ? "active" : ""}" onclick="selectLocalLibrary('${esc(group)}','${esc(lib.id)}')">${esc(lib.name)}<small>${esc(mediaTypeName(lib.type))}</small></button>`).join("")}</div>
     <div id="local-media-content-${esc(group)}"><div class="empty-tip">${esc(t("homeLoading"))}</div></div>
     <div id="local-media-viewer-${esc(group)}"></div>
@@ -450,7 +385,7 @@ async function loadLocalFiles(group, lib, offset = 0) {
     const next = data.has_more ? `<button class="btn" onclick="loadLocalFiles('${esc(group)}',findMediaLibrary('${esc(lib.id)}'),${offset + pageSize})">下一页 →</button>` : "";
     const pager = `<div class="media-actions">${prev}<span class="media-file-meta">${offset + 1}-${offset + files.length} / ${Number(data.total) || files.length}</span>${next}</div>`;
     if (group === "comic") {
-      const toolbar = `<div class="comic-shelf-toolbar"><div class="comic-shelf-tabs"><button class="${comicShelfView === "shelf" ? "active" : ""}" onclick="setComicShelfView('shelf')">📚 书架</button><button class="${comicShelfView === "completed" ? "active" : ""}" onclick="setComicShelfView('completed')">✓ 已读收藏</button></div><div class="media-actions"><button class="btn" onclick="refreshBookCovers()">↻ 重新刮削封面</button><label class="page-size-picker">每页 <select id="mediaPageSize" onchange="setMediaPageSize(this.value)"><option value="20"${pageSize===20?' selected':''}>20</option><option value="50"${pageSize===50?' selected':''}>50</option><option value="100"${pageSize===100?' selected':''}>100</option></select></label></div></div>`;
+      const toolbar = `<div class="content-section-heading"><div><span class="eyebrow">我的媒体库</span><h3>书架</h3></div><div class="comic-shelf-tabs"><button class="${comicShelfView === "shelf" ? "active" : ""}" onclick="setComicShelfView('shelf')">📚 书架</button><button class="${comicShelfView === "completed" ? "active" : ""}" onclick="setComicShelfView('completed')">✓ 已读收藏</button></div></div>`;
       target.innerHTML = `${toolbar}${files.length ? `<div class="book-grid">${files.map(file => renderBookCard(group, lib, file)).join("")}</div>` : `<div class="empty-tip">${comicShelfView === "completed" ? "还没有读完的书" : "当前页没有未读书籍"}</div>`}${pager}`;
       scrapeVisibleBookCovers(target);
     } else if (group === "audio") {
@@ -539,7 +474,7 @@ async function refreshBuildProgress(libId) {
 }
 async function cancelLibraryBuild(libId) {
   try {
-    const res = await fetch(`/api/media/index/cancel?id=${encodeURIComponent(libId)}`, { method: "POST", headers: mediaAdminHeaders(), credentials: "same-origin" });
+    const res = await fetch(`/api/media/index/cancel?id=${encodeURIComponent(libId)}`, { method: "POST", headers: sessionWriteHeaders(), credentials: "same-origin" });
     if (!await handleProtectedResponse(res)) { toast("⚠️ " + t("caddySaveBlocked")); return; }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     toast("■ " + t("buildCancelled"));
@@ -658,11 +593,14 @@ function renderAudioTrackList(lib, files) {
   return `<div class="audio-track-head"><button class="btn" onclick="audioTrackTitle='';setAudioView('albums')">← 返回</button><strong>${esc(audioTrackTitle)}</strong><span class="media-file-meta">${files.length} 首</span><div class="audio-view-tabs"><button class="${audioLoopMode === "random" ? "active" : ""}" onclick="setAudioLoop('random')">随机循环</button><button class="${audioLoopMode === "list" ? "active" : ""}" onclick="setAudioLoop('list')">列表循环</button><button class="${audioLoopMode === "sequence" ? "active" : ""}" onclick="setAudioLoop('sequence')">顺序播放</button></div></div><div class="media-file-list">${files.map(file => renderAudioRow(lib, file)).join("")}</div>`;
 }
 function renderAudioLibraryContent(host, lib, files) {
+  const latest = [...files].sort((a, b) => Number(b.mtime || 0) - Number(a.mtime || 0)).slice(0, 8);
   const pager = `<div class="media-actions"><button class="btn" ${audioCursor <= 0 ? "disabled" : ""} onclick="loadLocalFiles('audio',findMediaLibrary('${esc(lib.id)}'),${Math.max(0,audioCursor-audioPageSize)})">← 上一页</button><span class="media-file-meta">${audioCursor + 1}-${audioCursor + files.length}</span><button class="btn" onclick="loadLocalFiles('audio',findMediaLibrary('${esc(lib.id)}'),${audioCursor + audioPageSize})">下一页 →</button></div>`;
   const visibleFiles = audioArtistFilter ? files.filter(file => { const meta = audioMetadataFor(String(file.path)); return meta.artist === audioArtistFilter || meta.album === audioArtistFilter; }) : files;
-  let body = audioView === "tracks" ? renderAudioTrackList(lib, visibleFiles) : audioView === "artists" ? renderAudioArtists(lib, files) : audioView === "favorites" ? renderAudioFavorites(lib) : mediaResourceView === "list" ? `<div class="media-file-list">${visibleFiles.map(file => renderAudioRow(lib, file)).join("")}</div>` : renderAudioAlbums(lib, files);
-  host.innerHTML = `<div class="comic-shelf-toolbar"><div class="audio-view-tabs"><button class="${audioView === "albums" ? "active" : ""}" onclick="setAudioView('albums')">专辑</button><button class="${audioView === "artists" ? "active" : ""}" onclick="setAudioView('artists')">歌手</button><button class="${audioView === "favorites" ? "active" : ""}" onclick="setAudioView('favorites')">♥ 喜欢</button></div><div class="media-actions"><button class="btn media-view-toggle" onclick="toggleMediaResourceView('audio')">${mediaResourceView === "poster" ? "☷ 列表视图" : "▦ 海报视图"}</button><button class="btn" onclick="refreshAudioMetadata()">↻ 重新刮削</button><label class="page-size-picker">每页 <select id="audioPageSize" onchange="setAudioPageSize(this.value)"><option value="20"${audioPageSize===20?' selected':''}>20</option><option value="50"${audioPageSize===50?' selected':''}>50</option><option value="100"${audioPageSize===100?' selected':''}>100</option></select></label></div></div>${body}${audioView === "favorites" || audioView === "tracks" ? "" : pager}`;
+  let body = audioView === "tracks" ? renderAudioTrackList(lib, visibleFiles) : audioView === "artists" ? renderAudioArtists(lib, files) : audioView === "favorites" ? renderAudioFavorites(lib) : renderAudioAlbums(lib, files);
+  const latestGrid = audioView === "albums" && latest.length ? `<section class="content-collection latest-music"><div class="content-section-heading"><div><span class="eyebrow">最新音乐</span><h3>最近识别与入库</h3></div></div><div class="audio-latest-grid">${latest.map(file => renderAudioLatestCard(lib, file)).join("")}</div></section>` : "";
+  host.innerHTML = `<section class="content-collection"><div class="content-section-heading"><div><span class="eyebrow">我的媒体库</span><h3>音乐与 MV</h3></div><div class="audio-view-tabs"><button class="${audioView === "albums" ? "active" : ""}" onclick="setAudioView('albums')">专辑</button><button class="${audioView === "artists" ? "active" : ""}" onclick="setAudioView('artists')">歌手</button><button class="${audioView === "favorites" ? "active" : ""}" onclick="setAudioView('favorites')">♥ 喜欢</button><label class="page-size-picker">每页 <select id="audioPageSize" onchange="setAudioPageSize(this.value)"><option value="20"${audioPageSize===20?' selected':''}>20</option><option value="50"${audioPageSize===50?' selected':''}>50</option><option value="100"${audioPageSize===100?' selected':''}>100</option></select></label></div></div>${body}${audioView === "favorites" || audioView === "tracks" ? "" : pager}</section>${latestGrid}`;
 }
+function renderAudioLatestCard(lib, file) { const path=String(file.path), meta=audioMetadataFor(path); return `<article class="audio-latest-card" onclick="playAudioFile(${jsAttrArg(lib.id)},${jsAttrArg(path)})"><div class="audio-latest-cover" style="background:${coverGradient(meta.title)}">${audioCoverData(meta, meta.title)}</div><div><strong>${esc(meta.title)}</strong><small>${esc(meta.artist)}</small></div><button class="btn" title="喜欢" onclick="event.stopPropagation();toggleAudioFavorite(${jsAttrArg(lib.id)},${jsAttrArg(path)})">${isAudioFavorite(lib.id,path)?"♥":"♡"}</button></article>`; }
 function renderAudioLibrary(lib, files) { const host = document.createElement("div"); renderAudioLibraryContent(host, lib, files); return host.innerHTML; }
 function renderAudioRow(lib, file) { const meta = audioMetadataFor(String(file.path)); return `<div class="media-file-row"><div class="media-file-name" title="${esc(file.path)}"><b>${esc(meta.title)}</b><small>${esc(meta.artist)} · ${esc(meta.album)}</small></div><span class="media-file-meta">${esc(fileExt(file.path).toUpperCase())}</span><div class="media-actions"><button class="btn" onclick="playAudioFile(${jsAttrArg(lib.id)},${jsAttrArg(file.path)})">▶</button><button class="btn" title="喜欢" onclick="toggleAudioFavorite(${jsAttrArg(lib.id)},${jsAttrArg(file.path)})">${isAudioFavorite(lib.id, file.path) ? "♥" : "♡"}</button><button class="btn" onclick="openAudioMetadata(${jsAttrArg(file.path)})">✎</button></div></div>`; }
 function refreshAudioMetadata() { try { localStorage.removeItem(audioMetadataCache); } catch (e) {} const lib = findMediaLibrary(localMediaSelection.audio); if (lib) loadLocalFiles("audio", lib, 0); toast("🔄 正在重新刮削音乐信息"); }
@@ -887,6 +825,71 @@ function markReaderCompleted() {
   saveReadingProgress(activeReader.libId, activeReader.path, 100);
   toast("✅ 已归档到已读收藏");
 }
+const VIDEO_ENGINE_NATIVE = "native";
+const VIDEO_ENGINE_COMPAT = "compat";
+const VIDEO_ENGINE_WASM = "wasm";
+const VIDEO_ENGINE_LABELS = { native: "浏览器原生", compat: "FFmpeg 兼容流", wasm: "WebAssembly SIMD" };
+const WASM_INPUT_LIMIT = 256 * 1024 * 1024;
+function detectWasmSimd() {
+  if (typeof WebAssembly !== "object" || typeof WebAssembly.validate !== "function") return false;
+  // Minimal module containing v128.const; validation proves SIMD instructions compile.
+  return WebAssembly.validate(new Uint8Array([0,97,115,109,1,0,0,0,1,5,1,96,0,1,123,3,2,1,0,10,22,1,20,0,253,12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,11]));
+}
+function setVideoEngine(root, engine, detail) {
+  if (!root) return;
+  root.dataset.videoEngine = engine;
+  root.querySelectorAll("[data-engine-choice]").forEach(button => button.classList.toggle("active", button.dataset.engineChoice === engine));
+  setMovieCompatStatus(root, `${VIDEO_ENGINE_LABELS[engine] || engine}${detail ? " · " + detail : ""}`);
+}
+function terminateWasmVideo(root) {
+  if (root?.__wasmWorker) { root.__wasmWorker.terminate(); root.__wasmWorker = null; }
+  if (root?.__wasmObjectUrl) { URL.revokeObjectURL(root.__wasmObjectUrl); root.__wasmObjectUrl = ""; }
+}
+async function startWasmVideoFallback(root, video, direct) {
+  if (!detectWasmSimd()) throw new Error("当前浏览器不支持 WebAssembly SIMD");
+  setVideoEngine(root, VIDEO_ENGINE_WASM, "加载原片并启动软件解码");
+  const response = await fetch(direct, { cache: "no-store" });
+  if (!response.ok) throw new Error(`原片读取失败 HTTP ${response.status}`);
+  const size = Number(response.headers.get("Content-Length") || 0);
+  if (size > WASM_INPUT_LIMIT) throw new Error("文件超过 256 MB，浏览器软件解码为保护内存已停止");
+  const bytes = await response.arrayBuffer();
+  if (bytes.byteLength > WASM_INPUT_LIMIT) throw new Error("文件超过 256 MB，浏览器软件解码为保护内存已停止");
+  terminateWasmVideo(root);
+  const worker = new Worker("/web/vendor/ffmpeg/worker.js");
+  root.__wasmWorker = worker;
+  const id = Date.now().toString(36);
+  let output;
+  try {
+    output = await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error("WASM 软件解码超时")), 180000);
+      worker.onmessage = event => {
+        const message = event.data || {};
+        if (message.id !== id) return;
+        if (message.type === "done") { clearTimeout(timeout); resolve(message.bytes); }
+        if (message.type === "error") { clearTimeout(timeout); reject(new Error(message.error || "WASM 解码失败")); }
+      };
+      worker.onerror = event => { clearTimeout(timeout); reject(new Error(event.message || "WASM Worker 启动失败")); };
+      worker.postMessage({ type: "transcode", id, bytes, start: 0, duration: 60 }, [bytes]);
+    });
+  } catch (error) {
+    terminateWasmVideo(root);
+    throw error;
+  }
+  worker.terminate();
+  root.__wasmWorker = null;
+  const objectUrl = URL.createObjectURL(new Blob([output], { type: "video/mp4" }));
+  root.__wasmObjectUrl = objectUrl;
+  switchMovieSource(video, objectUrl);
+  setVideoEngine(root, VIDEO_ENGINE_WASM, "软件解码完成 · 当前为前 60 秒兼容片段");
+}
+async function advanceVideoEngine(root, video, context) {
+  const engine = root.dataset.videoEngine || VIDEO_ENGINE_NATIVE;
+  if (engine === VIDEO_ENGINE_NATIVE) { context.useCompat("原生失败，自动降级到 FFmpeg 兼容流"); return; }
+  if (engine === VIDEO_ENGINE_COMPAT) {
+    try { await startWasmVideoFallback(root, video, context.direct); }
+    catch (error) { setVideoEngine(root, VIDEO_ENGINE_WASM, `降级失败：${error.message}`); updateVideoStatus(root, video, "播放失败"); }
+  }
+}
 function movieMimeForExt(ext) {
   if (ext === "mp4" || ext === "m4v") return "video/mp4";
   if (ext === "webm") return "video/webm";
@@ -917,9 +920,9 @@ function updateVideoStatus(root, video, state) {
   const main=root?.querySelector("[data-video-status]"); const detail=root?.querySelector("[data-video-detail]");
   if (!main || !detail || !video) return;
   main.textContent=state;
-  const mode=(video.dataset.currentSrc||"").includes("/api/media/compat") ? `兼容流 · ${settings.hardwareAcceleration}` : "原片直连";
+  const engine = VIDEO_ENGINE_LABELS[root?.dataset.videoEngine] || "待选择";
   const size=video.videoWidth ? `${video.videoWidth}×${video.videoHeight}` : "分辨率待获取";
-  detail.textContent=`${formatMediaTime(video.currentTime)} / ${formatMediaTime(video.duration)} · ${size} · ${mode}`;
+  detail.textContent=`${formatMediaTime(video.currentTime)} / ${formatMediaTime(video.duration)} · ${size} · ${engine}`;
 }
 function toggleVideoStatusPanel(button) {
   const root = button?.closest(".media-video-body");
@@ -1013,21 +1016,28 @@ async function initMovieCompatPlayer(root, lib, path) {
   const direct = mediaFileUrl(lib, path);
   const compat = mediaCompatUrl(lib, path);
   bindVideoStatus(root, video);
-  const useDirect = () => { setMovieCompatStatus(root, "直连播放"); switchMovieSource(video, direct); };
-  const useCompat = reason => { setMovieCompatStatus(root, reason || "音频兼容流：AAC 输出"); switchMovieSource(video, compat); };
+  const useDirect = () => { terminateWasmVideo(videoRoot); setVideoEngine(videoRoot, VIDEO_ENGINE_NATIVE, "原片直连"); switchMovieSource(video, direct); };
+  const useCompat = reason => { terminateWasmVideo(videoRoot); setVideoEngine(videoRoot, VIDEO_ENGINE_COMPAT, reason || `服务端转码 · ${settings.hardwareAcceleration}`); switchMovieSource(video, compat); };
+  const useWasm = async () => { try { await startWasmVideoFallback(videoRoot, video, direct); } catch (error) { setVideoEngine(videoRoot, VIDEO_ENGINE_WASM, `启动失败：${error.message}`); } };
   root.querySelector("[data-movie-direct]")?.addEventListener("click", useDirect);
-  root.querySelector("[data-movie-compat]")?.addEventListener("click", () => useCompat("手动切换：音频兼容流"));
+  root.querySelector("[data-movie-compat]")?.addEventListener("click", () => useCompat("手动选择服务端兼容流"));
+  root.querySelector("[data-movie-wasm]")?.addEventListener("click", useWasm);
   video.addEventListener("loadedmetadata", () => { video.muted = false; video.volume = 1; restoreVideoPlaybackState(video); fetch(`/api/media/streams?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}`,{cache:'no-store'}).then(r=>r.ok?r.json():null).then(info=>populateVideoTracks(videoRoot,video,info)).catch(()=>{}); });
-  video.addEventListener("error", () => { if (video.dataset.currentSrc !== compat) useCompat("直连失败，已自动切换兼容流"); });
+  let engineFailurePending = false;
+  video.addEventListener("error", async () => {
+    if (engineFailurePending || (video.dataset.currentSrc || "").startsWith("blob:")) return;
+    engineFailurePending = true;
+    try { await advanceVideoEngine(videoRoot, video, { direct, useCompat }); } finally { setTimeout(() => { engineFailurePending = false; }, 1000); }
+  });
   const extRule = movieExtensionNeedsCompat(path) || browserSaysVideoContainerUnsupported(path);
-  if (extRule) { useCompat("自动判定：容器格式可能不兼容，使用 AAC 兼容流"); return; }
+  if (extRule) { useCompat("容器不兼容，智能选择服务端 FFmpeg"); return; }
   useDirect();
   try {
     const res = await fetch(mediaProbeUrl(lib, path), { cache: "no-store" });
     if (!res.ok) return;
     const info = await res.json();
-    if (info && info.compat_recommended && video.dataset.currentSrc !== compat) useCompat(`自动判定：音频 ${info.audio_codec || "未知"} 可能不兼容，使用 AAC 兼容流`);
-    else setMovieCompatStatus(root, `直连播放${info.audio_codec ? " · 音频 " + info.audio_codec : ""}`);
+    if (info && info.compat_recommended && video.dataset.currentSrc !== compat) useCompat(`音频 ${info.audio_codec || "未知"} 不兼容，智能降级`);
+    else setVideoEngine(videoRoot, VIDEO_ENGINE_NATIVE, info.audio_codec ? `音频 ${info.audio_codec}` : "原片直连");
   } catch (e) {}
 }
 const TXT_CHUNK_BYTES = 1024 * 1024;
@@ -1084,7 +1094,7 @@ async function openLocalMedia(group, libId, path) {
     } catch (err) { viewer.innerHTML = viewerShell(group, lib, path, `<div class="media-error">ZIP 漫画读取失败：${esc(err.message)}</div>`, url); return; }
   }
   if (["mp3","flac","m4a","ogg","wav"].includes(ext)) body = `<div class="media-viewer-body"><audio controls autoplay preload="metadata" src="${esc(url)}"></audio></div>`;
-  else if (MEDIA_FORMATS.movie.includes(ext)) body = `<div class="media-viewer-body media-video-body" data-video-controls-visible="true"><div class="movie-compat-bar"><button class="btn" type="button" data-movie-direct>直连原片</button><button class="btn" type="button" data-movie-compat>音频兼容</button><span class="movie-compat-status">正在判定播放方式...</span></div><button class="video-menu-button" type="button" title="字幕和音轨" aria-label="字幕和音轨" onclick="toggleVideoTrackMenu(this)">☷</button><button class="video-info-button" type="button" title="播放状态信息" aria-label="播放状态信息" aria-expanded="false" onclick="toggleVideoStatusPanel(this)">!</button><video data-movie-player controls playsinline preload="metadata" onloadedmetadata="this.muted=false;this.volume=1" onvolumechange="this.dataset.volume=String(this.volume)"></video><div class="video-timeline"><span class="video-time-label">00:00 / 00:00</span><div class="video-progress-shell" role="slider" aria-label="播放进度" onclick="seekVideoTimeline(event,this)"><span class="video-buffered-range"></span><span class="video-played-range"></span></div></div><div class="video-track-menu video-audio-menu" data-video-track-menu><h4>音源</h4><div class="video-audio-options" data-video-audio-options>读取音源中...</div><h4>字幕</h4><div class="video-subtitle-menu" data-video-subtitle-options>暂无外挂字幕</div><button type="button" onclick="searchVideoSubtitles(this)">搜索并挂载字幕</button></div><div class="video-status-panel"><span class="status-main" data-video-status>准备播放</span><span class="status-detail" data-video-detail>--:-- / --:-- · 分辨率待获取</span></div></div>`;
+  else if (MEDIA_FORMATS.movie.includes(ext)) body = `<div class="media-viewer-body media-video-body" data-video-controls-visible="true" data-video-engine="native"><div class="movie-compat-bar"><strong>三重解码</strong><button class="btn" type="button" data-engine-choice="native" data-movie-direct>浏览器原生</button><button class="btn" type="button" data-engine-choice="compat" data-movie-compat>FFmpeg 兼容流</button><button class="btn" type="button" data-engine-choice="wasm" data-movie-wasm>WASM SIMD</button><span class="movie-compat-status">正在探测并智能选择引擎...</span></div><button class="video-menu-button" type="button" title="字幕和音轨" aria-label="字幕和音轨" onclick="toggleVideoTrackMenu(this)">☷</button><button class="video-info-button" type="button" title="播放状态信息" aria-label="播放状态信息" aria-expanded="false" onclick="toggleVideoStatusPanel(this)">!</button><video data-movie-player controls playsinline preload="metadata" onloadedmetadata="this.muted=false;this.volume=1" onvolumechange="this.dataset.volume=String(this.volume)"></video><div class="video-timeline"><span class="video-time-label">00:00 / 00:00</span><div class="video-progress-shell" role="slider" aria-label="播放进度" onclick="seekVideoTimeline(event,this)"><span class="video-buffered-range"></span><span class="video-played-range"></span></div></div><div class="video-track-menu video-audio-menu" data-video-track-menu><h4>音源</h4><div class="video-audio-options" data-video-audio-options>读取音源中...</div><h4>字幕</h4><div class="video-subtitle-menu" data-video-subtitle-options>暂无外挂字幕</div><button type="button" onclick="searchVideoSubtitles(this)">搜索并挂载字幕</button></div><div class="video-status-panel"><span class="status-main" data-video-status>准备播放</span><span class="status-detail" data-video-detail>--:-- / --:-- · 分辨率待获取</span></div></div>`;
   else if (["jpg","jpeg","png","webp","gif","bmp","avif"].includes(ext)) body = `<img src="${esc(url)}" alt="${esc(path)}">`;
   else if (ext === "pdf") body = `<iframe src="${esc(url)}#view=FitH" title="${esc(path)}"></iframe>`;
   else if (ext === "txt") {
