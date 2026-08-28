@@ -36,12 +36,17 @@ type Library struct {
 type App struct {
 	mu               sync.RWMutex
 	libs             []Library
-	jobs             map[string]bool               // library id -> scan in progress
+	jobs             map[string]uint64             // library id -> running generation
+	generations      map[string]uint64             // invalidates stale scans after delete/recreate
+	deleting         map[string]bool               // blocks ID reuse until DB cleanup completes
 	scanCancel       map[string]context.CancelFunc // library id -> cancel its running scan
 	tasks            map[string]context.CancelFunc // transcode task id -> cancel
 	db               *sql.DB
 	scanGate         chan struct{} // size-1 semaphore: only one scan writes at a time
 	config, indexDir string
+	// scanWriteHook is test-only instrumentation, nil in production.
+	scanWriteHook func(string, int)
+	removeHook    func(string)
 }
 type FileEntry struct {
 	Path  string `json:"path"`
@@ -62,7 +67,9 @@ func (a *App) load() {
 	if e == nil {
 		_ = json.Unmarshal(b, &a.libs)
 	}
-	a.jobs = map[string]bool{}
+	a.jobs = map[string]uint64{}
+	a.generations = map[string]uint64{}
+	a.deleting = map[string]bool{}
 	a.scanCancel = map[string]context.CancelFunc{}
 	a.tasks = map[string]context.CancelFunc{}
 	a.scanGate = make(chan struct{}, 1)
@@ -92,6 +99,15 @@ CREATE TABLE IF NOT EXISTS files(
   PRIMARY KEY(lib, path)
 );
 CREATE INDEX IF NOT EXISTS idx_files_lib ON files(lib);
+CREATE TABLE IF NOT EXISTS scan_staging(
+  lib        TEXT NOT NULL,
+  generation INTEGER NOT NULL,
+  path       TEXT NOT NULL,
+  size       INTEGER NOT NULL,
+  mtime      INTEGER NOT NULL,
+  PRIMARY KEY(lib, generation, path)
+);
+CREATE INDEX IF NOT EXISTS idx_scan_staging_job ON scan_staging(lib, generation);
 CREATE TABLE IF NOT EXISTS index_status(
   lib        TEXT PRIMARY KEY,
   state      TEXT NOT NULL,   -- idle | scanning | ready | error | cancelled
@@ -202,13 +218,32 @@ func validID(s string) bool {
 	}
 	return true
 }
-func (a *App) save() error {
+func (a *App) saveLibrariesLocked(libs []Library) error {
 	_ = os.MkdirAll(filepath.Dir(a.config), 0755)
-	b, e := json.MarshalIndent(a.libs, "", "  ")
-	if e == nil {
-		e = os.WriteFile(a.config, b, 0644)
+	b, e := json.MarshalIndent(libs, "", "  ")
+	if e != nil {
+		return e
 	}
-	return e
+	tmp, e := os.CreateTemp(filepath.Dir(a.config), ".media-libraries-*.tmp")
+	if e != nil {
+		return e
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if e = tmp.Chmod(0644); e == nil {
+		_, e = tmp.Write(b)
+	}
+	if closeErr := tmp.Close(); e == nil {
+		e = closeErr
+	}
+	if e != nil {
+		return e
+	}
+	return os.Rename(tmpName, a.config)
+}
+
+func (a *App) save() error {
+	return a.saveLibrariesLocked(a.libs)
 }
 func (a *App) find(id string) (Library, bool) {
 	a.mu.RLock()
@@ -275,6 +310,11 @@ func (a *App) libraries(w http.ResponseWriter, r *http.Request) {
 		}
 		l.Path, _ = filepath.EvalSymlinks(p)
 		a.mu.Lock()
+		if a.deleting[l.ID] {
+			a.mu.Unlock()
+			errJSON(w, 409, "library id is being deleted")
+			return
+		}
 		for _, x := range a.libs {
 			if x.ID == l.ID {
 				a.mu.Unlock()
@@ -287,8 +327,11 @@ func (a *App) libraries(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		a.libs = append(a.libs, l)
-		e = a.save()
+		next := append(append([]Library(nil), a.libs...), l)
+		e = a.saveLibrariesLocked(next)
+		if e == nil {
+			a.libs = next
+		}
 		a.mu.Unlock()
 		if e != nil {
 			errJSON(w, 500, "configuration write failed")
@@ -300,21 +343,11 @@ func (a *App) libraries(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method == "DELETE" {
 		id := r.URL.Query().Get("id")
-		a.mu.Lock()
-		n := -1
-		for i, x := range a.libs {
-			if x.ID == id {
-				n = i
-			}
-		}
-		if n < 0 {
-			a.mu.Unlock()
+		found, e := a.removeLibrary(id)
+		if !found {
 			errJSON(w, 404, "library not found")
 			return
 		}
-		a.libs = append(a.libs[:n], a.libs[n+1:]...)
-		e := a.save()
-		a.mu.Unlock()
 		if e != nil {
 			errJSON(w, 500, "configuration write failed")
 			return
@@ -325,23 +358,113 @@ func (a *App) libraries(w http.ResponseWriter, r *http.Request) {
 	errJSON(w, 405, "method not allowed")
 }
 
+// removeLibrary persists configuration first, then invalidates/cancels the
+// running generation and clears all index state under the scan writer gate.
+func (a *App) removeLibrary(id string) (bool, error) {
+	a.mu.Lock()
+	n := -1
+	for i, x := range a.libs {
+		if x.ID == id {
+			n = i
+			break
+		}
+	}
+	if n < 0 {
+		a.mu.Unlock()
+		return false, nil
+	}
+	previous := append([]Library(nil), a.libs...)
+	next := append([]Library(nil), a.libs[:n]...)
+	next = append(next, a.libs[n+1:]...)
+	if e := a.saveLibrariesLocked(next); e != nil {
+		a.mu.Unlock()
+		return true, e
+	}
+	a.libs = next
+	a.generations[id]++
+	a.deleting[id] = true
+	if cancel := a.scanCancel[id]; cancel != nil {
+		cancel()
+	}
+	delete(a.scanCancel, id)
+	delete(a.jobs, id)
+	a.mu.Unlock()
+	if a.removeHook != nil {
+		a.removeHook(id)
+	}
+
+	a.scanGate <- struct{}{}
+	tx, e := a.db.Begin()
+	if e != nil {
+		<-a.scanGate
+		return true, a.rollbackLibraryRemoval(id, previous, e)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+	for _, q := range []string{
+		`DELETE FROM files WHERE lib=?`,
+		`DELETE FROM index_status WHERE lib=?`,
+		`DELETE FROM scan_staging WHERE lib=?`,
+	} {
+		if _, e = tx.Exec(q, id); e != nil {
+			_ = tx.Rollback()
+			<-a.scanGate
+			return true, a.rollbackLibraryRemoval(id, previous, e)
+		}
+	}
+	if e = tx.Commit(); e != nil {
+		<-a.scanGate
+		return true, a.rollbackLibraryRemoval(id, previous, e)
+	}
+	committed = true
+	<-a.scanGate
+	a.mu.Lock()
+	delete(a.deleting, id)
+	a.mu.Unlock()
+	return true, nil
+}
+
+// rollbackLibraryRemoval restores the prior configuration if DB cleanup could
+// not be committed. Callers have already released scanGate before entering.
+func (a *App) rollbackLibraryRemoval(id string, previous []Library, cause error) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	// The ID is protected by deleting, so no concurrent POST can have reused it.
+	if e := a.saveLibrariesLocked(previous); e != nil {
+		// Keep deleting[id] set: the on-disk config already removed this ID but
+		// stale DB rows may remain. Blocking reuse is safer than exposing those
+		// rows under a newly created library. A process restart resets the guard
+		// after the operator has resolved the underlying storage failure.
+		return fmt.Errorf("index cleanup failed: %v; configuration rollback failed (id remains blocked): %w", cause, e)
+	}
+	a.libs = previous
+	delete(a.deleting, id)
+	return cause
+}
+
 // start launches a background rescan for a library unless one is already
 // running. The scan streams results into SQLite in batches so /api/media/files
 // stays responsive, and it honours a per-library cancel func.
 func (a *App) start(l Library) {
 	a.mu.Lock()
-	if a.jobs[l.ID] {
+	if a.jobs[l.ID] != 0 {
 		a.mu.Unlock()
 		return
 	}
+	a.generations[l.ID]++
+	generation := a.generations[l.ID]
 	ctx, cancel := context.WithCancel(context.Background())
-	a.jobs[l.ID] = true
+	a.jobs[l.ID] = generation
 	a.scanCancel[l.ID] = cancel
 	a.mu.Unlock()
 
 	go func() {
 		start := time.Now().Unix()
-		a.setStatus(l.ID, "scanning", 0, 0, start, 0, "")
+		a.setStatusIfCurrent(l.ID, generation, "scanning", 0, 0, start, 0, "")
 
 		// Phase 1: walk the filesystem WITHOUT holding a DB write lock, so a
 		// long scan of one library never blocks scans/writes for another. The
@@ -362,39 +485,40 @@ func (a *App) start(l Library) {
 				rel, _ := filepath.Rel(l.Path, p)
 				rows = append(rows, row{rel, fi.Size(), fi.ModTime().Unix()})
 				if len(rows)%5000 == 0 {
-					a.setStatus(l.ID, "scanning", len(rows), 0, start, 0, "")
+					a.setStatusIfCurrent(l.ID, generation, "scanning", len(rows), 0, start, 0, "")
 				}
 			}
 			return nil
 		})
 		if cancelled {
-			a.finishScan(l.ID, "cancelled", len(rows), "scan cancelled")
+			a.finishScan(l.ID, generation, "cancelled", len(rows), "scan cancelled")
 			return
 		}
 		if walkErr != nil && walkErr != io.EOF {
-			a.finishScan(l.ID, "error", len(rows), walkErr.Error())
+			a.finishScan(l.ID, generation, "error", len(rows), walkErr.Error())
 			return
 		}
 
-		// Phase 2: swap the index under a single-writer gate, committing in
-		// bounded batches so the write lock is released frequently and other
-		// libraries' scans can interleave. Readers keep serving old rows via
-		// WAL until each batch commits.
+		// Phase 2 writes into a generation-scoped staging table in bounded
+		// transactions. Readers keep serving the complete old index throughout.
+		// Only a fully staged, still-current generation is atomically published.
 		a.scanGate <- struct{}{}
 		defer func() { <-a.scanGate }()
-		if ctx.Err() != nil {
-			a.finishScan(l.ID, "cancelled", 0, "scan cancelled")
+		cleanupStage := func() {
+			_, _ = a.db.Exec(`DELETE FROM scan_staging WHERE lib=? AND generation=?`, l.ID, generation)
+		}
+		if ctx.Err() != nil || !a.scanCurrent(l.ID, generation) {
+			cleanupStage()
+			a.finishScan(l.ID, generation, "cancelled", 0, "scan cancelled")
 			return
 		}
-		if _, e := a.db.Exec(`DELETE FROM files WHERE lib=?`, l.ID); e != nil {
-			a.finishScan(l.ID, "error", 0, e.Error())
-			return
-		}
+		cleanupStage()
 		const batch = 2000
 		written := 0
 		for off := 0; off < len(rows); off += batch {
-			if ctx.Err() != nil {
-				a.finishScan(l.ID, "cancelled", written, "scan cancelled")
+			if ctx.Err() != nil || !a.scanCurrent(l.ID, generation) {
+				cleanupStage()
+				a.finishScan(l.ID, generation, "cancelled", written, "scan cancelled")
 				return
 			}
 			end := off + batch
@@ -403,27 +527,72 @@ func (a *App) start(l Library) {
 			}
 			tx, e := a.db.Begin()
 			if e != nil {
-				a.finishScan(l.ID, "error", written, e.Error())
+				cleanupStage()
+				a.finishScan(l.ID, generation, "error", written, e.Error())
 				return
 			}
-			st, e := tx.Prepare(`INSERT OR REPLACE INTO files(lib,path,size,mtime) VALUES(?,?,?,?)`)
+			st, e := tx.Prepare(`INSERT OR REPLACE INTO scan_staging(lib,generation,path,size,mtime) VALUES(?,?,?,?,?)`)
 			if e != nil {
 				tx.Rollback()
-				a.finishScan(l.ID, "error", written, e.Error())
+				cleanupStage()
+				a.finishScan(l.ID, generation, "error", written, e.Error())
 				return
 			}
 			for _, x := range rows[off:end] {
-				st.Exec(l.ID, x.path, x.size, x.mtime)
+				if _, e = st.Exec(l.ID, generation, x.path, x.size, x.mtime); e != nil {
+					break
+				}
 			}
-			st.Close()
-			if e := tx.Commit(); e != nil {
-				a.finishScan(l.ID, "error", written, e.Error())
+			_ = st.Close()
+			if e != nil {
+				tx.Rollback()
+				cleanupStage()
+				a.finishScan(l.ID, generation, "error", written, e.Error())
+				return
+			}
+			if e = tx.Commit(); e != nil {
+				cleanupStage()
+				a.finishScan(l.ID, generation, "error", written, e.Error())
 				return
 			}
 			written = end
-			a.setStatus(l.ID, "scanning", written, len(rows), start, 0, "")
+			a.setStatusIfCurrent(l.ID, generation, "scanning", written, len(rows), start, 0, "")
+			if a.scanWriteHook != nil {
+				a.scanWriteHook(l.ID, written)
+			}
 		}
-		a.finishScan(l.ID, "ready", len(rows), "")
+		a.mu.Lock()
+		if ctx.Err() != nil || a.generations[l.ID] != generation || a.jobs[l.ID] != generation {
+			a.mu.Unlock()
+			cleanupStage()
+			a.finishScan(l.ID, generation, "cancelled", written, "scan cancelled")
+			return
+		}
+		tx, e := a.db.Begin()
+		if e == nil {
+			_, e = tx.Exec(`DELETE FROM files WHERE lib=?`, l.ID)
+		}
+		if e == nil {
+			_, e = tx.Exec(`INSERT INTO files(lib,path,size,mtime) SELECT lib,path,size,mtime FROM scan_staging WHERE lib=? AND generation=?`, l.ID, generation)
+		}
+		if e == nil {
+			_, e = tx.Exec(`DELETE FROM scan_staging WHERE lib=? AND generation=?`, l.ID, generation)
+		}
+		if e == nil {
+			e = tx.Commit()
+		} else if tx != nil {
+			_ = tx.Rollback()
+		}
+		if e != nil {
+			a.mu.Unlock()
+			cleanupStage()
+			a.finishScan(l.ID, generation, "error", written, e.Error())
+			return
+		}
+		a.setStatus(l.ID, "ready", len(rows), len(rows), 0, time.Now().Unix(), "")
+		delete(a.jobs, l.ID)
+		delete(a.scanCancel, l.ID)
+		a.mu.Unlock()
 	}()
 }
 
@@ -440,11 +609,34 @@ ON CONFLICT(lib) DO UPDATE SET state=excluded.state, scanned=excluded.scanned,
 		lib, state, scanned, total, started, ended, msg)
 }
 
-func (a *App) finishScan(lib, state string, scanned int, msg string) {
+func (a *App) scanCurrent(lib string, generation uint64) bool {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.generations[lib] == generation && a.jobs[lib] == generation
+}
+
+func (a *App) setStatusIfCurrent(lib string, generation uint64, state string, scanned, total int, started, ended int64, msg string) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if a.generations[lib] != generation || a.jobs[lib] != generation {
+		return
+	}
+	a.setStatus(lib, state, scanned, total, started, ended, msg)
+}
+
+func (a *App) finishScan(lib string, generation uint64, state string, scanned int, msg string) {
+	a.mu.RLock()
+	if a.generations[lib] != generation || a.jobs[lib] != generation {
+		a.mu.RUnlock()
+		return
+	}
 	a.setStatus(lib, state, scanned, scanned, 0, time.Now().Unix(), msg)
+	a.mu.RUnlock()
 	a.mu.Lock()
-	a.jobs[lib] = false
-	delete(a.scanCancel, lib)
+	if a.jobs[lib] == generation {
+		delete(a.jobs, lib)
+		delete(a.scanCancel, lib)
+	}
 	a.mu.Unlock()
 }
 
@@ -514,8 +706,8 @@ func (a *App) indexStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	a.mu.RLock()
 	jobs := map[string]bool{}
-	for k, v := range a.jobs {
-		jobs[k] = v
+	for k, generation := range a.jobs {
+		jobs[k] = generation != 0
 	}
 	libs := append([]Library(nil), a.libs...)
 	a.mu.RUnlock()
@@ -610,7 +802,7 @@ func (a *App) files(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.mu.RLock()
-	busy := a.jobs[id]
+	busy := a.jobs[id] != 0
 	a.mu.RUnlock()
 
 	var total int

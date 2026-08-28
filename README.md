@@ -1,9 +1,25 @@
-# VaultHub 蜀鼠之家 v0.7.0：以媒体库为中心的界面重构
+# VaultHub 蜀鼠之家 v0.7.1：索引一致性补丁
 
-v0.7.0 把界面重心从「资源大类」挪到「用户自己创建的媒体库」：侧边栏只列库名，
-大类退回到配置媒体库时才出现；系统设置接管媒体库的增删改与外连服务；
-顶栏右侧只放媒体库与首页信息，系统设置、关于、退出登录收进左侧账户头像。
-索引构建也从「请稍后刷新」变成可监测、可取消的真实进度。
+v0.7.1 延续 v0.7.0 的「以媒体库为中心」界面，并修复取消索引、删除扫描中媒体库以及同 ID 并发重建时可能造成部分索引或新索引被旧任务覆盖的问题。索引现在通过 generation 隔离的 staging 表分批写入，完整扫描成功后才原子替换正式索引；取消或失败时继续提供旧索引。
+
+## v0.7.1 更新
+
+### 原子索引替换
+
+- 扫描结果先写入 `scan_staging(lib, generation, ...)`，正式 `files` 表在扫描期间保持不变
+- 完整 staging 成功后，在一个 SQLite 事务中完成删除旧索引、复制新索引和清理 staging
+- 取消或错误会清理当前 generation 的 staging，保留上一份完整索引，不再暴露 2,000 条一批的部分结果
+
+### 安全删除扫描中的媒体库
+
+- 删除会推进任务 generation、取消正在运行的扫描，并清理 `files`、`index_status` 与 `scan_staging`
+- 旧任务失效后不能再写回正式索引或状态
+- 删除进行中，相同媒体库 ID 的创建请求返回 409；清理完成后才能复用，避免旧删除把新索引清空
+- 配置写入使用临时文件加原子 rename；配置保存失败时不修改内存状态
+
+### 动态一致性测试
+
+新增 Go 动态测试覆盖：写库阶段取消仍保留旧索引、扫描中删除后复用相同 ID、删除与同 ID 创建并发竞争。Race detector 连续 10 轮共 30 次通过，原有 26 个契约测试全部通过。
 
 ## v0.7.0 更新
 
@@ -266,11 +282,11 @@ environment:
 镜像发布在 GitHub Container Registry：
 
 ```
-ghcr.io/q807738511/vaulthub:<版本标签>   # 例如 v0.7.0
+ghcr.io/q807738511/vaulthub:<版本标签>   # 例如 v0.7.1
 ghcr.io/q807738511/vaulthub:latest        # 随 main 漂移，生产不建议
 ```
 
-**建议固定版本标签部署（如 `v0.7.0`），不要用 `latest`**：`latest` 会随每次推送变化，出问题难回滚。
+**建议固定版本标签部署（如 `v0.7.1`），不要用 `latest`**：`latest` 会随每次推送变化，出问题难回滚。
 
 ### 中国网络：直连 GHCR 拉不动怎么办
 
@@ -290,17 +306,17 @@ ghcr.io/q807738511/vaulthub:latest        # 随 main 漂移，生产不建议
 ```yaml
 services:
   vaulthub:
-    image: ghcr.nju.edu.cn/q807738511/vaulthub:v0.7.0
+    image: ghcr.nju.edu.cn/q807738511/vaulthub:v0.7.1
 ```
 
-> 注意只有一个冒号：`vaulthub:v0.7.0`，不是 `vaulthub::v0.7.0`。
+> 注意只有一个冒号：`vaulthub:v0.7.1`，不是 `vaulthub::v0.7.1`。
 
 用法二——保持 compose 用官方名，手动拉取后打回原名（便于随时切回直连）：
 
 ```bash
-docker pull ghcr.nju.edu.cn/q807738511/vaulthub:v0.7.0
-docker tag  ghcr.nju.edu.cn/q807738511/vaulthub:v0.7.0 ghcr.io/q807738511/vaulthub:v0.7.0
-# compose 仍写 image: ghcr.io/q807738511/vaulthub:v0.7.0
+docker pull ghcr.nju.edu.cn/q807738511/vaulthub:v0.7.1
+docker tag  ghcr.nju.edu.cn/q807738511/vaulthub:v0.7.1 ghcr.io/q807738511/vaulthub:v0.7.1
+# compose 仍写 image: ghcr.io/q807738511/vaulthub:v0.7.1
 docker compose up -d
 ```
 
