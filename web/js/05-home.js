@@ -5,7 +5,10 @@
    因此必须在它们之后加载。 */
 
 const HOME_GROUPS = ["comic", "movie", "audio"];
-const HOME_GROUP_LABEL = { comic: "电子书刊", movie: "影视作品", audio: "音视作品" };
+/* 大类名称走 i18n：这里只保留「分组 → i18n 键」的映射，实际文案在渲染时取，
+   否则语言切换后表格与占位文案仍是中文。 */
+const HOME_GROUP_I18N = { comic: "navGroupBook", movie: "navGroupVideo", audio: "navGroupAudio" };
+const homeGroupLabel = group => t(HOME_GROUP_I18N[group] || group);
 const HOME_GROUP_ICON = { comic: "📖", movie: "🎬", audio: "🎵" };
 const HOME_TYPE_ICON = { book: "📖", comic: "📚", movie: "🎬", series: "📺", audio: "🎵", musicvideo: "🎤" };
 const HOME_FILTER_GROUPS = { all: HOME_GROUPS, book: ["comic"], video: ["movie"], audio: ["audio"] };
@@ -77,11 +80,11 @@ function renderHomeCount() {
   const libs = localMediaLibraries || [];
   const items = libs.reduce((sum, lib) => sum + Number(homeIndexStatus[lib.id]?.total || 0), 0);
   el.textContent = libs.length
-    ? `共 ${items.toLocaleString("zh-CN")} 项 · ${libs.length} 个媒体库`
-    : "尚未添加媒体库";
+    ? tf("homeCountFmt", { items: items.toLocaleString(curLang === "en" ? "en-US" : "zh-CN"), libs: libs.length })
+    : t("homeCountEmpty");
   HOME_GROUPS.forEach(group => {
     const cnt = document.getElementById("kindCount" + group.charAt(0).toUpperCase() + group.slice(1));
-    if (cnt) cnt.textContent = `${(librariesForGroup(group) || []).length} 个库`;
+    if (cnt) cnt.textContent = tf("libCountFmt", { n: (librariesForGroup(group) || []).length });
   });
 }
 
@@ -271,14 +274,14 @@ async function renderHomeRecent() {
     if (!host || !show.includes(group)) continue;
     const libs = librariesForGroup(group) || [];
     if (!libs.length) {
-      host.innerHTML = `<div class="card" style="grid-column:1/-1"><div class="empty-tip">尚未添加${HOME_GROUP_LABEL[group]}媒体库</div></div>`;
+      host.innerHTML = `<div class="card" style="grid-column:1/-1"><div class="empty-tip">${esc(tf("homeEmptyLib", { kind: homeGroupLabel(group) }))}</div></div>`;
       continue;
     }
-    host.innerHTML = `<div class="card" style="grid-column:1/-1"><div class="empty-tip">正在读取最近入库…</div></div>`;
+    host.innerHTML = `<div class="card" style="grid-column:1/-1"><div class="empty-tip">${esc(t("homeLoading"))}</div></div>`;
     const items = await recentFilesForGroup(group, 10);
     host.innerHTML = items.length
       ? items.map(item => homePosterCard(group, item, group === "audio")).join("")
-      : `<div class="card" style="grid-column:1/-1"><div class="empty-tip">该分类暂无已索引的媒体文件</div></div>`;
+      : `<div class="card" style="grid-column:1/-1"><div class="empty-tip">${esc(t("homeNoIndexed"))}</div></div>`;
   }
 }
 
@@ -348,15 +351,15 @@ async function loadHomeIndexStatus() {
   } catch (e) {}
 }
 function homeLibStatePill(st) {
-  if (!st) return '<span class="pill info">待扫描</span>';
+  if (!st) return `<span class="pill info">${esc(t("stateWait"))}</span>`;
   if (st.running || st.state === "scanning") {
     const pct = st.total ? Math.min(99, Math.round(st.scanned / st.total * 100)) : 0;
-    return `<span class="pill warn">刮削中${pct ? " " + pct + "%" : ""}</span>`;
+    return `<span class="pill warn">${esc(t("stateScraping"))}${pct ? " " + pct + "%" : ""}</span>`;
   }
-  if (st.state === "error") return `<span class="pill bad" title="${esc(st.message || "")}">失败</span>`;
-  if (st.state === "cancelled") return '<span class="pill bad">已取消</span>';
-  if (st.state === "ready") return '<span class="pill ok">已完成</span>';
-  return '<span class="pill info">待扫描</span>';
+  if (st.state === "error") return `<span class="pill bad" title="${esc(st.message || "")}">${esc(t("stateFail"))}</span>`;
+  if (st.state === "cancelled") return `<span class="pill bad">${esc(t("stateCancelled"))}</span>`;
+  if (st.state === "ready") return `<span class="pill ok">${esc(t("stateDone"))}</span>`;
+  return `<span class="pill info">${esc(t("stateWait"))}</span>`;
 }
 function renderHomeLibTable() {
   const body = document.getElementById("homeLibBody");
@@ -372,14 +375,14 @@ function renderHomeLibTable() {
     const paths = (lib.paths && lib.paths.length ? lib.paths : [lib.path]).filter(Boolean);
     return `<tr>
       <td><div class="lib-name-cell"><span>${HOME_TYPE_ICON[lib.type] || "📄"}</span>${esc(lib.name)}</div></td>
-      <td>${esc(HOME_GROUP_LABEL[group])} · ${esc(mediaTypeName(lib.type))}</td>
+      <td>${esc(homeGroupLabel(group))} · ${esc(mediaTypeName(lib.type))}</td>
       <td class="mono">${paths.map(esc).join("<br>")}</td>
-      <td>${st ? Number(st.total || 0).toLocaleString("zh-CN") : "--"}</td>
+      <td>${st ? Number(st.total || 0).toLocaleString(curLang === "en" ? "en-US" : "zh-CN") : "--"}</td>
       <td>${homeLibStatePill(st)}</td>
       <td><div class="row-acts">
-        <button class="icon-btn" title="重新刮削" onclick="rebuildOneLibrary('${esc(lib.id)}')">🔄</button>
-        <button class="icon-btn" title="打开媒体库" onclick="openHomeLibrary('${esc(group)}','${esc(lib.id)}')">↗</button>
-        <button class="icon-btn" title="移除" onclick="deleteMediaLibrary('${esc(lib.id)}')">✕</button>
+        <button class="icon-btn" title="${esc(t("actRescrape"))}" onclick="rebuildOneLibrary('${esc(lib.id)}')">🔄</button>
+        <button class="icon-btn" title="${esc(t("actOpenLib"))}" onclick="openHomeLibrary('${esc(group)}','${esc(lib.id)}')">↗</button>
+        <button class="icon-btn" title="${esc(t("actRemove"))}" onclick="deleteMediaLibrary('${esc(lib.id)}')">✕</button>
       </div></td>
     </tr>`;
   }).join("");

@@ -170,13 +170,29 @@ const I18N = {
     up: "运行中", stopped: "已停止", restarting: "重启中",
     healthy: "healthy", unhealthy: "unhealthy",
     ptConnSaved: "✅ MoviePilot 连接已保存", ptReal: "MoviePilot API", ptMock: "模拟数据（API 不可达）",
-    testConnecting: "⏳ 正在验证…"
+    testConnecting: "⏳ 正在验证…",
+    /* v0.6.30.Branch-update：首页动态文案的模板键，供 05-home.js 使用 */
+    homeCountFmt: "共 {items} 项 · {libs} 个媒体库", homeCountEmpty: "尚未添加媒体库",
+    libCountFmt: "{n} 个库",
+    stateWait: "待扫描", stateScraping: "刮削中", stateFail: "失败",
+    stateCancelled: "已取消", stateDone: "已完成",
+    homeEmptyLib: "尚未添加{kind}媒体库", homeLoading: "正在读取最近入库…",
+    homeNoIndexed: "该分类暂无已索引的媒体文件",
+    actRescrape: "重新刮削", actOpenLib: "打开媒体库", actRemove: "移除",
+    nowBadge: "视频 / 音乐播放 · 含刮削信息",
+    /* 媒体子类型名称，供 mediaTypeName() 使用 */
+    typeAudio: "音乐", typeMusicvideo: "音乐视频（歌曲 MV）", typeComic: "漫画",
+    typeBook: "电子书", typeMovie: "电影", typeSeries: "电视剧集",
+    hwAuto: "自动选择（推荐）", hwCpu: "CPU", hwVaapi: "VAAPI（Intel/AMD）",
+    hwQsv: "Intel QSV", hwCuda: "NVIDIA CUDA/NVENC",
+    diskFreeShort: "剩余", noVolumes: "未配置监控卷",
+    hwBadgeFmt: "当前：{selected} · 可用：{available}", hwBadgeFail: "后端检测不可用 · 播放时回退 CPU"
   },
   "zh-TW": {
     caddySettings: "Caddy 設定", caddyOrigin: "WebUI 外部網域", caddyAdminToken: "管理權杖", caddyFile: "Caddyfile", caddySave: "儲存並套用", caddyReload: "重新載入", caddyHint: "儲存後會驗證並熱載入容器內的 Caddy 設定；失敗時會回滾。", superComicTitle: "Komga / Kavita / Calibre-Web · 統一書庫", appName: "蜀鼠之家", appSub: "VaultHub · 家庭 NAS 控制台 · 預覽版",
     navGroupMain: "主導覽", navHome: "首頁", navPt: "PT 管理",
     navGroupMedia: "媒體", navComic: "超漫畫", navMovie: "影視", navAudio: "音訊",
-    navGroupSys: "系統", navDocker: "容器管理",
+    navGroupSys: "系統",
     navGroupCustom: "自訂", addBoardNav: "新增模組",
     settings: "系統設定", about: "關於",
     secNas: "NAS 監控", cpu: "CPU", memory: "記憶體", network: "網路", diskTemp: "硬碟溫度",
@@ -246,13 +262,59 @@ const I18N = {
     up: "運行中", stopped: "已停止", restarting: "重啟中",
     healthy: "healthy", unhealthy: "unhealthy",
     ptConnSaved: "✅ MoviePilot 連線已儲存", ptReal: "MoviePilot API", ptMock: "模擬資料（API 不可達）",
-    testConnecting: "⏳ 正在驗證…"
+    testConnecting: "⏳ 正在驗證…",
+    /* v0.6.30.Branch-update：Plex 風格改版新增的鍵 */
+    navLibrary: "資料庫", navMore: "更多 ›",
+    navGroupBook: "電子書刊", navGroupVideo: "影視作品", navGroupAudio: "音視作品",
+    settingsLead: "反向代理、外觀主題、刮削與硬體設定集中在此，Caddy 設定已內建為其中一個標籤頁。",
+    setLook: "外觀主題", setScrape: "刮削與硬體",
+    caddyRoutes: "反向代理服務網域",
+    caddyRoutesHint: "維護服務網域與內網上游位址的對應，儲存後由內建 Caddy 校驗並熱載入，失敗會自動回滾。",
+    setSidebar: "側欄", setSidebarMem: "側欄寬度記憶",
+    setSidebarMemSub: "拖曳側欄右邊緣調整寬度，自動寫入本瀏覽器",
+    setSidebarReset: "恢復預設寬度",
+    setScrapeSrc: "刮削來源",
+    setScrapeHint: "媒體庫按大類使用不同刮削源：電子書刊用 Google Books / Bangumi，影視作品用 TMDB / 豆瓣，音視作品用 MusicBrainz / 網易雲。",
+    setHw: "顯卡加速", setHwLbl: "視訊相容流硬體加速", setHwDetect: "偵測顯卡",
+    setHwHint: "需要在 Docker Compose 中透傳 /dev/dri 或設定 NVIDIA Container Toolkit。硬體不可用時會自動回退 CPU，不影響播放。",
+    secServer: "伺服器監控",
+    cpuUsage: "CPU 使用率", memUsage: "記憶體使用率", netSpeed: "網路速度", diskUsage: "硬碟使用率",
+    avgTemp: " °C 均溫", diskFree: "容量剩餘",
+    secNow: "正在進行中的操作", nowEmpty: "目前沒有正在播放的影片或音樂",
+    secRecentBook: "最近入庫 · 電子書刊", secRecentBookSub: "電子書 / 漫畫",
+    secRecentVideo: "最近入庫 · 影視作品", secRecentVideoSub: "電視劇集 / 電影",
+    secRecentAudio: "最近入庫 · 音視作品", secRecentAudioSub: "音樂 / 音樂 MV",
+    secLibPaths: "媒體庫路徑管理", secLibPathsSub: "新增後以手動命名作為媒體庫刮削",
+    filterAll: "全部",
+    kindBookDesc: "子類型：電子書 / 漫畫 · 刮削源 Google Books、Bangumi",
+    kindVideoDesc: "子類型：電視劇集 / 電影 · 刮削源 TMDB、豆瓣",
+    kindAudioDesc: "子類型：音樂 / 音樂 MV · 刮削源 MusicBrainz、網易雲",
+    libKind: "媒體大類", libSubType: "子類型",
+    libPath: "媒體路徑（容器內絕對路徑）", libName: "庫名稱（手動命名，用於刮削）",
+    libAdd: "新增媒體庫", libRefresh: "重新整理", libRescrape: "全部重新刮削",
+    colLibName: "庫名稱", colLibKind: "大類 / 子類型", colLibPath: "媒體路徑",
+    colLibItems: "項目", colLibState: "刮削狀態", colLibActs: "操作",
+    libEmpty: "尚未新增媒體庫，填寫上方表單即可開始刮削",
+    homeCountFmt: "共 {items} 項 · {libs} 個媒體庫", homeCountEmpty: "尚未新增媒體庫",
+    libCountFmt: "{n} 個庫",
+    stateWait: "待掃描", stateScraping: "刮削中", stateFail: "失敗",
+    stateCancelled: "已取消", stateDone: "已完成",
+    homeEmptyLib: "尚未新增{kind}媒體庫", homeLoading: "正在讀取最近入庫…",
+    homeNoIndexed: "該分類暫無已索引的媒體檔案",
+    actRescrape: "重新刮削", actOpenLib: "開啟媒體庫", actRemove: "移除",
+    nowBadge: "影片 / 音樂播放 · 含刮削資訊",
+    typeAudio: "音樂", typeMusicvideo: "音樂影片（歌曲 MV）", typeComic: "漫畫",
+    typeBook: "電子書", typeMovie: "電影", typeSeries: "電視劇集",
+    hwAuto: "自動選擇（推薦）", hwCpu: "CPU", hwVaapi: "VAAPI（Intel/AMD）",
+    hwQsv: "Intel QSV", hwCuda: "NVIDIA CUDA/NVENC",
+    diskFreeShort: "剩餘", noVolumes: "未設定監控卷",
+    hwBadgeFmt: "目前：{selected} · 可用：{available}", hwBadgeFail: "後端偵測不可用 · 播放時回退 CPU"
   },
   "en": {
     caddySettings: "Caddy Config", caddyOrigin: "WebUI public domain", caddyAdminToken: "Admin token", caddyFile: "Caddyfile", caddySave: "Save & apply", caddyReload: "Reload", caddyHint: "Save will validate and hot-reload the container Caddy config; failures roll back.", superComicTitle: "Komga / Kavita / Calibre-Web · Unified Library", appName: "VaultHub", appSub: "VaultHub · Home NAS console · Preview",
     navGroupMain: "Main", navHome: "Home", navPt: "PT Manager",
     navGroupMedia: "Media", navComic: "Super Comics", navMovie: "Movies", navAudio: "Audio",
-    navGroupSys: "System", navDocker: "Containers",
+    navGroupSys: "System",
     navGroupCustom: "Custom", addBoardNav: "Add Module",
     settings: "Settings", about: "About",
     secNas: "NAS Monitor", cpu: "CPU", memory: "Memory", network: "Network", diskTemp: "Disk Temp",
@@ -322,12 +384,65 @@ const I18N = {
     up: "running", stopped: "stopped", restarting: "restarting",
     healthy: "healthy", unhealthy: "unhealthy",
     ptConnSaved: "✅ MoviePilot connection saved", ptReal: "MoviePilot API", ptMock: "Mock (API unreachable)",
-    testConnecting: "⏳ Verifying…"
+    testConnecting: "⏳ Verifying…",
+    /* v0.6.30.Branch-update: keys added by the Plex-style redesign */
+    navLibrary: "Library", navMore: "More ›",
+    navGroupBook: "Books & Comics", navGroupVideo: "Movies & TV", navGroupAudio: "Music & MV",
+    settingsLead: "Reverse proxy, appearance and scraping/hardware settings live here; the Caddy editor is one of the tabs.",
+    setLook: "Appearance", setScrape: "Scraping & hardware",
+    caddyRoutes: "Reverse proxy hostnames",
+    caddyRoutesHint: "Maintain hostname to LAN upstream mappings. Saving validates and hot-reloads the built-in Caddy; failures roll back automatically.",
+    setSidebar: "Sidebar", setSidebarMem: "Sidebar width memory",
+    setSidebarMemSub: "Drag the sidebar's right edge to resize; the width is stored in this browser",
+    setSidebarReset: "Reset to default width",
+    setScrapeSrc: "Scraping sources",
+    setScrapeHint: "Each category uses its own scrapers: Books & Comics via Google Books / Bangumi, Movies & TV via TMDB / Douban, Music & MV via MusicBrainz / NetEase.",
+    setHw: "GPU acceleration", setHwLbl: "Hardware acceleration for compat streams", setHwDetect: "Detect GPU",
+    setHwHint: "Requires passing /dev/dri through Docker Compose or configuring the NVIDIA Container Toolkit. Falls back to CPU automatically when unavailable, playback still works.",
+    secServer: "Server monitoring",
+    cpuUsage: "CPU usage", memUsage: "Memory usage", netSpeed: "Network speed", diskUsage: "Disk usage",
+    avgTemp: " °C average", diskFree: "Free space",
+    secNow: "Operations in progress", nowEmpty: "No video or music is playing right now",
+    secRecentBook: "Recently added · Books & Comics", secRecentBookSub: "E-books / comics",
+    secRecentVideo: "Recently added · Movies & TV", secRecentVideoSub: "TV series / movies",
+    secRecentAudio: "Recently added · Music & MV", secRecentAudioSub: "Music / music videos",
+    secLibPaths: "Library path management", secLibPathsSub: "The manual name you enter is used as the scraping library name",
+    filterAll: "All",
+    kindBookDesc: "Subtypes: e-book / comic · scrapers Google Books, Bangumi",
+    kindVideoDesc: "Subtypes: TV series / movie · scrapers TMDB, Douban",
+    kindAudioDesc: "Subtypes: music / music video · scrapers MusicBrainz, NetEase",
+    libKind: "Category", libSubType: "Subtype",
+    libPath: "Media path (absolute path inside the container)", libName: "Library name (manual, used for scraping)",
+    libAdd: "Add library", libRefresh: "Refresh", libRescrape: "Rescrape all",
+    colLibName: "Library", colLibKind: "Category / subtype", colLibPath: "Media path",
+    colLibItems: "Items", colLibState: "Scraping state", colLibActs: "Actions",
+    libEmpty: "No library yet. Fill in the form above to start scraping.",
+    homeCountFmt: "{items} items · {libs} libraries", homeCountEmpty: "No library yet",
+    libCountFmt: "{n} libraries",
+    stateWait: "Pending", stateScraping: "Scraping", stateFail: "Failed",
+    stateCancelled: "Cancelled", stateDone: "Done",
+    homeEmptyLib: "No {kind} library yet", homeLoading: "Loading recently added…",
+    homeNoIndexed: "No indexed media files in this category yet",
+    actRescrape: "Rescrape", actOpenLib: "Open library", actRemove: "Remove",
+    nowBadge: "Video / music playback · includes scraped info",
+    typeAudio: "Music", typeMusicvideo: "Music video", typeComic: "Comic",
+    typeBook: "E-book", typeMovie: "Movie", typeSeries: "TV series",
+    hwAuto: "Auto (recommended)", hwCpu: "CPU", hwVaapi: "VAAPI (Intel/AMD)",
+    hwQsv: "Intel QSV", hwCuda: "NVIDIA CUDA/NVENC",
+    diskFreeShort: "free", noVolumes: "No configured volumes",
+    hwBadgeFmt: "Active: {selected} · available: {available}", hwBadgeFail: "Backend detection unavailable · falls back to CPU"
   }
 };
 
 let curLang = "zh-CN";
 const t = k => (I18N[curLang] && I18N[curLang][k]) || I18N["zh-CN"][k] || k;
+/* tf 用于带占位符的文案：t("homeCountFmt") 取回 "共 {items} 项 · {libs} 个媒体库"，
+   再把 {items}/{libs} 替换成实参。这样动态文案也能跟随语言切换，不必在 JS 里
+   拼中文字面量。缺失的占位符保持原样，便于发现漏传参数。 */
+function tf(key, vars) {
+  return String(t(key)).replace(/\{(\w+)\}/g, (m, name) =>
+    Object.prototype.hasOwnProperty.call(vars || {}, name) ? String(vars[name]) : m);
+}
 
 function applyI18n() {
   document.querySelectorAll("[data-i18n]").forEach(el => { el.textContent = t(el.dataset.i18n); });
@@ -476,10 +591,10 @@ async function refreshHardwareStatus() {
     const data = await res.json();
     const selected = data.selected || "cpu";
     const available = Object.entries(data.available || {}).filter(([, ok]) => ok).map(([name]) => name).join(" / ");
-    badge.textContent = `当前：${selected.toUpperCase()} · 可用：${available || "CPU"}`;
+    badge.textContent = tf("hwBadgeFmt", { selected: selected.toUpperCase(), available: available || "CPU" });
     badge.title = data.vaapi_device || "";
   } catch (e) {
-    badge.textContent = "后端检测不可用 · 播放时回退 CPU";
+    badge.textContent = t("hwBadgeFail");
   }
 }
 

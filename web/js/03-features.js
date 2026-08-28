@@ -140,8 +140,8 @@ async function tickMetrics() {
     document.getElementById("diskCard").innerHTML = disks.map(d => {
       const p = Math.min(Number(d.percent || 0), 100);
       const free = Math.max(0, Number(d.total || 0) - Number(d.used || 0));
-      return `<div class="disk-row"><div class="disk-top"><span class="name">${esc(d.path)}</span><span>${fmtSize(d.used)} / ${fmtSize(d.total)} · 剩余 ${fmtSize(free)} · ${p}%</span></div><div class="bar"><i class="${p > 90 ? "hot" : p > 75 ? "warn" : ""}" style="width:${p}%"></i></div></div>`;
-    }).join("") || `<div class="empty-tip">${curLang === "en" ? "No configured volumes" : "未配置监控卷"}</div>`;
+      return `<div class="disk-row"><div class="disk-top"><span class="name">${esc(d.path)}</span><span>${fmtSize(d.used)} / ${fmtSize(d.total)} · ${esc(t("diskFreeShort"))} ${fmtSize(free)} · ${p}%</span></div><div class="bar"><i class="${p > 90 ? "hot" : p > 75 ? "warn" : ""}" style="width:${p}%"></i></div></div>`;
+    }).join("") || `<div class="empty-tip">${esc(t("noVolumes"))}</div>`;
     document.getElementById("diskSource").textContent = t("diskSourceReal");
     /* 首页第一栏「硬盘使用率」卡内的容量剩余汇总 */
     if (typeof renderHomeDiskSummary === "function") renderHomeDiskSummary(disks);
@@ -887,9 +887,17 @@ function setLang(l) {
   applyI18n();
   renderBoardList();
   renderCustomNav();
+  /* 首页与媒体库表单里的动态文案（库名列、子类型 option、海报占位、
+     最近入库轨）都由 JS 生成，applyI18n 只覆盖静态 data-i18n 节点，
+     所以语言切换后必须重跑这些渲染器，否则残留上一个语言。 */
   if (typeof renderHomeLibraryNav === "function") renderHomeLibraryNav();
   if (typeof renderHomeLibTable === "function") renderHomeLibTable();
   if (typeof renderHomeCount === "function") renderHomeCount();
+  if (typeof syncHomeLibTypes === "function") syncHomeLibTypes();
+  if (typeof renderHomeRecent === "function") renderHomeRecent();
+  if (typeof renderNowPlaying === "function") renderNowPlaying();
+  /* 硬件徽标文案由 JS 拼装（当前/可用），也要跟随语言重绘。 */
+  if (typeof refreshHardwareStatus === "function") refreshHardwareStatus();
   if (settings.mp.token) loadPtAll(); else renderPtMock();
   saveSettings();
 }

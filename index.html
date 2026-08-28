@@ -170,7 +170,7 @@
       <div class="section-title">
         <span class="idx">2</span>
         <span data-i18n="secNow">正在进行中的操作</span>
-        <span class="badge" id="nowBadge">视频 / 音乐播放 · 含刮削信息</span>
+        <span class="badge" id="nowBadge" data-i18n="nowBadge">视频 / 音乐播放 · 含刮削信息</span>
       </div>
       <div id="nowPlayingList"></div>
 
@@ -222,9 +222,9 @@
         <div class="lib-form">
           <div class="cfg-field"><label data-i18n="libKind">媒体大类</label>
             <select id="homeLibGroup" onchange="syncHomeLibTypes()">
-              <option value="comic">电子书刊</option>
-              <option value="movie">影视作品</option>
-              <option value="audio">音视作品</option>
+              <option value="comic" data-i18n="navGroupBook">电子书刊</option>
+              <option value="movie" data-i18n="navGroupVideo">影视作品</option>
+              <option value="audio" data-i18n="navGroupAudio">音视作品</option>
             </select></div>
           <div class="cfg-field"><label data-i18n="libSubType">子类型</label><select id="homeLibType"></select></div>
           <div class="cfg-field"><label data-i18n="libPath">媒体路径（容器内绝对路径）</label><input id="homeLibPath" type="text" placeholder="/vol2/1000/Books/技术书籍"></div>
@@ -665,7 +665,7 @@
       </div>
       <div class="setblock">
         <h4>🎞 <span data-i18n="setHw">显卡加速</span></h4>
-        <div class="cfg-field"><label for="hardwareAcceleration" data-i18n="setHwLbl">视频兼容流硬件加速</label><select id="hardwareAcceleration" onchange="saveHardwareAcceleration()"><option value="auto">自动选择（推荐）</option><option value="cpu">CPU</option><option value="vaapi">VAAPI（Intel/AMD）</option><option value="qsv">Intel QSV</option><option value="cuda">NVIDIA CUDA/NVENC</option></select></div>
+        <div class="cfg-field"><label for="hardwareAcceleration" data-i18n="setHwLbl">视频兼容流硬件加速</label><select id="hardwareAcceleration" onchange="saveHardwareAcceleration()"><option value="auto" data-i18n="hwAuto">自动选择（推荐）</option><option value="cpu" data-i18n="hwCpu">CPU</option><option value="vaapi" data-i18n="hwVaapi">VAAPI（Intel/AMD）</option><option value="qsv" data-i18n="hwQsv">Intel QSV</option><option value="cuda" data-i18n="hwCuda">NVIDIA CUDA/NVENC</option></select></div>
         <div class="media-actions"><span class="badge" id="hardwareStatus">正在检测…</span><button class="btn" type="button" onclick="refreshHardwareStatus()" data-i18n="setHwDetect">检测显卡</button></div>
         <div class="hint" data-i18n="setHwHint">需要在 Docker Compose 中透传 /dev/dri 或配置 NVIDIA Container Toolkit。硬件不可用时会自动回退 CPU，不影响播放。</div>
       </div>

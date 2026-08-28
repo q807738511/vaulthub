@@ -330,7 +330,8 @@ function setAudioView(view) {
 let mediaLibraryConfigGroup = "comic";
 function mediaTypesForGroup(group) { return group === "comic" ? ["comic","book"] : group === "movie" ? ["movie","series"] : ["audio","musicvideo"]; }
 function mediaTypeForGroup(group) { return mediaTypesForGroup(group)[0]; }
-function mediaTypeName(type) { return ({ audio: "音乐", musicvideo: "音乐视频（歌曲 MV）", comic: "漫画", book: "电子书", movie: "电影", series: "电视剧集" })[type] || type; }
+/* 子类型名称走 i18n（typeAudio/typeComic/…），未知类型回落原值。 */
+function mediaTypeName(type) { const k = "type" + String(type).charAt(0).toUpperCase() + String(type).slice(1); const v = t(k); return v === k ? type : v; }
 const MEDIA_FORMATS = {
   comic: ["epub","mobi","zip","cbz","pdf","rar","cbr","7z","cb7","jpg","jpeg","png","webp","gif","bmp","avif","cpg","lzh","cbl","tar","cbt"],
   book: ["epub","pdf","mobi","azw","azw3","chm","exe","umd","jar","jad","caj","pdg","djvu","djv","ceb","doc","docx","xps","txt"],
@@ -499,6 +500,29 @@ function audioMetadataFor(path) {
   const all = readAudioMetadata();
   return { ...audioBaseMetadata(path), ...(all[path] || {}) };
 }
+/* MusicBrainz 的 /recording 检索永远会返回「最像」的一条，哪怕相关度很低。
+   之前无条件采纳 recordings[0]，导致「周杰伦 - 七里香.mp3」被刮成标题
+   “周杰倫”、歌手“王泰翔 2000wtx”，「五月天 - 倔强.flac」被刮成
+   “倔强- 五月天”。这里改成结构化查询 + 打分与文本双重校验：
+   只有 score 足够高、且标题或歌手能和文件名解析结果对上，才覆盖本地元数据；
+   否则保留文件名解析结果并记下 checkedAt，避免反复请求。 */
+const AUDIO_MB_MIN_SCORE = 88;
+function audioNorm(s) {
+  return String(s || "").toLowerCase().replace(/[\s._\-–—'"`·、,，:：!！?？()（）\[\]]/g, "");
+}
+function audioMatchAcceptable(fallback, item) {
+  if (Number(item.score || 0) < AUDIO_MB_MIN_SCORE) return false;
+  const wantTitle = audioNorm(fallback.title);
+  const gotTitle = audioNorm(item.title);
+  const titleOk = !!wantTitle && !!gotTitle
+    && (gotTitle === wantTitle || gotTitle.includes(wantTitle) || wantTitle.includes(gotTitle));
+  const wantArtist = audioNorm(fallback.artist);
+  const credits = (item["artist-credit"] || []).map(c => audioNorm(c && c.name)).filter(Boolean);
+  const artistOk = !wantArtist || wantArtist === audioNorm("未知歌手")
+    || credits.some(c => c === wantArtist || c.includes(wantArtist) || wantArtist.includes(c));
+  /* 标题必须对上；歌手在文件名没给出时不作要求。 */
+  return titleOk && artistOk;
+}
 async function scrapeAudioMetadata(host, lib, files) {
   const all = readAudioMetadata();
   const pending = files.filter(file => !all[file.path]);
@@ -510,12 +534,24 @@ async function scrapeAudioMetadata(host, lib, files) {
   writeAudioMetadata(all);
   if (pending.length) renderAudioLibraryContent(host, lib, files);
   for (const file of pending) {
-    const path = String(file.path), fallback = all[path], query = `${fallback.artist} ${fallback.title}`.trim();
+    const path = String(file.path), fallback = all[path];
+    /* 结构化查询比裸关键词精确得多：歌手未知时只按标题查。 */
+    const known = fallback.artist && fallback.artist !== "未知歌手";
+    const query = known
+      ? `recording:"${fallback.title}" AND artist:"${fallback.artist}"`
+      : `recording:"${fallback.title}"`;
     try {
-      const response = await fetch(`https://musicbrainz.org/ws/2/recording/?query=${encodeURIComponent(query)}&fmt=json&limit=1`, { headers: { Accept: "application/json" }, cache: "force-cache" });
-      const item = response.ok ? (await response.json()).recordings?.[0] : null;
+      const response = await fetch(`https://musicbrainz.org/ws/2/recording/?query=${encodeURIComponent(query)}&fmt=json&limit=3`, { headers: { Accept: "application/json" }, cache: "force-cache" });
+      const list = response.ok ? ((await response.json()).recordings || []) : [];
+      const item = list.find(rec => audioMatchAcceptable(fallback, rec));
       if (item) {
-        all[path] = { ...fallback, title: item.title || fallback.title, artist: item["artist-credit"]?.[0]?.name || fallback.artist, album: item.releases?.[0]?.title || fallback.album, checkedAt: Date.now() };
+        all[path] = {
+          ...fallback,
+          title: item.title || fallback.title,
+          artist: item["artist-credit"]?.[0]?.name || fallback.artist,
+          album: item.releases?.[0]?.title || fallback.album,
+          checkedAt: Date.now(),
+        };
         writeAudioMetadata(all); renderAudioLibraryContent(host, lib, files);
       }
     } catch (e) { /* Keep filename-derived metadata when scraping is unavailable. */ }
