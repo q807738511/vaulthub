@@ -54,10 +54,12 @@ assert "async function refreshSessionStatus(" in state
 assert "async function ensureSessionForWrite(" in state
 assert "function renderSessionStatus(" in state
 assert 'id="sessionStatusBadge"' in html
-assert 'ensureSessionForWrite(t("writeAddLibrary"))' in features, "add-library must check the session first"
-assert 'ensureSessionForWrite(t("writeDeleteLibrary"))' in features, "delete-library must check the session first"
+# v0.7.0 moved the only add-library entry point into 05-home.js (the old per-group
+# modal is gone), so search the whole shipped frontend rather than one split file.
+assert 'ensureSessionForWrite(t("writeAddLibrary"))' in html, "add-library must check the session first"
+assert 'ensureSessionForWrite(t("writeDeleteLibrary"))' in html, "delete-library must check the session first"
 # Session failure copy lives in the tri-lingual dictionary, not inline strings.
-assert 'sessionWriteBlocked' in features, "write failures must report an invalid session"
+assert 'sessionWriteBlocked' in html, "write failures must report an invalid session"
 assert 'sessionBad: "登录状态异常"' in state, "zh-CN dictionary needs the invalid-session label"
 assert 'caddySaveBlocked' in state and 'writeAddLibrary' in state and 'writeDeleteLibrary' in state
 assert "refreshSessionStatus(false)" in boot, "boot must prime the session indicator"

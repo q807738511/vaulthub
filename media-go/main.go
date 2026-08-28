@@ -530,6 +530,11 @@ func (a *App) indexStatus(w http.ResponseWriter, r *http.Request) {
 		EndedAt   int64  `json:"ended_at"`
 		Message   string `json:"message"`
 		Running   bool   `json:"running"`
+		// Percent and Elapsed let the UI show a live build progress bar instead
+		// of a static "please refresh later" placeholder.
+		Percent int   `json:"percent"`
+		Elapsed int64 `json:"elapsed"`
+		Now     int64 `json:"now"`
 	}
 	rows := map[string]*st{}
 	for _, l := range libs {
@@ -550,12 +555,38 @@ func (a *App) indexStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]st, 0, len(rows))
 	anyRunning := false
+	now := time.Now().Unix()
 	for id, s := range rows {
 		s.Running = jobs[id]
 		if s.Running {
 			anyRunning = true
 			if s.State != "scanning" {
 				s.State = "scanning"
+			}
+		}
+		// Percent is only meaningful once phase 2 knows the row total. During
+		// phase 1 (filesystem walk) Total is still 0, so the UI falls back to
+		// showing the scanned counter plus elapsed time.
+		if s.Total > 0 {
+			p := s.Scanned * 100 / s.Total
+			if p > 100 {
+				p = 100
+			}
+			if s.Running && p >= 100 {
+				p = 99
+			}
+			s.Percent = p
+		} else if !s.Running && s.State == "ready" {
+			s.Percent = 100
+		}
+		s.Now = now
+		if s.StartedAt > 0 {
+			end := s.EndedAt
+			if s.Running || end <= 0 {
+				end = now
+			}
+			if end > s.StartedAt {
+				s.Elapsed = end - s.StartedAt
 			}
 		}
 		out = append(out, *s)
@@ -592,7 +623,13 @@ func (a *App) files(w http.ResponseWriter, r *http.Request) {
 	// Never indexed and nothing running: schedule a scan and report indexing.
 	if total == 0 && !busy && state == "" {
 		a.start(l)
-		writeJSON(w, 200, map[string]any{"status": "indexing", "total": 0, "offset": 0, "limit": 100, "has_more": false, "files": []FileEntry{}})
+		writeJSON(w, 200, map[string]any{"status": "indexing", "total": 0, "offset": 0, "limit": 100, "has_more": false, "files": []FileEntry{}, "scanning": true})
+		return
+	}
+	// A scan is in flight and has not written any rows yet: report indexing so
+	// the UI can show a live progress bar polled from /api/media/index/status.
+	if total == 0 && busy {
+		writeJSON(w, 200, map[string]any{"status": "indexing", "total": 0, "offset": 0, "limit": 100, "has_more": false, "files": []FileEntry{}, "scanning": true})
 		return
 	}
 

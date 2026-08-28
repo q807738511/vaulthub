@@ -3,42 +3,78 @@
    so the ~131 inline on*= handlers keep working. Load order is fixed by the
    <script> tags in index.html and MUST be preserved. */
 const MEDIA_VIEWS = ["comic", "movie", "audio"];
+
+/* ================= 外连服务（v0.7.0：从「资料库」页迁入系统设置） =================
+   过去每个大类页面里都内嵌一份 Komga/Emby/Navidrome 的表单，导致侧边栏和顶栏
+   反复出现同样的大类入口。现在外连服务和本地媒体库一样，只是「媒体库」的一种
+   来源，统一在系统设置 → 媒体库 → 媒体库增加里维护，侧边栏只显示用户填写的名称。 */
+const EXTERNAL_SERVICES_KEY = "vaulthub_external_services_v1";
+let externalServices = [];
+function loadExternalServices() {
+  try { externalServices = JSON.parse(localStorage.getItem(EXTERNAL_SERVICES_KEY) || "[]") || []; }
+  catch (e) { externalServices = []; }
+  externalServices = externalServices.filter(x => x && x.id && x.name && x.lan);
+  return externalServices;
+}
+function saveExternalServices() {
+  try { localStorage.setItem(EXTERNAL_SERVICES_KEY, JSON.stringify(externalServices)); } catch (e) {}
+}
+function externalServicesForGroup(group) {
+  return externalServices.filter(x => x.group === group);
+}
+function findExternalService(id) { return externalServices.find(x => x.id === id); }
+function addExternalMediaService() {
+  const group = document.getElementById("extLibGroup")?.value || "comic";
+  const name = (document.getElementById("extLibName")?.value || "").trim();
+  const lan = normalizeMediaUrl((document.getElementById("extLibLan")?.value || "").trim());
+  const proxy = normalizeMediaUrl((document.getElementById("extLibProxy")?.value || "").trim());
+  if (!name || !lan) { toast("⚠️ " + t("extLibNeed")); return; }
+  externalServices.push({ id: "ext-" + Date.now().toString(36), group, name, lan, proxy });
+  saveExternalServices();
+  document.getElementById("extLibName").value = "";
+  document.getElementById("extLibLan").value = "";
+  document.getElementById("extLibProxy").value = "";
+  renderExternalServiceList();
+  if (typeof renderHomeLibraryNav === "function") renderHomeLibraryNav();
+  toast("✅ " + tf("extLibAdded", { name }));
+}
+function removeExternalMediaService(id) {
+  externalServices = externalServices.filter(x => x.id !== id);
+  saveExternalServices();
+  renderExternalServiceList();
+  if (typeof renderHomeLibraryNav === "function") renderHomeLibraryNav();
+  toast("✅ " + t("extLibRemoved"));
+}
+function renderExternalServiceList() {
+  const host = document.getElementById("extServiceList");
+  if (!host) return;
+  if (!externalServices.length) { host.innerHTML = `<div class="empty-tip">${esc(t("extLibEmpty"))}</div>`; return; }
+  host.innerHTML = `<div class="media-file-list">${externalServices.map(svc => `<div class="media-file-row">
+    <div class="media-file-name"><strong>${esc(svc.name)}</strong><div class="hint">${esc(svc.lan)}${svc.proxy ? " · " + esc(svc.proxy) : ""}</div></div>
+    <span class="badge">${esc(t(MEDIA_GROUP_I18N[svc.group] || svc.group))}</span>
+    <div class="media-actions">
+      <button class="btn" type="button" onclick="openExternalService(${jsAttrArg(svc.id)})">↗ ${esc(t("btnMediaLogin"))}</button>
+      <button class="btn btn-danger" type="button" onclick="removeExternalMediaService(${jsAttrArg(svc.id)})">${esc(t("actRemove"))}</button>
+    </div></div>`).join("")}</div>`;
+}
+const MEDIA_GROUP_I18N = { comic: "navGroupBook", movie: "navGroupVideo", audio: "navGroupAudio" };
+function setLibrarySource(src) {
+  document.querySelectorAll("[data-libsrc]").forEach(el => el.classList.toggle("active", el.dataset.libsrc === src));
+  const local = document.getElementById("libSrc-local");
+  const ext = document.getElementById("libSrc-external");
+  if (local) local.style.display = src === "local" ? "" : "none";
+  if (ext) ext.style.display = src === "external" ? "" : "none";
+  if (src === "external") renderExternalServiceList();
+}
+
 function initMediaLogin() {
-  document.querySelectorAll("#view-comic .tab-panel, #view-movie .tab-panel, #view-audio .tab-panel").forEach((panel, idx) => {
-    if (panel.dataset.mediaLoginReady) return;
-    const group = panel.querySelector("[data-lan-input]")?.dataset.lanInput;
-    if (!group) return;
-    const id = panel.id || `${group}-single-${idx}`;
-    panel.dataset.mediaLoginReady = "1";
-    panel.insertAdjacentHTML("beforeend", `
-      <div class="media-login" data-media-launch="${esc(id)}">
-        <div class="media-actions">
-          <button class="btn btn-primary" onclick="mediaLogin('${esc(id)}')">↗ <span data-i18n="btnMediaLogin">进入媒体服务</span></button>
-          <button class="btn" onclick="openMediaExternal('${esc(id)}')">⊞ <span data-i18n="btnOpenExternal">新窗口打开</span></button>
-          <button class="btn" onclick="hideMediaConfig('${esc(group)}')">⌃ <span data-i18n="mediaHideCfg">收起配置</span></button>
-        </div>
-        <div class="media-login-note" data-i18n="mediaLoginNote">填写或选择上方访问地址后，点击进入会在当前栏目内打开媒体服务登录页，账号密码在媒体服务页面里手动填写。</div>
-      </div>`);
-  });
-  MEDIA_VIEWS.forEach(v => {
-    const wrap = document.querySelector(`#view-${v} .cfg-wrap`);
-    if (wrap) wrap.style.display = "none";
-    renderMediaHome(v);
-  });
-  addMediaPath();
+  loadExternalServices();
+  renderExternalServiceList();
+  MEDIA_VIEWS.forEach(v => renderMediaHome(v));
   refreshMediaLibraries(false);
   applyI18n();
 }
 
-function mediaPanel(id) {
-  return document.querySelector(`[data-media-launch="${CSS.escape(id)}"]`)?.closest(".tab-panel, .card");
-}
-function mediaWideHostForPanel(panel) {
-  const view = panel?.closest(".view");
-  if (!view) return null;
-  const group = view.id.replace("view-", "");
-  return document.getElementById("media-wide-" + group);
-}
 function isPrivateHostname(hostname) {
   const host = String(hostname || "").toLowerCase();
   return host === "localhost" || host === "127.0.0.1" || host === "::1" ||
@@ -49,30 +85,18 @@ function isPrivateServiceUrl(url) {
   try { return isPrivateHostname(new URL(normalizeMediaUrl(url)).hostname); }
   catch (e) { return false; }
 }
-function serviceAccessUrl(panel, selectedUrl, pageHostname = location.hostname) {
-  let url = normalizeMediaUrl(selectedUrl);
-  if (!panel || !url) return url;
-
-  /* 外网浏览器无法直连 192.168.x.x：自动改走同容器的公网 Host 入口。 */
-  if (!isPrivateHostname(pageHostname) && isPrivateServiceUrl(url)) {
-    const proxy = panel.querySelector("[data-proxy-input]")?.value.trim();
-    if (proxy) url = normalizeMediaUrl(proxy);
+/* 外网浏览器无法直连 192.168.x.x：页面本身在公网时自动改走反代域名。
+   Navidrome 的 FPK 版没有 BaseURL 开关，根路径要补 /app/ 才是真正入口。 */
+function serviceAccessUrl(svc, pageHostname = location.hostname) {
+  if (!svc) return "";
+  let url = normalizeMediaUrl(svc.lan);
+  if (!isPrivateHostname(pageHostname) && isPrivateServiceUrl(url) && svc.proxy) {
+    url = normalizeMediaUrl(svc.proxy);
   }
-
-  /* 飞牛 FPK 版 Navidrome 无 BaseURL 开关，公网 Host 直接使用其真实 /app/ 入口。 */
-  if (panel.id === "audio-navidrome") {
-    try {
-      const parsed = new URL(url);
-      if (parsed.pathname === "/") parsed.pathname = "/app/";
-      url = parsed.toString();
-    } catch (e) {}
+  if (/navidrome/i.test(svc.name || "")) {
+    try { const u = new URL(url); if (u.pathname === "/") u.pathname = "/app/"; url = u.toString(); } catch (e) {}
   }
   return url;
-}
-function mediaCurrentUrl(id) {
-  const panel = mediaPanel(id);
-  const addr = panel?.querySelector(".addr-box .val")?.textContent.trim();
-  return serviceAccessUrl(panel, addr || "");
 }
 function normalizeMediaUrl(url) {
   const raw = String(url || "").trim();
@@ -80,33 +104,21 @@ function normalizeMediaUrl(url) {
   if (/^https?:\/\//i.test(raw)) return raw;
   return "http://" + raw;
 }
-function rememberMediaUrl(id, url) {
-  try { localStorage.setItem("dwu_media_url_" + id, url); } catch (e) {}
-}
-function activeMediaPanel(group) {
-  const view = document.getElementById("view-" + group);
-  return view?.querySelector(".tab-panel.active") || view?.querySelector(".card");
-}
-function activeMediaId(group) {
-  const panel = activeMediaPanel(group);
-  return panel?.querySelector("[data-media-launch]")?.dataset.mediaLaunch || null;
-}
 function mediaStoreKey(group) { return "dwu_media_configured_" + group; }
 function mediaMode(group) {
   try { return localStorage.getItem("dwu_media_mode_" + group) || "local"; } catch (e) { return "local"; }
 }
 function setMediaMode(group, mode) {
   try { localStorage.setItem("dwu_media_mode_" + group, mode); } catch (e) {}
-  const wrap = document.querySelector(`#view-${group} .cfg-wrap`);
-  if (wrap) wrap.style.display = "none";
   renderMediaHome(group);
 }
 function mediaModeBar(group) {
   const mode = mediaMode(group);
+  const exts = externalServicesForGroup(group);
   return `<div class="media-modebar"><div class="media-modes" role="tablist" aria-label="媒体来源">
-    <button class="media-mode ${mode === "local" ? "active" : ""}" type="button" onclick="setMediaMode('${esc(group)}','local')">本地媒体库</button>
-    <button class="media-mode ${mode === "external" ? "active" : ""}" type="button" onclick="setMediaMode('${esc(group)}','external')">外连服务</button>
-  </div><button class="btn" type="button" onclick="showMediaConfig('${esc(group)}')">⚙ 设置</button></div>`;
+    <button class="media-mode ${mode === "local" ? "active" : ""}" type="button" onclick="setMediaMode('${esc(group)}','local')">${esc(t("libSrcLocal"))}</button>
+    <button class="media-mode ${mode === "external" ? "active" : ""}" type="button" onclick="setMediaMode('${esc(group)}','external')">${esc(t("libSrcExternal"))}${exts.length ? " · " + exts.length : ""}</button>
+  </div><button class="btn" type="button" onclick="showMediaLibraryConfig('${esc(group)}')">⚙ ${esc(t("navManage"))}</button></div>`;
 }
 function setMediaConfigured(group, configured) {
   try { localStorage.setItem(mediaStoreKey(group), configured ? "1" : "0"); } catch (e) {}
@@ -114,21 +126,10 @@ function setMediaConfigured(group, configured) {
 function isMediaConfigured(group) {
   try { return localStorage.getItem(mediaStoreKey(group)) === "1"; } catch (e) { return false; }
 }
-function showMediaConfig(group) {
-  if (mediaMode(group) === "local") {
-    showMediaLibraryConfig(group);
-    return;
-  }
-  const wrap = document.querySelector(`#view-${group} .cfg-wrap`);
-  if (wrap) wrap.style.display = "block";
-  const host = document.getElementById("media-wide-" + group);
-  if (host) host.classList.remove("show");
-}
-function hideMediaConfig(group) {
-  const wrap = document.querySelector(`#view-${group} .cfg-wrap`);
-  if (wrap) wrap.style.display = "none";
-  renderMediaHome(group);
-}
+/* 「设置」按钮统一打开系统设置的媒体库标签页，不再在页面里展开内嵌表单。 */
+function showMediaConfig(group) { showMediaLibraryConfig(group); }
+function hideMediaConfig(group) { renderMediaHome(group); }
+let externalSelection = {};
 function renderMediaHome(group) {
   const host = document.getElementById("media-wide-" + group);
   if (!host) return;
@@ -137,58 +138,48 @@ function renderMediaHome(group) {
     renderLocalMedia(group);
     return;
   }
-  const configured = isMediaConfigured(group);
-  if (!configured) {
+  const services = externalServicesForGroup(group);
+  if (!services.length) {
     host.innerHTML = `${mediaModeBar(group)}
       <div class="media-empty">
         <div class="big">📭</div>
         <h3 data-i18n="mediaEmptyTitle">暂无资源</h3>
-        <p data-i18n="mediaEmptyDesc">当前栏目还没有配置媒体服务器。请先配置服务器访问地址，保存后这里会作为资源访问页展示。</p>
-        <button class="btn btn-primary" onclick="showMediaConfig('${esc(group)}')">⚙️ <span data-i18n="mediaCfgBtn">配置服务器</span></button>
+        <p data-i18n="setLibAddHint">先选来源：本地媒体库使用容器内已挂载的绝对路径；外连服务接入 Emby / Navidrome / Komga 等现成服务器。</p>
+        <button class="btn btn-primary" onclick="showMediaLibraryConfig('${esc(group)}')">⚙️ <span data-i18n="extLibAdd">添加外连服务</span></button>
       </div>`;
     applyI18n();
     return;
   }
-  const id = activeMediaId(group);
-  if (id) openMediaFrame(id, false);
-}
-function openMediaFrame(id, showToast) {
-  const panel = mediaPanel(id);
-  const url = mediaCurrentUrl(id);
-  const host = mediaWideHostForPanel(panel);
-  const group = panel?.closest(".view")?.id.replace("view-", "");
-  if (!panel || !host || !url || !group) {
-    if (!url) toast("⚠️ " + (curLang === "en" ? "Missing service address" : "缺少服务地址"));
-    return;
-  }
+  const selected = services.find(x => x.id === externalSelection[group]) || services[0];
+  externalSelection[group] = selected.id;
   setMediaConfigured(group, true);
-  rememberMediaUrl(id, url);
-  const wrap = document.querySelector(`#view-${group} .cfg-wrap`);
-  if (wrap) wrap.style.display = "none";
-  host.classList.add("show");
+  const url = serviceAccessUrl(selected);
   host.innerHTML = `${mediaModeBar(group)}
+    <div class="library-strip">${services.map(svc => `<button class="library-chip ${svc.id === selected.id ? "active" : ""}" onclick="openExternalService(${jsAttrArg(svc.id)})">${esc(svc.name)}<small>${esc(t("libSrcExternal"))}</small></button>`).join("")}</div>
+    <div class="media-actions"><button class="btn" type="button" onclick="openExternalServiceWindow(${jsAttrArg(selected.id)})">⊞ <span data-i18n="btnOpenExternal">新窗口打开</span></button><span class="media-file-meta">${esc(url)}</span></div>
     <div class="media-frame">
       <iframe src="${esc(url)}" loading="lazy" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
     </div>`;
   applyI18n();
-  if (showToast) toast("✅ " + (curLang === "en" ? "Opened service page" : "已在当前栏目打开服务页"));
 }
-function mediaLogin(id) {
-  openMediaFrame(id, true);
+function openExternalService(id) {
+  const svc = findExternalService(id);
+  if (!svc) { toast("⚠️ " + t("homeOpenFail")); return; }
+  externalSelection[svc.group] = svc.id;
+  try { localStorage.setItem("dwu_media_mode_" + svc.group, "external"); } catch (e) {}
+  closeModal("settingsModal");
+  switchView(svc.group);
+  renderMediaHome(svc.group);
 }
-function openMediaExternal(id) {
-  const url = mediaCurrentUrl(id);
-  if (!url) { toast("⚠️ " + (curLang === "en" ? "Missing service address" : "缺少服务地址")); return; }
-  rememberMediaUrl(id, url);
-  window.open(url, "_blank", "noopener");
+function openExternalServiceWindow(id) {
+  const svc = findExternalService(id);
+  if (!svc) return;
+  window.open(serviceAccessUrl(svc), "_blank", "noopener");
 }
 function openActiveMediaExternal(group) {
-  if (mediaMode(group) === "local") {
-    showMediaLibraryConfig(group);
-    return;
-  }
-  const id = activeMediaId(group);
-  if (id) openMediaExternal(id);
+  if (mediaMode(group) === "local") { showMediaLibraryConfig(group); return; }
+  const svc = findExternalService(externalSelection[group]) || externalServicesForGroup(group)[0];
+  if (svc) openExternalServiceWindow(svc.id);
 }
 
 /* ================= 本地媒体库 ================= */
@@ -388,7 +379,10 @@ async function refreshMediaLibraries(notify) {
     const res = await fetch("/api/media/libraries", { headers: mediaAdminHeaders(), cache: "no-store" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     localMediaLibraries = normalizeLibraryPayload(await res.json());
-    renderMediaLibraryConfigList();
+    /* 媒体库列表变化后，系统设置里的表格、侧栏条目和顶栏统计都要跟着更新。 */
+    if (typeof renderHomeLibTable === "function") renderHomeLibTable();
+    if (typeof renderHomeLibraryNav === "function") renderHomeLibraryNav();
+    if (typeof renderHomeCount === "function") renderHomeCount();
     ["comic", "movie", "audio"].forEach(group => { if (mediaMode(group) === "local") renderLocalMedia(group); });
     if (notify) toast("✅ 本地媒体库已刷新");
   } catch (err) {
@@ -415,7 +409,7 @@ function renderLocalMedia(group) {
   localMediaSelection[group] = selected.id;
   host.innerHTML = `${mediaModeBar(group)}<div class="local-media">
     <div class="library-strip">${libs.map(lib => `<button class="library-chip ${lib.id === selected.id ? "active" : ""}" onclick="selectLocalLibrary('${esc(group)}','${esc(lib.id)}')">${esc(lib.name)}<small>${esc(mediaTypeName(lib.type))}</small></button>`).join("")}</div>
-    <div id="local-media-content-${esc(group)}"><div class="empty-tip">正在读取文件...</div></div>
+    <div id="local-media-content-${esc(group)}"><div class="empty-tip">${esc(t("homeLoading"))}</div></div>
     <div id="local-media-viewer-${esc(group)}"></div>
   </div>`;
   loadLocalFiles(group, selected);
@@ -439,9 +433,13 @@ async function loadLocalFiles(group, lib, offset = 0) {
     let files = normalizeFilePayload(data).sort((a, b) => String(a.path).localeCompare(String(b.path), "zh-CN"));
     files = files.filter(file => supportedLocalMediaFile(group, lib, String(file.path)));
     if (data.status === "indexing") {
-      target.innerHTML = '<div class="empty-tip">正在后台建立低速索引，请稍后刷新。扫描不会阻塞页面。</div>';
+      /* 旧版本只显示一句「请稍后刷新」，用户无法判断卡住还是仍在扫描。
+         现在渲染一个能监测的进度块，并启动 /api/media/index/status 轮询。 */
+      target.innerHTML = buildProgressHtml(lib);
+      startBuildProgressWatch(group, lib);
       return;
     }
+    stopBuildProgressWatch(group);
     if (group === "comic") {
       files = files.filter(file => {
         const progress = Number(readingState(lib.id, String(file.path)).progress || 0);
@@ -469,6 +467,83 @@ async function loadLocalFiles(group, lib, offset = 0) {
   } catch (err) {
     target.innerHTML = `<div class="media-error">文件列表读取失败：${esc(err.message)}</div>`;
   }
+}
+
+/* ================= 索引构建进度（v0.7.0 修复「构建卡加载无法监测」） =================
+   后端 /api/media/index/status 现在返回 percent / scanned / total / elapsed，
+   前端据此渲染真实进度条并每 2 秒轮询；构建结束后自动加载文件列表。 */
+const buildWatchTimers = {};
+function formatBuildElapsed(sec) {
+  const s = Math.max(0, Math.floor(Number(sec) || 0));
+  if (s < 60) return s + "s";
+  const m = Math.floor(s / 60), r = s % 60;
+  if (m < 60) return m + "m" + String(r).padStart(2, "0") + "s";
+  return Math.floor(m / 60) + "h" + String(m % 60).padStart(2, "0") + "m";
+}
+function buildProgressHtml(lib, st) {
+  const scanned = Number(st?.scanned || 0);
+  const total = Number(st?.total || 0);
+  const pct = Number(st?.percent || 0);
+  const elapsed = Number(st?.elapsed || 0);
+  const known = total > 0;
+  return `<div class="build-progress" data-build-lib="${esc(lib.id)}">
+    <div class="bp-head">
+      <strong>⏳ ${esc(t("buildProgress"))}</strong>
+      <span class="bp-pct">${known ? pct + "%" : esc(t("buildWaiting"))}</span>
+    </div>
+    <div class="bp-bar ${known ? "" : "indeterminate"}"><i style="width:${known ? pct : 100}%"></i></div>
+    <div class="bp-meta">
+      <span>${esc(tf("buildScanned", { n: scanned.toLocaleString(curLang === "en" ? "en-US" : "zh-CN") }))}${known ? " / " + total.toLocaleString(curLang === "en" ? "en-US" : "zh-CN") : ""}</span>
+      <span>${esc(tf("buildElapsed", { sec: formatBuildElapsed(elapsed) }))}</span>
+    </div>
+    <div class="media-actions">
+      <button class="btn" type="button" onclick="refreshBuildProgress(${jsAttrArg(lib.id)})">↻ ${esc(t("buildRefresh"))}</button>
+      <button class="btn btn-danger" type="button" onclick="cancelLibraryBuild(${jsAttrArg(lib.id)})">■ ${esc(t("buildCancel"))}</button>
+    </div>
+  </div>`;
+}
+async function fetchBuildStatus(libId) {
+  try {
+    const res = await fetch("/api/media/index/status", { cache: "no-store" });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return (data.libraries || []).find(x => x.lib === libId) || null;
+  } catch (e) { return null; }
+}
+function stopBuildProgressWatch(group) {
+  if (buildWatchTimers[group]) { clearInterval(buildWatchTimers[group]); delete buildWatchTimers[group]; }
+}
+function startBuildProgressWatch(group, lib) {
+  stopBuildProgressWatch(group);
+  buildWatchTimers[group] = setInterval(async () => {
+    const host = document.getElementById("local-media-content-" + group);
+    const block = host?.querySelector(`[data-build-lib="${CSS.escape(lib.id)}"]`);
+    if (!host || !block) { stopBuildProgressWatch(group); return; }
+    const st = await fetchBuildStatus(lib.id);
+    if (!st) return;
+    if (!st.running && (st.state === "ready" || st.state === "error" || st.state === "cancelled")) {
+      stopBuildProgressWatch(group);
+      if (st.state === "ready") toast("✅ " + t("buildDone"));
+      else if (st.state === "cancelled") toast("■ " + t("buildCancelled"));
+      loadLocalFiles(group, lib, 0);
+      return;
+    }
+    block.outerHTML = buildProgressHtml(lib, st);
+  }, 2000);
+}
+async function refreshBuildProgress(libId) {
+  const lib = findMediaLibrary(libId);
+  if (!lib) return;
+  const group = homeGroupOfType(lib.type);
+  loadLocalFiles(group, lib, 0);
+}
+async function cancelLibraryBuild(libId) {
+  try {
+    const res = await fetch(`/api/media/index/cancel?id=${encodeURIComponent(libId)}`, { method: "POST", headers: mediaAdminHeaders(), credentials: "same-origin" });
+    if (!await handleProtectedResponse(res)) { toast("⚠️ " + t("caddySaveBlocked")); return; }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    toast("■ " + t("buildCancelled"));
+  } catch (err) { toast("⚠️ " + err.message); }
 }
 function fileExt(path) { const match = String(path).toLowerCase().match(/\.([^.\/]+)$/); return match ? match[1] : ""; }
 function formatFileSize(size) {
@@ -980,6 +1055,14 @@ function decodeTextBytes(bytes) {
   catch (e) { return new TextDecoder("gb18030").decode(bytes); }
 }
 
+function scrollViewerIntoView(viewer) {
+  const overlay = viewer && viewer.querySelector(".media-reader-overlay");
+  if (!overlay) return;
+  try {
+    if (typeof overlay.scrollIntoView === "function") overlay.scrollIntoView({ block: "start" });
+  } catch (e) { /* 滚动不是关键路径，失败不影响已渲染的内容 */ }
+}
+
 async function openLocalMedia(group, libId, path) {
   const lib = findMediaLibrary(libId);
   const viewer = document.getElementById("local-media-viewer-" + group);
@@ -1014,20 +1097,20 @@ async function openLocalMedia(group, libId, path) {
       window.__ebookTextLength = text.length;
       body = `<pre class="media-text" id="ebookText">${esc(text)}</pre>`;
       viewer.innerHTML = viewerShell(group, lib, path, body, url, { chapters, ebook: true });
-      const overlay = viewer.querySelector(".media-reader-overlay");
-      if (overlay) overlay.scrollIntoView({ block: "start" });
-      return;
     } catch (err) {
       body = `<div class="media-error">文本读取失败：${esc(err.message)}</div>`;
       viewer.innerHTML = viewerShell(group, lib, path, body, url);
       return;
     }
+    /* 滚动定位放在 try 之外：它失败只是没滚到位，不能被报成「文本读取失败」，
+       否则正文其实已经渲染好了，用户却看到一条读取失败的红字。 */
+    scrollViewerIntoView(viewer);
+    return;
   } else {
     const note = MEDIA_FORMATS.comic.includes(ext) ? "该漫画/压缩格式已加入书架。当前浏览器不能直接解析时，可下载后用专业阅读器打开。" : MEDIA_FORMATS.book.includes(ext) ? "该电子书格式已加入书架。浏览器不支持直接解析时，可在新窗口打开或下载阅读。" : "该格式可下载或交给浏览器打开。";
     body = `<div class="reader-book-fallback"><div class="book-cover" style="max-width:220px;margin:0 auto 24px;background:${coverGradient(displayBookTitle(path))}"><span class="book-cover-title">${esc(displayBookTitle(path))}</span></div><p>${note}</p><p><a class="btn btn-primary" href="${esc(url)}" target="_blank" rel="noopener">↗ 尝试在浏览器打开</a></p></div>`;
   }
   viewer.innerHTML = viewerShell(group, lib, path, body, url);
   if (group === "movie" && MEDIA_FORMATS.movie.includes(ext)) initMovieCompatPlayer(viewer, lib, path);
-  const overlay = viewer.querySelector(".media-reader-overlay");
-  if (overlay) overlay.scrollIntoView({ block: "start" });
+  scrollViewerIntoView(viewer);
 }

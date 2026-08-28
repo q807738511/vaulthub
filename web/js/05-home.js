@@ -21,24 +21,37 @@ function homeGroupOfType(type) {
   return "audio";
 }
 
-/* ---------- 侧栏：每个媒体库一项，名称即刮削用的手动命名 ---------- */
+/* ---------- 侧栏：一个扁平的媒体库列表 ----------
+   v0.7.0：不再按「电子书刊 / 影视作品 / 音视作品」三个大类各起一节，
+   也不再重复出现大类本身的入口。侧栏只显示媒体库创建时填写的名称
+   （本地媒体库 + 外连服务），大类只在系统设置的媒体库配置里出现。 */
 function renderHomeLibraryNav() {
-  const hosts = { comic: "libNavComic", movie: "libNavMovie", audio: "libNavAudio" };
-  HOME_GROUPS.forEach(group => {
-    const host = document.getElementById(hosts[group]);
-    if (!host) return;
-    const libs = (typeof librariesForGroup === "function" ? librariesForGroup(group) : []) || [];
-    host.innerHTML = libs.map(lib => {
-      const icon = HOME_TYPE_ICON[lib.type] || HOME_GROUP_ICON[group];
-      const count = Number(homeIndexStatus[lib.id]?.total || 0);
-      return `<div class="nav-item" data-view="${esc(group)}" onclick="openHomeLibrary('${esc(group)}','${esc(lib.id)}')">`
-        + `<span class="ic">${icon}</span><span class="txt" title="${esc(lib.name)}">${esc(lib.name)}</span>`
-        + `<span class="cnt">${count ? formatHomeCount(count) : ""}</span></div>`;
-    }).join("");
+  const host = document.getElementById("libNavAll");
+  if (!host) return;
+  const rows = [];
+  (localMediaLibraries || []).forEach(lib => {
+    const group = homeGroupOfType(lib.type);
+    const count = Number(homeIndexStatus[lib.id]?.total || 0);
+    rows.push(`<div class="nav-item" data-view="${esc(group)}" data-lib-id="${esc(lib.id)}" `
+      + `onclick="openHomeLibrary('${esc(group)}',${jsAttrArg(lib.id)})" title="${esc(lib.name)}">`
+      + `<span class="ic">${HOME_TYPE_ICON[lib.type] || "📄"}</span>`
+      + `<span class="txt">${esc(lib.name)}</span>`
+      + `<span class="cnt">${count ? formatHomeCount(count) : ""}</span></div>`);
   });
+  if (typeof externalServices !== "undefined") {
+    externalServices.forEach(svc => {
+      rows.push(`<div class="nav-item" data-view="${esc(svc.group)}" data-lib-id="${esc(svc.id)}" `
+        + `onclick="openExternalService(${jsAttrArg(svc.id)})" title="${esc(svc.name)}">`
+        + `<span class="ic">🔗</span><span class="txt">${esc(svc.name)}</span>`
+        + `<span class="cnt">↗</span></div>`);
+    });
+  }
+  host.innerHTML = rows.length ? rows.join("")
+    : `<div class="nav-empty">${esc(t("libNavEmpty"))}</div>`;
 }
 function openHomeLibrary(group, libId) {
   localMediaSelection[group] = libId;
+  try { localStorage.setItem("dwu_media_mode_" + group, "local"); } catch (e) {}
   switchView(group);
   if (typeof setMediaMode === "function") setMediaMode(group, "local");
   else renderLocalMedia(group);
@@ -76,12 +89,22 @@ function applyHomeFilter() {
 }
 function renderHomeCount() {
   const el = document.getElementById("homeCount");
-  if (!el) return;
   const libs = localMediaLibraries || [];
   const items = libs.reduce((sum, lib) => sum + Number(homeIndexStatus[lib.id]?.total || 0), 0);
-  el.textContent = libs.length
+  const text = libs.length
     ? tf("homeCountFmt", { items: items.toLocaleString(curLang === "en" ? "en-US" : "zh-CN"), libs: libs.length })
     : t("homeCountEmpty");
+  if (el) el.textContent = text;
+  /* 顶栏右侧信息区：媒体库总量与正在构建的索引，替代原来的导航按钮。 */
+  const topLib = document.getElementById("topLibStat");
+  if (topLib) topLib.textContent = text;
+  const topScan = document.getElementById("topScanStat");
+  if (topScan) {
+    const scanning = Object.values(homeIndexStatus).filter(s => s && (s.running || s.state === "scanning"));
+    topScan.textContent = scanning.length ? "⏳ " + tf("buildScanned", { n: scanning.reduce((n, s) => n + Number(s.scanned || 0), 0) }) : "";
+  }
+  const setCount = document.getElementById("setLibCount");
+  if (setCount) setCount.textContent = tf("libCountBadge", { n: libs.length });
   HOME_GROUPS.forEach(group => {
     const cnt = document.getElementById("kindCount" + group.charAt(0).toUpperCase() + group.slice(1));
     if (cnt) cnt.textContent = tf("libCountFmt", { n: (librariesForGroup(group) || []).length });
@@ -254,7 +277,7 @@ function homePosterCard(group, item, square) {
     : isAudioAlbum ? `${mediaTypeName(lib.type)} · ${meta.artist || "未知歌手"}`
     : `${mediaTypeName(lib.type)} · ${formatHomeBytes(item.size)}`;
   const prog = Number(readingState(lib.id, path).progress || 0);
-  return `<div class="hp ${square ? "sq" : ""}" onclick="openLocalMedia('${esc(group)}','${esc(lib.id)}',${jsAttrArg(path)})" title="${esc(path)}">
+  return `<div class="hp ${square ? "sq" : ""}" onclick="openHomeMediaItem('${esc(group)}',${jsAttrArg(lib.id)},${jsAttrArg(path)})" title="${esc(path)}">
     <div class="img" style="${cover ? "" : "background:" + coverGradient(title)}">
       ${cover ? `<img src="${esc(cover)}" alt="" loading="lazy" onerror="this.remove()">` : `<div class="fake">${icon}</div>`}
       <div class="tag">${esc(ext)}</div>
@@ -265,6 +288,36 @@ function homePosterCard(group, item, square) {
     <div class="nm">${esc(title)}</div>
     <div class="st">${esc(sub)}</div>
   </div>`;
+}
+/* 首页「最近入库」以前直接调用 openLocalMedia()，但阅读器容器
+   #local-media-viewer-<group> 只有在对应媒体库视图渲染之后才存在，
+   所以在首页点击等于什么都没发生。现在先切到该库的视图、等容器就绪，
+   再打开阅读器/播放器，实现「点击即读取播放」。 */
+async function openHomeMediaItem(group, libId, path) {
+  const lib = findMediaLibrary(libId);
+  if (!lib) { toast("⚠️ " + t("homeOpenFail")); return; }
+  openHomeLibrary(group, libId);
+  const viewer = await waitForMediaViewer(group);
+  if (!viewer) { toast("⚠️ " + t("homeOpenFail")); return; }
+  if (group === "audio" && typeof playAudioFile === "function"
+      && MEDIA_FORMATS.audio.includes(fileExt(path))) {
+    /* 音乐直接进播放器，不需要打开阅读器外壳。 */
+    playAudioFile(libId, path);
+    return;
+  }
+  await openLocalMedia(group, libId, path);
+}
+function waitForMediaViewer(group, tries = 40) {
+  return new Promise(resolve => {
+    let left = tries;
+    const tick = () => {
+      const el = document.getElementById("local-media-viewer-" + group);
+      if (el) { resolve(el); return; }
+      if (--left <= 0) { resolve(null); return; }
+      setTimeout(tick, 50);
+    };
+    tick();
+  });
 }
 async function renderHomeRecent() {
   const show = HOME_FILTER_GROUPS[homeFilter] || HOME_GROUPS;
@@ -300,7 +353,11 @@ async function addHomeMediaLibrary() {
   const name = (document.getElementById("homeLibName")?.value || "").trim();
   if (!name || !path) { toast("⚠️ 请填写媒体路径与库名称"); return; }
   if (!path.startsWith("/")) { toast("⚠️ 路径必须是容器内已挂载的绝对路径"); return; }
+  /* v0.7.0：新增媒体库是唯一的添加入口（旧弹窗已删除），
+     所以写操作前的会话守卫必须在这里，而不是在已经移除的 saveMediaLibraries 里。 */
+  if (!await ensureSessionForWrite(t("writeAddLibrary"))) return;
   const body = { id: libraryId(name, type, path, 0), name, type, path };
+  try { const tok = document.getElementById("mediaAdminToken")?.value.trim() || ""; localStorage.setItem("dwu_media_admin_token", tok); } catch (e) {}
   try {
     const res = await fetch("/api/media/libraries", {
       method: "POST",
@@ -308,7 +365,7 @@ async function addHomeMediaLibrary() {
       credentials: "same-origin",
       body: JSON.stringify(body)
     });
-    if (!await handleProtectedResponse(res)) { toast("⚠️ 会话已过期，请重新登录后再保存"); return; }
+    if (!await handleProtectedResponse(res)) { toast("⚠️ " + tf("sessionWriteBlocked", { action: t("writeAddLibrary") })); return; }
     if (!res.ok) {
       let detail = "";
       try { detail = (await res.json()).error || ""; } catch (e) {}
@@ -414,10 +471,11 @@ function initHome() {
   refreshHomeData();
   /* 播放状态每 5s 跟随监控刷新；索引状态每 20s 拉一次 */
   setInterval(renderNowPlaying, 5000);
+  /* 索引状态 5 秒一次：顶栏「正在构建」提示与侧栏计数需要及时反映扫描进度。 */
   setInterval(async () => {
     await loadHomeIndexStatus();
     renderHomeCount();
     renderHomeLibraryNav();
     renderHomeLibTable();
-  }, 20000);
+  }, 5000);
 }

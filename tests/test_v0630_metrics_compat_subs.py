@@ -65,12 +65,17 @@ assert "caddyApiHeaders" not in state, "obsolete caddyApiHeaders helper must be 
 # --- Frontend: embedded subtitle option population ---
 assert "subtitle_tracks" in media_js, "player must consume embedded subtitle tracks"
 
-# --- About/version bumped to 0.6.30 ---
-# The About/sidebar version must be at least 0.6.30 (later releases bump it).
+# --- About/sidebar version must be at least 0.6.30 (later releases bump it) ---
+# Read the version out of the About row and the sidebar footer specifically, so
+# unrelated v0.6.x mentions in code comments cannot satisfy this assertion.
 import re as _re
-_vers = _re.findall(r"v0\.6\.(\d+)", html)
-assert _vers, "About/sidebar must carry a v0.6.x version string"
-assert max(int(v) for v in _vers) >= 30, f"version must be >= 0.6.30, found {_vers}"
+index_html = (ROOT / "index.html").read_text(encoding="utf-8")
+_shown = _re.findall(r'class="ver">v(\d+)\.(\d+)\.(\d+)', index_html)
+_shown += _re.findall(r'data-i18n="aboutVer">[^<]*</span><b>v(\d+)\.(\d+)\.(\d+)', index_html)
+assert len(_shown) >= 2, f"both the sidebar footer and About row must show a version, got {_shown}"
+_tuples = [tuple(int(x) for x in v) for v in _shown]
+assert len(set(_tuples)) == 1, f"sidebar and About versions must agree, got {_tuples}"
+assert _tuples[0] >= (0, 6, 30), f"version must be >= 0.6.30, found {_tuples[0]}"
 assert "v0.6.22" not in html, "stale 0.6.22 version string remains"
 
 print("PASS: v0.6.30 metrics, compat copy, embedded subtitles, and UI fixes present")

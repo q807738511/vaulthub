@@ -20,7 +20,7 @@
   </div>
 </div>
 
-<!-- ===== 顶栏：logo + 横向主导航 + 工具（V4 Plex 双层导航） ===== -->
+<!-- ===== 顶栏：左侧 logo + 账户头像 / 关于；右侧全部留给媒体库与首页信息 ===== -->
 <header class="topbar">
   <div class="logo">
     <div class="logo-icon" aria-label="中华鼠图标">
@@ -41,19 +41,33 @@
       <small data-i18n="appName">蜀鼠之家</small>
     </div>
   </div>
-  <nav class="topnav" id="topNav">
-    <div class="topnav-item active" data-view="home"><span>🏠</span><span data-i18n="navHome">首页</span></div>
-    <div class="topnav-item" data-view="comic"><span>📂</span><span data-i18n="navLibrary">资料库</span></div>
-    <div class="topnav-item" data-view="pt"><span>🌊</span><span data-i18n="navPt">PT 管理</span></div>
-  </nav>
-  <div class="actions">
-    <button class="ibtn" onclick="openModal('settingsModal')" title="系统设置（含 Caddy 配置）" aria-label="系统设置">⚙</button>
-    <button class="ibtn" onclick="openModal('aboutModal')" title="关于" aria-label="关于">ℹ</button>
-    <div class="tb-avatar" title="已登录">Q</div>
+
+  <!-- 账户头像：系统设置、关于、头像设置、退出登录全部收在这里，位于左侧 -->
+  <div class="account" id="accountWrap">
+    <button class="tb-avatar" id="tbAvatar" type="button" aria-haspopup="menu" aria-expanded="false"
+            onclick="toggleAccountMenu()" title="账户与设置" data-i18n-title="accountMenu">Q</button>
+    <div class="account-menu" id="accountMenu" role="menu">
+      <div class="am-head">
+        <span class="am-name" id="accountName">VaultHub</span>
+        <span class="am-state" id="accountState" data-i18n="sessionChecking">正在检查登录状态…</span>
+      </div>
+      <button class="am-item" type="button" role="menuitem" onclick="openAvatarSettings()">🖼 <span data-i18n="avatarSettings">头像设置</span></button>
+      <button class="am-item" type="button" role="menuitem" onclick="openAccountMenuItem('settingsModal')">⚙ <span data-i18n="settingsTitle">系统设置</span></button>
+      <button class="am-item" type="button" role="menuitem" onclick="openAccountMenuItem('aboutModal')">ℹ <span data-i18n="aboutTitle">关于</span></button>
+      <div class="am-sep"></div>
+      <button class="am-item danger" type="button" role="menuitem" onclick="closeAccountMenu(); logoutVaultHub()">🚪 <span data-i18n="setLogout">退出登录</span></button>
+    </div>
+  </div>
+
+  <!-- 右侧信息区：只展示媒体库与首页信息，不再有任何导航按钮 -->
+  <div class="tb-info" id="topInfo">
+    <span class="tb-stat" id="topLibStat" data-i18n="homeCountEmpty">尚未添加任何媒体库</span>
+    <span class="tb-stat" id="topScanStat"></span>
+    <span class="tb-stat" id="topPlayStat"></span>
   </div>
 </header>
 
-<!-- ===== 侧边栏：顶栏下方，可拖拽自适应宽度 ===== -->
+<!-- ===== 侧边栏：只展示媒体库创建时设置的名称，不再重复展示资源大类 ===== -->
 <aside class="sidebar" id="sidebar">
   <div class="sidebar-resizer" id="sidebarResizer"></div>
   <nav class="nav" id="mainNav">
@@ -61,26 +75,17 @@
     <div class="nav-item active" data-view="home" data-module="home"><span class="ic">🏠</span><span class="txt" data-i18n="navHome">首页</span></div>
     <div class="nav-item" data-view="pt" data-module="pt"><span class="ic">🌊</span><span class="txt" data-i18n="navPt">PT 管理</span></div>
 
-    <div class="nav-group" data-nav-group="book"><span data-i18n="navGroupBook">电子书刊</span><span class="g-more" onclick="showMediaLibraryConfig('comic')" data-i18n="navMore">更多 ›</span></div>
-    <div class="nav-item" data-view="comic" data-module="comic"><span class="ic">📖</span><span class="txt" data-i18n="navComic">电子书刊</span><span class="nav-tools"><button class="icon-btn" title="媒体库路径" onclick="event.stopPropagation(); showMediaLibraryConfig('comic')">⚙</button><button class="icon-btn" title="新窗口打开" onclick="event.stopPropagation(); openActiveMediaExternal('comic')">↗</button></span></div>
-    <div id="libNavComic"></div>
-
-    <div class="nav-group" data-nav-group="video"><span data-i18n="navGroupVideo">影视作品</span><span class="g-more" onclick="showMediaLibraryConfig('movie')" data-i18n="navMore">更多 ›</span></div>
-    <div class="nav-item" data-view="movie" data-module="movie"><span class="ic">🎬</span><span class="txt" data-i18n="navMovie">影视作品</span><span class="nav-tools"><button class="icon-btn" title="媒体库路径" onclick="event.stopPropagation(); showMediaLibraryConfig('movie')">⚙</button><button class="icon-btn" title="新窗口打开" onclick="event.stopPropagation(); openActiveMediaExternal('movie')">↗</button></span></div>
-    <div id="libNavMovie"></div>
-
-    <div class="nav-group" data-nav-group="audio"><span data-i18n="navGroupAudio">音视作品</span><span class="g-more" onclick="showMediaLibraryConfig('audio')" data-i18n="navMore">更多 ›</span></div>
-    <div class="nav-item" data-view="audio" data-module="audio"><span class="ic">🎵</span><span class="txt" data-i18n="navAudio">音视作品</span><span class="nav-tools"><button class="icon-btn" title="媒体库路径" onclick="event.stopPropagation(); showMediaLibraryConfig('audio')">⚙</button><button class="icon-btn" title="新窗口打开" onclick="event.stopPropagation(); openActiveMediaExternal('audio')">↗</button></span></div>
-    <div id="libNavAudio"></div>
+    <div class="nav-group" data-nav-group="library">
+      <span data-i18n="navGroupLibrary">媒体库</span>
+      <span class="g-more" onclick="showMediaLibraryConfig()" data-i18n="navManage">管理 ›</span>
+    </div>
+    <div id="libNavAll"></div>
 
     <div class="nav-group" data-nav-group="custom" data-i18n="navGroupCustom">自定义</div>
     <div id="customNav"></div>
   </nav>
-  <div class="add-board-btn" onclick="openModuleModal()">
-    <span>＋</span><span data-i18n="addBoardNav">添加模块</span>
-  </div>
   <div class="sidebar-foot">
-    <span class="ver">v0.6.31 · Plex UI, Session & Fast Cache</span>
+    <span class="ver">v0.7.0 · Library-first Navigation</span>
     <button class="rail-btn" onclick="toggleBars()" title="折叠 / 展开侧栏" aria-label="折叠或展开侧栏">⇤</button>
   </div>
 </aside>
@@ -198,55 +203,6 @@
         <span class="more" onclick="switchView('audio')" data-i18n="navMore">更多 ›</span>
       </div>
       <div class="home-poster-grid sq" id="recentAudio"></div>
-
-      <!-- ---- 媒体库路径管理 ---- -->
-      <div class="section-title">
-        <span data-i18n="secLibPaths">媒体库路径管理</span>
-        <span class="badge" data-i18n="secLibPathsSub">添加后以手动命名作为媒体库刮削</span>
-      </div>
-      <div class="lib-kinds" id="libKinds">
-        <div class="lib-kind on" data-lib-group="comic">
-          <div class="kh"><span class="e">📖</span><span data-i18n="navGroupBook">电子书刊</span><span class="n" id="kindCountComic">0 个库</span></div>
-          <div class="kd" data-i18n="kindBookDesc">子类型：电子书 / 漫画 · 刮削源 Google Books、Bangumi</div>
-        </div>
-        <div class="lib-kind" data-lib-group="movie">
-          <div class="kh"><span class="e">🎬</span><span data-i18n="navGroupVideo">影视作品</span><span class="n" id="kindCountMovie">0 个库</span></div>
-          <div class="kd" data-i18n="kindVideoDesc">子类型：电视剧集 / 电影 · 刮削源 TMDB、豆瓣</div>
-        </div>
-        <div class="lib-kind" data-lib-group="audio">
-          <div class="kh"><span class="e">🎵</span><span data-i18n="navGroupAudio">音视作品</span><span class="n" id="kindCountAudio">0 个库</span></div>
-          <div class="kd" data-i18n="kindAudioDesc">子类型：音乐 / 音乐 MV · 刮削源 MusicBrainz、网易云</div>
-        </div>
-      </div>
-      <div class="card">
-        <div class="lib-form">
-          <div class="cfg-field"><label data-i18n="libKind">媒体大类</label>
-            <select id="homeLibGroup" onchange="syncHomeLibTypes()">
-              <option value="comic" data-i18n="navGroupBook">电子书刊</option>
-              <option value="movie" data-i18n="navGroupVideo">影视作品</option>
-              <option value="audio" data-i18n="navGroupAudio">音视作品</option>
-            </select></div>
-          <div class="cfg-field"><label data-i18n="libSubType">子类型</label><select id="homeLibType"></select></div>
-          <div class="cfg-field"><label data-i18n="libPath">媒体路径（容器内绝对路径）</label><input id="homeLibPath" type="text" placeholder="/vol2/1000/Books/技术书籍"></div>
-          <div class="cfg-field"><label data-i18n="libName">库名称（手动命名，用于刮削）</label><input id="homeLibName" type="text" placeholder="例：技术藏书"></div>
-        </div>
-        <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
-          <button class="btn btn-primary" type="button" onclick="addHomeMediaLibrary()">＋ <span data-i18n="libAdd">添加媒体库</span></button>
-          <button class="btn" type="button" onclick="refreshMediaLibraries(true)">↻ <span data-i18n="libRefresh">刷新</span></button>
-          <button class="btn" type="button" onclick="rebuildAllLibraries()">🔄 <span data-i18n="libRescrape">全部重新刮削</span></button>
-        </div>
-        <table>
-          <thead><tr>
-            <th data-i18n="colLibName">库名称</th>
-            <th data-i18n="colLibKind">大类 / 子类型</th>
-            <th data-i18n="colLibPath">媒体路径</th>
-            <th data-i18n="colLibItems">项目</th>
-            <th data-i18n="colLibState">刮削状态</th>
-            <th style="text-align:right" data-i18n="colLibActs">操作</th>
-          </tr></thead>
-          <tbody id="homeLibBody"></tbody>
-        </table>
-      </div>
     </section>
 
 
@@ -348,212 +304,18 @@
       </div>
     </section>
 
-    <!-- ============ 超漫画 ============ -->
+    <!-- ============ 媒体库视图：电子书刊 / 影视作品 / 音视作品 ============ -->
+    <!-- 服务器地址配置已迁移到「系统设置 → 媒体库 → 媒体库增加 → 外连服务」，
+         这里只保留内容宿主，由 renderMediaHome(group) 注入本地库或外连 iframe。 -->
     <section class="view" id="view-comic">
-      <div class="section-title"><span data-i18n="secComic">超漫画</span></div>
-      <div class="cfg-wrap">
-        <div class="card">
-          <div class="card-h"><span class="t" data-i18n="superComicTitle">Komga / Kavita / Calibre-Web · 统一书库</span><span class="dot"></span></div>
-          <div class="tabs">
-            <div class="tab active" data-tab="comic-1">Komga</div>
-            <div class="tab" data-tab="comic-2">Kavita</div>
-            <div class="tab" data-tab="comic-3">Calibre-Web</div>
-          </div>
-          <div class="tab-panel active" id="comic-1">
-            <div class="cfg-field">
-              <label data-i18n="lblLan">内网 IP 地址</label>
-              <input id="comicLan" type="text" value="http://192.168.112.3:25600" data-lan-input="comic">
-            </div>
-            <div class="cfg-field">
-              <label data-i18n="lblProxy">反代 / 代理域名</label>
-              <input id="comicProxy" type="text" value="https://kom.enged.top" data-proxy-input="comic">
-            </div>
-            <div class="switch-row">
-              <div class="lbl" data-i18n="lblAutoSwitch">访问地址自动切换<small data-i18n="lblAutoSwitchSub">内网自动走内网 IP，外网自动走反代域名</small></div>
-              <div class="switch on" data-switch="comic"></div>
-            </div>
-            <div class="addr-box">
-              <div class="label" data-i18n="curAddr">当前访问地址</div>
-              <div class="val" id="comicAddr">https://kom.enged.top</div>
-            </div>
-            <button class="btn btn-primary" onclick="toast(t('testOk'))">🔌 <span data-i18n="btnTest">测试连接</span></button>
-            <button class="btn" style="margin-left:8px" onclick="toast(t('saved'))">💾 <span data-i18n="btnSave">保存</span></button>
-            <div class="hint" data-i18n="comicHint">提示：Komga 适合漫画与合集管理。</div>
-          </div>
-          <div class="tab-panel" id="comic-2">
-            <div class="cfg-field">
-              <label data-i18n="lblLan">内网 IP 地址</label>
-              <input type="text" value="http://192.168.112.3:8085" data-lan-input="comic">
-            </div>
-            <div class="cfg-field">
-              <label data-i18n="lblProxy">反代 / 代理域名</label>
-              <input type="text" value="https://kavita.enged.top" data-proxy-input="comic">
-            </div>
-            <div class="switch-row">
-              <div class="lbl" data-i18n="lblAutoSwitch">访问地址自动切换<small data-i18n="lblAutoSwitchSub">内网自动走内网 IP，外网自动走反代域名</small></div>
-              <div class="switch on" data-switch="comic"></div>
-            </div>
-            <div class="addr-box">
-              <div class="label" data-i18n="curAddr">当前访问地址</div>
-              <div class="val" id="comicAddr2">https://kavita.enged.top</div>
-            </div>
-            <button class="btn btn-primary" onclick="toast(t('testOk'))">🔌 <span data-i18n="btnTest">测试连接</span></button>
-            <div class="hint" data-i18n="kavitaHint">提示：Kavita 内建阅读器，支持书架管理。</div>
-          </div>
-          <div class="tab-panel" id="comic-3">
-            <div class="cfg-field">
-              <label data-i18n="lblLan">内网 IP 地址</label>
-              <input type="text" value="http://192.168.112.3:8083" data-lan-input="comic">
-            </div>
-            <div class="cfg-field">
-              <label data-i18n="lblProxy">反代 / 代理域名</label>
-              <input type="text" value="https://book.enged.top" data-proxy-input="comic">
-            </div>
-            <div class="switch-row">
-              <div class="lbl" data-i18n="lblAutoSwitch">访问地址自动切换<small data-i18n="lblAutoSwitchSub">内网自动走内网 IP，外网自动走反代域名</small></div>
-              <div class="switch on" data-switch="comic"></div>
-            </div>
-            <div class="addr-box">
-              <div class="label" data-i18n="curAddr">当前访问地址</div>
-              <div class="val" id="ebookAddr">https://book.enged.top</div>
-            </div>
-            <button class="btn btn-primary" onclick="toast(t('testOk'))">🔌 <span data-i18n="btnTest">测试连接</span></button>
-            <button class="btn" style="margin-left:8px" onclick="toast(t('saved'))">💾 <span data-i18n="btnSave">保存</span></button>
-            <div class="hint" data-i18n="ebookHint">提示：可搭配 Calibre-Web Automated 实现 PT 下载后自动刮削入库。</div>
-          </div>
-        </div>
-      </div>
       <div class="media-wide-host" id="media-wide-comic"></div>
     </section>
 
-    <!-- ============ 影视 ============ -->
     <section class="view" id="view-movie">
-      <div class="section-title"><span data-i18n="secMovie">影视服务器</span></div>
-      <div class="cfg-wrap">
-        <div class="card">
-          <div class="card-h"><span class="t" data-i18n="movieSupport">支持 Plex / Emby / Jellyfin</span><span class="dot"></span></div>
-          <div class="tabs">
-            <div class="tab" data-tab="movie-plex">Plex</div>
-            <div class="tab active" data-tab="movie-emby">Emby</div>
-            <div class="tab" data-tab="movie-jellyfin">Jellyfin</div>
-          </div>
-          <div class="tab-panel" id="movie-plex">
-            <div class="cfg-field">
-              <label data-i18n="lblLan">内网 IP 地址</label>
-              <input type="text" value="http://192.168.112.3:32400" data-lan-input="movie">
-            </div>
-            <div class="cfg-field">
-              <label data-i18n="lblProxy">反代 / 代理域名</label>
-              <input type="text" value="https://plex.enged.top" data-proxy-input="movie">
-            </div>
-            <div class="switch-row">
-              <div class="lbl" data-i18n="lblAutoSwitch">访问地址自动切换<small data-i18n="lblAutoSwitchSub">内网自动走内网 IP，外网自动走反代域名</small></div>
-              <div class="switch on" data-switch="movie"></div>
-            </div>
-            <div class="addr-box">
-              <div class="label" data-i18n="curAddr">当前访问地址</div>
-              <div class="val" id="movieAddrPlex">https://plex.enged.top</div>
-            </div>
-            <button class="btn btn-primary" onclick="toast(t('testOk'))">🔌 <span data-i18n="btnTest">测试连接</span></button>
-            <div class="hint" data-i18n="plexHint">提示：Plex 需关闭「要求安全连接」或配置自定义域名访问。</div>
-          </div>
-          <div class="tab-panel active" id="movie-emby">
-            <div class="cfg-field">
-              <label data-i18n="lblLan">内网 IP 地址</label>
-              <input type="text" value="http://192.168.112.3:8096" data-lan-input="movie">
-            </div>
-            <div class="cfg-field">
-              <label data-i18n="lblProxy">反代 / 代理域名</label>
-              <input type="text" value="https://emby.enged.top" data-proxy-input="movie">
-            </div>
-            <div class="switch-row">
-              <div class="lbl" data-i18n="lblAutoSwitch">访问地址自动切换<small data-i18n="lblAutoSwitchSub">内网自动走内网 IP，外网自动走反代域名</small></div>
-              <div class="switch on" data-switch="movie"></div>
-            </div>
-            <div class="addr-box">
-              <div class="label" data-i18n="curAddr">当前访问地址</div>
-              <div class="val" id="movieAddrEmby">https://emby.enged.top</div>
-            </div>
-            <button class="btn btn-primary" onclick="toast(t('testOk'))">🔌 <span data-i18n="btnTest">测试连接</span></button>
-            <div class="hint" data-i18n="embyHint">提示：Emby 回调 MP 时填写 https://mp.enged.top/api/v1/webhook?token=…</div>
-          </div>
-          <div class="tab-panel" id="movie-jellyfin">
-            <div class="cfg-field">
-              <label data-i18n="lblLan">内网 IP 地址</label>
-              <input type="text" value="http://192.168.112.3:8096" data-lan-input="movie">
-            </div>
-            <div class="cfg-field">
-              <label data-i18n="lblProxy">反代 / 代理域名</label>
-              <input type="text" value="https://jellyfin.enged.top" data-proxy-input="movie">
-            </div>
-            <div class="switch-row">
-              <div class="lbl" data-i18n="lblAutoSwitch">访问地址自动切换<small data-i18n="lblAutoSwitchSub">内网自动走内网 IP，外网自动走反代域名</small></div>
-              <div class="switch on" data-switch="movie"></div>
-            </div>
-            <div class="addr-box">
-              <div class="label" data-i18n="curAddr">当前访问地址</div>
-              <div class="val" id="movieAddrJellyfin">https://jellyfin.enged.top</div>
-            </div>
-            <button class="btn btn-primary" onclick="toast(t('testOk'))">🔌 <span data-i18n="btnTest">测试连接</span></button>
-            <div class="hint" data-i18n="jellyfinHint">提示：Jellyfin 开源免费，无数量限制。</div>
-          </div>
-        </div>
-      </div>
       <div class="media-wide-host" id="media-wide-movie"></div>
     </section>
 
-    <!-- ============ 音频 ============ -->
     <section class="view" id="view-audio">
-      <div class="section-title"><span data-i18n="secAudio">音频服务器</span></div>
-      <div class="cfg-wrap">
-        <div class="card">
-          <div class="card-h"><span class="t" data-i18n="audioSupport">支持 道理鱼 / Navidrome</span><span class="dot"></span></div>
-          <div class="tabs">
-            <div class="tab active" data-tab="audio-navidrome">Navidrome</div>
-            <div class="tab" data-tab="audio-dly">道理鱼</div>
-          </div>
-          <div class="tab-panel active" id="audio-navidrome">
-            <div class="cfg-field">
-              <label data-i18n="lblLan">内网 IP 地址</label>
-              <input type="text" value="http://192.168.112.3:4533" data-lan-input="audio">
-            </div>
-            <div class="cfg-field">
-              <label data-i18n="lblProxy">反代 / 代理域名</label>
-              <input type="text" value="https://yy.enged.top/app/" data-proxy-input="audio">
-            </div>
-            <div class="switch-row">
-              <div class="lbl" data-i18n="lblAutoSwitch">访问地址自动切换<small data-i18n="lblAutoSwitchSub">内网自动走内网 IP，外网自动走反代域名</small></div>
-              <div class="switch on" data-switch="audio"></div>
-            </div>
-            <div class="addr-box">
-              <div class="label" data-i18n="curAddr">当前访问地址</div>
-              <div class="val" id="audioAddrNd">https://yy.enged.top/app/</div>
-            </div>
-            <button class="btn btn-primary" onclick="toast(t('testOk'))">🔌 <span data-i18n="btnTest">测试连接</span></button>
-            <div class="hint" data-i18n="ndHint">提示：Navidrome 走 Cloudflare Tunnel 若播放卡顿，关闭 HTTP/3 并强制 cloudflared http2。</div>
-          </div>
-          <div class="tab-panel" id="audio-dly">
-            <div class="cfg-field">
-              <label data-i18n="lblLan">内网 IP 地址</label>
-              <input type="text" value="http://192.168.112.3:4000" data-lan-input="audio">
-            </div>
-            <div class="cfg-field">
-              <label data-i18n="lblProxy">反代 / 代理域名</label>
-              <input type="text" value="https://music.enged.top" data-proxy-input="audio">
-            </div>
-            <div class="switch-row">
-              <div class="lbl" data-i18n="lblAutoSwitch">访问地址自动切换<small data-i18n="lblAutoSwitchSub">内网自动走内网 IP，外网自动走反代域名</small></div>
-              <div class="switch on" data-switch="audio"></div>
-            </div>
-            <div class="addr-box">
-              <div class="label" data-i18n="curAddr">当前访问地址</div>
-              <div class="val" id="audioAddrDly">https://music.enged.top</div>
-            </div>
-            <button class="btn btn-primary" onclick="toast(t('testOk'))">🔌 <span data-i18n="btnTest">测试连接</span></button>
-            <div class="hint" data-i18n="dlyHint">提示：道理鱼为本地音乐服务，反代域名需在 DNS 解析至 Tunnel。</div>
-          </div>
-        </div>
-      </div>
       <div class="media-wide-host" id="media-wide-audio"></div>
     </section>
 
@@ -563,39 +325,139 @@
   </div>
 </div>
 
-<!-- ===== 本地媒体库设置弹窗 ===== -->
-<div class="modal-mask" id="mediaLibraryModal">
-  <div class="modal wide">
-    <h3><span>本地媒体库设置</span><button class="close" onclick="closeModal('mediaLibraryModal')">✕</button></h3>
-    <div id="mediaLibraryConfigList"></div>
-    <div class="modal-sec">添加媒体库</div>
-    <div class="form-2col">
-      <div class="cfg-field"><label>库名称</label><input id="mediaLibName" type="text" placeholder="例如：家庭音乐"></div>
-      <div class="cfg-field"><label>媒体类型</label><select id="mediaLibType"><option value="comic">漫画</option><option value="book">电子书</option><option value="movie">电影</option><option value="series">电视剧集</option><option value="audio">音乐</option><option value="musicvideo">音乐视频（歌曲 MV）</option></select></div>
+<!-- ===== 头像设置弹窗 ===== -->
+<div class="modal-mask" id="avatarModal">
+  <div class="modal">
+    <h3><span data-i18n="avatarSettings">头像设置</span><button class="close" onclick="closeModal('avatarModal')">✕</button></h3>
+    <div class="lead" data-i18n="avatarLead">头像仅保存在本浏览器 localStorage，不上传服务器。可用文字缩写、emoji 或上传图片。</div>
+    <div class="avatar-preview">
+      <div class="avatar-shot" id="avatarPreview">Q</div>
+      <div class="hint" data-i18n="avatarPreview">预览效果</div>
     </div>
-    <div class="cfg-field"><label>容器路径</label><div id="mediaLibPaths"></div><button class="btn" type="button" onclick="addMediaPath()">＋ 添加路径</button></div>
-    <div class="cfg-field"><label>管理令牌（如后端启用）</label><input id="mediaAdminToken" type="password" placeholder="X-VaultHub-Token" autocomplete="off"></div>
-    <button class="btn btn-primary" type="button" onclick="saveMediaLibraries()">💾 保存</button>
-    <button class="btn" type="button" onclick="refreshMediaLibraries(true)">↻ 刷新</button>
-    <div class="hint">每个路径会保存为一个本地库，必须是容器内已挂载且存在的绝对目录。</div>
+    <div class="cfg-field">
+      <label data-i18n="avatarText">显示文字（1-2 个字符或 emoji）</label>
+      <input id="avatarText" type="text" maxlength="4" placeholder="Q" oninput="previewAvatarSettings()">
+    </div>
+    <div class="cfg-field">
+      <label data-i18n="avatarColor">背景色</label>
+      <input id="avatarColor" type="color" value="#3fa7a7" oninput="previewAvatarSettings()">
+    </div>
+    <div class="cfg-field">
+      <label data-i18n="avatarUpload">上传头像图片（可选）</label>
+      <input id="avatarFile" type="file" accept="image/*" onchange="uploadAvatarImage(this)">
+    </div>
+    <div class="media-actions">
+      <button class="btn btn-primary" type="button" onclick="saveAvatarSettings()">💾 <span data-i18n="btnSave">保存</span></button>
+      <button class="btn btn-danger" type="button" onclick="resetAvatarSettings()">🗑 <span data-i18n="avatarReset">恢复默认</span></button>
+    </div>
   </div>
 </div>
 
-<!-- ===== 系统设置弹窗（Caddy 配置已内置为标签页） ===== -->
+<!-- ===== 系统设置弹窗（媒体库管理与 Caddy 入口都在标签页里） ===== -->
 <div class="modal-mask" id="settingsModal">
   <div class="modal wide">
     <h3><span data-i18n="settingsTitle">系统设置</span><button class="close" onclick="closeModal('settingsModal')">✕</button></h3>
-    <div class="lead" data-i18n="settingsLead">反向代理、外观主题、刮削与硬件设置集中在此，Caddy 配置已内置为其中一个标签页。</div>
+    <div class="lead" data-i18n="settingsLead">媒体库、反向代理、外观主题、刮削与硬件设置集中在此，Caddy 配置单独占用一整页。</div>
 
     <div class="settabs">
-      <div class="settab on" data-settab="caddy" onclick="switchSetTab('caddy')">🔀 <span data-i18n="caddySettings">Caddy 配置</span></div>
+      <div class="settab on" data-settab="library" onclick="switchSetTab('library')">🗂 <span data-i18n="setLibrary">媒体库</span></div>
+      <div class="settab" data-settab="caddy" onclick="switchSetTab('caddy')">🔀 <span data-i18n="caddySettings">Caddy 配置</span></div>
       <div class="settab" data-settab="look" onclick="switchSetTab('look')">🎨 <span data-i18n="setLook">外观主题</span></div>
       <div class="settab" data-settab="scrape" onclick="switchSetTab('scrape')">🔍 <span data-i18n="setScrape">刮削与硬件</span></div>
       <div class="settab" data-settab="account" onclick="switchSetTab('account')">👤 <span data-i18n="setAccount">账户与登录</span></div>
     </div>
 
+    <!-- 媒体库面板：大类只在这里出现；本地媒体库与外连服务都归到「媒体库增加」 -->
+    <div class="setpanel on" id="setpanel-library">
+      <div class="setblock">
+        <h4>🗂 <span data-i18n="setLibExisting">已添加的媒体库</span></h4>
+        <p data-i18n="setLibExistingHint">侧边栏只展示这里创建时填写的库名称。每个库都可以单独重新刮削、打开或删除。</p>
+        <div class="media-actions" style="margin-bottom:10px;">
+          <button class="btn" type="button" onclick="refreshMediaLibraries(true)">↻ <span data-i18n="libRefresh">刷新</span></button>
+          <button class="btn" type="button" onclick="rebuildAllLibraries()">🔄 <span data-i18n="libRescrape">全部重新刮削</span></button>
+          <span class="badge" id="setLibCount">--</span>
+        </div>
+        <table>
+          <thead><tr>
+            <th data-i18n="colLibName">库名称</th>
+            <th data-i18n="colLibKind">大类 / 子类型</th>
+            <th data-i18n="colLibPath">媒体路径</th>
+            <th data-i18n="colLibItems">项目</th>
+            <th data-i18n="colLibState">刮削状态</th>
+            <th style="text-align:right" data-i18n="colLibActs">操作</th>
+          </tr></thead>
+          <tbody id="homeLibBody"></tbody>
+        </table>
+      </div>
+
+      <div class="setblock">
+        <h4>＋ <span data-i18n="setLibAdd">媒体库增加</span></h4>
+        <p data-i18n="setLibAddHint">先选来源：本地媒体库使用容器内已挂载的绝对路径；外连服务接入 Emby / Navidrome / Komga 等现成服务器。</p>
+        <div class="media-modes" role="tablist" aria-label="媒体库来源" style="margin-bottom:12px;">
+          <button class="media-mode active" type="button" data-libsrc="local" onclick="setLibrarySource('local')" data-i18n="libSrcLocal">本地媒体库</button>
+          <button class="media-mode" type="button" data-libsrc="external" onclick="setLibrarySource('external')" data-i18n="libSrcExternal">外连服务</button>
+        </div>
+
+        <!-- 来源一：本地媒体库；大类卡片只在这里展示 -->
+        <div id="libSrc-local">
+          <div class="lib-kinds" id="libKinds">
+            <div class="lib-kind on" data-lib-group="comic">
+              <div class="kh"><span class="e">📖</span><span data-i18n="navGroupBook">电子书刊</span><span class="n" id="kindCountComic">0 个库</span></div>
+              <div class="kd" data-i18n="kindBookDesc">子类型：电子书 / 漫画 · 刮削源 Google Books、Bangumi</div>
+            </div>
+            <div class="lib-kind" data-lib-group="movie">
+              <div class="kh"><span class="e">🎬</span><span data-i18n="navGroupVideo">影视作品</span><span class="n" id="kindCountMovie">0 个库</span></div>
+              <div class="kd" data-i18n="kindVideoDesc">子类型：电视剧集 / 电影 · 刮削源 TMDB、豆瓣</div>
+            </div>
+            <div class="lib-kind" data-lib-group="audio">
+              <div class="kh"><span class="e">🎵</span><span data-i18n="navGroupAudio">音视作品</span><span class="n" id="kindCountAudio">0 个库</span></div>
+              <div class="kd" data-i18n="kindAudioDesc">子类型：音乐 / 音乐 MV · 刮削源 MusicBrainz、网易云</div>
+            </div>
+          </div>
+          <div class="lib-form">
+            <div class="cfg-field"><label data-i18n="libKind">媒体大类</label>
+              <select id="homeLibGroup" onchange="syncHomeLibTypes()">
+                <option value="comic" data-i18n="navGroupBook">电子书刊</option>
+                <option value="movie" data-i18n="navGroupVideo">影视作品</option>
+                <option value="audio" data-i18n="navGroupAudio">音视作品</option>
+              </select></div>
+            <div class="cfg-field"><label data-i18n="libSubType">子类型</label><select id="homeLibType"></select></div>
+            <div class="cfg-field"><label data-i18n="libPath">媒体路径（容器内绝对路径）</label><input id="homeLibPath" type="text" placeholder="/vol2/1000/Books/技术书籍"></div>
+            <div class="cfg-field"><label data-i18n="libName">库名称（手动命名，用于刮削）</label><input id="homeLibName" type="text" placeholder="例：技术藏书"></div>
+          </div>
+          <div class="cfg-field"><label data-i18n="libAdminToken">管理令牌（如后端启用）</label><input id="mediaAdminToken" type="password" placeholder="X-VaultHub-Token" autocomplete="off"></div>
+          <div class="media-actions">
+            <button class="btn btn-primary" type="button" onclick="addHomeMediaLibrary()">＋ <span data-i18n="libAdd">添加媒体库</span></button>
+          </div>
+          <div class="hint" data-i18n="libPathHint">路径必须是容器内已挂载且存在的绝对目录；库名称会直接作为侧边栏与刮削标识。</div>
+        </div>
+
+        <!-- 来源二：外连服务，原「资料库」页里的服务器配置迁到这里 -->
+        <div id="libSrc-external" style="display:none;">
+          <div class="lib-form">
+            <div class="cfg-field"><label data-i18n="libKind">媒体大类</label>
+              <select id="extLibGroup">
+                <option value="comic" data-i18n="navGroupBook">电子书刊</option>
+                <option value="movie" data-i18n="navGroupVideo">影视作品</option>
+                <option value="audio" data-i18n="navGroupAudio">音视作品</option>
+              </select></div>
+            <div class="cfg-field"><label data-i18n="extLibName">服务名称</label><input id="extLibName" type="text" placeholder="例：家庭 Emby"></div>
+            <div class="cfg-field"><label data-i18n="extLibLan">内网地址</label><input id="extLibLan" type="text" placeholder="http://192.168.1.10:8096"></div>
+            <div class="cfg-field"><label data-i18n="extLibProxy">反代 / 外网域名（可选）</label><input id="extLibProxy" type="text" placeholder="https://emby.example.com"></div>
+          </div>
+          <div class="media-actions">
+            <button class="btn btn-primary" type="button" onclick="addExternalMediaService()">＋ <span data-i18n="extLibAdd">添加外连服务</span></button>
+            <button class="btn" type="button" onclick="renderExternalServiceList()">↻ <span data-i18n="libRefresh">刷新</span></button>
+          </div>
+          <div class="hint" data-i18n="extLibHint">内网访问自动走内网地址，外网访问自动走反代域名；添加后会在侧边栏媒体库中出现。</div>
+          <div class="modal-sec" data-i18n="extLibList">已添加的外连服务</div>
+          <div id="extServiceList"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- Caddy 配置面板：仅作入口，真正的编辑在独立整页 #caddyPage 中 -->
-    <div class="setpanel on" id="setpanel-caddy">
+    <div class="setpanel" id="setpanel-caddy">
       <div class="setblock">
         <h4>🔀 <span data-i18n="caddyRoutes">反向代理服务域名</span></h4>
         <p data-i18n="caddyRoutesHint">维护服务域名与内网上游地址的映射，保存后由内置 Caddy 校验并热加载，失败会自动回滚。</p>
@@ -643,6 +505,10 @@
       <div class="toggle-row">
         <div class="l"><span data-i18n="setSidebarMem">侧栏宽度记忆</span><small data-i18n="setSidebarMemSub">拖拽侧栏右边缘调整宽度，自动写入本浏览器</small></div>
         <button class="btn" type="button" onclick="resetSidebarWidth()" data-i18n="setSidebarReset">恢复默认宽度</button>
+      </div>
+      <div class="toggle-row">
+        <div class="l"><span data-i18n="boardTitle">模块设置</span><small data-i18n="setModuleSub">侧栏不再放「添加模块」按钮，模块的显隐与自定义网页在这里管理</small></div>
+        <button class="btn" type="button" onclick="openModuleModal()" data-i18n="setModuleOpen">打开模块设置</button>
       </div>
     </div>
 
@@ -801,7 +667,7 @@
   <div class="modal">
     <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
     <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
-    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.6.31 · Plex UI, Session & Fast Cache</b></div>
+    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.7.0 · Library-first Navigation</b></div>
     <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>Go (media/manager/subtitle) · Caddy · FFmpeg · SQLite · HTML/CSS/JS</b></div>
     <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>VaultHub 内置系统监控</b></div>
     <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>

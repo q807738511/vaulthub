@@ -21,11 +21,16 @@ assert "markVaultHubActivity" in html
 assert "openCaddyModal()" in html
 assert "handleProtectedResponse" in html
 
-assert 'value="comic"' in html and 'value="book"' in html
-assert 'value="movie"' in html and 'value="series"' in html
-assert 'value="audio"' in html and 'value="musicvideo"' in html
+# v0.7.0: the subtype <select> is populated from mediaTypesForGroup() inside
+# 系统设置 → 媒体库, so check every subtype is reachable through that mapping and
+# has a translated label, instead of matching hardcoded <option value=...> markup.
+assert 'group === "comic" ? ["comic","book"]' in html
+assert 'group === "movie" ? ["movie","series"]' in html
+assert '["audio","musicvideo"]' in html
 assert "mediaTypesForGroup" in html
-assert "visibleLibraries" in html
+# The per-group library modal was replaced by one table listing every library.
+assert 'function renderHomeLibTable(' in html, "library table renderer missing"
+assert 'id="homeLibBody"' in html, "library table body missing from 系统设置"
 assert "TMDB_API_BASE" in compose
 assert "TMDB_IMAGE_BASE" in compose
 

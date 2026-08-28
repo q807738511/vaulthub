@@ -20,8 +20,14 @@ for ext in book_required:
 for ext in movie_required:
     assert f'"{ext}"' in html, f"movie format missing from frontend list: {ext}"
 
-assert '<option value="movie">电影</option>' in html, "local media config does not offer movie libraries"
-assert '<option value="series">电视剧集</option>' in html, "local media config does not offer series libraries"
+# v0.7.0 moved library management into 系统设置 → 媒体库 and now builds the subtype
+# <select> from mediaTypesForGroup()/mediaTypeName() instead of hardcoding options,
+# so assert the data contract that produces 电影 / 电视剧集 rather than the old markup.
+assert 'mediaTypesForGroup(group)' in html, "subtype options must be derived from the group"
+assert 'group === "movie" ? ["movie","series"]' in html, "movie group must offer movie+series subtypes"
+assert 'typeMovie: "电影"' in html, "movie subtype label missing from the zh-CN dictionary"
+assert 'typeSeries: "电视剧集"' in html, "series subtype label missing from the zh-CN dictionary"
+assert 'id="homeLibType"' in html, "the add-library form must expose the subtype select"
 assert 'mediaTypesForGroup(group).includes(lib.type)' in html, "movie local libraries are not selectable"
 assert 'setMediaMode(\'${esc(group)}\',\'local\')' in html or "本地媒体库" in html, "media source mode bar missing"
 assert 'if (group === "movie") return "external"' not in html, "movie mode is still forced to external"
