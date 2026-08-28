@@ -12,28 +12,21 @@ function closeLocalViewer(group) {
     if (prior && readingState(prior.libId, prior.path).progress >= COMPLETED_PROGRESS) toast("📚 已读文档已移入收藏");
   }
 }
+/* v0.7.0：媒体库的增删改全部集中到「系统设置 → 媒体库」，不再有独立弹窗。
+   group 可选，用于把「媒体库增加」表单预置成对应大类。 */
 function showMediaLibraryConfig(group) {
-  mediaLibraryConfigGroup = group;
-  const modal = document.getElementById("mediaLibraryModal");
-  const type = document.getElementById("mediaLibType");
-  if (type) { const allowed = mediaTypesForGroup(group); type.innerHTML = allowed.map(x => `<option value="${esc(x)}">${esc(mediaTypeName(x))}</option>`).join(""); type.value = allowed[0]; }
+  if (group) mediaLibraryConfigGroup = group;
   const token = document.getElementById("mediaAdminToken");
   try { if (token) token.value = localStorage.getItem("dwu_media_admin_token") || ""; } catch (e) {}
-  renderMediaLibraryConfigList();
-  modal?.classList.add("show");
-}
-function addMediaPath(value = "") {
-  const host = document.getElementById("mediaLibPaths");
-  if (!host) return;
-  const row = document.createElement("div");
-  row.className = "media-path-row";
-  row.innerHTML = `<input type="text" class="media-lib-path" placeholder="/books 或 /mnt/music" value="${esc(value)}"><button class="icon-btn" type="button" title="删除路径" onclick="removeMediaPath(this)">✕</button>`;
-  host.appendChild(row);
-}
-function removeMediaPath(button) {
-  const host = document.getElementById("mediaLibPaths");
-  button.closest(".media-path-row")?.remove();
-  if (host && !host.children.length) addMediaPath();
+  openModal("settingsModal");
+  switchSetTab("library");
+  if (group) {
+    const sel = document.getElementById("homeLibGroup");
+    if (sel) { sel.value = group; if (typeof syncHomeLibTypes === "function") syncHomeLibTypes(); }
+    document.querySelectorAll(".lib-kind[data-lib-group]").forEach(card =>
+      card.classList.toggle("on", card.dataset.libGroup === group));
+  }
+  setLibrarySource("local");
 }
 function libraryId(name, type, path, index) {
   const raw = `${type}-${name}-${path}-${index}`.toLowerCase();
@@ -41,47 +34,6 @@ function libraryId(name, type, path, index) {
   for (let i = 0; i < raw.length; i++) { hash ^= raw.charCodeAt(i); hash = Math.imul(hash, 16777619); }
   const slug = String(name || type).toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 28) || type;
   return `${slug}-${(hash >>> 0).toString(36)}`;
-}
-async function saveMediaLibraries() {
-  const name = document.getElementById("mediaLibName")?.value.trim();
-  const type = document.getElementById("mediaLibType")?.value;
-  const paths = [...document.querySelectorAll(".media-lib-path")].map(el => el.value.trim().replace(/\/$/, "")).filter(Boolean);
-  const token = document.getElementById("mediaAdminToken")?.value.trim() || "";
-  if (!name || !type || !paths.length) { toast("⚠️ 请填写库名称、类型和至少一个路径"); return; }
-  if (paths.some(path => !path.startsWith("/"))) { toast("⚠️ 路径必须是容器内已挂载的绝对路径"); return; }
-  // 写操作前先确认服务端会话有效，避免点了保存只看到静默失败。
-  if (!await ensureSessionForWrite(t("writeAddLibrary"))) return;
-  try { localStorage.setItem("dwu_media_admin_token", token); } catch (e) {}
-  try {
-    let saved = 0;
-    let skipped = 0;
-    for (let i = 0; i < paths.length; i++) {
-      const body = { id: libraryId(name, type, paths[i], i), name: paths.length > 1 ? `${name} ${i + 1}` : name, type, path: paths[i] };
-      const res = await fetch("/api/media/libraries", { method: "POST", headers: { "Content-Type": "application/json", ...mediaAdminHeaders() }, credentials: "same-origin", body: JSON.stringify(body) });
-      if (!await handleProtectedResponse(res)) { toast("⚠️ " + t("caddySaveBlocked")); return; }
-      if (!res.ok) {
-        let detail = "";
-        try { detail = (await res.json()).error || ""; } catch (e) {}
-        if (/id already exists/i.test(detail)) { skipped++; continue; }
-        throw new Error(detail || `HTTP ${res.status}`);
-      }
-      saved++;
-    }
-    document.getElementById("mediaLibName").value = "";
-    document.getElementById("mediaLibPaths").innerHTML = "";
-    addMediaPath();
-    await refreshMediaLibraries(false);
-    if (saved && skipped) toast(`✅ 已保存 ${saved} 个路径，跳过 ${skipped} 个已存在路径`);
-    else if (skipped && !saved) toast("✅ 这些媒体路径已经添加，无需重复保存");
-    else toast("✅ 本地媒体库已保存");
-  } catch (err) { toast("⚠️ 保存失败：" + err.message); }
-}
-function renderMediaLibraryConfigList() {
-  const host = document.getElementById("mediaLibraryConfigList");
-  if (!host) return;
-  const visibleLibraries = localMediaLibraries.filter(lib => mediaTypesForGroup(mediaLibraryConfigGroup).includes(lib.type));
-  if (!visibleLibraries.length) { host.innerHTML = '<div class="empty-tip">当前栏目尚未配置本地媒体库</div>'; return; }
-  host.innerHTML = `<div class="media-file-list">${visibleLibraries.map(lib => `<div class="media-file-row"><div class="media-file-name"><strong>${esc(lib.name)}</strong><div class="hint">${esc((lib.paths || []).join(" · ") || lib.path)}</div></div><span class="badge">${esc(mediaTypeName(lib.type))}</span><button class="btn btn-danger" onclick="deleteMediaLibrary('${esc(lib.id)}')">删除</button></div>`).join("")}</div>`;
 }
 async function deleteMediaLibrary(id) {
   if (!confirm("确定删除这个本地媒体库配置？媒体文件不会被删除。")) return;
@@ -659,14 +611,13 @@ function renderPtMock() {
 /* ================= 模块管理 ================= */
 const BOARD_TYPE_VIEW = { comic: "view-comic", movie: "view-movie", audio: "view-audio" };
 const BOARD_TYPE_NAV = { comic: "navComic", movie: "navMovie", audio: "navAudio" };
+/* 内置模块：v0.7.0 起侧栏只有首页与 PT 管理两个固定项，
+   三个资源大类不再作为独立侧栏条目，因此也不再出现在模块显隐列表里。 */
 const BUILTIN_MODULES = [
   { id: "home", icon: "🏠", type: "web", nameKey: "navHome" },
-  { id: "pt", icon: "🌊", type: "pt", nameKey: "navPt" },
-  { id: "comic", icon: "📖", type: "comic", nameKey: "navComic" },
-  { id: "movie", icon: "🎬", type: "movie", nameKey: "navMovie" },
-  { id: "audio", icon: "🎵", type: "audio", nameKey: "navAudio" }
+  { id: "pt", icon: "🌊", type: "pt", nameKey: "navPt" }
 ];
-const MODULE_GROUP = { home: "main", pt: "main", comic: "book", movie: "video", audio: "audio" };
+const MODULE_GROUP = { home: "main", pt: "main" };
 
 
 function openModuleModal(preType) {
@@ -719,12 +670,10 @@ function applyModuleVisibility() {
   document.querySelectorAll(".nav-item[data-module]").forEach(item => {
     item.style.display = hiddenModules.includes(item.dataset.module) ? "none" : "";
   });
-  ["main", "book", "video", "audio"].forEach(g => {
-    const ids = Object.keys(MODULE_GROUP).filter(k => MODULE_GROUP[k] === g);
-    const allHidden = ids.length && ids.every(id => hiddenModules.includes(id));
-    const header = document.querySelector(`.nav-group[data-nav-group="${g}"]`);
-    if (header) header.style.display = allHidden ? "none" : "";
-  });
+  /* v0.7.0：侧栏不再有三个资源大类分组，只有主导航 / 媒体库 / 自定义。 */
+  const mainIds = Object.keys(MODULE_GROUP).filter(k => MODULE_GROUP[k] === "main");
+  const mainHeader = document.querySelector('.nav-group[data-nav-group="main"]');
+  if (mainHeader) mainHeader.style.display = mainIds.every(id => hiddenModules.includes(id)) ? "none" : "";
   const customHeader = document.querySelector(`.nav-group[data-nav-group="custom"]`);
   if (customHeader) customHeader.style.display = customBoards.length ? "" : "none";
 }
@@ -798,27 +747,28 @@ function addBoard(skipBuild, board) {
   toast(t("boardAdded"));
 }
 
-/* 将自定义媒体模块的服务器地址应用到内置功能页面并跳转 */
+/* 自定义模块里选了媒体类型：v0.7.0 起等价于新增一个外连服务，
+   服务器地址不再写进页面内嵌表单（那些表单已经迁到系统设置）。 */
 function applyBoardToView(b) {
-  const viewId = BOARD_TYPE_VIEW[b.type];
-  const panel = document.querySelector(`#${viewId} .tab-panel.active`);
-  if (panel) {
-    const lan = panel.querySelector("[data-lan-input]");
-    if (lan) lan.value = b.baseUrl;
-    const sw = panel.querySelector("[data-switch]");
-    if (sw) sw.classList.add("on");
-    const addrEl = panel.querySelector(".addr-box .val");
-    if (addrEl) addrEl.textContent = b.baseUrl;
-  } else {
-    const lan = document.querySelector(`#${viewId} [data-lan-input]`);
-    if (lan) lan.value = b.baseUrl;
+  const group = b.type;
+  if (typeof loadExternalServices === "function" && !findExternalService("board-" + b.id)) {
+    externalServices.push({ id: "board-" + b.id, group, name: b.name, lan: b.baseUrl, proxy: "" });
+    saveExternalServices();
+    if (typeof renderExternalServiceList === "function") renderExternalServiceList();
   }
-  updateAddr(b.type);
-  switchView(b.type);
+  try { localStorage.setItem("dwu_media_mode_" + group, "external"); } catch (e) {}
+  externalSelection[group] = "board-" + b.id;
+  switchView(group);
+  renderMediaHome(group);
 }
 
 function deleteBoard(id) {
   customBoards = customBoards.filter(b => b.id !== id);
+  if (typeof externalServices !== "undefined") {
+    externalServices = externalServices.filter(x => x.id !== "board-" + id);
+    saveExternalServices();
+    if (typeof renderExternalServiceList === "function") renderExternalServiceList();
+  }
   saveBoards();
   renderCustomNav();
   renderBoardList();

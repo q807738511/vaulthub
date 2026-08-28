@@ -6,6 +6,10 @@
 const VAULTHUB_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 let vaultHubAuthenticated = false;
 let vaultHubIdleTimer = null;
+/* 每次显式登录/退出都推进一次 epoch。启动探测和 60 秒轮询是异步的，
+   如果一次慢响应在用户已经登录之后才回来，就会用过期结果把遮罩重新弹出来。
+   带 epoch 的探测结果只在 epoch 未变时才允许写入状态。 */
+let vaultHubAuthEpoch = 0;
 function showVaultHubLogin() { document.getElementById('authMask')?.classList.remove('hidden'); }
 function markVaultHubActivity() {
   if (!vaultHubAuthenticated) return;
@@ -26,16 +30,22 @@ async function vaultHubLogin() {
     const res=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password})});
     const data=await res.json();
     if(!res.ok||!data.ok){error.textContent=data.error||'登录失败';return;}
+    vaultHubAuthEpoch++;
     handleVaultHubAuthResult(true);
+    renderSessionStatus(true, t('sessionOkHint'));
     document.getElementById('vaultHubPassword').value='';
   } catch (_) { error.textContent='登录服务不可用'; }
 }
 async function requireVaultHubLogin() {
+  const epoch = vaultHubAuthEpoch;
   try {
     const res=await fetch('/api/system/runtime',{cache:'no-store'});
     const logged=res.ok;
+    /* 期间用户已经登录/退出过：这次探测的结果已经过期，丢弃。 */
+    if (epoch !== vaultHubAuthEpoch) return vaultHubAuthenticated;
     return handleVaultHubAuthResult(logged);
   } catch (_) {
+    if (epoch !== vaultHubAuthEpoch) return vaultHubAuthenticated;
     handleVaultHubAuthResult(false);
     return false;
   }
@@ -47,12 +57,15 @@ function guardProtectedAction(fn) { return async (...args)=>{if(vaultHubAuthenti
 /* 主动退出：先让服务端销毁 Session，再复位前端状态并显示登录遮罩。
    本地界面偏好（主题/语言/侧栏宽度）保留，不做清理。 */
 async function logoutVaultHub() {
+  vaultHubAuthEpoch++;
   try { await fetch('/api/logout', { method: 'POST', credentials: 'same-origin' }); } catch (_) {}
   clearTimeout(vaultHubIdleTimer);
   vaultHubAuthenticated = false;
   renderSessionStatus(false);
   closeCaddyPage();
   closeModal('settingsModal');
+  closeModal('avatarModal');
+  closeAccountMenu();
   showVaultHubLogin();
   const pass = document.getElementById('vaultHubPassword');
   if (pass) pass.value = '';
@@ -73,13 +86,22 @@ function renderSessionStatus(logged, note) {
   if (hint && note) hint.textContent = note;
   const dot = document.getElementById('sessionDot');
   if (dot) dot.classList.toggle('red', !logged);
+  /* 账户头像菜单里同样显示登录状态，避免必须打开系统设置才能看到。 */
+  const state = document.getElementById('accountState');
+  if (state) {
+    state.textContent = logged ? t('sessionOk') : t('sessionBad');
+    state.className = logged ? 'am-state ok' : 'am-state bad';
+  }
 }
 async function refreshSessionStatus(notify) {
+  const epoch = vaultHubAuthEpoch;
   let logged = false;
   try {
     const res = await fetch('/api/system/runtime', { cache: 'no-store' });
     logged = res.ok;
   } catch (_) { logged = false; }
+  /* 同上：登录/退出发生在探测期间时，不用旧结果覆盖新状态。 */
+  if (epoch !== vaultHubAuthEpoch) return vaultHubAuthenticated;
   vaultHubAuthenticated = logged;
   renderSessionStatus(logged, t(logged ? 'sessionOkHint' : 'sessionBadHint'));
   if (notify) toast(logged ? '✅ ' + t('sessionOk') : '⚠️ ' + t('sessionReloginToast'));
@@ -149,13 +171,43 @@ async function saveCaddyConfig() {
 /* ================= i18n ================= */
 const I18N = {
   "zh-CN": {
+    mpToken: "MoviePilot API Token",
+
+    setModuleSub: "侧栏不再放「添加模块」按钮，模块的显隐与自定义网页在这里管理", setModuleOpen: "打开模块设置",
+
+    /* ---- v0.7.0：媒体库优先导航、账户菜单、头像、构建进度 ---- */
+    navGroupLibrary: "媒体库", navManage: "管理 ›",
+    accountMenu: "账户与设置", avatarSettings: "头像设置",
+    avatarLead: "头像仅保存在本浏览器 localStorage，不上传服务器。可用文字缩写、emoji 或上传图片。",
+    avatarPreview: "预览效果", avatarText: "显示文字（1-2 个字符或 emoji）", avatarColor: "背景色",
+    avatarUpload: "上传头像图片（可选）", avatarReset: "恢复默认", avatarSaved: "头像已保存",
+    avatarTooLarge: "图片过大，无法保存到 localStorage", avatarResetDone: "头像已恢复默认",
+    setLibrary: "媒体库", setLibExisting: "已添加的媒体库",
+    setLibExistingHint: "侧边栏只展示这里创建时填写的库名称。每个库都可以单独重新刮削、打开或删除。",
+    setLibAdd: "媒体库增加",
+    setLibAddHint: "先选来源：本地媒体库使用容器内已挂载的绝对路径；外连服务接入 Emby / Navidrome / Komga 等现成服务器。",
+    libSrcLocal: "本地媒体库", libSrcExternal: "外连服务",
+    libAdminToken: "管理令牌（如后端启用）",
+    libPathHint: "路径必须是容器内已挂载且存在的绝对目录；库名称会直接作为侧边栏与刮削标识。",
+    extLibName: "服务名称", extLibLan: "内网地址", extLibProxy: "反代 / 外网域名（可选）",
+    extLibAdd: "添加外连服务", extLibList: "已添加的外连服务",
+    extLibHint: "内网访问自动走内网地址，外网访问自动走反代域名；添加后会在侧边栏媒体库中出现。",
+    extLibEmpty: "尚未添加外连服务", extLibNeed: "请填写服务名称与内网地址",
+    extLibAdded: "外连服务「{name}」已添加", extLibRemoved: "外连服务已删除",
+    libNavEmpty: "尚未添加媒体库", libCountBadge: "{n} 个媒体库",
+    buildProgress: "正在建立索引", buildScanned: "已扫描 {n} 项",
+    buildElapsed: "已用 {sec}", buildCancel: "取消构建",
+    buildCancelled: "已取消索引构建", buildDone: "索引构建完成",
+    buildWaiting: "正在统计文件数量…", buildRefresh: "手动刷新",
+    homeOpenFail: "无法打开：媒体库或文件不存在",
+
     caddySettings: "Caddy 配置", caddyOrigin: "WebUI 外部域名", caddyAdminToken: "管理令牌", caddyFile: "Caddyfile", caddySave: "保存并应用", caddyReload: "重新载入", caddyHint: "保存后会校验并热加载容器内的 Caddy 配置；失败时会回滚。", superComicTitle: "Komga / Kavita / Calibre-Web · 统一书库", appName: "蜀鼠之家", appSub: "VaultHub · 家庭 NAS 控制台 · 预览版",
-    navGroupMain: "主导航", navHome: "首页", navPt: "PT 管理", navLibrary: "资料库", navMore: "更多 ›",
+    navGroupMain: "主导航", navHome: "首页", navPt: "PT 管理", navMore: "更多 ›",
     navGroupMedia: "媒体", navComic: "电子书刊", navMovie: "影视作品", navAudio: "音视作品",
     navGroupBook: "电子书刊", navGroupVideo: "影视作品", navGroupAudio: "音视作品",
     navGroupSys: "系统",
-    navGroupCustom: "自定义", addBoardNav: "添加模块",
-    settings: "系统设置", about: "关于", settingsLead: "反向代理、外观主题、刮削与硬件、账户与登录集中在此，Caddy 配置有独立整页。",
+    navGroupCustom: "自定义",
+    settings: "系统设置", about: "关于", settingsLead: "媒体库、反向代理、外观主题、刮削与硬件、账户与登录集中在此，Caddy 配置有独立整页。",
     setLook: "外观主题", setScrape: "刮削与硬件", caddyRoutes: "反向代理服务域名",
     setAccount: "账户与登录", setAccountTitle: "当前登录状态", sessionChecking: "正在检查登录状态…", sessionRefresh: "刷新状态",
     sessionHint: "会话在最后一次操作后 30 分钟空闲自动失效；增删媒体库等写操作需要有效登录。",
@@ -178,7 +230,6 @@ const I18N = {
     secRecentBook: "最近入库 · 电子书刊", secRecentBookSub: "电子书 / 漫画",
     secRecentVideo: "最近入库 · 影视作品", secRecentVideoSub: "电视剧集 / 电影",
     secRecentAudio: "最近入库 · 音视作品", secRecentAudioSub: "音乐 / 音乐 MV",
-    secLibPaths: "媒体库路径管理", secLibPathsSub: "添加后以手动命名作为媒体库刮削",
     filterAll: "全部",
     kindBookDesc: "子类型：电子书 / 漫画 · 刮削源 Google Books、Bangumi",
     kindVideoDesc: "子类型：电视剧集 / 电影 · 刮削源 TMDB、豆瓣",
@@ -282,11 +333,40 @@ const I18N = {
     writeAddLibrary: "添加媒体库", writeDeleteLibrary: "删除媒体库", caddySaveBlocked: "登录状态异常，请重新登录后再保存"
   },
   "zh-TW": {
+    mpToken: "MoviePilot API Token",
+
+    setModuleSub: "側欄不再放「新增模組」按鈕，模組的顯隱與自訂網頁在這裡管理", setModuleOpen: "開啟模組設定",
+
+    navGroupLibrary: "媒體庫", navManage: "管理 ›",
+    accountMenu: "帳戶與設定", avatarSettings: "頭像設定",
+    avatarLead: "頭像僅保存在本瀏覽器 localStorage，不會上傳伺服器。可用文字縮寫、emoji 或上傳圖片。",
+    avatarPreview: "預覽效果", avatarText: "顯示文字（1-2 個字元或 emoji）", avatarColor: "背景色",
+    avatarUpload: "上傳頭像圖片（可選）", avatarReset: "恢復預設", avatarSaved: "頭像已保存",
+    avatarTooLarge: "圖片過大，無法保存到 localStorage", avatarResetDone: "頭像已恢復預設",
+    setLibrary: "媒體庫", setLibExisting: "已新增的媒體庫",
+    setLibExistingHint: "側邊欄只顯示這裡建立時填寫的庫名稱。每個庫都可以單獨重新刮削、開啟或刪除。",
+    setLibAdd: "媒體庫新增",
+    setLibAddHint: "先選來源：本地媒體庫使用容器內已掛載的絕對路徑；外連服務接入 Emby / Navidrome / Komga 等現成伺服器。",
+    libSrcLocal: "本地媒體庫", libSrcExternal: "外連服務",
+    libAdminToken: "管理權杖（若後端啟用）",
+    libPathHint: "路徑必須是容器內已掛載且存在的絕對目錄；庫名稱會直接作為側邊欄與刮削識別。",
+    extLibName: "服務名稱", extLibLan: "內網位址", extLibProxy: "反代 / 外網網域（可選）",
+    extLibAdd: "新增外連服務", extLibList: "已新增的外連服務",
+    extLibHint: "內網存取自動走內網位址，外網存取自動走反代網域；新增後會在側邊欄媒體庫中出現。",
+    extLibEmpty: "尚未新增外連服務", extLibNeed: "請填寫服務名稱與內網位址",
+    extLibAdded: "外連服務「{name}」已新增", extLibRemoved: "外連服務已刪除",
+    libNavEmpty: "尚未新增媒體庫", libCountBadge: "{n} 個媒體庫",
+    buildProgress: "正在建立索引", buildScanned: "已掃描 {n} 項",
+    buildElapsed: "已用 {sec}", buildCancel: "取消建立",
+    buildCancelled: "已取消索引建立", buildDone: "索引建立完成",
+    buildWaiting: "正在統計檔案數量…", buildRefresh: "手動重新整理",
+    homeOpenFail: "無法開啟：媒體庫或檔案不存在",
+
     caddySettings: "Caddy 設定", caddyOrigin: "WebUI 外部網域", caddyAdminToken: "管理權杖", caddyFile: "Caddyfile", caddySave: "儲存並套用", caddyReload: "重新載入", caddyHint: "儲存後會驗證並熱載入容器內的 Caddy 設定；失敗時會回滾。", superComicTitle: "Komga / Kavita / Calibre-Web · 統一書庫", appName: "蜀鼠之家", appSub: "VaultHub · 家庭 NAS 控制台 · 預覽版",
     navGroupMain: "主導覽", navHome: "首頁", navPt: "PT 管理",
     navGroupMedia: "媒體", navComic: "超漫畫", navMovie: "影視", navAudio: "音訊",
     navGroupSys: "系統",
-    navGroupCustom: "自訂", addBoardNav: "新增模組",
+    navGroupCustom: "自訂",
     settings: "系統設定", about: "關於",
     setAccount: "帳戶與登入", setAccountTitle: "目前登入狀態", sessionChecking: "正在檢查登入狀態…", sessionRefresh: "重新檢查",
     sessionHint: "工作階段在最後一次操作後 30 分鐘閒置自動失效；新增或刪除媒體庫等寫入操作需要有效登入。",
@@ -361,10 +441,9 @@ const I18N = {
     healthy: "healthy", unhealthy: "unhealthy",
     ptConnSaved: "✅ MoviePilot 連線已儲存", ptReal: "MoviePilot API", ptMock: "模擬資料（API 不可達）",
     testConnecting: "⏳ 正在驗證…",
-    /* v0.6.30.Branch-update：Plex 風格改版新增的鍵 */
-    navLibrary: "資料庫", navMore: "更多 ›",
+    /* v0.6.30.Branch-update：Plex 風格改版新增的鍵 */ navMore: "更多 ›",
     navGroupBook: "電子書刊", navGroupVideo: "影視作品", navGroupAudio: "音視作品",
-    settingsLead: "反向代理、外觀主題、刮削與硬體設定集中在此，Caddy 設定已內建為其中一個標籤頁。",
+    settingsLead: "媒體庫、反向代理、外觀主題、刮削與硬體設定集中在此，Caddy 設定有獨立整頁。",
     setLook: "外觀主題", setScrape: "刮削與硬體",
     caddyRoutes: "反向代理服務網域",
     caddyRoutesHint: "維護服務網域與內網上游位址的對應，儲存後由內建 Caddy 校驗並熱載入，失敗會自動回滾。",
@@ -382,7 +461,6 @@ const I18N = {
     secRecentBook: "最近入庫 · 電子書刊", secRecentBookSub: "電子書 / 漫畫",
     secRecentVideo: "最近入庫 · 影視作品", secRecentVideoSub: "電視劇集 / 電影",
     secRecentAudio: "最近入庫 · 音視作品", secRecentAudioSub: "音樂 / 音樂 MV",
-    secLibPaths: "媒體庫路徑管理", secLibPathsSub: "新增後以手動命名作為媒體庫刮削",
     filterAll: "全部",
     kindBookDesc: "子類型：電子書 / 漫畫 · 刮削源 Google Books、Bangumi",
     kindVideoDesc: "子類型：電視劇集 / 電影 · 刮削源 TMDB、豆瓣",
@@ -422,11 +500,40 @@ const I18N = {
     writeAddLibrary: "新增媒體庫", writeDeleteLibrary: "刪除媒體庫", caddySaveBlocked: "登入狀態異常，請重新登入後再儲存"
   },
   "en": {
+    mpToken: "MoviePilot API token",
+
+    setModuleSub: "The sidebar no longer has an Add Module button; module visibility and custom pages live here", setModuleOpen: "Open module settings",
+
+    navGroupLibrary: "Libraries", navManage: "Manage ›",
+    accountMenu: "Account & settings", avatarSettings: "Avatar settings",
+    avatarLead: "The avatar is stored in this browser's localStorage only, never uploaded. Use initials, an emoji or an image.",
+    avatarPreview: "Preview", avatarText: "Display text (1-2 characters or emoji)", avatarColor: "Background colour",
+    avatarUpload: "Upload avatar image (optional)", avatarReset: "Reset to default", avatarSaved: "Avatar saved",
+    avatarTooLarge: "Image too large for localStorage", avatarResetDone: "Avatar reset to default",
+    setLibrary: "Libraries", setLibExisting: "Existing libraries",
+    setLibExistingHint: "The sidebar shows only the library names you enter here. Each library can be rescraped, opened or removed.",
+    setLibAdd: "Add a library",
+    setLibAddHint: "Pick a source: local libraries use absolute paths mounted inside the container; external services connect to Emby / Navidrome / Komga and friends.",
+    libSrcLocal: "Local library", libSrcExternal: "External service",
+    libAdminToken: "Admin token (if enabled on the backend)",
+    libPathHint: "The path must be an absolute directory mounted inside the container; the library name is used in the sidebar and for scraping.",
+    extLibName: "Service name", extLibLan: "LAN address", extLibProxy: "Reverse-proxy / public domain (optional)",
+    extLibAdd: "Add external service", extLibList: "Existing external services",
+    extLibHint: "LAN visitors use the LAN address, external visitors use the proxy domain. Added services show up in the sidebar libraries.",
+    extLibEmpty: "No external service added yet", extLibNeed: "Enter a service name and LAN address",
+    extLibAdded: "External service \"{name}\" added", extLibRemoved: "External service removed",
+    libNavEmpty: "No library added yet", libCountBadge: "{n} libraries",
+    buildProgress: "Building index", buildScanned: "{n} items scanned",
+    buildElapsed: "elapsed {sec}", buildCancel: "Cancel build",
+    buildCancelled: "Index build cancelled", buildDone: "Index build finished",
+    buildWaiting: "Counting files…", buildRefresh: "Refresh now",
+    homeOpenFail: "Cannot open: library or file is missing",
+
     caddySettings: "Caddy Config", caddyOrigin: "WebUI public domain", caddyAdminToken: "Admin token", caddyFile: "Caddyfile", caddySave: "Save & apply", caddyReload: "Reload", caddyHint: "Save will validate and hot-reload the container Caddy config; failures roll back.", superComicTitle: "Komga / Kavita / Calibre-Web · Unified Library", appName: "VaultHub", appSub: "VaultHub · Home NAS console · Preview",
     navGroupMain: "Main", navHome: "Home", navPt: "PT Manager",
     navGroupMedia: "Media", navComic: "Super Comics", navMovie: "Movies", navAudio: "Audio",
     navGroupSys: "System",
-    navGroupCustom: "Custom", addBoardNav: "Add Module",
+    navGroupCustom: "Custom",
     settings: "Settings", about: "About",
     setAccount: "Account & Sign-in", setAccountTitle: "Current session", sessionChecking: "Checking session…", sessionRefresh: "Refresh",
     sessionHint: "Sessions expire after 30 minutes of inactivity; adding or removing libraries requires a valid sign-in.",
@@ -501,10 +608,9 @@ const I18N = {
     healthy: "healthy", unhealthy: "unhealthy",
     ptConnSaved: "✅ MoviePilot connection saved", ptReal: "MoviePilot API", ptMock: "Mock (API unreachable)",
     testConnecting: "⏳ Verifying…",
-    /* v0.6.30.Branch-update: keys added by the Plex-style redesign */
-    navLibrary: "Library", navMore: "More ›",
+    /* v0.6.30.Branch-update: keys added by the Plex-style redesign */ navMore: "More ›",
     navGroupBook: "Books & Comics", navGroupVideo: "Movies & TV", navGroupAudio: "Music & MV",
-    settingsLead: "Reverse proxy, appearance and scraping/hardware settings live here; the Caddy editor is one of the tabs.",
+    settingsLead: "Libraries, reverse proxy, appearance and scraping/hardware settings live here; the Caddy editor has its own full page.",
     setLook: "Appearance", setScrape: "Scraping & hardware",
     caddyRoutes: "Reverse proxy hostnames",
     caddyRoutesHint: "Maintain hostname to LAN upstream mappings. Saving validates and hot-reloads the built-in Caddy; failures roll back automatically.",
@@ -522,7 +628,6 @@ const I18N = {
     secRecentBook: "Recently added · Books & Comics", secRecentBookSub: "E-books / comics",
     secRecentVideo: "Recently added · Movies & TV", secRecentVideoSub: "TV series / movies",
     secRecentAudio: "Recently added · Music & MV", secRecentAudioSub: "Music / music videos",
-    secLibPaths: "Library path management", secLibPathsSub: "The manual name you enter is used as the scraping library name",
     filterAll: "All",
     kindBookDesc: "Subtypes: e-book / comic · scrapers Google Books, Bangumi",
     kindVideoDesc: "Subtypes: TV series / movie · scrapers TMDB, Douban",
@@ -746,35 +851,125 @@ async function refreshHardwareStatus(notify) {
   }
 }
 
-/* ================= 导航 ================= */
+/* ================= 导航 =================
+   v0.7.0：顶栏不再有「首页 / 资料库」按钮，侧边栏也不再重复展示三个资源大类。
+   媒体视图由侧边栏的媒体库条目驱动，大类只在系统设置的媒体库配置里出现。 */
 const titleMap = { home: "navHome", pt: "navPt", comic: "navComic", movie: "navMovie", audio: "navAudio" };
-/* 顶栏横向导航把「资料库」映射到媒体视图，用于高亮回写 */
-const TOPNAV_FOR_VIEW = { home: "home", pt: "pt", comic: "comic", movie: "comic", audio: "comic" };
 
 function switchView(v) {
   document.querySelectorAll(".nav-item[data-view]").forEach(n => n.classList.remove("active"));
   const navItem = document.querySelector(`.nav-item[data-view="${v}"]`);
   if (navItem) navItem.classList.add("active");
-  const topKey = TOPNAV_FOR_VIEW[v] || (String(v).startsWith("custom-") ? null : "home");
-  document.querySelectorAll(".topnav-item[data-view]").forEach(n => n.classList.toggle("active", n.dataset.view === topKey));
   document.querySelectorAll(".view").forEach(s => s.classList.remove("active"));
   const view = document.getElementById("view-" + v);
   if (view) view.classList.add("active");
+  /* 音乐播放器只在音视作品视图显示，出现方式为屏幕居中浮层。 */
   const player = document.getElementById("audio-bottom-player");
   if (player) player.classList.toggle("show", v === "audio");
   window.scrollTo(0, 0);
 }
 
-document.querySelectorAll(".nav-item[data-view]").forEach(item => {
-  item.addEventListener("click", () => {
-    const v = item.dataset.view;
-    if (v.startsWith("custom-")) { openCustomBoard(v); return; }
-    switchView(v);
-  });
+/* 侧边栏媒体库条目是 JS 注入的，用事件委托绑定，避免注入后丢事件。 */
+document.addEventListener("click", event => {
+  const item = event.target.closest("#mainNav .nav-item[data-view]");
+  if (!item || event.target.closest(".nav-tools, .del")) return;
+  const v = item.dataset.view;
+  if (!v) return;
+  if (v.startsWith("custom-")) { openCustomBoard(v); return; }
+  if (item.dataset.libId) return; /* 媒体库条目自己有 onclick */
+  switchView(v);
 });
-document.querySelectorAll(".topnav-item[data-view]").forEach(item => {
-  item.addEventListener("click", () => switchView(item.dataset.view));
+
+/* ---------- 账户头像菜单：系统设置 / 关于 / 头像设置 / 退出登录 ---------- */
+function toggleAccountMenu(force) {
+  const menu = document.getElementById("accountMenu");
+  const btn = document.getElementById("tbAvatar");
+  if (!menu) return;
+  const open = typeof force === "boolean" ? force : !menu.classList.contains("show");
+  menu.classList.toggle("show", open);
+  if (btn) btn.setAttribute("aria-expanded", open ? "true" : "false");
+  if (open) refreshSessionStatus(false);
+}
+function closeAccountMenu() { toggleAccountMenu(false); }
+function openAccountMenuItem(id) { closeAccountMenu(); openModal(id); }
+document.addEventListener("click", event => {
+  if (!event.target.closest("#accountWrap")) closeAccountMenu();
 });
+
+/* ---------- 头像设置：文字 / 颜色 / 上传图片，仅存本浏览器 ---------- */
+const LS_AVATAR = "vaulthub_avatar_v1";
+let avatarConfig = { text: "Q", color: "#3fa7a7", image: "" };
+function loadAvatarConfig() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LS_AVATAR) || "null");
+    if (saved && typeof saved === "object") Object.assign(avatarConfig, saved);
+  } catch (e) {}
+  applyAvatarConfig();
+}
+function applyAvatarConfig() {
+  const el = document.getElementById("tbAvatar");
+  if (!el) return;
+  if (avatarConfig.image) {
+    el.textContent = "";
+    el.style.backgroundImage = `url(${avatarConfig.image})`;
+    el.style.backgroundSize = "cover";
+    el.style.backgroundPosition = "center";
+  } else {
+    el.textContent = avatarConfig.text || "Q";
+    el.style.backgroundImage = "";
+    el.style.background = avatarConfig.color || "#3fa7a7";
+  }
+}
+function openAvatarSettings() {
+  closeAccountMenu();
+  const text = document.getElementById("avatarText");
+  const color = document.getElementById("avatarColor");
+  if (text) text.value = avatarConfig.text || "";
+  if (color) color.value = avatarConfig.color || "#3fa7a7";
+  previewAvatarSettings();
+  openModal("avatarModal");
+}
+function previewAvatarSettings() {
+  const shot = document.getElementById("avatarPreview");
+  if (!shot) return;
+  const text = (document.getElementById("avatarText")?.value || "Q").slice(0, 4);
+  const color = document.getElementById("avatarColor")?.value || "#3fa7a7";
+  if (avatarConfig.image) {
+    shot.textContent = "";
+    shot.style.backgroundImage = `url(${avatarConfig.image})`;
+    shot.style.backgroundSize = "cover";
+  } else {
+    shot.textContent = text;
+    shot.style.backgroundImage = "";
+    shot.style.background = color;
+  }
+}
+function uploadAvatarImage(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    avatarConfig.image = e.target.result;
+    previewAvatarSettings();
+  };
+  reader.readAsDataURL(file);
+}
+function saveAvatarSettings() {
+  avatarConfig.text = (document.getElementById("avatarText")?.value || "Q").slice(0, 4) || "Q";
+  avatarConfig.color = document.getElementById("avatarColor")?.value || "#3fa7a7";
+  try { localStorage.setItem(LS_AVATAR, JSON.stringify(avatarConfig)); }
+  catch (e) { toast("⚠️ " + t("avatarTooLarge")); return; }
+  applyAvatarConfig();
+  closeModal("avatarModal");
+  toast("✅ " + t("avatarSaved"));
+}
+function resetAvatarSettings() {
+  avatarConfig = { text: "Q", color: "#3fa7a7", image: "" };
+  try { localStorage.removeItem(LS_AVATAR); } catch (e) {}
+  applyAvatarConfig();
+  previewAvatarSettings();
+  toast("🗑 " + t("avatarResetDone"));
+}
 
 /* ================= 侧栏宽度：拖拽自适应 + 记忆 ================= */
 const LS_SIDEBAR_W = "vaulthub_sidebar_w";
@@ -831,6 +1026,13 @@ function switchSetTab(key) {
   if (key === "caddy") loadCaddyConfig();
   if (key === "scrape") refreshHardwareStatus();
   if (key === "account") refreshSessionStatus(false);
+  /* 媒体库标签页：把已添加的库和外连服务都刷新一遍，避免看到上一次的旧列表。 */
+  if (key === "library") {
+    if (typeof refreshMediaLibraries === "function") refreshMediaLibraries(false);
+    if (typeof renderHomeLibTable === "function") renderHomeLibTable();
+    if (typeof renderHomeCount === "function") renderHomeCount();
+    if (typeof renderExternalServiceList === "function") renderExternalServiceList();
+  }
 }
 
 
@@ -844,34 +1046,5 @@ document.querySelectorAll(".tab[data-tab]").forEach(tab => {
     document.getElementById(tab.dataset.tab).classList.add("active");
   });
 });
-
-/* ================= 内网/反代自动切换 ================= */
-function bindSwitches() {
-  document.querySelectorAll("[data-switch]").forEach(sw => {
-    sw.addEventListener("click", () => {
-      sw.classList.toggle("on");
-      updateAddr(sw.dataset.switch);
-    });
-  });
-  document.querySelectorAll("[data-lan-input], [data-proxy-input]").forEach(inp => {
-    inp.addEventListener("input", () => updateAddr(inp.dataset.lanInput || inp.dataset.proxyInput));
-  });
-}
-function updateAddr(group) {
-  const panels = document.querySelectorAll(`#view-comic .tab-panel.active, #view-movie .tab-panel.active, #view-audio .tab-panel.active`);
-  panels.forEach(p => {
-    const sw = p.querySelector(`[data-switch="${group}"]`);
-    const lan = p.querySelector(`[data-lan-input="${group}"]`);
-    const proxy = p.querySelector(`[data-proxy-input="${group}"]`);
-    const addrEl = p.querySelector(".addr-box .val");
-    if (sw && lan && proxy && addrEl) {
-      addrEl.textContent = sw.classList.contains("on") ? proxy.value : lan.value;
-      const launcher = p.querySelector("[data-media-launch]");
-      const host = mediaWideHostForPanel(p);
-      if (launcher) launcher.dataset.lastUrl = addrEl.textContent;
-      if (launcher && host?.classList.contains("show")) openMediaFrame(launcher.dataset.mediaLaunch, false);
-    }
-  });
-}
 
 /* ================= 媒体服务设置 / 资源页 ================= */
