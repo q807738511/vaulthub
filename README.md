@@ -1,6 +1,6 @@
-# VaultHub 蜀鼠之家 v0.8.1：缓存与媒体库体验修复
+# VaultHub 蜀鼠之家 v0.8.3：缓存与媒体库体验修复
 
-v0.8.1 在 v0.8.0 三重解码和图形媒体中心基础上，增加可配置转码缓存目录与定期/定量清理，修复播放器空闲隐藏、媒体页面顶部标签残留，以及漫画/电子书按媒体库和子类型切换问题。
+v0.8.3 是 v0.8.1 功能修复后的清洁发布标签，移除了构建目录生成的临时二进制文件。
 
 ## v0.8.0 更新
 
@@ -329,7 +329,7 @@ services:
 ```bash
 docker pull ghcr.nju.edu.cn/q807738511/vaulthub:v0.8.0
 docker tag  ghcr.nju.edu.cn/q807738511/vaulthub:v0.8.0 ghcr.io/q807738511/vaulthub:v0.8.0
-# compose 仍写 image: ghcr.io/q807738511/vaulthub:v0.8.0
+# compose 仍写 image: ghcr.io/q807738511/vaulthub:v0.8.3
 docker compose up -d
 ```
 
