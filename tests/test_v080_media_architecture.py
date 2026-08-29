@@ -33,6 +33,8 @@ assert "renderBookCard(" in media and "book-grid" in media
 assert "renderAudioAlbums(" in media and "audio-album-grid" in media
 assert "我的媒体库" in media and "最新音乐" in media
 assert "书架" in media and "已读收藏" in media
+assert "selectLocalLibrary" in media
+assert "setBookTypeView" in media and "电子书" in media and "漫画" in media
 # Scrape buttons/config text must not be emitted by content renderers.
 for fn in ["renderMovieLibraryContent", "renderAudioLibraryContent"]:
     start = media.index(f"function {fn}(")
@@ -44,6 +46,12 @@ for fn in ["renderMovieLibraryContent", "renderAudioLibraryContent"]:
 for marker in ["openAudioMetadata(", "toggleAudioFavorite(", 'id="audioFavoriteButton"']:
     assert marker in media + index
 assert ".audio-player" in css and re.search(r"\.audio-player\s*\{[^}]*left:\s*50%", css, re.S)
+assert "MEDIA_CACHE_DIR" in backend
+assert "MEDIA_CACHE_MAX_BYTES" in backend and "MEDIA_CACHE_MAX_AGE_HOURS" in backend
+assert "cacheJanitor" in backend and "cleanCache" in backend
+assert "MEDIA_CACHE_DIR" in compose and "MEDIA_CACHE_CLEANUP_INTERVAL_HOURS" in compose
+assert "removeAttribute(\"src\")" in media and "activeAudio=null" in media
+assert "setBookTypeView" in media
 
 # Session cookie is the sole write authority. Token compatibility is removed end-to-end.
 for text in [backend, compose, dockerfile, env_example, install, upgrade]:

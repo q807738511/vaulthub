@@ -26,6 +26,11 @@ services:
       TMDB_IMAGE_BASE: "${TMDB_IMAGE_BASE:-https://image.tmdb.org/t/p}"
       # Go 字幕服务无需 Python/额外容器；默认自动扫描视频同目录字幕。
       MEDIA_ROOT: "/media"
+      # FFmpeg兼容流缓存；建议映射到容量充足的数据卷。
+      MEDIA_CACHE_DIR: "${MEDIA_CACHE_DIR:-/data/transcode-cache}"
+      MEDIA_CACHE_MAX_BYTES: "${MEDIA_CACHE_MAX_BYTES:-10737418240}"
+      MEDIA_CACHE_MAX_AGE_HOURS: "${MEDIA_CACHE_MAX_AGE_HOURS:-168}"
+      MEDIA_CACHE_CLEANUP_INTERVAL_HOURS: "${MEDIA_CACHE_CLEANUP_INTERVAL_HOURS:-24}"
       # 在线 provider 预留标准 JSON 适配端点；留空时仅使用本地字幕。
       SUBTITLE_SHOOTER_ENDPOINT: ""
       SUBTITLE_ZIMUKU_BASE: ""

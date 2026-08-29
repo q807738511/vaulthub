@@ -44,6 +44,9 @@ type App struct {
 	db               *sql.DB
 	scanGate         chan struct{} // size-1 semaphore: only one scan writes at a time
 	config, indexDir string
+	cacheDir         string
+	cacheMaxBytes    int64
+	cacheMaxAge      time.Duration
 	configTrusted    bool // false when config exists but cannot be read/decoded
 	// Hooks are test-only fault/interleaving instrumentation, nil in production.
 	scanWriteHook     func(string, int)
@@ -63,9 +66,19 @@ func env(k, d string) string {
 	}
 	return d
 }
+func envInt64(k string, d int64) int64 {
+	v, e := strconv.ParseInt(os.Getenv(k), 10, 64)
+	if e != nil || v < 0 {
+		return d
+	}
+	return v
+}
 func (a *App) load() {
 	a.config = env("MEDIA_CONFIG", "/data/media-libraries.json")
 	a.indexDir = env("MEDIA_INDEX_DIR", "/data/media-index")
+	a.cacheDir = env("MEDIA_CACHE_DIR", "/data/transcode-cache")
+	a.cacheMaxBytes = envInt64("MEDIA_CACHE_MAX_BYTES", 10*1024*1024*1024)
+	a.cacheMaxAge = time.Duration(envInt64("MEDIA_CACHE_MAX_AGE_HOURS", 168)) * time.Hour
 	b, e := os.ReadFile(a.config)
 	if e == nil {
 		a.configTrusted = json.Unmarshal(b, &a.libs) == nil
@@ -79,6 +92,64 @@ func (a *App) load() {
 	a.tasks = map[string]context.CancelFunc{}
 	a.scanGate = make(chan struct{}, 1)
 	a.openDB()
+	go a.cacheJanitor()
+}
+
+// cacheJanitor bounds the optional FFmpeg compatibility cache by both age and
+// total bytes. Files are sorted oldest-first, so active/newer transcodes survive
+// until the configured quota is reached. A dedicated directory can be mounted
+// to a large data volume instead of consuming the system disk.
+func (a *App) cacheJanitor() {
+	interval := time.Duration(envInt64("MEDIA_CACHE_CLEANUP_INTERVAL_HOURS", 24)) * time.Hour
+	if interval <= 0 {
+		interval = 24 * time.Hour
+	}
+	a.cleanCache()
+	for range time.NewTicker(interval).C {
+		a.cleanCache()
+	}
+}
+func (a *App) cleanCache() {
+	if a.cacheMaxBytes <= 0 && a.cacheMaxAge <= 0 {
+		return
+	}
+	ents, e := os.ReadDir(a.cacheDir)
+	if e != nil {
+		return
+	}
+	type item struct {
+		path string
+		size int64
+		mod  time.Time
+	}
+	items := make([]item, 0, len(ents))
+	var total int64
+	now := time.Now()
+	for _, ent := range ents {
+		if ent.IsDir() || filepath.Ext(ent.Name()) != ".mp4" {
+			continue
+		}
+		info, e := ent.Info()
+		if e != nil {
+			continue
+		}
+		p := filepath.Join(a.cacheDir, ent.Name())
+		if a.cacheMaxAge > 0 && now.Sub(info.ModTime()) > a.cacheMaxAge {
+			_ = os.Remove(p)
+			continue
+		}
+		items = append(items, item{p, info.Size(), info.ModTime()})
+		total += info.Size()
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].mod.Before(items[j].mod) })
+	for _, it := range items {
+		if a.cacheMaxBytes <= 0 || total <= a.cacheMaxBytes {
+			break
+		}
+		if os.Remove(it.path) == nil {
+			total -= it.size
+		}
+	}
 }
 
 // openDB opens (creating if needed) the SQLite index database and applies the
@@ -1102,9 +1173,9 @@ func mime(p string) string {
 	return "application/octet-stream"
 }
 
-func cacheKey(path string) string {
+func (a *App) cacheKey(path string) string {
 	h := sha256.Sum256([]byte(path))
-	return filepath.Join("/data/transcode-cache", hex.EncodeToString(h[:])+".mp4")
+	return filepath.Join(a.cacheDir, hex.EncodeToString(h[:])+".mp4")
 }
 func commandJSON(w http.ResponseWriter, r *http.Request, name string, args ...string) {
 	ctx, cancel := context.WithCancel(r.Context())
@@ -1779,7 +1850,7 @@ func (a *App) compat(w http.ResponseWriter, r *http.Request) {
 	// separately and never collide.
 	audioTrack := r.URL.Query().Get("audio_track")
 	hw := r.URL.Query().Get("hw")
-	cache := cacheKey(fmt.Sprintf("%s:%d:%d:%s:a%s", p, st.Size(), st.ModTime().UnixNano(), hw, audioTrack))
+	cache := a.cacheKey(fmt.Sprintf("%s:%d:%d:%s:a%s", p, st.Size(), st.ModTime().UnixNano(), hw, audioTrack))
 	// Fully built cache: serve it with byte ranges so seeking works.
 	if f, e := os.Open(cache); e == nil {
 		defer f.Close()

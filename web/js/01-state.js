@@ -862,7 +862,7 @@ function switchView(v) {
   if (view) view.classList.add("active");
   /* 音乐播放器只在音视作品视图显示，出现方式为屏幕居中浮层。 */
   const player = document.getElementById("audio-bottom-player");
-  if (player) player.classList.toggle("show", v === "audio");
+  if (player) player.classList.toggle("show", v === "audio" && typeof audioHasActivePlayback === "function" && audioHasActivePlayback());
   window.scrollTo(0, 0);
 }
 
