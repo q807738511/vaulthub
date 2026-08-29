@@ -246,6 +246,13 @@ function setComicShelfView(view) {
   const lib = findMediaLibrary(localMediaSelection.comic);
   if (lib) loadLocalFiles("comic", lib, 0);
 }
+function setBookTypeView(type) {
+  const libs = librariesForGroup("comic").filter(lib => lib.type === type);
+  if (!libs.length) { toast("⚠️ 当前没有" + mediaTypeName(type) + "媒体库"); return; }
+  localMediaSelection.comic = libs[0].id;
+  comicShelfView = "shelf";
+  renderLocalMedia("comic");
+}
 function setMediaPageSize(size) {
   mediaPageSize = [20, 50, 100].includes(Number(size)) ? Number(size) : 20;
   const lib = findMediaLibrary(localMediaSelection.comic);
@@ -343,7 +350,6 @@ function renderLocalMedia(group) {
   let selected = libs.find(lib => lib.id === localMediaSelection[group]) || libs[0];
   localMediaSelection[group] = selected.id;
   host.innerHTML = `<div class="local-media">
-    <div class="library-strip">${libs.map(lib => `<button class="library-chip ${lib.id === selected.id ? "active" : ""}" onclick="selectLocalLibrary('${esc(group)}','${esc(lib.id)}')">${esc(lib.name)}<small>${esc(mediaTypeName(lib.type))}</small></button>`).join("")}</div>
     <div id="local-media-content-${esc(group)}"><div class="empty-tip">${esc(t("homeLoading"))}</div></div>
     <div id="local-media-viewer-${esc(group)}"></div>
   </div>`;
@@ -353,6 +359,7 @@ function selectLocalLibrary(group, id) {
   localMediaSelection[group] = id;
   renderLocalMedia(group);
 }
+function audioHasActivePlayback() { return !!activeAudio; }
 function normalizeFilePayload(data) {
   const files = Array.isArray(data) ? data : (data?.files || data?.items || []);
   return files.map(item => typeof item === "string" ? { path: item } : item).filter(item => item?.path);
@@ -385,7 +392,7 @@ async function loadLocalFiles(group, lib, offset = 0) {
     const next = data.has_more ? `<button class="btn" onclick="loadLocalFiles('${esc(group)}',findMediaLibrary('${esc(lib.id)}'),${offset + pageSize})">下一页 →</button>` : "";
     const pager = `<div class="media-actions">${prev}<span class="media-file-meta">${offset + 1}-${offset + files.length} / ${Number(data.total) || files.length}</span>${next}</div>`;
     if (group === "comic") {
-      const toolbar = `<div class="content-section-heading"><div><span class="eyebrow">我的媒体库</span><h3>书架</h3></div><div class="comic-shelf-tabs"><button class="${comicShelfView === "shelf" ? "active" : ""}" onclick="setComicShelfView('shelf')">📚 书架</button><button class="${comicShelfView === "completed" ? "active" : ""}" onclick="setComicShelfView('completed')">✓ 已读收藏</button></div></div>`;
+      const toolbar = `<div class="content-section-heading"><div><span class="eyebrow">我的媒体库</span><h3>书架</h3></div><div class="comic-shelf-tabs"><button class="${lib.type === "book" ? "active" : ""}" onclick="setBookTypeView('book')">📄 电子书</button><button class="${lib.type === "comic" ? "active" : ""}" onclick="setBookTypeView('comic')">📚 漫画</button><button class="${comicShelfView === "completed" ? "active" : ""}" onclick="setComicShelfView('completed')">✓ 已读收藏</button></div></div>`;
       target.innerHTML = `${toolbar}${files.length ? `<div class="book-grid">${files.map(file => renderBookCard(group, lib, file)).join("")}</div>` : `<div class="empty-tip">${comicShelfView === "completed" ? "还没有读完的书" : "当前页没有未读书籍"}</div>`}${pager}`;
       scrapeVisibleBookCovers(target);
     } else if (group === "audio") {
@@ -676,7 +683,7 @@ function playAudioFile(libId, path) {
   updateAudioFavoriteButton();
 }
 function audioTogglePause() { const player=document.getElementById("audioPlayerElement"); if(!player?.src) return; if(player.paused) { player.play().catch(() => {}); document.getElementById("audioPauseButton").textContent="Ⅱ"; } else { player.pause(); document.getElementById("audioPauseButton").textContent="▶"; } }
-function audioStop() { const player=document.getElementById("audioPlayerElement"); if(!player) return; player.pause(); player.currentTime=0; document.getElementById("audioPauseButton").textContent="▶"; }
+function audioStop() { const player=document.getElementById("audioPlayerElement"); if(!player) return; player.pause(); player.currentTime=0; player.removeAttribute("src"); player.load(); activeAudio=null; document.getElementById("audio-bottom-player")?.classList.remove("show"); document.getElementById("audioPauseButton").textContent="▶"; }
 function audioPrevious() { if(!activeAudio || !audioFiles.length) return; const index=(activeAudio.index-1+audioFiles.length)%audioFiles.length; playAudioFile(activeAudio.libId,audioFiles[index].path); }
 function audioNext() {
   if(!activeAudio || !audioFiles.length) return;
@@ -684,7 +691,7 @@ function audioNext() {
   if (audioLoopMode === "single") { player.currentTime = 0; player.play().catch(() => {}); return; }
   if (audioLoopMode === "random") { let index = Math.floor(Math.random() * audioFiles.length); if (audioFiles.length > 1 && index === activeAudio.index) index = (index + 1) % audioFiles.length; playAudioFile(activeAudio.libId, audioFiles[index].path); return; }
   const nextIndex = activeAudio.index + 1;
-  if (audioLoopMode === "sequence" && nextIndex >= audioFiles.length) { player.pause(); player.currentTime = 0; document.getElementById("audioPauseButton").textContent="▶"; return; }
+  if (audioLoopMode === "sequence" && nextIndex >= audioFiles.length) { audioStop(); return; }
   playAudioFile(activeAudio.libId, audioFiles[nextIndex % audioFiles.length].path);
 }
 function showAudioDetails() { if(!activeAudio) return; const meta=audioMetadataFor(activeAudio.path); document.getElementById("audioDetailsContent").innerHTML=`<h4>${esc(meta.title)}</h4><p>${esc(meta.artist)} · ${esc(meta.album)}</p>${meta.lyrics ? `<pre class="audio-lyrics">${esc(meta.lyrics)}</pre>` : '<div class="empty-tip">暂无歌词，可通过“文件”视图的手动适配填写。</div>'}`; openModal("audioDetailsModal"); }
