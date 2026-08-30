@@ -30,7 +30,9 @@ assert 'compat_recommended' in html, "ffprobe-based automatic compatibility rule
 assert 'left:var(--sidebar-w)' in html, "desktop reader overlay still covers the left sidebar"
 assert '豆瓣刮削/文件名展示' not in html, "video playback still shows the old hint under the page"
 assert '.media-video-body video { width:100%; height:100%;' in html, "video does not fill the reader window"
-assert '.media-reader-body { flex:1; min-height:0; height:calc(100vh - 51px);' in html, "reader body height is not viewport-bound"
+# v0.8.7：overlay 从顶栏下方开始（top:var(--topbar-h)），正文高度必须同时扣掉
+# 顶栏和阅读器顶栏，否则底部会被裁掉。原断言写死 calc(100vh - 51px)。
+assert '.media-reader-body { flex:1; min-height:0; height:calc(100vh - var(--topbar-h) - 51px);' in html, "reader body height is not viewport-bound"
 assert '.media-viewer-body { padding: 12px; max-height: none;' in html, "generic media viewer still has 72vh limit"
 assert '.media-reader-body iframe { width:100%; height:100%; min-height:0;' in html, "PDF/ebook iframe still has fixed viewport min-height"
 

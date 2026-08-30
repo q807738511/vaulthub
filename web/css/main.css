@@ -509,7 +509,9 @@
   .media-poster-card.is-read .media-poster-art { filter:saturate(.68); }
   .movie-detail-page { overflow:hidden; }
   .movie-detail-scroll { width:100%; height:100%; overflow:auto; background:var(--bg); }
-  .movie-detail-scroll>.media-reader-close { position:fixed; top:14px; right:18px; z-index:4; }
+  /* 详情页关闭按钮是 position:fixed，必须相对顶栏下方定位，
+     否则它会浮在顶栏的统计信息上面（overlay 下移后尤为明显）。 */
+  .movie-detail-scroll>.media-reader-close { position:fixed; top:calc(var(--topbar-h) + 14px); right:18px; z-index:4; }
   .movie-detail-scroll header { min-height:min(68vh,680px); display:flex; flex-direction:column; justify-content:flex-end; gap:16px; padding:clamp(80px,12vw,170px) clamp(24px,8vw,120px) clamp(40px,7vw,90px); background-size:cover; background-position:center; }
   .movie-detail-scroll header h1 { margin:0; font-size:clamp(34px,6vw,72px); }
   .movie-detail-scroll header p { max-width:760px; margin:0; line-height:1.8; color:#e6edf3; }
@@ -542,12 +544,25 @@
   .book-card-meta { margin-top:5px; color:var(--text2); font-size:11px; display:flex; justify-content:space-between; gap:6px; }
   .book-progress { height:3px; margin-top:7px; border-radius:4px; overflow:hidden; background:var(--border); }
   .book-progress span { display:block; height:100%; background:var(--green); }
-  .media-reader-overlay { position:fixed; top:0; right:0; bottom:0; left:var(--sidebar-w); z-index:300; display:flex; flex-direction:column; background:var(--bg); min-height:100vh; }
+  /* 阅读器/播放器浮层从顶栏下方开始，绝不覆盖顶栏。
+     旧写法 top:0 + z-index:300 会整条盖住 .topbar（fixed, height:52px, z-index:80），
+     于是长文件名标题压在账户/设置按钮上，实测该按钮在「侧栏折叠」和「≤843px 视口」
+     下完全点不到 —— 而账户菜单是进入系统设置的唯一入口。 */
+  .media-reader-overlay { position:fixed; top:var(--topbar-h); right:0; bottom:0; left:var(--sidebar-w); z-index:300; display:flex; flex-direction:column; background:var(--bg); min-height:0; }
   body.sidebar-hidden .media-reader-overlay { left:60px; }
   .media-reader-head { flex:0 0 auto; min-height:50px; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 12px; border-bottom:1px solid var(--border); background:var(--bg2); }
-  .media-reader-title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  /* 文件名很长时（例如 [福音战士新剧场版：序].Evangelion.1.0.You.Are.Not.Alone…）
+     标题会把右侧的设置/已读/关闭按钮挤出可视区甚至压在上面。
+     标题必须可收缩（flex:1 1 auto + min-width:0）并限制最大宽度，
+     按钮组必须 flex:0 0 auto 且 nowrap，这样按钮永远优先保留空间。 */
+  .media-reader-title { flex:1 1 auto; min-width:0; max-width:calc(100% - 190px); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .media-reader-head .media-actions { flex:0 0 auto; margin-top:0; flex-wrap:nowrap; align-items:center; }
+  .media-reader-head .media-actions .btn { white-space:nowrap; }
+  /* 播放器顶栏只有一个关闭按钮，标题可以占更多宽度。 */
+  .media-reader-head.movie-player-head .media-reader-title { max-width:calc(100% - 60px); }
   .media-reader-close { flex:0 0 auto; width:36px; height:36px; border-radius:50%; border:1px solid var(--border); color:var(--text); background:var(--card2); cursor:pointer; font-size:18px; }
-  .media-reader-body { flex:1; min-height:0; height:calc(100vh - 51px); overflow:auto; display:flex; align-items:stretch; justify-content:center; background:#17191d; }
+  /* overlay 现在从顶栏下方开始，正文高度要同时扣掉顶栏和阅读器顶栏。 */
+  .media-reader-body { flex:1; min-height:0; height:calc(100vh - var(--topbar-h) - 51px); overflow:auto; display:flex; align-items:stretch; justify-content:center; background:#17191d; }
   .media-reader-wrap { width:100%; min-height:100%; height:100%; display:flex; align-items:stretch; justify-content:center; }
   .ebook-chapters { flex:0 0 220px; max-width:220px; height:100%; max-height:none; overflow:auto; padding:14px 10px; border-right:1px solid var(--border); background:var(--bg2); position:sticky; top:0; align-self:stretch; }
   .ebook-chapters h4 { font-size:12px; color:var(--text2); padding:0 6px 8px; }
@@ -567,7 +582,7 @@
   .reader-book-fallback { width:min(520px,90%); margin:auto; text-align:center; color:var(--text); }
   #view-comic { position:relative; }
   .media-viewer-body { padding: 12px; max-height: none; overflow: auto; }
-  .media-video-body { position:relative; width:100%; height:100%; min-height:calc(100vh - 54px); padding:clamp(0px,1.5vw,20px); box-sizing:border-box; margin:0; overflow:hidden; background:#000; display:flex; align-items:center; justify-content:center; }
+  .media-video-body { position:relative; width:100%; height:100%; min-height:calc(100vh - var(--topbar-h) - 54px); padding:clamp(0px,1.5vw,20px); box-sizing:border-box; margin:0; overflow:hidden; background:#000; display:flex; align-items:center; justify-content:center; }
   .media-video-body video { width:100%; height:100%; max-width:none; max-height:none; object-fit:contain; background:#000; }
   .video-timeline { position:absolute; left:20px; right:20px; bottom:18px; z-index:6; height:28px; display:flex; align-items:center; gap:10px; opacity:0; transition:opacity .18s; }
   .media-video-body.video-controls-visible .video-timeline { opacity:1; }
@@ -638,7 +653,10 @@
     .topbar .actions { gap:4px; flex-wrap:wrap; justify-content:flex-end; }
     .topbar .actions .btn { padding:6px 8px; }
     .content { padding-left:12px; padding-right:12px; }
-    .media-reader-overlay, body.sidebar-hidden .media-reader-overlay { left:0; }
+    .media-reader-overlay, body.sidebar-hidden .media-reader-overlay { left:0; top:var(--topbar-h); }
+    /* 窄屏按钮更窄，标题相应多让出一点，但仍保证按钮不被压住。 */
+    .media-reader-title { max-width:calc(100% - 150px); }
+    .media-reader-head.movie-player-head .media-reader-title { max-width:calc(100% - 52px); }
     .video-info-button { top:8px; right:8px; }
     .video-status-panel { top:48px; right:8px; width:calc(100% - 16px); }
     .docker-scan-bar { display:grid; grid-template-columns:1fr; }
@@ -650,7 +668,15 @@
     .media-file-row { grid-template-columns: minmax(0,1fr) auto; }
     .media-file-meta { display: none; }
     .book-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
-    .media-reader-overlay { position:fixed; inset:0; z-index:300; min-height:100vh; }
+    /* 窄屏也必须给顶栏留位，否则账户/设置按钮同样被标题盖住。 */
+    .media-reader-overlay { position:fixed; inset:var(--topbar-h) 0 0 0; z-index:300; min-height:0; }
+  }
+  /* 电子书阅读器顶栏还带字号工具条（A- / A+ / 正体），按钮组固定约 351px 且
+     nowrap，视口窄于约 375px 时关闭按钮会被挤出屏幕（320px 下完全不可点）。
+     这里隐藏字号工具条 —— 字号仍可在系统设置的阅读器设置里调整。 */
+  @media (max-width: 420px) {
+    .media-reader-head .ebook-toolbar { display:none; }
+    .media-reader-title { max-width:calc(100% - 118px); }
   }
   /* PT 子页 */
   .ptsub-panel { display: none; }

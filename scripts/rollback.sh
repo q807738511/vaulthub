@@ -25,7 +25,9 @@ fi
 
 echo "Restoring backup: $BACKUP_DIR"
 mkdir -p "$TARGET_DIR"
-for name in Dockerfile docker-compose.yml .env .dockerignore Caddyfile index.html caddy vaulthub-manager README.md SHA256SUMS data; do
+# v0.8.7: VaultHub.env is part of the deployment set (compose loads it via
+# env_file), so it must be restored together with the rest — upgrade.sh backs it up.
+for name in Dockerfile docker-compose.yml .env VaultHub.env .dockerignore Caddyfile index.html caddy vaulthub-manager README.md SHA256SUMS data; do
   if [ -e "$BACKUP_DIR/$name" ]; then
     rm -rf "$TARGET_DIR/$name"
     cp -a "$BACKUP_DIR/$name" "$TARGET_DIR/$name"

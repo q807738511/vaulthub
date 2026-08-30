@@ -40,7 +40,7 @@ fi
 
 echo "Creating backup: $BACKUP_DIR"
 mkdir -p "$BACKUP_DIR"
-for name in Dockerfile docker-compose.yml .env .dockerignore Caddyfile index.html caddy vaulthub-manager README.md SHA256SUMS data; do
+for name in Dockerfile docker-compose.yml .env VaultHub.env .dockerignore Caddyfile index.html caddy vaulthub-manager README.md SHA256SUMS data; do
   if [ -e "$TARGET_DIR/$name" ]; then
     cp -a "$TARGET_DIR/$name" "$BACKUP_DIR/"
   fi
@@ -50,6 +50,16 @@ echo "Installing VaultHub $VERSION files ..."
 for name in Dockerfile docker-compose.yml .dockerignore Caddyfile index.html caddy vaulthub-manager README.md; do
   cp -a "$FILES_DIR/$name" "$TARGET_DIR/$name"
 done
+
+# v0.8.7: compose loads VaultHub.env via env_file. A missing file makes
+# `docker compose` abort with "env file ... not found", so ship it on upgrade
+# too, while keeping any values the user already customised.
+if [ ! -f "$TARGET_DIR/VaultHub.env" ]; then
+  cp -a "$FILES_DIR/VaultHub.env" "$TARGET_DIR/VaultHub.env"
+  echo "Created default VaultHub.env"
+else
+  echo "Keeping existing VaultHub.env"
+fi
 chmod +x "$TARGET_DIR/caddy" "$TARGET_DIR/vaulthub-manager"
 
 if [ ! -f "$TARGET_DIR/.env" ]; then
@@ -66,7 +76,7 @@ fi
 
 (
   cd "$TARGET_DIR"
-  sha256sum Dockerfile docker-compose.yml .env .dockerignore caddy vaulthub-manager Caddyfile index.html README.md > SHA256SUMS
+  sha256sum Dockerfile docker-compose.yml .env VaultHub.env .dockerignore caddy vaulthub-manager Caddyfile index.html README.md > SHA256SUMS
 )
 
 echo "Building and starting VaultHub ..."

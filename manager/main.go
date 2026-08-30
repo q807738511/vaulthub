@@ -301,8 +301,13 @@ func start(bin string, args ...string) *exec.Cmd {
 	}
 	return c
 }
+
+// caddyPath is the caddy binary used for validation. It is a variable so tests
+// can point at the repo-local binary; production always uses the image path.
+var caddyPath = "/usr/bin/caddy"
+
 func validateCaddy(path string) error {
-	out, err := exec.Command("/usr/bin/caddy", "validate", "--config", path, "--adapter", "caddyfile").CombinedOutput()
+	out, err := exec.Command(caddyPath, "validate", "--config", path, "--adapter", "caddyfile").CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
 	}
@@ -445,24 +450,62 @@ func normalizeCaddyfile(b []byte) []byte {
 	}
 	return []byte(s)
 }
+
+// prepareCaddyfile resolves the effective Caddyfile at startup: prefer the
+// persisted /data copy, fall back to the image default, and inject the cache
+// policy. A persisted file that no longer parses must not be fatal — with
+// restart: unless-stopped that means an endless crash loop and a permanently
+// unreachable WebUI, so the user cannot even open the Caddy editor to fix it.
+// The broken file is preserved next to it for inspection.
+func prepareCaddyfile(dataPath, builtinPath, tmpPath string) ([]byte, error) {
+	b, _ := os.ReadFile(dataPath)
+	usedPersisted := len(b) > 0
+	if !usedPersisted {
+		b, _ = os.ReadFile(builtinPath)
+	}
+	b = normalizeCaddyfile(b)
+	if err := os.WriteFile(tmpPath, b, 0644); err != nil {
+		return nil, err
+	}
+	err := validateCaddy(tmpPath)
+	if err == nil {
+		return b, nil
+	}
+	_ = os.Remove(tmpPath)
+	if !usedPersisted {
+		return nil, fmt.Errorf("built-in Caddyfile validation failed: %w", err)
+	}
+	log.Printf("persisted %s is invalid (%v); falling back to the built-in config", dataPath, err)
+	if e := os.Rename(dataPath, dataPath+".invalid"); e != nil {
+		log.Printf("could not preserve the invalid Caddyfile: %v", e)
+	} else {
+		log.Printf("the invalid file was kept as %s.invalid", dataPath)
+	}
+	fallback, e := os.ReadFile(builtinPath)
+	if e != nil {
+		return nil, fmt.Errorf("built-in Caddyfile is unreadable: %w", e)
+	}
+	b = normalizeCaddyfile(fallback)
+	if e := os.WriteFile(tmpPath, b, 0644); e != nil {
+		return nil, e
+	}
+	if e := validateCaddy(tmpPath); e != nil {
+		_ = os.Remove(tmpPath)
+		return nil, fmt.Errorf("built-in Caddyfile validation failed: %w", e)
+	}
+	return b, nil
+}
+
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 	if err := os.MkdirAll("/data", 0755); err != nil {
 		log.Fatal(err)
 	}
-	b, _ := os.ReadFile("/data/Caddyfile")
-	if len(b) == 0 {
-		b, _ = os.ReadFile("/etc/caddy/Caddyfile")
-	}
-	b = normalizeCaddyfile(b)
 	tmp := "/data/Caddyfile.startup.tmp"
-	if err := os.WriteFile(tmp, b, 0644); err != nil {
+	b, err := prepareCaddyfile("/data/Caddyfile", "/etc/caddy/Caddyfile", tmp)
+	if err != nil {
 		log.Fatal(err)
-	}
-	if err := validateCaddy(tmp); err != nil {
-		_ = os.Remove(tmp)
-		log.Fatalf("migrated Caddyfile validation failed: %v", err)
 	}
 	if err := os.Rename(tmp, "/data/Caddyfile"); err != nil {
 		log.Fatal(err)

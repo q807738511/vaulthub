@@ -13,7 +13,9 @@ features = (ROOT / "web/js/03-features.js").read_text(encoding="utf-8")
 state = (ROOT / "web/js/01-state.js").read_text(encoding="utf-8")
 css = (ROOT / "web/css/main.css").read_text(encoding="utf-8")
 backend = (ROOT / "media-go/main.go").read_text(encoding="utf-8")
-compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+# v0.8.7：部署配置拆成 docker-compose.yml（常用项）+ VaultHub.env（固定项）。
+compose = ((ROOT / "docker-compose.yml").read_text(encoding="utf-8") + "\n"
+           + (ROOT / "VaultHub.env").read_text(encoding="utf-8"))
 dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
 env_example = (ROOT / ".env.example").read_text(encoding="utf-8")
 install = (ROOT / "scripts/install.sh").read_text(encoding="utf-8")

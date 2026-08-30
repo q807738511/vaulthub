@@ -201,6 +201,105 @@ func TestNormalizeCaddyfileRemovesLegacyStaticServe(t *testing.T) {
 
 // TestMigratedCachePolicyValidatesAndServes proves the injected policy is not
 // just textually present but actually adapts and serves the intended headers.
+// caddyBinary locates a usable caddy for tests that need real validation and
+// points validateCaddy at it (outside the container caddy is not in /usr/bin).
+func caddyBinary() string {
+	for _, c := range []string{"/usr/bin/caddy", filepath.Join("..", "caddy")} {
+		if st, err := os.Stat(c); err == nil && !st.IsDir() {
+			abs, err := filepath.Abs(c)
+			if err != nil {
+				abs = c
+			}
+			caddyPath = abs
+			return abs
+		}
+	}
+	return ""
+}
+
+// TestPrepareCaddyfileFallsBackOnInvalidPersistedConfig guards the v0.8.7 fix:
+// a hand-edited /data/Caddyfile that no longer parses used to be fatal, and with
+// restart: unless-stopped that is an endless crash loop — the WebUI never comes
+// back, so the user cannot even open the Caddy editor to repair it.
+func TestPrepareCaddyfileFallsBackOnInvalidPersistedConfig(t *testing.T) {
+	if caddyBinary() == "" {
+		t.Skip("caddy binary not available")
+	}
+	dir := t.TempDir()
+	data := filepath.Join(dir, "Caddyfile")
+	builtin := filepath.Join(dir, "builtin")
+	tmp := filepath.Join(dir, "startup.tmp")
+	// A directive inside the site block that Caddy does not recognise. A bare
+	// top-level token would be parsed as a site address and still validate,
+	// so the broken line has to sit inside the block.
+	broken := strings.Replace(legacyCaddyfile, "encode zstd gzip", "totally_bogus_inner_directive x", 1)
+	if err := os.WriteFile(data, []byte(broken), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(builtin, []byte(legacyCaddyfile), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := prepareCaddyfile(data, builtin, tmp)
+	if err != nil {
+		t.Fatalf("invalid persisted config must not be fatal: %v", err)
+	}
+	if strings.Contains(string(out), "totally_bogus_inner_directive") {
+		t.Fatal("fallback config still carries the broken directive")
+	}
+	if !strings.Contains(string(out), cachePolicyMarker) {
+		t.Fatal("fallback config lost the cache policy")
+	}
+	if _, err := os.Stat(data + ".invalid"); err != nil {
+		t.Fatalf("broken config was not preserved for inspection: %v", err)
+	}
+}
+
+// A broken built-in config is a genuine build defect and must stay fatal,
+// otherwise the container would start with no reverse proxy at all.
+func TestPrepareCaddyfileFailsWhenBuiltinIsInvalid(t *testing.T) {
+	if caddyBinary() == "" {
+		t.Skip("caddy binary not available")
+	}
+	dir := t.TempDir()
+	builtin := filepath.Join(dir, "builtin")
+	broken := strings.Replace(legacyCaddyfile, "encode zstd gzip", "totally_bogus_inner_directive x", 1)
+	if err := os.WriteFile(builtin, []byte(broken), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := prepareCaddyfile(filepath.Join(dir, "absent"), builtin, filepath.Join(dir, "t.tmp")); err == nil {
+		t.Fatal("invalid built-in config must be fatal")
+	}
+}
+
+// A valid persisted config must be kept as-is (plus policy injection) and must
+// not be replaced by the built-in one.
+func TestPrepareCaddyfileKeepsValidPersistedConfig(t *testing.T) {
+	if caddyBinary() == "" {
+		t.Skip("caddy binary not available")
+	}
+	dir := t.TempDir()
+	data := filepath.Join(dir, "Caddyfile")
+	builtin := filepath.Join(dir, "builtin")
+	marker := "handle /api/custom-user-route/* {\n\t\treverse_proxy http://127.0.0.1:9999\n\t}"
+	custom := strings.Replace(legacyCaddyfile, "handle /api/media/*", marker+"\n\n\thandle /api/media/*", 1)
+	if err := os.WriteFile(data, []byte(custom), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(builtin, []byte(legacyCaddyfile), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := prepareCaddyfile(data, builtin, filepath.Join(dir, "t.tmp"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), "custom-user-route") {
+		t.Fatal("user's persisted route was discarded")
+	}
+	if _, err := os.Stat(data + ".invalid"); err == nil {
+		t.Fatal("valid config must not be quarantined")
+	}
+}
+
 func TestMigratedCachePolicyValidates(t *testing.T) {
 	caddy := ""
 	for _, c := range []string{"/usr/bin/caddy", filepath.Join("..", "caddy")} {

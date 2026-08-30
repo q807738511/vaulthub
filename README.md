@@ -1,6 +1,13 @@
-# VaultHub 蜀鼠之家 v0.8.6：前端资源缓存修复
+# VaultHub 蜀鼠之家 v0.8.7：侧栏切库、顶栏标题与 compose 精简
+
+v0.8.7 修三件事：侧栏从「漫画」点到「电子书」后高亮和内容真正跟着切换；阅读器/播放器顶栏的长文件名不再压住右侧按钮；部署配置精简为 `docker-compose.yml`（常用项）+ `VaultHub.env`（固定项），环境变量统一 `KEY=value` 写法。
+
+<details>
+<summary>v0.8.6：前端资源缓存修复</summary>
 
 v0.8.6 修复升级后浏览器仍然执行旧前端脚本的问题：v0.8.4/v0.8.5 已经删除的播放器设置按钮、标记已读按钮、下载按钮和书架页电子书/漫画切换按钮，在旧缓存下会继续显示，看起来像“没有更新”。现在 `index.html` 入口页 `no-store`，`/web/` 静态资源带 `?v=<版本>` 且长缓存，前端启动时还会自查脚本版本，不一致时自动绕过缓存重载一次。
+
+</details>
 
 ## v0.8.0 更新
 
@@ -299,7 +306,7 @@ ghcr.io/q807738511/vaulthub:<版本标签>   # 例如 v0.8.0
 ghcr.io/q807738511/vaulthub:latest        # 随 main 漂移，生产不建议
 ```
 
-**建议固定版本标签部署（如 `v0.8.6`），不要用 `latest`**：`latest` 会随每次推送变化，出问题难回滚。
+**建议固定版本标签部署（如 `v0.8.7`），不要用 `latest`**：`latest` 会随每次推送变化，出问题难回滚。
 
 ### 中国网络：直连 GHCR 拉不动怎么办
 
@@ -319,17 +326,17 @@ ghcr.io/q807738511/vaulthub:latest        # 随 main 漂移，生产不建议
 ```yaml
 services:
   vaulthub:
-    image: ghcr.nju.edu.cn/q807738511/vaulthub:v0.8.6
+    image: ghcr.nju.edu.cn/q807738511/vaulthub:v0.8.7
 ```
 
-> 注意只有一个冒号：`vaulthub:v0.8.6`，不是 `vaulthub::v0.8.6`。
+> 注意只有一个冒号：`vaulthub:v0.8.7`，不是 `vaulthub::v0.8.7`。
 
 用法二——保持 compose 用官方名，手动拉取后打回原名（便于随时切回直连）：
 
 ```bash
-docker pull ghcr.nju.edu.cn/q807738511/vaulthub:v0.8.6
-docker tag  ghcr.nju.edu.cn/q807738511/vaulthub:v0.8.6 ghcr.io/q807738511/vaulthub:v0.8.6
-# compose 仍写 image: ghcr.io/q807738511/vaulthub:v0.8.6
+docker pull ghcr.nju.edu.cn/q807738511/vaulthub:v0.8.7
+docker tag  ghcr.nju.edu.cn/q807738511/vaulthub:v0.8.7 ghcr.io/q807738511/vaulthub:v0.8.7
+# compose 仍写 image: ghcr.io/q807738511/vaulthub:v0.8.7
 docker compose up -d
 ```
 
@@ -341,6 +348,38 @@ docker compose up -d
 - 保留 v0.4.2 的 Komga 路由修复和媒体公网自动映射。
 
 ## 首次配置
+
+v0.8.7 起部署配置分两个文件，都放在 compose 同一目录：
+
+| 文件 | 放什么 | 什么时候改 |
+|------|--------|-----------|
+| `docker-compose.yml` | 镜像标签、端口、卷、以及 7 项常用环境变量 | 换版本、改路径、改账号时 |
+| `VaultHub.env` | 容器内固定路径、官方 API 地址、监控挂载点、缓存清理策略、硬件能力声明 | 基本不用改 |
+
+compose 通过 `env_file` 加载 `VaultHub.env`，因此 compose 里只剩下你会经常调的那几项：`ADMIN_USERNAME`、`ADMIN_PASSWORD`、`TMDB_API_KEY`、`MEDIA_SCRAPER_MODE`、`MEDIA_CACHE_DIR`、`FFMPEG_HWACCEL`、`SYSTEM_MONITOR_FILESYSTEMS`。
+
+> 关于代理：TMDB 客户端使用自带 SSRF 防护的自定义 `http.Transport`，没有设置 `Proxy`，所以 `PROXY_HOST` 和标准的 `HTTPS_PROXY` 都不会生效。若你的网络必须走代理才能访问 `api.themoviedb.org`，请在网关或 Clash 侧做透明代理/分流。
+
+两个文件的环境变量都必须写成 `KEY=value`：
+
+```yaml
+    env_file:
+      - ./VaultHub.env
+    environment:
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-ADMIN}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-ADMIN123}
+```
+
+在 `environment` 列表里写成 `- KEY: "value"` 会让 compose 报
+`services.vaulthub.environment.[N]: unexpected type map[string]interface {}` —— 列表项里的 `KEY: value` 会被 YAML 解析成映射而不是字符串。同一段里不要混用列表写法（`- KEY=value`）和映射写法（`KEY: value`）。
+
+改完 `VaultHub.env` 需要重建容器才会重新注入，`restart` 不够：
+
+```bash
+docker compose up -d --force-recreate
+```
+
+**`VaultHub.env` 必须和 compose 放在同一目录**：文件缺失时 `docker compose` 会直接报 `env file ... not found` 并拒绝启动。`scripts/install.sh` 和 `scripts/upgrade.sh` 会自动投递它，已存在时保留你的改动。
 
 旧的变量化 `.env` 写法仍兼容，但当前家庭 NAS 固定部署不再要求使用：
 

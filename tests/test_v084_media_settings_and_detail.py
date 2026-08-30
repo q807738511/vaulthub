@@ -7,7 +7,8 @@ index = (ROOT / "index.html").read_text()
 media = (ROOT / "web/js/02-media.js").read_text()
 home = (ROOT / "web/js/05-home.js").read_text()
 backend = (ROOT / "media-go/main.go").read_text()
-compose = (ROOT / "docker-compose.yml").read_text()
+# v0.8.7：部署配置拆成 docker-compose.yml（常用项）+ VaultHub.env（固定项）。
+compose = (ROOT / "docker-compose.yml").read_text() + "\n" + (ROOT / "VaultHub.env").read_text()
 env_example = (ROOT / ".env.example").read_text()
 css = "\n".join(p.read_text() for p in (ROOT / "web/css").glob("*.css"))
 
@@ -46,5 +47,5 @@ assert "videoRoot.dataset.videoMetadata=formatVideoMetadata(info)" not in stream
 assert "context.WithTimeout" in backend and "CheckRedirect" in backend
 assert "media-video-body" in css and ("object-fit:contain" in css.replace(" ", "") or "object-fit: contain" in css)
 
-assert "v0.8.6" in index
-print("PASS: v0.8.6 runtime settings, split bookshelf, and movie details contracts")
+assert "v0.8.7" in index
+print("PASS: v0.8.7 runtime settings, split bookshelf, and movie details contracts")

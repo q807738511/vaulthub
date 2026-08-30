@@ -7,7 +7,8 @@ import sys as _sys, os as _os
 _sys.path.insert(0, _os.path.dirname(__file__))
 from _frontend import frontend_source as _fs
 html = _fs()
-compose = (ROOT / "docker-compose.yml").read_text()
+# v0.8.7：硬件能力声明搬到 VaultHub.env，按两个文件合起来校验。
+compose = (ROOT / "docker-compose.yml").read_text() + "\n" + (ROOT / "VaultHub.env").read_text()
 dockerfile = (ROOT / "Dockerfile").read_text()
 
 # Backend must expose status and accept a safe, explicit accelerator per request.
@@ -26,11 +27,11 @@ assert 'saveHardwareAcceleration()' in html
 
 # Container setup must make both Intel/AMD render devices and NVIDIA runtime discoverable.
 for marker in [
-    'FFMPEG_HWACCEL:',
-    'VAAPI_DEVICE:',
+    'FFMPEG_HWACCEL=',
+    'VAAPI_DEVICE=',
     'VAULTHUB_DRI_DEVICE',
-    'NVIDIA_VISIBLE_DEVICES:',
-    'NVIDIA_DRIVER_CAPABILITIES:',
+    'NVIDIA_VISIBLE_DEVICES=',
+    'NVIDIA_DRIVER_CAPABILITIES=',
 ]:
     assert marker in compose, f"missing Docker GPU configuration: {marker}"
 assert ('libva' in dockerfile and 'mesa-va-gallium' in dockerfile) or 'nvidia/cuda:' in dockerfile or ('debian:trixie-slim' in dockerfile and 'ffmpeg' in dockerfile)

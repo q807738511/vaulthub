@@ -1,49 +1,29 @@
 services:
   vaulthub:
     # 固定版本标签部署，不要用 latest：latest 随每次推送变化，出问题难回滚。
-    image: ghcr.io/q807738511/vaulthub:v0.8.6
+    image: ghcr.io/q807738511/vaulthub:v0.8.7
     container_name: VaultHub
     pull_policy: always
     ports:
       - "8088:8088"
+    # 固定不变的参数（容器内路径、官方 API 地址、监控挂载点、硬件能力声明）
+    # 全部收在 VaultHub.env 里，这里只保留你会经常调整的几项。
+    env_file:
+      - ./VaultHub.env
     environment:
-      # WebUI 用户名密码登录；未设置时默认为 ADMIN / ADMIN123。
-      ADMIN_USERNAME: "${ADMIN_USERNAME:-ADMIN}"
-      ADMIN_PASSWORD: "${ADMIN_PASSWORD:-ADMIN123}"
-      # 内置 NAS 监控开关，不需要 Glances 容器。
-      SYSTEM_MONITOR_ENABLED: "true"
-      # 采样间隔示例，当前接口按请求即时读取。
-      SYSTEM_MONITOR_INTERVAL: "5"
-      # 网卡名称；留空时由后端使用默认网卡策略。
-      SYSTEM_MONITOR_INTERFACE: ""
-      # 容器内要显示容量的卷，逗号分隔；也可直接填容器内绝对路径。
-      SYSTEM_MONITOR_FILESYSTEMS: "vol1,vol2,vol3"
-      # 宿主机系统信息在容器内的只读路径。
-      SYSTEM_MONITOR_PROC_ROOT: "/host/proc"
-      SYSTEM_MONITOR_SYS_ROOT: "/host/sys"
-      # 可选：配置后影视本地库启用 TMDB 刮削；未配置时默认豆瓣/文件名兜底。
-      TMDB_API_KEY: "${TMDB_API_KEY:-}"
-      TMDB_API_BASE: "${TMDB_API_BASE:-https://api.themoviedb.org/3}"
-      TMDB_IMAGE_BASE: "${TMDB_IMAGE_BASE:-https://image.tmdb.org/t/p}"
-      MEDIA_SCRAPER_MODE: "${MEDIA_SCRAPER_MODE:-auto}"
-      MEDIA_RUNTIME_CONFIG: "${MEDIA_RUNTIME_CONFIG:-/data/media-runtime.json}"
-      # Go 字幕服务无需 Python/额外容器；默认自动扫描视频同目录字幕。
-      MEDIA_ROOT: "/media"
-      # FFmpeg兼容流缓存；建议映射到容量充足的数据卷。
-      MEDIA_CACHE_DIR: "${MEDIA_CACHE_DIR:-/data/transcode-cache}"
-      MEDIA_CACHE_MAX_BYTES: "${MEDIA_CACHE_MAX_BYTES:-10737418240}"
-      MEDIA_CACHE_MAX_AGE_HOURS: "${MEDIA_CACHE_MAX_AGE_HOURS:-168}"
-      MEDIA_CACHE_CLEANUP_INTERVAL_HOURS: "${MEDIA_CACHE_CLEANUP_INTERVAL_HOURS:-24}"
-      # 在线 provider 预留标准 JSON 适配端点；留空时仅使用本地字幕。
-      SUBTITLE_SHOOTER_ENDPOINT: ""
-      SUBTITLE_ZIMUKU_BASE: ""
-      SUBTITLE_SUBHD_BASE: ""
-      # 硬件转码：auto 会优先尝试 NVIDIA CUDA，其次 VAAPI/QSV，失败自动回退 CPU。
-      FFMPEG_HWACCEL: "${FFMPEG_HWACCEL:-auto}"
-      VAAPI_DEVICE: "${VAAPI_DEVICE:-/dev/dri/renderD128}"
-      # NVIDIA 宿主机安装 nvidia-container-toolkit 后取消注释 deploy.devices。
-      NVIDIA_VISIBLE_DEVICES: "${NVIDIA_VISIBLE_DEVICES:-all}"
-      NVIDIA_DRIVER_CAPABILITIES: "${NVIDIA_DRIVER_CAPABILITIES:-compute,video,utility}"
+      # WebUI 登录账号，首次部署请改掉默认值。
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-ADMIN}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-ADMIN123}
+      # TMDB 个人密钥；留空则用豆瓣/文件名兜底，也可以在 WebUI 系统设置里填。
+      - TMDB_API_KEY=${TMDB_API_KEY:-}
+      # 刮削方式：auto / tmdb / filename。
+      - MEDIA_SCRAPER_MODE=${MEDIA_SCRAPER_MODE:-auto}
+      # FFmpeg 兼容流缓存目录；想放到大容量卷就改这里并加对应 volumes 映射。
+      - MEDIA_CACHE_DIR=${MEDIA_CACHE_DIR:-/data/transcode-cache}
+      # 硬件转码：auto 优先 NVIDIA CUDA，其次 VAAPI/QSV，失败自动回退 CPU。
+      - FFMPEG_HWACCEL=${FFMPEG_HWACCEL:-auto}
+      # 要显示容量的卷，逗号分隔；需与下方 volumes 里的 /host/volN 对应。
+      - SYSTEM_MONITOR_FILESYSTEMS=${SYSTEM_MONITOR_FILESYSTEMS:-vol1,vol2,vol3}
     # NVIDIA 宿主机安装 nvidia-container-toolkit 后，可在 .env 设置 VAULTHUB_GPUS=all。
     # gpus: "${VAULTHUB_GPUS:-all}"
     # GPU 主机启用 VAAPI/QSV 时取消注释；默认不映射不存在的设备，保证 CPU 主机可启动。
@@ -70,4 +50,4 @@ services:
       - /tmp:size=32m,mode=1777
     security_opt:
       - no-new-privileges:true
-    restart: "on-failure:1"
+    restart: unless-stopped

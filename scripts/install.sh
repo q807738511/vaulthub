@@ -53,6 +53,15 @@ mkdir -p "$TARGET_DIR"
 for name in Dockerfile docker-compose.yml .dockerignore Caddyfile index.html caddy vaulthub-manager README.md; do
   cp -a "$FILES_DIR/$name" "$TARGET_DIR/$name"
 done
+
+# v0.8.7：compose 用 env_file 加载 VaultHub.env，缺文件时 docker compose 会直接报
+# "env file ... not found" 拒绝启动，因此必须一起安装；已存在则保留用户的修改。
+if [ ! -f "$TARGET_DIR/VaultHub.env" ]; then
+  cp -a "$FILES_DIR/VaultHub.env" "$TARGET_DIR/VaultHub.env"
+  echo "      创建默认 VaultHub.env"
+else
+  echo "      保留现有 VaultHub.env"
+fi
 chmod +x "$TARGET_DIR/caddy" "$TARGET_DIR/vaulthub-manager"
 
 if [ ! -f "$TARGET_DIR/.env" ]; then

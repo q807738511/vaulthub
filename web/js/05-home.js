@@ -32,7 +32,10 @@ function renderHomeLibraryNav() {
   (localMediaLibraries || []).forEach(lib => {
     const group = homeGroupOfType(lib.type);
     const count = Number(homeIndexStatus[lib.id]?.total || 0);
+    /* data-nav-key 唯一标识一个媒体库条目。漫画与电子书都落在 data-view="comic"，
+       只靠 data-view 无法区分，switchView 会永远高亮排在前面的那一个。 */
     rows.push(`<div class="nav-item" data-view="${esc(group)}" data-lib-id="${esc(lib.id)}" `
+      + `data-nav-key="${esc(group + ":" + lib.id)}" `
       + `onclick="openHomeLibrary('${esc(group)}',${jsAttrArg(lib.id)})" title="${esc(lib.name)}">`
       + `<span class="ic">${HOME_TYPE_ICON[lib.type] || "📄"}</span>`
       + `<span class="txt">${esc(lib.name)}</span>`
@@ -41,6 +44,7 @@ function renderHomeLibraryNav() {
   if (typeof externalServices !== "undefined") {
     externalServices.forEach(svc => {
       rows.push(`<div class="nav-item" data-view="${esc(svc.group)}" data-lib-id="${esc(svc.id)}" `
+        + `data-nav-key="${esc(svc.group + ":" + svc.id)}" `
         + `onclick="openExternalService(${jsAttrArg(svc.id)})" title="${esc(svc.name)}">`
         + `<span class="ic">🔗</span><span class="txt">${esc(svc.name)}</span>`
         + `<span class="cnt">↗</span></div>`);
@@ -48,10 +52,21 @@ function renderHomeLibraryNav() {
   }
   host.innerHTML = rows.length ? rows.join("")
     : `<div class="nav-empty">${esc(t("libNavEmpty"))}</div>`;
+  /* 这里每 5 秒被 initHome 的定时器整体重建一次（为了刷新计数与索引进度）。
+     重建出来的节点都是新的、都不带 active，因此必须按 switchView 记下的
+     选中键重新套用高亮，否则用户点完媒体库 5 秒后侧栏就什么都不亮了。 */
+  const activeKey = window.vaultHubActiveNavKey;
+  if (activeKey) {
+    const keep = [...host.querySelectorAll(".nav-item[data-nav-key]")]
+      .find(n => n.dataset.navKey === activeKey);
+    if (keep) keep.classList.add("active");
+  }
 }
 function openHomeLibrary(group, libId) {
+  /* 先把当前媒体库切过去再切视图，并把 libId 传给 switchView，
+     否则同组的漫画与电子书无法区分，侧栏高亮会停在排在前面的那一个。 */
   selectLocalLibrary(group, libId);
-  switchView(group);
+  switchView(group, libId);
 }
 function formatHomeCount(n) {
   const v = Number(n) || 0;
