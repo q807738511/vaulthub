@@ -46,5 +46,5 @@ assert "videoRoot.dataset.videoMetadata=formatVideoMetadata(info)" not in stream
 assert "context.WithTimeout" in backend and "CheckRedirect" in backend
 assert "media-video-body" in css and ("object-fit:contain" in css.replace(" ", "") or "object-fit: contain" in css)
 
-assert "v0.8.5" in index
-print("PASS: v0.8.5 runtime settings, split bookshelf, and movie details contracts")
+assert "v0.8.6" in index
+print("PASS: v0.8.6 runtime settings, split bookshelf, and movie details contracts")

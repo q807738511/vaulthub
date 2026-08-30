@@ -8,9 +8,13 @@ ROOT = Path(__file__).resolve().parents[1]
 index = (ROOT / "index.html").read_text(encoding="utf-8")
 
 # index.html no longer inlines the whole app.
-assert '<link rel="stylesheet" href="/web/css/main.css">' in index
+# v0.8.6: every asset URL carries a ?v=<version> cache-busting query string, so
+# match the path prefix instead of the exact bare URL.
+assert re.search(r'<link rel="stylesheet" href="/web/css/main\.css\?v=[0-9.]+">', index), \
+    "main.css must be referenced with a ?v= cache-busting query"
 for f in ["01-state.js", "02-media.js", "03-features.js", "04-boot.js"]:
-    assert f'<script src="/web/js/{f}"></script>' in index, f"missing script tag {f}"
+    assert re.search(rf'<script src="/web/js/{re.escape(f)}\?v=[0-9.]+"></script>', index), \
+        f"missing versioned script tag {f}"
 
 # The split assets must exist.
 css = ROOT / "web" / "css" / "main.css"

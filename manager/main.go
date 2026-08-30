@@ -319,14 +319,116 @@ var managerRoutes = []string{
 	"handle /api/admin/*",
 }
 
+// cachePolicyMarker identifies the v0.8.6 static-asset cache policy. The
+// container prefers the persisted /data/Caddyfile over the image's
+// /etc/caddy/Caddyfile, so pulling a new image alone would NOT deliver new
+// cache headers to existing installs — the browser would keep executing the
+// stale JS bundle this release exists to fix. Startup therefore migrates the
+// policy into place, keyed on this marker so it happens exactly once and any
+// operator edits inside the block are preserved.
+const cachePolicyMarker = "VAULTHUB-CACHE-POLICY"
+
+// cachePolicyBody is inserted verbatim (indented to match the surrounding
+// block) right after the static `root *` directive, i.e. before try_files and
+// file_server so the header matchers take effect.
+var cachePolicyBody = []string{
+	"# " + cachePolicyMarker + " v1",
+	"# /web/ 资源由嵌套 handle 独占：缺失文件返回 404，不会回落成 index.html。",
+	"# 带 ?v=<语义版本> 且文件存在 → immutable 长缓存；其余一律短缓存回源。",
+	"handle /web/* {",
+	"	@versioned_asset {",
+	"		file",
+	"		expression `{query.v}.matches(\"^[0-9]+\\\\.[0-9]+\\\\.[0-9]+$\")`",
+	"	}",
+	"	header @versioned_asset Cache-Control \"public, max-age=31536000, immutable\"",
+	"",
+	"	@unversioned_asset not expression `{query.v}.matches(\"^[0-9]+\\\\.[0-9]+\\\\.[0-9]+$\")`",
+	"	header @unversioned_asset Cache-Control \"public, max-age=300, must-revalidate\"",
+	"",
+	"	@web_miss not file",
+	"	header @web_miss Cache-Control \"no-store\"",
+	"",
+	"	file_server",
+	"}",
+	"",
+	"# 入口页是版本入口，必须每次回源，否则升级后仍会执行缓存里的旧脚本。",
+	"handle {",
+	"	header Cache-Control \"no-store, must-revalidate\"",
+	"	try_files {path} /index.html",
+	"	file_server",
+	"}",
+	"# " + cachePolicyMarker + "-END",
+}
+
+// injectCachePolicy adds the static-asset cache policy to a Caddyfile that does
+// not have it yet. It is a no-op when the marker is already present (fresh
+// images ship it, and operators may have customised it), when the file already
+// defines any of the policy's matcher names (re-defining a matcher makes Caddy
+// reject the whole config and the container would restart forever), and when no
+// static `root *` directive exists to anchor the insertion.
+func injectCachePolicy(s string) string {
+	if strings.Contains(s, cachePolicyMarker) {
+		return s
+	}
+	for _, name := range []string{"@versioned_asset", "@unversioned_asset", "@web_miss"} {
+		if strings.Contains(s, name) {
+			return s
+		}
+	}
+	lines := strings.Split(s, "\n")
+	anchor := -1
+	for i, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "root *") {
+			anchor = i
+			break
+		}
+	}
+	if anchor < 0 {
+		return s
+	}
+	indent := lines[anchor][:len(lines[anchor])-len(strings.TrimLeft(lines[anchor], " 	"))]
+
+	// Drop the legacy `try_files` / `file_server` pair that used to live directly
+	// in this block: the injected policy owns serving now, and leaving the old
+	// directives behind would re-introduce the SPA fallback for /web/* (a missing
+	// asset would answer 200 text/html again, which is the bug being fixed).
+	body := make([]string, 0, len(lines)-anchor)
+	for _, line := range lines[anchor+1:] {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "try_files {path} /index.html" || trimmed == "file_server" {
+			// Only strip while still inside the static block (deeper indent).
+			if strings.HasPrefix(line, indent) {
+				continue
+			}
+		}
+		body = append(body, line)
+	}
+
+	block := make([]string, 0, len(cachePolicyBody)+2)
+	block = append(block, "")
+	for _, line := range cachePolicyBody {
+		if line == "" {
+			block = append(block, "")
+			continue
+		}
+		block = append(block, indent+line)
+	}
+	out := make([]string, 0, len(lines)+len(block))
+	out = append(out, lines[:anchor+1]...)
+	out = append(out, block...)
+	out = append(out, body...)
+	return strings.Join(out, "\n")
+}
+
 // normalizeCaddyfile migrates an older Caddyfile in place. It is idempotent:
 // only genuinely missing manager routes are inserted, so repeated container
 // starts never accumulate duplicate handle blocks.
 func normalizeCaddyfile(b []byte) []byte {
 	s := strings.ReplaceAll(string(b), "\r\n", "\n")
+	s = injectCachePolicy(s)
 	var missing []string
 	for _, x := range managerRoutes {
-		if !strings.Contains(s, x+" {") && !strings.Contains(s, x+"\t{") {
+		if !strings.Contains(s, x+" {") && !strings.Contains(s, x+"	{") {
 			missing = append(missing, x)
 		}
 	}
@@ -336,7 +438,7 @@ func normalizeCaddyfile(b []byte) []byte {
 	var sb strings.Builder
 	sb.WriteString("\n")
 	for _, x := range missing {
-		sb.WriteString("\t" + x + " {\n\t\treverse_proxy http://127.0.0.1:9099\n\t}\n")
+		sb.WriteString("	" + x + " {\n		reverse_proxy http://127.0.0.1:9099\n	}\n")
 	}
 	if i := strings.Index(s, "{"); i >= 0 {
 		s = s[:i+1] + sb.String() + s[i+1:]

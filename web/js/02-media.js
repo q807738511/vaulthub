@@ -414,10 +414,17 @@ async function loadLocalFiles(group, lib, offset = 0) {
     }
     const prev = offset > 0 ? `<button class="btn" onclick="loadLocalFiles('${esc(group)}',findMediaLibrary('${esc(lib.id)}'),${Math.max(0, offset - pageSize)})">← 上一页</button>` : "";
     const next = data.has_more ? `<button class="btn" onclick="loadLocalFiles('${esc(group)}',findMediaLibrary('${esc(lib.id)}'),${offset + pageSize})">下一页 →</button>` : "";
-    const pager = `<div class="media-actions">${prev}<span class="media-file-meta">${offset + 1}-${offset + files.length} / ${Number(data.total) || files.length}</span>${next}</div>`;
+    /* 过滤后可能一条不剩（例如整页都是已读，或整页都是不支持的扩展名）。
+       此时旧写法会算出「1-0 / 848」这种不成立的区间，改为显式提示本页为空。 */
+    const total = Number(data.total) || files.length;
+    const range = files.length ? `${offset + 1}-${offset + files.length}` : "本页无匹配";
+    const pager = `<div class="media-actions">${prev}<span class="media-file-meta">${range} / ${total}</span>${next}</div>`;
     if (group === "comic") {
       const toolbar = `<div class="content-section-heading"><div><span class="eyebrow">我的媒体库</span><h3>${lib.type === "book" ? "电子书" : "漫画"}</h3></div><div class="comic-shelf-tabs"><button class="${comicShelfView === "completed" ? "active" : ""}" onclick="setComicShelfView(comicShelfView === \"completed\" ? \"shelf\" : \"completed\")">${comicShelfView === "completed" ? "← 返回未读" : "✓ 已读收藏"}</button></div></div>`;
-      target.innerHTML = `${toolbar}${files.length ? `<div class="book-grid">${files.map(file => renderBookCard(group, lib, file)).join("")}</div>` : `<div class="empty-tip">${comicShelfView === "completed" ? "还没有读完的书" : "当前页没有未读书籍"}</div>`}${pager}`;
+      const emptyTip = comicShelfView === "completed"
+        ? "还没有读完的书；读完的书籍会自动归档到这里。"
+        : (data.has_more ? "本页书籍都已读完，点击「下一页 →」继续查看未读书籍。" : "该媒体库暂无未读书籍。");
+      target.innerHTML = `${toolbar}${files.length ? `<div class="book-grid">${files.map(file => renderBookCard(group, lib, file)).join("")}</div>` : `<div class="empty-tip">${esc(emptyTip)}</div>`}${pager}`;
       scrapeVisibleBookCovers(target);
     } else if (group === "audio") {
       audioFiles = files;
@@ -887,7 +894,9 @@ async function startWasmVideoFallback(root, video, direct) {
   const bytes = await response.arrayBuffer();
   if (bytes.byteLength > WASM_INPUT_LIMIT) throw new Error("文件超过 256 MB，浏览器软件解码为保护内存已停止");
   terminateWasmVideo(root);
-  const worker = new Worker("/web/vendor/ffmpeg/worker.js");
+  /* Worker 脚本同样要带版本号：它是我们自己的代码，不带版本时浏览器只会按
+     max-age=300 复用，升级后 5 分钟内仍可能执行旧 Worker。 */
+  const worker = new Worker(`/web/vendor/ffmpeg/worker.js?v=${encodeURIComponent(VAULTHUB_SCRIPT_VERSION)}`);
   root.__wasmWorker = worker;
   const id = Date.now().toString(36);
   let output;

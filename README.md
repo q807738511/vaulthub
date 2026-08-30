@@ -1,6 +1,6 @@
-# VaultHub 蜀鼠之家 v0.8.5：配置安全与媒体元数据修复
+# VaultHub 蜀鼠之家 v0.8.6：前端资源缓存修复
 
-v0.8.5 在 v0.8.4 功能基础上修复配置并发落盘、TMDB 自定义目标 SSRF、播放器元数据覆盖和已读收藏分页问题。环境变量继续作为首次启动默认值，WebUI 保存值持久化到 `/data/media-runtime.json` 并立即生效。
+v0.8.6 修复升级后浏览器仍然执行旧前端脚本的问题：v0.8.4/v0.8.5 已经删除的播放器设置按钮、标记已读按钮、下载按钮和书架页电子书/漫画切换按钮，在旧缓存下会继续显示，看起来像“没有更新”。现在 `index.html` 入口页 `no-store`，`/web/` 静态资源带 `?v=<版本>` 且长缓存，前端启动时还会自查脚本版本，不一致时自动绕过缓存重载一次。
 
 ## v0.8.0 更新
 
@@ -299,7 +299,7 @@ ghcr.io/q807738511/vaulthub:<版本标签>   # 例如 v0.8.0
 ghcr.io/q807738511/vaulthub:latest        # 随 main 漂移，生产不建议
 ```
 
-**建议固定版本标签部署（如 `v0.8.0`），不要用 `latest`**：`latest` 会随每次推送变化，出问题难回滚。
+**建议固定版本标签部署（如 `v0.8.6`），不要用 `latest`**：`latest` 会随每次推送变化，出问题难回滚。
 
 ### 中国网络：直连 GHCR 拉不动怎么办
 
@@ -319,17 +319,17 @@ ghcr.io/q807738511/vaulthub:latest        # 随 main 漂移，生产不建议
 ```yaml
 services:
   vaulthub:
-    image: ghcr.nju.edu.cn/q807738511/vaulthub:v0.8.0
+    image: ghcr.nju.edu.cn/q807738511/vaulthub:v0.8.6
 ```
 
-> 注意只有一个冒号：`vaulthub:v0.8.0`，不是 `vaulthub::v0.8.0`。
+> 注意只有一个冒号：`vaulthub:v0.8.6`，不是 `vaulthub::v0.8.6`。
 
 用法二——保持 compose 用官方名，手动拉取后打回原名（便于随时切回直连）：
 
 ```bash
-docker pull ghcr.nju.edu.cn/q807738511/vaulthub:v0.8.0
-docker tag  ghcr.nju.edu.cn/q807738511/vaulthub:v0.8.0 ghcr.io/q807738511/vaulthub:v0.8.0
-# compose 仍写 image: ghcr.io/q807738511/vaulthub:v0.8.3
+docker pull ghcr.nju.edu.cn/q807738511/vaulthub:v0.8.6
+docker tag  ghcr.nju.edu.cn/q807738511/vaulthub:v0.8.6 ghcr.io/q807738511/vaulthub:v0.8.6
+# compose 仍写 image: ghcr.io/q807738511/vaulthub:v0.8.6
 docker compose up -d
 ```
 

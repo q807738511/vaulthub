@@ -129,11 +129,41 @@
 	# 未命中媒体域名时返回 WebUI 静态页面。
 	handle {
 		root * {$WEB_ROOT:/srv}
-		try_files {path} /index.html
-		file_server
 		header {
 			X-Content-Type-Options nosniff
 			Referrer-Policy same-origin
 		}
+
+		# VAULTHUB-CACHE-POLICY v1
+		# 缓存策略（v0.8.6 修复「升级后浏览器仍执行旧前端」）。
+		# 必须用两个互斥的嵌套 handle：Caddy 的指令排序把 try_files 排在 handle
+		# 之前，若把 try_files 留在外层，缺失的 /web/ 资源会先被改写成
+		# /index.html，再被当作脚本缓存——正是本版本要消除的故障。
+		handle /web/* {
+			# 带 ?v=<语义版本> 且文件存在 → 内容变则 URL 变，可安全长缓存。
+			@versioned_asset {
+				file
+				expression `{query.v}.matches("^[0-9]+\\.[0-9]+\\.[0-9]+$")`
+			}
+			header @versioned_asset Cache-Control "public, max-age=31536000, immutable"
+
+			# 其余（无版本串、空版本串、非法版本、vendor 二进制）只短缓存并回源。
+			@unversioned_asset not expression `{query.v}.matches("^[0-9]+\\.[0-9]+\\.[0-9]+$")`
+			header @unversioned_asset Cache-Control "public, max-age=300, must-revalidate"
+
+			# 缺失文件在这里直接 404，不进入 SPA 回落，也不可缓存。
+			@web_miss not file
+			header @web_miss Cache-Control "no-store"
+
+			file_server
+		}
+
+		# 入口页是版本入口，必须每次回源，否则升级后仍会执行缓存里的旧脚本。
+		handle {
+			header Cache-Control "no-store, must-revalidate"
+			try_files {path} /index.html
+			file_server
+		}
+		# VAULTHUB-CACHE-POLICY-END
 	}
 }

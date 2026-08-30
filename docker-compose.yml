@@ -1,6 +1,7 @@
 services:
   vaulthub:
-    image: ghcr.io/q807738511/vaulthub:latest
+    # 固定版本标签部署，不要用 latest：latest 随每次推送变化，出问题难回滚。
+    image: ghcr.io/q807738511/vaulthub:v0.8.6
     container_name: VaultHub
     pull_policy: always
     ports:
