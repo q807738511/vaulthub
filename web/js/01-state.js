@@ -4,6 +4,45 @@
    <script> tags in index.html and MUST be preserved. */
 
 const VAULTHUB_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+/* 脚本自带版本号，必须与 index.html 里的 window.VAULTHUB_ASSET_VERSION 相同。
+   历史故障：v0.8.3→v0.8.5 的前端修改在服务端已生效，但浏览器仍执行缓存里的
+   旧 02-media.js，用户看到「没有更新」。现在入口页 no-store、静态资源带 ?v=，
+   并在启动时做一次一致性自查，不一致就绕过缓存强制重载一次。 */
+const VAULTHUB_SCRIPT_VERSION = "0.8.6";
+function ensureFreshAssets() {
+  /* expected 为空 = 浏览器执行的 index.html 早于 v0.8.6（旧版本入口页没有声明
+     版本号），同样属于"页面是旧的"，也需要换 URL 重新取一次。 */
+  const expected = String(window.VAULTHUB_ASSET_VERSION || "");
+  const url = new URL(location.href);
+  if (expected === VAULTHUB_SCRIPT_VERSION) {
+    /* 版本已对齐：清掉守卫标记，并把重载用的 _vh 参数从地址栏抹掉，
+       避免用户复制到带内部参数的链接。 */
+    try { sessionStorage.removeItem("vaulthub_asset_reload"); } catch (e) {}
+    if (url.searchParams.has("_vh")) {
+      url.searchParams.delete("_vh");
+      try { history.replaceState(null, "", url.toString()); } catch (e) {}
+    }
+    return false;
+  }
+  const marker = expected || "legacy-entry";
+  /* 双重守卫，缺一不可：
+     - URL 上的 _vh：sessionStorage 被浏览器禁用（隐私模式/策略）时仍然有效，
+       否则 setItem 静默失败会导致无限重载；
+     - sessionStorage：用户手动去掉 _vh 后再次进入时也不会反复刷新。 */
+  const urlGuard = String(url.searchParams.get("_vh") || "").startsWith(VAULTHUB_SCRIPT_VERSION + ".");
+  let storageGuard = false;
+  try { storageGuard = (sessionStorage.getItem("vaulthub_asset_reload") || "") === marker; } catch (e) {}
+  if (urlGuard || storageGuard) {
+    console.warn(`VaultHub 资源版本仍不一致（页面 ${expected || "旧版本"} / 脚本 ${VAULTHUB_SCRIPT_VERSION}），请按 Ctrl+Shift+R 强制刷新一次。`);
+    return false;
+  }
+  try { sessionStorage.setItem("vaulthub_asset_reload", marker); } catch (e) {}
+  /* 换一个查询串即换一个缓存键，浏览器必须回源取新的 index.html，
+     新入口页再带 ?v= 拉取新脚本。URL 对象会保留原有 query 和 hash。 */
+  url.searchParams.set("_vh", VAULTHUB_SCRIPT_VERSION + "." + Date.now());
+  location.replace(url.toString());
+  return true;
+}
 let vaultHubAuthenticated = false;
 let vaultHubIdleTimer = null;
 /* 每次显式登录/退出都推进一次 epoch。启动探测和 60 秒轮询是异步的，

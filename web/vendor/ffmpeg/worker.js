@@ -4,15 +4,21 @@
  * engine when the browser's SIMD capability probe fails.
  */
 let corePromise;
+/* Worker 的 URL 由主线程带上 ?v=<版本>；把同一个版本号透传给 importScripts 和
+   locateFile，vendor 资产升级时 URL 会跟着变，不用等 max-age=300 过期。 */
+const ASSET_VERSION = (() => {
+  try { return new URL(self.location.href).searchParams.get("v") || ""; } catch (e) { return ""; }
+})();
+function vendorUrl(name) {
+  return "/web/vendor/ffmpeg/" + name + (ASSET_VERSION ? "?v=" + encodeURIComponent(ASSET_VERSION) : "");
+}
 function loadCore() {
   if (corePromise) return corePromise;
-  importScripts("/web/vendor/ffmpeg/ffmpeg-core.js");
+  importScripts(vendorUrl("ffmpeg-core.js"));
   corePromise = createFFmpegCore({
     noInitialRun: true,
     locateFile(path) {
-      return path.endsWith(".wasm")
-        ? "/web/vendor/ffmpeg/ffmpeg-core.wasm"
-        : "/web/vendor/ffmpeg/" + path;
+      return path.endsWith(".wasm") ? vendorUrl("ffmpeg-core.wasm") : vendorUrl(path);
     },
     print() {},
     printErr(line) { self.postMessage({ type: "log", line: String(line) }); },
