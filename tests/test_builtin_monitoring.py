@@ -8,9 +8,9 @@ import sys as _sys, os as _os
 _sys.path.insert(0, _os.path.dirname(__file__))
 from _frontend import frontend_source as _fs
 html = _fs()
-# v0.8.7：固定环境变量搬到 VaultHub.env，compose 只留常用项。
+# v0.8.7：固定环境变量搬到 vaulthub.env，compose 只留常用项。
 # 部署配置按「两个文件合起来」校验，写法统一为 KEY=value。
-compose = (ROOT / "docker-compose.yml").read_text() + "\n" + (ROOT / "VaultHub.env").read_text()
+compose = (ROOT / "docker-compose.yml").read_text() + "\n" + (ROOT / "vaulthub.env").read_text()
 
 required_source = [
     '"/api/system/metrics"',

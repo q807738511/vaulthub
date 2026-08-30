@@ -1,53 +1,56 @@
 services:
   vaulthub:
-    # 固定版本标签部署，不要用 latest：latest 随每次推送变化，出问题难回滚。
-    image: ghcr.io/q807738511/vaulthub:v0.8.7
+    image: ghcr.nju.edu.cn/q807738511/vaulthub:v0.8.7
     container_name: VaultHub
     pull_policy: always
+
+    # 将 NVIDIA GPU 交给容器；宿主机需安装 NVIDIA Container Toolkit。
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities:
+                - gpu
+
     ports:
       - "8088:8088"
-    # 固定不变的参数（容器内路径、官方 API 地址、监控挂载点、硬件能力声明）
-    # 全部收在 VaultHub.env 里，这里只保留你会经常调整的几项。
+
     env_file:
-      - ./VaultHub.env
+      - ./vaulthub.env
+
     environment:
-      # WebUI 登录账号，首次部署请改掉默认值。
-      - ADMIN_USERNAME=${ADMIN_USERNAME:-ADMIN}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-ADMIN123}
-      # TMDB 个人密钥；留空则用豆瓣/文件名兜底，也可以在 WebUI 系统设置里填。
-      - TMDB_API_KEY=${TMDB_API_KEY:-}
-      # 刮削方式：auto / tmdb / filename。
-      - MEDIA_SCRAPER_MODE=${MEDIA_SCRAPER_MODE:-auto}
-      # FFmpeg 兼容流缓存目录；想放到大容量卷就改这里并加对应 volumes 映射。
-      - MEDIA_CACHE_DIR=${MEDIA_CACHE_DIR:-/data/transcode-cache}
-      # 硬件转码：auto 优先 NVIDIA CUDA，其次 VAAPI/QSV，失败自动回退 CPU。
-      - FFMPEG_HWACCEL=${FFMPEG_HWACCEL:-auto}
-      # 要显示容量的卷，逗号分隔；需与下方 volumes 里的 /host/volN 对应。
-      - SYSTEM_MONITOR_FILESYSTEMS=${SYSTEM_MONITOR_FILESYSTEMS:-vol1,vol2,vol3}
-    # NVIDIA 宿主机安装 nvidia-container-toolkit 后，可在 .env 设置 VAULTHUB_GPUS=all。
-    # gpus: "${VAULTHUB_GPUS:-all}"
-    # GPU 主机启用 VAAPI/QSV 时取消注释；默认不映射不存在的设备，保证 CPU 主机可启动。
-    # devices:
-    #   - "${VAULTHUB_DRI_DEVICE:-/dev/dri:/dev/dri}"
+      - ADMIN_USERNAME=admin
+      - ADMIN_PASSWORD=admin123
+      - TMDB_API_KEY=
+      - MEDIA_SCRAPER_MODE=auto
+      - SYSTEM_MONITOR_FILESYSTEMS=vol1,vol2,vol3
+
     volumes:
       - ./data:/data
-      # 启用本机容器扫描；Docker socket 权限等同主机 Docker 管理权限，仅限可信环境。
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      # 媒体目录：按实际宿主机目录修改，保持只读。
       - /media:/media:ro
-      # 兼容现有 NAS 媒体目录；应用通过容器内固定路径访问。
+      - /vol3/1000/监控/date:/data/transcode-cache
       - /vol3/1000/komga/音乐:/yy:ro
       - /vol3/1000/komga/漫画/mh:/mh:ro
       - /vol3/1000/komga/BOOK:/txt:ro
-      # 内置监控所需的少量只读系统信息。
+      - /vol4/1000/AMO:/AMO:ro
+      - /vol2/1000/ATV:/ATV:ro
+
+      # Docker 状态监控
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+      # 系统监控
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
-      # 仅监控这里列出的卷容量，不会递归扫描文件。
       - /vol1:/host/vol1:ro
       - /vol2:/host/vol2:ro
       - /vol3:/host/vol3:ro
+
     tmpfs:
       - /tmp:size=32m,mode=1777
+
     security_opt:
       - no-new-privileges:true
+
     restart: unless-stopped

@@ -6,7 +6,7 @@
    switchView 不能再用 `.nav-item[data-view="comic"]` 取第一个匹配节点。
 2. 阅读器/播放器顶栏的媒体标题不再覆盖右侧按钮——标题必须能收缩，
    按钮组不能收缩，并且两者不能重叠。
-3. compose 精简：固定环境变量搬到 VaultHub.env，compose 用 KEY=value 写法，
+3. compose 精简：固定环境变量搬到 vaulthub.env，compose 用 KEY=value 写法，
    且不再出现 `KEY: "value"` 这种在 list 语法下会被解析成 map 的错误写法。
 
 直接运行：python3 tests/test_v087_nav_title_compose.py
@@ -171,11 +171,11 @@ check("详情页关闭按钮避开顶栏",
 
 # ---------------------------------------------------------------- 需求 3
 compose = read("docker-compose.yml")
-env_file = read("VaultHub.env")
+env_file = read("vaulthub.env")
 
 # compose 必须引用 env_file
-check("compose 通过 env_file 引用 VaultHub.env",
-      re.search(r"env_file:\s*\n\s*-\s*\.?/?VaultHub\.env", compose) is not None,
+check("compose 通过 env_file 引用 vaulthub.env",
+      re.search(r"env_file:\s*\n\s*-\s*\.?/?vaulthub\.env", compose) is not None,
       "compose 未声明 env_file")
 
 # compose 里 environment 段必须全是 KEY=value 列表写法，
@@ -192,22 +192,22 @@ if env_block:
     check("compose environment 已精简（不超过 12 项）",
           len(lines) <= 12, f"当前 {len(lines)} 项")
 
-# VaultHub.env 也必须是 KEY=value，且承载固定参数
+# vaulthub.env 也必须是 KEY=value，且承载固定参数
 env_lines = [ln.strip() for ln in env_file.splitlines()
              if ln.strip() and not ln.strip().startswith("#")]
 for s in env_lines:
-    check(f"VaultHub.env 行是 KEY=value: {s[:40]}", re.match(r"^[A-Z0-9_]+=", s) is not None, s)
+    check(f"vaulthub.env 行是 KEY=value: {s[:40]}", re.match(r"^[A-Z0-9_]+=", s) is not None, s)
 # env_file 不做变量插值以外的处理，但 compose 会展开 ${VAR:-default}。
 # 写成字面量会让用户在 .env 里的覆盖被静默忽略（v0.8.6 时是生效的）。
 literal = [s for s in env_lines if not re.match(r"^[A-Z0-9_]+=\$\{[A-Z0-9_]+(:-[^}]*)?\}$", s)]
-check("VaultHub.env 保留 ${VAR:-默认值} 覆盖能力", not literal,
+check("vaulthub.env 保留 ${VAR:-默认值} 覆盖能力", not literal,
       "写成字面量的行: " + "; ".join(literal[:3]))
 
 fixed_keys = ["SYSTEM_MONITOR_PROC_ROOT", "SYSTEM_MONITOR_SYS_ROOT", "MEDIA_ROOT",
               "MEDIA_RUNTIME_CONFIG", "TMDB_API_BASE", "TMDB_IMAGE_BASE",
               "SUBTITLE_SHOOTER_ENDPOINT", "NVIDIA_DRIVER_CAPABILITIES"]
 missing = [k for k in fixed_keys if not re.search(rf"^{k}=", env_file, re.M)]
-check("固定参数已归集到 VaultHub.env", not missing, "缺少: " + ",".join(missing))
+check("固定参数已归集到 vaulthub.env", not missing, "缺少: " + ",".join(missing))
 
 # 固定参数不应再重复出现在 compose 的 environment 段
 if env_block:
@@ -221,7 +221,7 @@ dead = [k for k in ["PROXY_HOST"] if re.search(rf"^\s*-?\s*{k}=", compose + env_
 check("部署配置不含无效的代理变量", not dead, "存在死变量: " + ",".join(dead))
 
 # 常用项仍留在 compose 里方便直接改
-common = ["ADMIN_USERNAME", "ADMIN_PASSWORD", "TMDB_API_KEY", "MEDIA_CACHE_DIR"]
+common = ["ADMIN_USERNAME", "ADMIN_PASSWORD", "TMDB_API_KEY"]
 if env_block:
     lost = [k for k in common if not re.search(rf"-\s*{k}=", env_block.group(1))]
     check("常用项仍展示在 compose", not lost, "缺少: " + ",".join(lost))
@@ -232,20 +232,20 @@ check("compose 使用固定版本标签而非 latest",
 
 # README 要说明新增的 env 文件
 readme = read("README.md")
-check("README 说明 VaultHub.env", "VaultHub.env" in readme)
+check("README 说明 vaulthub.env", "vaulthub.env" in readme)
 
 # env_file 缺失时 docker compose 直接拒绝启动（"env file ... not found"），
-# 因此安装/升级脚本必须把 VaultHub.env 一起投递，且不能覆盖用户已改过的值。
+# 因此安装/升级脚本必须把 vaulthub.env 一起投递，且不能覆盖用户已改过的值。
 for script in ["scripts/install.sh", "scripts/upgrade.sh"]:
     text = read(script)
-    check(f"{script} 投递 VaultHub.env", "VaultHub.env" in text)
-    check(f"{script} 保留已存在的 VaultHub.env",
-          re.search(r'if \[ ! -f "\$TARGET_DIR/VaultHub\.env" \]', text) is not None,
+    check(f"{script} 投递 vaulthub.env", "vaulthub.env" in text)
+    check(f"{script} 保留已存在的 vaulthub.env",
+          re.search(r'if \[ ! -f "\$TARGET_DIR/vaulthub\.env" \]', text) is not None,
           "缺少存在性判断，会覆盖用户配置")
-check("upgrade.sh 备份 VaultHub.env",
-      re.search(r"for name in .*VaultHub\.env.*SHA256SUMS", read("scripts/upgrade.sh")) is not None)
-check("rollback.sh 还原 VaultHub.env",
-      re.search(r"for name in .*VaultHub\.env.*SHA256SUMS", read("scripts/rollback.sh")) is not None,
+check("upgrade.sh 备份 vaulthub.env",
+      re.search(r"for name in .*vaulthub\.env.*SHA256SUMS", read("scripts/upgrade.sh")) is not None)
+check("rollback.sh 还原 vaulthub.env",
+      re.search(r"for name in .*vaulthub\.env.*SHA256SUMS", read("scripts/rollback.sh")) is not None,
       "备份与还原不对称")
 
 # 版本号

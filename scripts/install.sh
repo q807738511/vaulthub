@@ -54,13 +54,13 @@ for name in Dockerfile docker-compose.yml .dockerignore Caddyfile index.html cad
   cp -a "$FILES_DIR/$name" "$TARGET_DIR/$name"
 done
 
-# v0.8.7：compose 用 env_file 加载 VaultHub.env，缺文件时 docker compose 会直接报
+# v0.8.7：compose 用 env_file 加载 vaulthub.env，缺文件时 docker compose 会直接报
 # "env file ... not found" 拒绝启动，因此必须一起安装；已存在则保留用户的修改。
-if [ ! -f "$TARGET_DIR/VaultHub.env" ]; then
-  cp -a "$FILES_DIR/VaultHub.env" "$TARGET_DIR/VaultHub.env"
-  echo "      创建默认 VaultHub.env"
+if [ ! -f "$TARGET_DIR/vaulthub.env" ]; then
+  cp -a "$FILES_DIR/vaulthub.env" "$TARGET_DIR/vaulthub.env"
+  echo "      创建默认 vaulthub.env"
 else
-  echo "      保留现有 VaultHub.env"
+  echo "      保留现有 vaulthub.env"
 fi
 chmod +x "$TARGET_DIR/caddy" "$TARGET_DIR/vaulthub-manager"
 

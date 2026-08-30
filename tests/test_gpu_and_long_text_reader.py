@@ -7,8 +7,8 @@ import sys as _sys, os as _os
 _sys.path.insert(0, _os.path.dirname(__file__))
 from _frontend import frontend_source as _fs
 html = _fs()
-# v0.8.7：硬件能力声明搬到 VaultHub.env，按两个文件合起来校验。
-compose = (ROOT / "docker-compose.yml").read_text() + "\n" + (ROOT / "VaultHub.env").read_text()
+# v0.8.7：硬件能力声明搬到 vaulthub.env，按两个文件合起来校验。
+compose = (ROOT / "docker-compose.yml").read_text() + "\n" + (ROOT / "vaulthub.env").read_text()
 dockerfile = (ROOT / "Dockerfile").read_text()
 
 # Backend must expose status and accept a safe, explicit accelerator per request.

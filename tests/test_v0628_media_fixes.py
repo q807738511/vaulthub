@@ -10,9 +10,9 @@ import sys as _sys, os as _os
 _sys.path.insert(0, _os.path.dirname(__file__))
 from _frontend import frontend_source as _fs
 html = _fs()
-# v0.8.7：部署配置拆成 docker-compose.yml（常用项）+ VaultHub.env（固定项），
+# v0.8.7：部署配置拆成 docker-compose.yml（常用项）+ vaulthub.env（固定项），
 # 按两个文件合起来校验。
-compose = (ROOT / "docker-compose.yml").read_text() + "\n" + (ROOT / "VaultHub.env").read_text()
+compose = (ROOT / "docker-compose.yml").read_text() + "\n" + (ROOT / "vaulthub.env").read_text()
 
 # 1. 媒体库写接口必须经过会话鉴权，且 ADMIN_TOKEN 为空时不得放行。
 assert "func writeAuth(" in media_go
