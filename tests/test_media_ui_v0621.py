@@ -9,7 +9,7 @@ checks = {
     "brand subtitle": '蜀鼠之家，承包你的所有休闲内容' in html,
     "collapsed reader follows sidebar": 'body.sidebar-hidden .media-reader-overlay { left:60px;' in html,
     "mobile reader ignores sidebar": '@media (max-width: 768px)' in html and '.media-reader-overlay { left:0;' in html,
-    "video information button": 'class="video-info-button"' in html and 'aria-label="播放状态信息"' in html,
+    "video information button": 'class="video-info-button"' in html and 'aria-label="播放及媒体元数据"' in html,
     "video information popover": 'class="video-status-panel"' in html and 'toggleVideoStatusPanel' in html,
     "controls visibility sync": 'video-controls-visible' in html and 'scheduleVideoChromeHide' in html,
     "shared media view toggle": 'toggleMediaResourceView' in html and 'media-view-toggle' in html,

@@ -50,9 +50,8 @@ function renderHomeLibraryNav() {
     : `<div class="nav-empty">${esc(t("libNavEmpty"))}</div>`;
 }
 function openHomeLibrary(group, libId) {
-  localMediaSelection[group] = libId;
+  selectLocalLibrary(group, libId);
   switchView(group);
-  renderLocalMedia(group);
 }
 function formatHomeCount(n) {
   const v = Number(n) || 0;

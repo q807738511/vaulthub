@@ -85,7 +85,7 @@
     <div id="customNav"></div>
   </nav>
   <div class="sidebar-foot">
-    <span class="ver">v0.8.3 · Cache &amp; Library UX</span>
+    <span class="ver">v0.8.4 · Media Detail &amp; Settings</span>
     <button class="rail-btn" onclick="toggleBars()" title="折叠 / 展开侧栏" aria-label="折叠或展开侧栏">⇤</button>
   </div>
 </aside>
@@ -509,10 +509,23 @@
     <div class="setpanel" id="setpanel-scrape">
       <div class="setblock">
         <h4>🔍 <span data-i18n="setScrapeSrc">刮削来源</span></h4>
-        <p data-i18n="setScrapeHint">媒体库按大类使用不同刮削源：电子书刊用 Google Books / Bangumi，影视作品用 TMDB / 豆瓣，音视作品用 MusicBrainz / 网易云。</p>
-        <div class="media-actions">
-          <button class="btn" type="button" onclick="rebuildAllLibraries()">🔄 <span data-i18n="libRescrape">全部重新刮削</span></button>
-          <button class="btn" type="button" onclick="refreshMediaLibraries(true)">↻ <span data-i18n="libRefresh">刷新</span></button>
+        <p>环境变量作为首次启动默认值；在这里保存后写入 <code>/data/media-runtime.json</code> 并立即生效。API Key 留空会保留已保存的密钥。</p>
+        <div class="form-2col">
+          <div class="cfg-field"><label for="mediaScraperMode">刮削方式</label><select id="mediaScraperMode" data-env="MEDIA_SCRAPER_MODE"><option value="auto">自动：TMDB → 豆瓣 → 文件名</option><option value="tmdb">仅 TMDB（失败回文件名）</option><option value="douban">仅豆瓣（失败回文件名）</option><option value="filename">仅使用文件名</option></select></div>
+          <div class="cfg-field"><label for="tmdbApiKey">TMDB API Key</label><input id="tmdbApiKey" type="password" autocomplete="new-password" placeholder="未设置；留空保留已有值" data-env="TMDB_API_KEY"></div>
+          <div class="cfg-field"><label for="tmdbApiBase">TMDB API 调用链接</label><input id="tmdbApiBase" type="url" value="https://api.themoviedb.org/3" data-env="TMDB_API_BASE"></div>
+          <div class="cfg-field"><label for="tmdbImageBase">TMDB 图片调用链接</label><input id="tmdbImageBase" type="url" value="https://image.tmdb.org/t/p" data-env="TMDB_IMAGE_BASE"></div>
+        </div>
+        <div class="media-actions"><span class="badge" id="mediaRuntimeStatus">读取中…</span><button class="btn btn-primary" type="button" onclick="saveMediaRuntimeSettings()">💾 保存刮削与缓存设置</button><button class="btn" type="button" onclick="loadMediaRuntimeSettings(true)">↻ 重新载入</button><button class="btn" type="button" onclick="rebuildAllLibraries()">🔄 <span data-i18n="libRescrape">全部重新刮削</span></button></div>
+      </div>
+      <div class="setblock">
+        <h4>💾 转码缓存</h4>
+        <p>请填写容器内绝对路径，并在 Compose 中把该路径映射到容量充足的数据盘。保存后新缓存立即使用该目录。</p>
+        <div class="form-2col">
+          <div class="cfg-field"><label for="mediaCacheDir">缓存目录</label><input id="mediaCacheDir" value="/data/transcode-cache" data-env="MEDIA_CACHE_DIR"></div>
+          <div class="cfg-field"><label for="mediaCacheMaxBytes">最大容量（字节）</label><input id="mediaCacheMaxBytes" type="number" min="0" value="10737418240" data-env="MEDIA_CACHE_MAX_BYTES"></div>
+          <div class="cfg-field"><label for="mediaCacheMaxAge">最大保留时间（小时）</label><input id="mediaCacheMaxAge" type="number" min="0" value="168" data-env="MEDIA_CACHE_MAX_AGE_HOURS"></div>
+          <div class="cfg-field"><label for="mediaCacheCleanup">清理周期（小时）</label><input id="mediaCacheCleanup" type="number" min="1" value="24" data-env="MEDIA_CACHE_CLEANUP_INTERVAL_HOURS"></div>
         </div>
       </div>
       <div class="setblock">
@@ -660,7 +673,7 @@
   <div class="modal">
     <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
     <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
-    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.8.3 · Cache &amp; Library UX</b></div>
+    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.8.4 · Media Detail &amp; Settings</b></div>
     <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>Go (media/manager/subtitle) · Caddy · FFmpeg · SQLite · HTML/CSS/JS</b></div>
     <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>VaultHub 内置系统监控</b></div>
     <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>

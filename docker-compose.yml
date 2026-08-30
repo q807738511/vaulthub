@@ -24,6 +24,8 @@ services:
       TMDB_API_KEY: "${TMDB_API_KEY:-}"
       TMDB_API_BASE: "${TMDB_API_BASE:-https://api.themoviedb.org/3}"
       TMDB_IMAGE_BASE: "${TMDB_IMAGE_BASE:-https://image.tmdb.org/t/p}"
+      MEDIA_SCRAPER_MODE: "${MEDIA_SCRAPER_MODE:-auto}"
+      MEDIA_RUNTIME_CONFIG: "${MEDIA_RUNTIME_CONFIG:-/data/media-runtime.json}"
       # Go 字幕服务无需 Python/额外容器；默认自动扫描视频同目录字幕。
       MEDIA_ROOT: "/media"
       # FFmpeg兼容流缓存；建议映射到容量充足的数据卷。

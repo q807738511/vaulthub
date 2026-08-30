@@ -47,6 +47,13 @@ type App struct {
 	cacheDir         string
 	cacheMaxBytes    int64
 	cacheMaxAge      time.Duration
+	cacheCleanup     time.Duration
+	cacheWake        chan struct{}
+	runtimeConfig    string
+	scraperMode      string
+	tmdbAPIKey       string
+	tmdbAPIBase      string
+	tmdbImageBase    string
 	configTrusted    bool // false when config exists but cannot be read/decoded
 	// Hooks are test-only fault/interleaving instrumentation, nil in production.
 	scanWriteHook     func(string, int)
@@ -58,6 +65,16 @@ type FileEntry struct {
 	Path  string `json:"path"`
 	Size  int64  `json:"size"`
 	Mtime int64  `json:"mtime"`
+}
+type RuntimeConfig struct {
+	ScraperMode               string `json:"scraper_mode"`
+	TMDBAPIKey                string `json:"tmdb_api_key,omitempty"`
+	TMDBAPIBase               string `json:"tmdb_api_base"`
+	TMDBImageBase             string `json:"tmdb_image_base"`
+	CacheDir                  string `json:"cache_dir"`
+	CacheMaxBytes             int64  `json:"cache_max_bytes"`
+	CacheMaxAgeHours          int64  `json:"cache_max_age_hours"`
+	CacheCleanupIntervalHours int64  `json:"cache_cleanup_interval_hours"`
 }
 
 func env(k, d string) string {
@@ -79,6 +96,14 @@ func (a *App) load() {
 	a.cacheDir = env("MEDIA_CACHE_DIR", "/data/transcode-cache")
 	a.cacheMaxBytes = envInt64("MEDIA_CACHE_MAX_BYTES", 10*1024*1024*1024)
 	a.cacheMaxAge = time.Duration(envInt64("MEDIA_CACHE_MAX_AGE_HOURS", 168)) * time.Hour
+	a.cacheCleanup = time.Duration(envInt64("MEDIA_CACHE_CLEANUP_INTERVAL_HOURS", 24)) * time.Hour
+	a.cacheWake = make(chan struct{}, 1)
+	a.runtimeConfig = env("MEDIA_RUNTIME_CONFIG", "/data/media-runtime.json")
+	a.scraperMode = env("MEDIA_SCRAPER_MODE", "auto")
+	a.tmdbAPIKey = os.Getenv("TMDB_API_KEY")
+	a.tmdbAPIBase = strings.TrimRight(env("TMDB_API_BASE", "https://api.themoviedb.org/3"), "/")
+	a.tmdbImageBase = strings.TrimRight(env("TMDB_IMAGE_BASE", "https://image.tmdb.org/t/p"), "/")
+	a.loadRuntimeConfig()
 	b, e := os.ReadFile(a.config)
 	if e == nil {
 		a.configTrusted = json.Unmarshal(b, &a.libs) == nil
@@ -100,20 +125,34 @@ func (a *App) load() {
 // until the configured quota is reached. A dedicated directory can be mounted
 // to a large data volume instead of consuming the system disk.
 func (a *App) cacheJanitor() {
-	interval := time.Duration(envInt64("MEDIA_CACHE_CLEANUP_INTERVAL_HOURS", 24)) * time.Hour
-	if interval <= 0 {
-		interval = 24 * time.Hour
-	}
 	a.cleanCache()
-	for range time.NewTicker(interval).C {
+	for {
+		a.mu.RLock()
+		interval := a.cacheCleanup
+		wake := a.cacheWake
+		a.mu.RUnlock()
+		if interval <= 0 {
+			interval = 24 * time.Hour
+		}
+		timer := time.NewTimer(interval)
+		select {
+		case <-timer.C:
+		case <-wake:
+			if !timer.Stop() {
+				<-timer.C
+			}
+		}
 		a.cleanCache()
 	}
 }
 func (a *App) cleanCache() {
-	if a.cacheMaxBytes <= 0 && a.cacheMaxAge <= 0 {
+	a.mu.RLock()
+	cacheDir, cacheMaxBytes, cacheMaxAge := a.cacheDir, a.cacheMaxBytes, a.cacheMaxAge
+	a.mu.RUnlock()
+	if cacheMaxBytes <= 0 && cacheMaxAge <= 0 {
 		return
 	}
-	ents, e := os.ReadDir(a.cacheDir)
+	ents, e := os.ReadDir(cacheDir)
 	if e != nil {
 		return
 	}
@@ -133,8 +172,8 @@ func (a *App) cleanCache() {
 		if e != nil {
 			continue
 		}
-		p := filepath.Join(a.cacheDir, ent.Name())
-		if a.cacheMaxAge > 0 && now.Sub(info.ModTime()) > a.cacheMaxAge {
+		p := filepath.Join(cacheDir, ent.Name())
+		if cacheMaxAge > 0 && now.Sub(info.ModTime()) > cacheMaxAge {
 			_ = os.Remove(p)
 			continue
 		}
@@ -143,7 +182,7 @@ func (a *App) cleanCache() {
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].mod.Before(items[j].mod) })
 	for _, it := range items {
-		if a.cacheMaxBytes <= 0 || total <= a.cacheMaxBytes {
+		if cacheMaxBytes <= 0 || total <= cacheMaxBytes {
 			break
 		}
 		if os.Remove(it.path) == nil {
@@ -305,6 +344,126 @@ func managerSessionOK(r *http.Request) bool {
 // HttpOnly session cookie. Password login is the only write authority.
 func writeAuth(r *http.Request) bool {
 	return managerSessionOK(r)
+}
+
+func (a *App) runtimeConfigSnapshot(includeSecret bool) map[string]any {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	out := map[string]any{
+		"scraper_mode": a.scraperMode, "tmdb_enabled": a.tmdbAPIKey != "",
+		"tmdb_api_key_masked": a.tmdbAPIKey != "", "tmdb_api_base": a.tmdbAPIBase,
+		"tmdb_image_base": a.tmdbImageBase, "cache_dir": a.cacheDir,
+		"cache_max_bytes": a.cacheMaxBytes, "cache_max_age_hours": int64(a.cacheMaxAge / time.Hour),
+		"cache_cleanup_interval_hours": int64(a.cacheCleanup / time.Hour),
+	}
+	if includeSecret {
+		out["tmdb_api_key"] = a.tmdbAPIKey
+	}
+	return out
+}
+func (a *App) loadRuntimeConfig() {
+	b, err := os.ReadFile(a.runtimeConfig)
+	if err != nil {
+		return
+	}
+	var c RuntimeConfig
+	if json.Unmarshal(b, &c) != nil {
+		return
+	}
+	if c.ScraperMode != "" {
+		a.scraperMode = c.ScraperMode
+	}
+	if c.TMDBAPIKey != "" {
+		a.tmdbAPIKey = c.TMDBAPIKey
+	}
+	if c.TMDBAPIBase != "" {
+		a.tmdbAPIBase = strings.TrimRight(c.TMDBAPIBase, "/")
+	}
+	if c.TMDBImageBase != "" {
+		a.tmdbImageBase = strings.TrimRight(c.TMDBImageBase, "/")
+	}
+	if c.CacheDir != "" {
+		a.cacheDir = c.CacheDir
+	}
+	if c.CacheMaxBytes >= 0 {
+		a.cacheMaxBytes = c.CacheMaxBytes
+	}
+	if c.CacheMaxAgeHours >= 0 {
+		a.cacheMaxAge = time.Duration(c.CacheMaxAgeHours) * time.Hour
+	}
+	if c.CacheCleanupIntervalHours > 0 {
+		a.cacheCleanup = time.Duration(c.CacheCleanupIntervalHours) * time.Hour
+	}
+}
+func validHTTPBase(v string) bool {
+	u, err := url.Parse(v)
+	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
+}
+func (a *App) saveRuntimeConfig(c RuntimeConfig) error {
+	if c.ScraperMode != "auto" && c.ScraperMode != "tmdb" && c.ScraperMode != "douban" && c.ScraperMode != "filename" {
+		return fmt.Errorf("invalid scraper mode")
+	}
+	if !validHTTPBase(c.TMDBAPIBase) || !validHTTPBase(c.TMDBImageBase) {
+		return fmt.Errorf("invalid TMDB URL")
+	}
+	if !filepath.IsAbs(c.CacheDir) || c.CacheMaxBytes < 0 || c.CacheMaxAgeHours < 0 || c.CacheCleanupIntervalHours <= 0 {
+		return fmt.Errorf("invalid cache settings")
+	}
+	if err := os.MkdirAll(c.CacheDir, 0755); err != nil {
+		return fmt.Errorf("cache directory: %w", err)
+	}
+	if c.TMDBAPIKey == "" {
+		a.mu.RLock()
+		c.TMDBAPIKey = a.tmdbAPIKey
+		a.mu.RUnlock()
+	}
+	b, _ := json.MarshalIndent(c, "", "  ")
+	if err := os.MkdirAll(filepath.Dir(a.runtimeConfig), 0755); err != nil {
+		return err
+	}
+	tmp := a.runtimeConfig + ".tmp"
+	if err := os.WriteFile(tmp, b, 0600); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, a.runtimeConfig); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	a.mu.Lock()
+	a.scraperMode, a.tmdbAPIKey = c.ScraperMode, c.TMDBAPIKey
+	a.tmdbAPIBase, a.tmdbImageBase = strings.TrimRight(c.TMDBAPIBase, "/"), strings.TrimRight(c.TMDBImageBase, "/")
+	a.cacheDir, a.cacheMaxBytes = c.CacheDir, c.CacheMaxBytes
+	a.cacheMaxAge, a.cacheCleanup = time.Duration(c.CacheMaxAgeHours)*time.Hour, time.Duration(c.CacheCleanupIntervalHours)*time.Hour
+	a.mu.Unlock()
+	select {
+	case a.cacheWake <- struct{}{}:
+	default:
+	}
+	return nil
+}
+func (a *App) runtimeSettings(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		writeJSON(w, 200, a.runtimeConfigSnapshot(false))
+		return
+	}
+	if r.Method != http.MethodPut && r.Method != http.MethodPost {
+		errJSON(w, 405, "method not allowed")
+		return
+	}
+	if !writeAuth(r) {
+		errJSON(w, 401, "login required")
+		return
+	}
+	var c RuntimeConfig
+	if json.NewDecoder(io.LimitReader(r.Body, 64<<10)).Decode(&c) != nil {
+		errJSON(w, 400, "invalid JSON")
+		return
+	}
+	if err := a.saveRuntimeConfig(c); err != nil {
+		errJSON(w, 400, err.Error())
+		return
+	}
+	writeJSON(w, 200, a.runtimeConfigSnapshot(false))
 }
 func validID(s string) bool {
 	if s == "" || len(s) > 63 {
@@ -1175,7 +1334,10 @@ func mime(p string) string {
 
 func (a *App) cacheKey(path string) string {
 	h := sha256.Sum256([]byte(path))
-	return filepath.Join(a.cacheDir, hex.EncodeToString(h[:])+".mp4")
+	a.mu.RLock()
+	dir := a.cacheDir
+	a.mu.RUnlock()
+	return filepath.Join(dir, hex.EncodeToString(h[:])+".mp4")
 }
 func commandJSON(w http.ResponseWriter, r *http.Request, name string, args ...string) {
 	ctx, cancel := context.WithCancel(r.Context())
@@ -1408,7 +1570,7 @@ func probe(w http.ResponseWriter, r *http.Request, a *App) {
 	}
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
-	b, e := exec.CommandContext(ctx, "ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", p).Output()
+	b, e := exec.CommandContext(ctx, "ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", "-show_format", p).Output()
 	if e != nil {
 		writeJSON(w, 200, map[string]any{"audio_codec": "", "video_codec": "", "container_likely_supported": false, "audio_likely_supported": true, "compat_recommended": true})
 		return
@@ -1417,22 +1579,30 @@ func probe(w http.ResponseWriter, r *http.Request, a *App) {
 		Streams []struct {
 			CodecType string `json:"codec_type"`
 			CodecName string `json:"codec_name"`
+			Width     int    `json:"width"`
+			Height    int    `json:"height"`
 		} `json:"streams"`
+		Format struct {
+			FormatName string `json:"format_name"`
+			BitRate    string `json:"bit_rate"`
+			Duration   string `json:"duration"`
+		} `json:"format"`
 	}
 	_ = json.Unmarshal(b, &x)
 	ac, vc := "", ""
+	width, height := 0, 0
 	for _, s := range x.Streams {
 		if s.CodecType == "audio" && ac == "" {
 			ac = s.CodecName
 		}
 		if s.CodecType == "video" && vc == "" {
-			vc = s.CodecName
+			vc, width, height = s.CodecName, s.Width, s.Height
 		}
 	}
 	ext := strings.ToLower(filepath.Ext(p))
 	container := ext == ".mp4" || ext == ".m4v" || ext == ".webm" || ext == ".ogv" || ext == ".ogg"
 	audio := ac == "" || map[string]bool{"aac": true, "mp3": true, "opus": true, "vorbis": true, "flac": true}[ac]
-	writeJSON(w, 200, map[string]any{"audio_codec": ac, "video_codec": vc, "container_likely_supported": container, "audio_likely_supported": audio, "compat_recommended": !container || !audio})
+	writeJSON(w, 200, map[string]any{"audio_codec": ac, "video_codec": vc, "width": width, "height": height, "format_name": x.Format.FormatName, "container": strings.TrimPrefix(ext, "."), "bit_rate": x.Format.BitRate, "duration": x.Format.Duration, "video_metadata": true, "container_likely_supported": container, "audio_likely_supported": audio, "compat_recommended": !container || !audio})
 }
 func streams(w http.ResponseWriter, r *http.Request, a *App) {
 	l, ok := a.find(r.URL.Query().Get("id"))
@@ -1700,13 +1870,11 @@ func main() {
 	mux.HandleFunc("/api/media/archive/zip/register", a.archive)
 	mux.HandleFunc("/api/media/archive", a.archive)
 	mux.HandleFunc("/api/media/zip", a.archive)
+	mux.HandleFunc("/api/media/settings", a.runtimeSettings)
 	mux.HandleFunc("/api/media/scrapers", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{
-			"default":         "douban",
-			"tmdb_enabled":    os.Getenv("TMDB_API_KEY") != "",
-			"tmdb_image_base": strings.TrimRight(env("TMDB_IMAGE_BASE", "https://image.tmdb.org/t/p"), "/"),
-			"types":           []string{"movie", "series"},
-		})
+		out := a.runtimeConfigSnapshot(false)
+		out["default"], out["types"] = out["scraper_mode"], []string{"movie", "series"}
+		writeJSON(w, 200, out)
 	})
 	mux.HandleFunc("/api/media/hardware", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, detectHardware(r.Context(), r.URL.Query().Get("hw")))
@@ -1746,18 +1914,33 @@ func (a *App) subtitle(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"items": items})
 }
 func (a *App) tmdb(w http.ResponseWriter, r *http.Request) {
-	key := os.Getenv("TMDB_API_KEY")
+	a.mu.RLock()
+	key, base := a.tmdbAPIKey, a.tmdbAPIBase
+	a.mu.RUnlock()
 	if key == "" {
 		errJSON(w, 400, "TMDB_API_KEY is not configured")
 		return
 	}
-	typ := r.URL.Query().Get("type")
+	mediaType := r.URL.Query().Get("type")
 	endpoint := "search/movie"
-	if typ == "series" || typ == "tv" {
+	if mediaType == "series" || mediaType == "tv" {
 		endpoint = "search/tv"
 	}
-	base := strings.TrimRight(env("TMDB_API_BASE", "https://api.themoviedb.org/3"), "/")
-	u := base + "/" + endpoint + "?api_key=" + url.QueryEscape(key) + "&language=zh-CN&query=" + url.QueryEscape(r.URL.Query().Get("query"))
+	if id := r.URL.Query().Get("id"); id != "" {
+		if _, err := strconv.ParseInt(id, 10, 64); err != nil {
+			errJSON(w, 400, "invalid TMDB id")
+			return
+		}
+		kind := "movie"
+		if mediaType == "series" || mediaType == "tv" {
+			kind = "tv"
+		}
+		endpoint = kind + "/" + id
+	}
+	u := base + "/" + endpoint + "?api_key=" + url.QueryEscape(key) + "&language=zh-CN&append_to_response=credits,recommendations"
+	if strings.HasPrefix(endpoint, "search/") {
+		u += "&query=" + url.QueryEscape(r.URL.Query().Get("query"))
+	}
 	req, _ := http.NewRequestWithContext(r.Context(), "GET", u, nil)
 	res, e := http.DefaultClient.Do(req)
 	if e != nil {

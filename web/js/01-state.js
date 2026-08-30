@@ -1021,7 +1021,7 @@ function switchSetTab(key) {
   document.querySelectorAll(".settab[data-settab]").forEach(el => el.classList.toggle("on", el.dataset.settab === key));
   document.querySelectorAll(".setpanel").forEach(el => el.classList.toggle("on", el.id === "setpanel-" + key));
   if (key === "caddy") loadCaddyConfig();
-  if (key === "scrape") refreshHardwareStatus();
+  if (key === "scrape") { refreshHardwareStatus(); if (typeof loadMediaRuntimeSettings === "function") loadMediaRuntimeSettings(false); }
   if (key === "account") refreshSessionStatus(false);
   /* 媒体库标签页：把已添加的库和外连服务都刷新一遍，避免看到上一次的旧列表。 */
   if (key === "library") {
