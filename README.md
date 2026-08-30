@@ -353,10 +353,10 @@ v0.8.7 起部署配置分两个文件，都放在 compose 同一目录：
 
 | 文件 | 放什么 | 什么时候改 |
 |------|--------|-----------|
-| `docker-compose.yml` | 镜像标签、端口、卷、以及 7 项常用环境变量 | 换版本、改路径、改账号时 |
+| `docker-compose.yml` | 镜像标签、端口、卷、以及常用环境变量 | 换版本、改路径、改账号时 |
 | `VaultHub.env` | 容器内固定路径、官方 API 地址、监控挂载点、缓存清理策略、硬件能力声明 | 基本不用改 |
 
-compose 通过 `env_file` 加载 `VaultHub.env`，因此 compose 里只剩下你会经常调的那几项：`ADMIN_USERNAME`、`ADMIN_PASSWORD`、`TMDB_API_KEY`、`MEDIA_SCRAPER_MODE`、`MEDIA_CACHE_DIR`、`FFMPEG_HWACCEL`、`SYSTEM_MONITOR_FILESYSTEMS`。
+compose 通过 `env_file` 加载 `VaultHub.env`，因此 compose 里只剩下你会经常调的那几项：`ADMIN_USERNAME`、`ADMIN_PASSWORD`、`TMDB_API_KEY`、`MEDIA_SCRAPER_MODE`、`MEDIA_CACHE_DIR`、`SYSTEM_MONITOR_FILESYSTEMS`。硬件转码选择 `FFMPEG_HWACCEL` 放在 `VaultHub.env` 中统一管理，默认值为 `auto`。
 
 > 关于代理：TMDB 客户端使用自带 SSRF 防护的自定义 `http.Transport`，没有设置 `Proxy`，所以 `PROXY_HOST` 和标准的 `HTTPS_PROXY` 都不会生效。若你的网络必须走代理才能访问 `api.themoviedb.org`，请在网关或 Clash 侧做透明代理/分流。
 
