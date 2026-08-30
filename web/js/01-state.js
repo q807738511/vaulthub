@@ -8,7 +8,7 @@ const VAULTHUB_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
    历史故障：v0.8.3→v0.8.5 的前端修改在服务端已生效，但浏览器仍执行缓存里的
    旧 02-media.js，用户看到「没有更新」。现在入口页 no-store、静态资源带 ?v=，
    并在启动时做一次一致性自查，不一致就绕过缓存强制重载一次。 */
-const VAULTHUB_SCRIPT_VERSION = "0.8.6";
+const VAULTHUB_SCRIPT_VERSION = "0.8.7";
 function ensureFreshAssets() {
   /* expected 为空 = 浏览器执行的 index.html 早于 v0.8.6（旧版本入口页没有声明
      版本号），同样属于"页面是旧的"，也需要换 URL 重新取一次。 */
@@ -889,12 +889,32 @@ async function refreshHardwareStatus(notify) {
 
 /* ================= 导航 =================
    v0.7.0：顶栏不再有「首页 / 资料库」按钮，侧边栏也不再重复展示三个资源大类。
-   媒体视图由侧边栏的媒体库条目驱动，大类只在系统设置的媒体库配置里出现。 */
-const titleMap = { home: "navHome", pt: "navPt", comic: "navComic", movie: "navMovie", audio: "navAudio" };
+   媒体视图由侧边栏的媒体库条目驱动，大类只在系统设置的媒体库配置里出现。
+   （v0.8.7 删掉了 titleMap：顶栏标题去掉后它已无任何引用点。） */
 
-function switchView(v) {
-  document.querySelectorAll(".nav-item[data-view]").forEach(n => n.classList.remove("active"));
-  const navItem = document.querySelector(`.nav-item[data-view="${v}"]`);
+function switchView(v, libId) {
+  const items = [...document.querySelectorAll(".nav-item[data-view]")];
+  items.forEach(n => n.classList.remove("active"));
+  /* 漫画与电子书同属 data-view="comic"，音乐与 MV 同属 "audio"。
+     旧写法 querySelector('.nav-item[data-view="comic"]') 永远命中排在前面的那一个，
+     于是点「电子书」后侧栏高亮仍停在「漫画」，看起来像是又跳回了漫画。
+     侧栏条目现在带唯一的 data-nav-key，这里按它精确匹配；
+     直接比较 dataset 而不是拼接选择器，媒体库名或 id 含引号时也不会选歪。
+
+     未显式传 libId 时（首页「更多 ›」、侧栏事件委托等旧调用点）回落到该视图
+     当前选中的媒体库，避免高亮与页面内容对不上。
+     选中态还要记到 window 上：侧栏每 5 秒整体重绘一次，只把 active 打在 DOM
+     节点上会在重绘后丢失，表现为「点完 5 秒后侧栏什么都不亮」。 */
+  let navKey = "";
+  if (libId) {
+    navKey = v + ":" + libId;
+  } else if (typeof localMediaSelection !== "undefined" && localMediaSelection[v]) {
+    navKey = v + ":" + localMediaSelection[v];
+  }
+  window.vaultHubActiveNavKey = navKey;
+  const navItem = (navKey && items.find(n => n.dataset.navKey === navKey))
+    || items.find(n => n.dataset.view === v && !n.dataset.libId)
+    || items.find(n => n.dataset.view === v);
   if (navItem) navItem.classList.add("active");
   document.querySelectorAll(".view").forEach(s => s.classList.remove("active"));
   const view = document.getElementById("view-" + v);
