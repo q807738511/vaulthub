@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -44,10 +45,49 @@ func TestRuntimeConfigRejectsUnsafeValues(t *testing.T) {
 	if a.saveRuntimeConfig(bad) == nil {
 		t.Fatal("accepted non-http TMDB URL")
 	}
+	for _, target := range []string{"http://127.0.0.1:9099", "http://localhost:9099", "http://169.254.169.254/latest", "http://192.168.1.10/api"} {
+		bad = base
+		bad.TMDBAPIBase = target
+		if a.saveRuntimeConfig(bad) == nil {
+			t.Fatalf("accepted private TMDB target %s", target)
+		}
+	}
 	bad = base
 	bad.ScraperMode = "shell"
 	if a.saveRuntimeConfig(bad) == nil {
 		t.Fatal("accepted invalid scraper mode")
+	}
+}
+
+func TestRuntimeConfigConcurrentSavesRemainValid(t *testing.T) {
+	d := t.TempDir()
+	a := &App{runtimeConfig: filepath.Join(d, "runtime.json"), cacheWake: make(chan struct{}, 1)}
+	base := RuntimeConfig{ScraperMode: "auto", TMDBAPIBase: "https://api.themoviedb.org/3", TMDBImageBase: "https://image.tmdb.org/t/p", CacheDir: filepath.Join(d, "cache"), CacheMaxAgeHours: 1, CacheCleanupIntervalHours: 1}
+	var wg sync.WaitGroup
+	errCh := make(chan error, 20)
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			c := base
+			c.CacheMaxBytes = int64(n + 1)
+			errCh <- a.saveRuntimeConfig(c)
+		}(i)
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	b, err := os.ReadFile(a.runtimeConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved RuntimeConfig
+	if json.Unmarshal(b, &saved) != nil || saved.CacheMaxBytes < 1 || saved.CacheMaxBytes > 20 {
+		t.Fatalf("invalid concurrent result: %s", b)
 	}
 }
 

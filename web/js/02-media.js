@@ -392,7 +392,7 @@ async function loadLocalFiles(group, lib, offset = 0) {
   const target = document.getElementById("local-media-content-" + group);
   if (!target) return;
   try {
-    const pageSize = group === "comic" ? mediaPageSize : group === "audio" ? audioPageSize : group === "movie" ? 50 : 100;
+    const pageSize = group === "comic" ? (comicShelfView === "completed" ? 100000 : mediaPageSize) : group === "audio" ? audioPageSize : group === "movie" ? 50 : 100;
     const res = await fetch(`/api/media/files?id=${encodeURIComponent(lib.id)}&offset=${offset}&limit=${pageSize}`, { cache: "no-store" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
@@ -1059,7 +1059,7 @@ async function initMovieCompatPlayer(root, lib, path) {
   root.querySelector("[data-movie-direct]")?.addEventListener("click", useDirect);
   root.querySelector("[data-movie-compat]")?.addEventListener("click", () => useCompat("手动选择服务端兼容流"));
   root.querySelector("[data-movie-wasm]")?.addEventListener("click", useWasm);
-  video.addEventListener("loadedmetadata", () => { video.muted = false; video.volume = 1; restoreVideoPlaybackState(video); fetch(`/api/media/streams?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}`,{cache:'no-store'}).then(r=>r.ok?r.json():null).then(info=>{populateVideoTracks(videoRoot,video,info);videoRoot.dataset.videoMetadata=formatVideoMetadata(info);updateVideoStatus(videoRoot,video,video.paused?"已暂停":"正在播放");}).catch(()=>{}); });
+  video.addEventListener("loadedmetadata", () => { video.muted = false; video.volume = 1; restoreVideoPlaybackState(video); fetch(`/api/media/streams?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}`,{cache:'no-store'}).then(r=>r.ok?r.json():null).then(info=>{populateVideoTracks(videoRoot,video,info);updateVideoStatus(videoRoot,video,video.paused?"已暂停":"正在播放");}).catch(()=>{}); });
   let engineFailurePending = false;
   video.addEventListener("error", async () => {
     if (engineFailurePending || (video.dataset.currentSrc || "").startsWith("blob:")) return;

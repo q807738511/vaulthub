@@ -41,7 +41,10 @@ assert "系统设置" not in movie_shell and "download" not in movie_shell
 assert "video-info-button" in movie_shell
 assert "formatVideoMetadata" in media and "videoMetadata" in media
 assert '"video_metadata"' in backend
+streams_callback = media.split('fetch(`/api/media/streams?',1)[1].split('}); });',1)[0]
+assert "videoRoot.dataset.videoMetadata=formatVideoMetadata(info)" not in streams_callback
+assert "context.WithTimeout" in backend and "CheckRedirect" in backend
 assert "media-video-body" in css and ("object-fit:contain" in css.replace(" ", "") or "object-fit: contain" in css)
 
-assert "v0.8.4" in index
-print("PASS: v0.8.4 runtime settings, split bookshelf, and movie details contracts")
+assert "v0.8.5" in index
+print("PASS: v0.8.5 runtime settings, split bookshelf, and movie details contracts")

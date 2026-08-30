@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -35,6 +36,7 @@ type Library struct {
 }
 type App struct {
 	mu               sync.RWMutex
+	configMu         sync.Mutex // serializes runtime config read-modify-write transactions
 	libs             []Library
 	jobs             map[string]uint64             // library id -> running generation
 	generations      map[string]uint64             // invalidates stale scans after delete/recreate
@@ -397,9 +399,65 @@ func (a *App) loadRuntimeConfig() {
 }
 func validHTTPBase(v string) bool {
 	u, err := url.Parse(v)
-	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil {
+		return false
+	}
+	host := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
+	if host == "" || host == "localhost" {
+		return false
+	}
+	if host == "api.themoviedb.org" || host == "image.tmdb.org" {
+		return u.Scheme == "https"
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return publicIP(ip)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil || len(addrs) == 0 {
+		return false
+	}
+	for _, addr := range addrs {
+		if !publicIP(addr.IP) {
+			return false
+		}
+	}
+	return true
+}
+func publicIP(ip net.IP) bool {
+	return ip != nil && !ip.IsLoopback() && !ip.IsPrivate() && !ip.IsLinkLocalUnicast() && !ip.IsLinkLocalMulticast() && !ip.IsUnspecified() && !ip.IsMulticast()
+}
+func safeHTTPClient() *http.Client {
+	dialer := &net.Dialer{Timeout: 5 * time.Second}
+	transport := &http.Transport{DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(address)
+		if err != nil {
+			return nil, err
+		}
+		ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+		if err != nil || len(ips) == 0 {
+			return nil, fmt.Errorf("target resolution failed")
+		}
+		for _, item := range ips {
+			if !publicIP(item.IP) {
+				return nil, fmt.Errorf("private target rejected")
+			}
+		}
+		return dialer.DialContext(ctx, network, net.JoinHostPort(ips[0].IP.String(), port))
+	}}
+	client := &http.Client{Timeout: 12 * time.Second, Transport: transport}
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 3 || !validHTTPBase(req.URL.Scheme+"://"+req.URL.Host) {
+			return http.ErrUseLastResponse
+		}
+		return nil
+	}
+	return client
 }
 func (a *App) saveRuntimeConfig(c RuntimeConfig) error {
+	a.configMu.Lock()
+	defer a.configMu.Unlock()
 	if c.ScraperMode != "auto" && c.ScraperMode != "tmdb" && c.ScraperMode != "douban" && c.ScraperMode != "filename" {
 		return fmt.Errorf("invalid scraper mode")
 	}
@@ -421,12 +479,28 @@ func (a *App) saveRuntimeConfig(c RuntimeConfig) error {
 	if err := os.MkdirAll(filepath.Dir(a.runtimeConfig), 0755); err != nil {
 		return err
 	}
-	tmp := a.runtimeConfig + ".tmp"
-	if err := os.WriteFile(tmp, b, 0600); err != nil {
+	tmpFile, err := os.CreateTemp(filepath.Dir(a.runtimeConfig), ".media-runtime-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmp := tmpFile.Name()
+	defer os.Remove(tmp)
+	if err := tmpFile.Chmod(0600); err != nil {
+		tmpFile.Close()
+		return err
+	}
+	if _, err := tmpFile.Write(b); err != nil {
+		tmpFile.Close()
+		return err
+	}
+	if err := tmpFile.Sync(); err != nil {
+		tmpFile.Close()
+		return err
+	}
+	if err := tmpFile.Close(); err != nil {
 		return err
 	}
 	if err := os.Rename(tmp, a.runtimeConfig); err != nil {
-		_ = os.Remove(tmp)
 		return err
 	}
 	a.mu.Lock()
@@ -443,6 +517,10 @@ func (a *App) saveRuntimeConfig(c RuntimeConfig) error {
 }
 func (a *App) runtimeSettings(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
+		if !writeAuth(r) {
+			errJSON(w, 401, "login required")
+			return
+		}
 		writeJSON(w, 200, a.runtimeConfigSnapshot(false))
 		return
 	}
@@ -1568,7 +1646,7 @@ func probe(w http.ResponseWriter, r *http.Request, a *App) {
 		errJSON(w, 404, "invalid media path")
 		return
 	}
-	ctx, cancel := context.WithCancel(r.Context())
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 	b, e := exec.CommandContext(ctx, "ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", "-show_format", p).Output()
 	if e != nil {
@@ -1941,8 +2019,10 @@ func (a *App) tmdb(w http.ResponseWriter, r *http.Request) {
 	if strings.HasPrefix(endpoint, "search/") {
 		u += "&query=" + url.QueryEscape(r.URL.Query().Get("query"))
 	}
-	req, _ := http.NewRequestWithContext(r.Context(), "GET", u, nil)
-	res, e := http.DefaultClient.Do(req)
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, "GET", u, nil)
+	res, e := safeHTTPClient().Do(req)
 	if e != nil {
 		errJSON(w, 502, "tmdb scrape failed")
 		return
@@ -1950,7 +2030,7 @@ func (a *App) tmdb(w http.ResponseWriter, r *http.Request) {
 	defer res.Body.Close()
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(res.StatusCode)
-	io.Copy(w, res.Body)
+	_, _ = io.Copy(w, io.LimitReader(res.Body, 8<<20))
 }
 
 // compatBuilds tracks which cache keys already have a background build running
