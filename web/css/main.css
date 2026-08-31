@@ -66,7 +66,7 @@
 
 
   /* ===== 登录遮罩 ===== */
-  .auth-mask { position:fixed; inset:0; z-index:1000; display:flex; align-items:center; justify-content:center; background:rgba(8,10,12,.86); backdrop-filter:blur(8px); }
+  .auth-mask { position:fixed; inset:0; z-index:2000; display:flex; align-items:center; justify-content:center; background:rgba(8,10,12,.86); backdrop-filter:blur(8px); }
   .auth-mask.hidden { display:none; }
   .auth-card { width:min(390px,calc(100vw - 32px)); padding:24px; border:1px solid var(--border); border-radius:var(--radius); background:var(--card); box-shadow:0 20px 70px rgba(0,0,0,.45); }
   .auth-card h2 { margin:0 0 8px; }
@@ -688,6 +688,7 @@
     display: none; align-items: center; justify-content: center;
   }
   .modal-mask.show { display: flex; }
+  #settingsModal { inset: 0; z-index: 1300; }
   body.sidebar-hidden .modal-mask { left: 62px; }
   @media (max-width: 680px) { .modal-mask { left: 0; } }
   .modal {

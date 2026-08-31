@@ -2005,6 +2005,60 @@ func (a *App) extractSubtitle(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/vtt; charset=utf-8")
 	w.Write(out)
 }
+func (a *App) externalSubtitle(w http.ResponseWriter, r *http.Request) {
+	if !writeAuth(r) {
+		errJSON(w, 401, "login required")
+		return
+	}
+	l, ok := a.find(r.URL.Query().Get("id"))
+	if !ok {
+		errJSON(w, 404, "invalid media path")
+		return
+	}
+	p, _, e := safeFile(l, r.URL.Query().Get("path"))
+	if e != nil {
+		errJSON(w, 404, "invalid media path")
+		return
+	}
+	ext := strings.ToLower(filepath.Ext(p))
+	if ext == ".vtt" {
+		f, e := os.Open(p)
+		if e != nil {
+			errJSON(w, 404, "subtitle not found")
+			return
+		}
+		defer f.Close()
+		w.Header().Set("Content-Type", "text/vtt; charset=utf-8")
+		io.Copy(w, f)
+		return
+	}
+	if !map[string]bool{".srt": true, ".ass": true, ".ssa": true, ".sub": true}[ext] {
+		errJSON(w, 400, "unsupported subtitle format")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "ffmpeg", "-hide_banner", "-loglevel", "error", "-i", p, "-f", "webvtt", "pipe:1")
+	pipe, e := cmd.StdoutPipe()
+	if e != nil || cmd.Start() != nil {
+		errJSON(w, 500, "subtitle convert failed")
+		return
+	}
+	out, e := io.ReadAll(io.LimitReader(pipe, (8<<20)+1))
+	if len(out) > 8<<20 {
+		cancel()
+		_ = cmd.Wait()
+		errJSON(w, 413, "subtitle output too large")
+		return
+	}
+	waitErr := cmd.Wait()
+	if e != nil || waitErr != nil || len(out) == 0 {
+		errJSON(w, 500, "subtitle convert failed")
+		return
+	}
+	w.Header().Set("Content-Type", "text/vtt; charset=utf-8")
+	w.Write(out)
+}
 func cancelTask(w http.ResponseWriter, r *http.Request, a *App) {
 	if r.Method != http.MethodPost {
 		errJSON(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -2060,9 +2114,10 @@ func main() {
 	mux.HandleFunc("/api/media/tasks/cancel", func(w http.ResponseWriter, r *http.Request) { cancelTask(w, r, a) })
 	mux.HandleFunc("/api/media/subtitles/search", a.subtitle)
 	mux.HandleFunc("/api/media/subtitles/extract", a.extractSubtitle)
-	mux.HandleFunc("/api/media/subtitles/proxy", a.serve)
+	mux.HandleFunc("/api/media/subtitles/proxy", a.externalSubtitle)
 	mux.HandleFunc("/api/media/tmdb", a.tmdb)
 	mux.HandleFunc("/api/media/tvdb", a.tvdb)
+	mux.HandleFunc("/api/media/metadata", a.localMetadata)
 	mux.HandleFunc("/api/media/network/speed", a.networkSpeed)
 	mux.HandleFunc("/api/media/compat", a.compat)
 	fmt.Println("VaultHub media API listening on 127.0.0.1:9100")
