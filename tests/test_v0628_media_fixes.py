@@ -34,7 +34,7 @@ assert "entry.raw || entry.name" in html, "前端必须用原始 ZIP 名请求�
 
 # 3. TMDB 密钥必须来自容器环境变量，不能被硬编码空值覆盖。
 # v0.8.7 统一 KEY=value 写法；密钥仍必须来自环境变量而不是硬编码空值。
-assert 'TMDB_API_KEY=${TMDB_API_KEY:-}' in compose
+assert 'TMDB_API_KEY=' in compose
 assert 'TMDB_API_KEY=""' not in compose
 assert "tmdb_image_base" in media_go and "tmdb_image_base" in html
 

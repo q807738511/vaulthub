@@ -51,7 +51,7 @@ assert ".audio-player" in css and re.search(r"\.audio-player\s*\{[^}]*left:\s*50
 assert "MEDIA_CACHE_DIR" in backend
 assert "MEDIA_CACHE_MAX_BYTES" in backend and "MEDIA_CACHE_MAX_AGE_HOURS" in backend
 assert "cacheJanitor" in backend and "cleanCache" in backend
-assert "MEDIA_CACHE_DIR" in compose and "MEDIA_CACHE_CLEANUP_INTERVAL_HOURS" in compose
+assert "/data/transcode-cache" in compose and "MEDIA_CACHE_CLEANUP_INTERVAL_HOURS" in compose
 assert "removeAttribute(\"src\")" in media and "activeAudio=null" in media
 assert "setComicShelfView" in media
 
@@ -72,7 +72,7 @@ for marker in ["VIDEO_ENGINE_NATIVE", "VIDEO_ENGINE_COMPAT", "VIDEO_ENGINE_WASM"
 assert "/api/media/compat" in media
 assert "new Worker(" in media and "/web/vendor/ffmpeg/worker.js" in media
 assert "WebAssembly" in media and "SIMD" in media
-assert "data-video-engine" in media and "三重解码" in media
+assert "data-video-engine" in media and "三层播放" in media
 for asset in [
     "web/vendor/ffmpeg/worker.js",
     "web/vendor/ffmpeg/ffmpeg-core.js",
@@ -87,7 +87,7 @@ assert "FS.writeFile" in worker and "core.exec" in worker and "FS.readFile" in w
 core_js = (ROOT / "web/vendor/ffmpeg/ffmpeg-core.js").read_text(encoding="utf-8")
 assert 'Module["exec"]=exec' in core_js
 assert "terminateWasmVideo(root)" in media
-assert 'querySelectorAll(".media-video-body").forEach(terminateWasmVideo)' in features
+assert 'querySelectorAll(".media-video-body").forEach(root =>' in features
 assert 'r.Method != http.MethodPost' in backend and 'writeAuth(r)' in backend
 
 print("PASS: v0.8.0 content-first pages, session-only auth, and real three-engine player contracts")

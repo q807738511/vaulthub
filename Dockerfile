@@ -15,7 +15,7 @@ WORKDIR /src/media
 # Copy module metadata first for layer caching, then download deps.
 COPY media-go/go.mod media-go/go.sum ./
 RUN go mod download
-COPY media-go/main.go ./
+COPY media-go/main.go media-go/playback.go ./
 RUN go build -trimpath -ldflags="-s -w" -o /out-media-api .
 WORKDIR /src/subtitle
 COPY subtitle-api/go.mod ./

@@ -26,7 +26,7 @@ assert 'onloadedmetadata="this.muted=false;this.volume=1"' in html, "video audio
 assert 'mediaCompatUrl(lib, path)' in html, "audio-compatible playback URL is missing"
 assert 'mediaProbeUrl(lib, path)' in html, "automatic compatibility probe URL is missing"
 assert 'movieExtensionNeedsCompat(path)' in html, "extension-based automatic compatibility rule is missing"
-assert 'compat_recommended' in html, "ffprobe-based automatic compatibility rule is missing"
+assert 'requestPlaybackPlan(lib, path' in html and '/api/media/playback/plan' in html, "server playback-plan rule is missing"
 assert 'left:var(--sidebar-w)' in html, "desktop reader overlay still covers the left sidebar"
 assert '豆瓣刮削/文件名展示' not in html, "video playback still shows the old hint under the page"
 assert '.media-video-body video { width:100%; height:100%;' in html, "video does not fill the reader window"

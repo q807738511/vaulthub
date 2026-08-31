@@ -327,6 +327,34 @@ function mediaProbeUrl(lib, path) {
   const query = `id=${encodeURIComponent(String(lib.id))}&path=${encodeURIComponent(String(path))}`;
   return `/api/media/probe?${query}`;
 }
+function browserPlaybackCapabilities() {
+  const video = document.createElement("video");
+  const mse = typeof MediaSource !== "undefined";
+  const supported = mime => !!video.canPlayType(mime) || (mse && typeof MediaSource.isTypeSupported === "function" && MediaSource.isTypeSupported(mime));
+  return {
+    mse,
+    mp4: supported('video/mp4'),
+    h264: supported('video/mp4; codecs="avc1.42E01E,mp4a.40.2"'),
+    hevc: supported('video/mp4; codecs="hvc1.1.6.L93.B0"'),
+    vp9: supported('video/webm; codecs="vp09.00.10.08"'),
+    aac: supported('audio/mp4; codecs="mp4a.40.2"'),
+    opus: supported('audio/webm; codecs="opus"')
+  };
+}
+async function requestPlaybackPlan(lib, path, quality = "auto") {
+  const response = await fetch("/api/media/playback/plan", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ library_id: String(lib.id), path: String(path), quality, hardware: settings.hardwareAcceleration || "auto", client: browserPlaybackCapabilities() })
+  });
+  if (!response.ok) throw new Error(`播放计划 HTTP ${response.status}`);
+  return response.json();
+}
+function playbackModeLabel(plan) {
+  const labels = { direct: "Direct Play 原画直放", remux: "Smart Stream · Remux", audio_transcode: "Smart Stream · 仅音频转码", full_transcode: "Smart Stream · 完整转码" };
+  return `${labels[plan?.mode] || "Smart Stream"}${plan?.hardware && plan.mode === "full_transcode" ? ` · ${plan.hardware.toUpperCase()}` : ""}`;
+}
 function mediaLegacyFileUrl(lib, path) {
   return `/api/media/file/${encodeURIComponent(lib.id)}/${String(path).split("/").map(encodeURIComponent).join("/")}`;
 }
@@ -992,9 +1020,24 @@ function scheduleVideoChromeHide(root) {
     }
   }, 3000);
 }
+async function createVideoPlaybackSession(root, lib, path, mode) {
+  try {
+    const response = await fetch('/api/media/playback/sessions', { method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:JSON.stringify({library_id:String(lib.id),path:String(path),mode:String(mode||'auto')}) });
+    if (!response.ok) return;
+    const session = await response.json(); root.dataset.playbackSession = session.id || '';
+  } catch(e) {}
+}
+function reportVideoPlaybackSession(root, video, state) {
+  const id=root?.dataset.playbackSession; if(!id)return;
+  fetch(`/api/media/playback/sessions/${encodeURIComponent(id)}/progress`,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({position_ms:Math.round((video.currentTime||0)*1000),duration_ms:Math.round((video.duration||0)*1000),state:state||(!video.paused?'playing':'paused')}),keepalive:true}).catch(()=>{});
+}
+function stopVideoPlaybackSession(root) {
+  const id=root?.dataset.playbackSession; if(!id)return;
+  fetch(`/api/media/playback/sessions/${encodeURIComponent(id)}/stop`,{method:'POST',credentials:'same-origin',keepalive:true}).catch(()=>{}); root.dataset.playbackSession='';
+}
 function bindVideoStatus(root, video) {
-  [["loadstart","正在连接"],["waiting","正在缓冲"],["playing","正在播放"],["pause","已暂停"],["ended","播放完成"],["stalled","网络等待"],["error","播放错误"]].forEach(([ev,label])=>video.addEventListener(ev,()=>updateVideoStatus(root,video,label)));
-  video.addEventListener("timeupdate",()=>{ updateVideoStatus(root,video,video.paused?"已暂停":"正在播放"); updateVideoTimeline(video); saveVideoPlaybackState(video); });
+  [["loadstart","正在连接"],["waiting","正在缓冲"],["playing","正在播放"],["pause","已暂停"],["ended","播放完成"],["stalled","网络等待"],["error","播放错误"]].forEach(([ev,label])=>video.addEventListener(ev,()=>{updateVideoStatus(root,video,label);if(['pause','ended'].includes(ev))reportVideoPlaybackSession(root,video,ev);}));
+  video.addEventListener("timeupdate",()=>{ updateVideoStatus(root,video,video.paused?"已暂停":"正在播放"); updateVideoTimeline(video); saveVideoPlaybackState(video); if(!root.__sessionReportAt||Date.now()-root.__sessionReportAt>10000){root.__sessionReportAt=Date.now();reportVideoPlaybackSession(root,video);} });
   ["progress","loadedmetadata","durationchange","canplay"].forEach(ev=>video.addEventListener(ev,()=>{ updateVideoTimeline(video); if(ev==='loadedmetadata')restoreVideoPlaybackState(video); }));
   video.addEventListener('keydown',e=>handleVideoKeyboard(e,video));
   video.tabIndex=0;
@@ -1059,14 +1102,16 @@ async function initMovieCompatPlayer(root, lib, path) {
   if (!video) return;
   const videoRoot = video.closest('.media-video-body');
   videoRoot.dataset.library=String(lib.id); videoRoot.dataset.path=String(path);
+  const showThreeLayerButtons = () => { const bar=videoRoot.querySelector('.movie-compat-bar'); if(bar)bar.hidden=false; };
+  showThreeLayerButtons();
   const direct = mediaFileUrl(lib, path);
   const compat = mediaCompatUrl(lib, path);
   bindVideoStatus(root, video);
-  const useDirect = () => { terminateWasmVideo(videoRoot); setVideoEngine(videoRoot, VIDEO_ENGINE_NATIVE, "原片直连"); switchMovieSource(video, direct); };
-  const useCompat = reason => { terminateWasmVideo(videoRoot); setVideoEngine(videoRoot, VIDEO_ENGINE_COMPAT, reason || `服务端转码 · ${settings.hardwareAcceleration}`); switchMovieSource(video, compat); };
+  const useDirect = (reason="原片直连") => { terminateWasmVideo(videoRoot); setVideoEngine(videoRoot, VIDEO_ENGINE_NATIVE, reason); switchMovieSource(video, direct); };
+  const useCompat = (reason, url=compat) => { terminateWasmVideo(videoRoot); setVideoEngine(videoRoot, VIDEO_ENGINE_COMPAT, reason || `Smart Stream · ${settings.hardwareAcceleration}`); switchMovieSource(video, url); };
   const useWasm = async () => { try { await startWasmVideoFallback(videoRoot, video, direct); } catch (error) { setVideoEngine(videoRoot, VIDEO_ENGINE_WASM, `启动失败：${error.message}`); } };
-  root.querySelector("[data-movie-direct]")?.addEventListener("click", useDirect);
-  root.querySelector("[data-movie-compat]")?.addEventListener("click", () => useCompat("手动选择服务端兼容流"));
+  root.querySelector("[data-movie-direct]")?.addEventListener("click", () => useDirect("手动选择 Direct Play"));
+  root.querySelector("[data-movie-compat]")?.addEventListener("click", () => useCompat("手动选择 Smart Stream"));
   root.querySelector("[data-movie-wasm]")?.addEventListener("click", useWasm);
   video.addEventListener("loadedmetadata", () => { video.muted = false; video.volume = 1; restoreVideoPlaybackState(video); fetch(`/api/media/streams?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}`,{cache:'no-store'}).then(r=>r.ok?r.json():null).then(info=>{populateVideoTracks(videoRoot,video,info);updateVideoStatus(videoRoot,video,video.paused?"已暂停":"正在播放");}).catch(()=>{}); });
   let engineFailurePending = false;
@@ -1075,17 +1120,19 @@ async function initMovieCompatPlayer(root, lib, path) {
     engineFailurePending = true;
     try { await advanceVideoEngine(videoRoot, video, { direct, useCompat }); } finally { setTimeout(() => { engineFailurePending = false; }, 1000); }
   });
-  const extRule = movieExtensionNeedsCompat(path) || browserSaysVideoContainerUnsupported(path);
-  if (extRule) useCompat("容器不兼容，智能选择服务端 FFmpeg");
-  else useDirect();
   try {
-    const res = await fetch(mediaProbeUrl(lib, path), { cache: "no-store" });
-    if (!res.ok) return;
-    const info = await res.json();
-    if (info) { videoRoot.dataset.videoMetadata=formatVideoMetadata(info); }
-    if (info && info.compat_recommended && video.dataset.currentSrc !== compat) useCompat(`音频 ${info.audio_codec || "未知"} 不兼容，智能降级`);
-    else setVideoEngine(videoRoot, VIDEO_ENGINE_NATIVE, info.audio_codec ? `音频 ${info.audio_codec}` : "原片直连");
-  } catch (e) {}
+    const plan = await requestPlaybackPlan(lib, path, "auto");
+    videoRoot.dataset.videoMetadata = formatMediaTime(Number(plan.media?.duration || 0)) !== "--:--" ? formatVideoMetadata(plan.media) : formatVideoMetadata(plan.media);
+    videoRoot.dataset.playbackMode = plan.mode || "auto";
+    setMovieCompatStatus(videoRoot, `${playbackModeLabel(plan)} · ${plan.reason || "智能选择"}`);
+    if (plan.mode === "direct") useDirect(`${playbackModeLabel(plan)} · ${plan.reason}`);
+    else useCompat(`${playbackModeLabel(plan)} · ${plan.reason}`, plan.url || compat);
+    createVideoPlaybackSession(videoRoot, lib, path, plan.mode);
+  } catch (error) {
+    const extRule = movieExtensionNeedsCompat(path) || browserSaysVideoContainerUnsupported(path);
+    if (extRule) useCompat(`播放计划不可用，按容器规则降级：${error.message}`); else useDirect(`播放计划不可用，尝试原画：${error.message}`);
+    createVideoPlaybackSession(videoRoot, lib, path, extRule ? "full_transcode" : "direct");
+  }
 }
 const TXT_CHUNK_BYTES = 1024 * 1024;
 async function fetchCompleteTextFile(url) {
@@ -1141,7 +1188,7 @@ async function openLocalMedia(group, libId, path) {
     } catch (err) { viewer.innerHTML = viewerShell(group, lib, path, `<div class="media-error">ZIP 漫画读取失败：${esc(err.message)}</div>`, url); return; }
   }
   if (["mp3","flac","m4a","ogg","wav"].includes(ext)) body = `<div class="media-viewer-body"><audio controls autoplay preload="metadata" src="${esc(url)}"></audio></div>`;
-  else if (MEDIA_FORMATS.movie.includes(ext)) body = `<div class="media-viewer-body media-video-body" data-video-controls-visible="true" data-video-engine="native"><div class="movie-compat-bar"><strong>三重解码</strong><button class="btn" type="button" data-engine-choice="native" data-movie-direct>浏览器原生</button><button class="btn" type="button" data-engine-choice="compat" data-movie-compat>FFmpeg 兼容流</button><button class="btn" type="button" data-engine-choice="wasm" data-movie-wasm>WASM SIMD</button><span class="movie-compat-status">正在探测并智能选择引擎...</span></div><button class="video-menu-button" type="button" title="字幕和音轨" aria-label="字幕和音轨" onclick="toggleVideoTrackMenu(this)">☷</button><button class="video-info-button" type="button" title="播放及媒体元数据" aria-label="播放及媒体元数据" aria-expanded="false" onclick="toggleVideoStatusPanel(this)">!</button><video data-movie-player controls playsinline preload="metadata" onloadedmetadata="this.muted=false;this.volume=1" onvolumechange="this.dataset.volume=String(this.volume)"></video><div class="video-timeline"><span class="video-time-label">00:00 / 00:00</span><div class="video-progress-shell" role="slider" aria-label="播放进度" onclick="seekVideoTimeline(event,this)"><span class="video-buffered-range"></span><span class="video-played-range"></span></div></div><div class="video-track-menu video-audio-menu" data-video-track-menu><h4>音源</h4><div class="video-audio-options" data-video-audio-options>读取音源中...</div><h4>字幕</h4><div class="video-subtitle-menu" data-video-subtitle-options>暂无外挂字幕</div><button type="button" onclick="searchVideoSubtitles(this)">搜索并挂载字幕</button></div><div class="video-status-panel"><span class="status-main" data-video-status>准备播放</span><span class="status-detail" data-video-detail>--:-- / --:-- · 媒体元数据待识别</span></div></div>`;
+  else if (MEDIA_FORMATS.movie.includes(ext)) body = `<div class="media-viewer-body media-video-body" data-video-controls-visible="true" data-video-engine="native"><div class="movie-compat-bar"><strong>三层播放</strong><button class="btn" type="button" data-engine-choice="native" data-movie-direct>Direct Play</button><button class="btn" type="button" data-engine-choice="compat" data-movie-compat>Smart Stream</button><button class="btn" type="button" data-engine-choice="wasm" data-movie-wasm>WASM Fallback</button><span class="movie-compat-status">正在上报浏览器能力并生成播放计划...</span></div><button class="video-menu-button" type="button" title="字幕和音轨" aria-label="字幕和音轨" onclick="toggleVideoTrackMenu(this)">☷</button><button class="video-info-button" type="button" title="播放及媒体元数据" aria-label="播放及媒体元数据" aria-expanded="false" onclick="toggleVideoStatusPanel(this)">!</button><video data-movie-player controls playsinline preload="metadata" onloadedmetadata="this.muted=false;this.volume=1" onvolumechange="this.dataset.volume=String(this.volume)"></video><div class="video-timeline"><span class="video-time-label">00:00 / 00:00</span><div class="video-progress-shell" role="slider" aria-label="播放进度" onclick="seekVideoTimeline(event,this)"><span class="video-buffered-range"></span><span class="video-played-range"></span></div></div><div class="video-track-menu video-audio-menu" data-video-track-menu><h4>音源</h4><div class="video-audio-options" data-video-audio-options>读取音源中...</div><h4>字幕</h4><div class="video-subtitle-menu" data-video-subtitle-options>暂无外挂字幕</div><button type="button" onclick="searchVideoSubtitles(this)">搜索并挂载字幕</button></div><div class="video-status-panel"><span class="status-main" data-video-status>准备播放</span><span class="status-detail" data-video-detail>--:-- / --:-- · 媒体元数据待识别</span></div></div>`;
   else if (["jpg","jpeg","png","webp","gif","bmp","avif"].includes(ext)) body = `<img src="${esc(url)}" alt="${esc(path)}">`;
   else if (ext === "pdf") body = `<iframe src="${esc(url)}#view=FitH" title="${esc(path)}"></iframe>`;
   else if (ext === "txt") {

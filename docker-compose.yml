@@ -1,6 +1,6 @@
 services:
   vaulthub:
-    image: ghcr.nju.edu.cn/q807738511/vaulthub:v0.8.7
+    image: ghcr.nju.edu.cn/q807738511/vaulthub:v0.8.8
     container_name: VaultHub
     pull_policy: always
 

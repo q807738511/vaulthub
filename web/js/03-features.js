@@ -5,7 +5,7 @@
 function closeLocalViewer(group) {
   const prior = activeReader;
   const el = document.getElementById("local-media-viewer-" + group);
-  if (el) el.querySelectorAll(".media-video-body").forEach(terminateWasmVideo);
+  if (el) el.querySelectorAll(".media-video-body").forEach(root => { stopVideoPlaybackSession(root); terminateWasmVideo(root); });
   if (el) el.innerHTML = "";
   activeReader = null;
   if (group === "comic") {

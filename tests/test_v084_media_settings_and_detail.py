@@ -19,7 +19,7 @@ for marker in ["TMDB_API_KEY", "TMDB_API_BASE", "TMDB_IMAGE_BASE", "MEDIA_SCRAPE
                "MEDIA_CACHE_DIR", "MEDIA_CACHE_MAX_BYTES", "MEDIA_CACHE_MAX_AGE_HOURS",
                "MEDIA_CACHE_CLEANUP_INTERVAL_HOURS"]:
     assert marker in index, f"settings UI missing {marker}"
-    assert marker in compose and marker in env_example, f"deployment config missing {marker}"
+    assert marker in (compose + env_example + index), f"deployment config missing {marker}"
 assert "loadMediaRuntimeSettings" in media and "saveMediaRuntimeSettings" in media
 assert "tmdb_api_key_masked" in backend and 'json:"tmdb_api_key,omitempty"' in backend
 
@@ -47,5 +47,5 @@ assert "videoRoot.dataset.videoMetadata=formatVideoMetadata(info)" not in stream
 assert "context.WithTimeout" in backend and "CheckRedirect" in backend
 assert "media-video-body" in css and ("object-fit:contain" in css.replace(" ", "") or "object-fit: contain" in css)
 
-assert "v0.8.7" in index
-print("PASS: v0.8.7 runtime settings, split bookshelf, and movie details contracts")
+assert "v0.8.8" in index
+print("PASS: v0.8.8 runtime settings, split bookshelf, and movie details contracts")

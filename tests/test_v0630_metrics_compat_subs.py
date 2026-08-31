@@ -29,7 +29,7 @@ for marker in [
     assert marker in media, f"missing metrics backend marker: {marker}"
 
 # --- Backend: compat copies H.264 and maps chosen audio track ---
-assert "func probeVideoCodec(" in media, "compat must probe video codec"
+assert "probeVideoCodec = func(" in media, "compat must probe video codec"
 assert 'if vc, _ := probeVideoCodec(ctx, p); vc == "h264"' in media, "compat must copy H.264 video"
 assert 'vcodec = "copy"' in media
 assert '"0:a:%d?"' in media, "compat must map selected audio track"

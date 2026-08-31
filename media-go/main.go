@@ -62,6 +62,11 @@ type App struct {
 	removeHook        func(string)
 	removeDBHook      func(string) error
 	saveLibrariesHook func([]Library) error
+
+	// playbackSessions tracks active browser playback heartbeats. Sessions are
+	// deliberately in-memory: persistent resume progress remains client-owned in
+	// v0.8.8, while this lifecycle map lets abandoned FFmpeg tasks be reclaimed.
+	playbackSessions map[string]playbackSession
 }
 type FileEntry struct {
 	Path  string `json:"path"`
@@ -77,6 +82,48 @@ type RuntimeConfig struct {
 	CacheMaxBytes             int64  `json:"cache_max_bytes"`
 	CacheMaxAgeHours          int64  `json:"cache_max_age_hours"`
 	CacheCleanupIntervalHours int64  `json:"cache_cleanup_interval_hours"`
+}
+
+type playbackClient struct {
+	MP4  bool `json:"mp4"`
+	MSE  bool `json:"mse"`
+	H264 bool `json:"h264"`
+	HEVC bool `json:"hevc"`
+	VP9  bool `json:"vp9"`
+	AAC  bool `json:"aac"`
+	Opus bool `json:"opus"`
+}
+
+type playbackMedia struct {
+	Container  string `json:"container"`
+	VideoCodec string `json:"video_codec"`
+	AudioCodec string `json:"audio_codec"`
+	Width      int    `json:"width"`
+	Height     int    `json:"height"`
+	BitRate    string `json:"bit_rate"`
+	Duration   string `json:"duration"`
+}
+
+type playbackPlan struct {
+	Layer       string        `json:"layer"`
+	Mode        string        `json:"mode"`
+	Reason      string        `json:"reason"`
+	URL         string        `json:"url"`
+	VideoAction string        `json:"video_action"`
+	AudioAction string        `json:"audio_action"`
+	Hardware    string        `json:"hardware"`
+	Media       playbackMedia `json:"media"`
+}
+
+type playbackSession struct {
+	ID         string `json:"id"`
+	LibraryID  string `json:"library_id"`
+	Path       string `json:"path"`
+	Mode       string `json:"mode"`
+	State      string `json:"state"`
+	PositionMS int64  `json:"position_ms"`
+	DurationMS int64  `json:"duration_ms"`
+	UpdatedAt  int64  `json:"updated_at"`
 }
 
 func env(k, d string) string {
@@ -117,6 +164,7 @@ func (a *App) load() {
 	a.deleting = map[string]bool{}
 	a.scanCancel = map[string]context.CancelFunc{}
 	a.tasks = map[string]context.CancelFunc{}
+	a.playbackSessions = map[string]playbackSession{}
 	a.scanGate = make(chan struct{}, 1)
 	a.openDB()
 	go a.cacheJanitor()
@@ -1749,7 +1797,7 @@ func streams(w http.ResponseWriter, r *http.Request, a *App) {
 // probeVideoCodec returns the codec name of the first video stream (e.g.
 // "h264", "hevc"). Used to decide whether the compat stream can copy the video
 // instead of re-encoding it.
-func probeVideoCodec(ctx context.Context, p string) (string, error) {
+var probeVideoCodec = func(ctx context.Context, p string) (string, error) {
 	b, e := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=codec_name", "-of", "default=nk=1:nw=1", p).Output()
 	if e != nil {
 		return "", e
@@ -1958,6 +2006,9 @@ func main() {
 		writeJSON(w, 200, detectHardware(r.Context(), r.URL.Query().Get("hw")))
 	})
 	mux.HandleFunc("/api/media/probe", func(w http.ResponseWriter, r *http.Request) { probe(w, r, a) })
+	mux.HandleFunc("/api/media/playback/plan", a.playbackPlan)
+	mux.HandleFunc("/api/media/playback/sessions", a.playbackSessionsHandler)
+	mux.HandleFunc("/api/media/playback/sessions/", a.playbackSessionAction)
 	mux.HandleFunc("/api/media/streams", func(w http.ResponseWriter, r *http.Request) { streams(w, r, a) })
 	mux.HandleFunc("/api/media/tasks/cancel", func(w http.ResponseWriter, r *http.Request) { cancelTask(w, r, a) })
 	mux.HandleFunc("/api/media/subtitles/search", a.subtitle)
@@ -2043,7 +2094,7 @@ var (
 // compatArgs assembles the ffmpeg arguments shared by the live stream and the
 // background cache build: pick the video codec (copy when the source is already
 // H.264), map the requested audio track, and always deliver stereo AAC.
-func compatArgs(ctx context.Context, p, audioTrack, hw string) (pre []string, mid []string) {
+func compatArgs(ctx context.Context, p, audioTrack, hw, mode string) (pre []string, mid []string) {
 	vcodec := ""
 	var post []string
 	if vc, _ := probeVideoCodec(ctx, p); vc == "h264" {
@@ -2062,14 +2113,18 @@ func compatArgs(ctx context.Context, p, audioTrack, hw string) (pre []string, mi
 	}
 	mid = append(mid, "-c:v", vcodec)
 	mid = append(mid, post...)
-	mid = append(mid, "-c:a", "aac", "-ac", "2", "-b:a", "160k")
+	if mode == "remux" {
+		mid = append(mid, "-c:a", "copy")
+	} else {
+		mid = append(mid, "-c:a", "aac", "-ac", "2", "-b:a", "160k")
+	}
 	return pre, mid
 }
 
 // buildCompatCache produces the seekable (faststart) MP4 in the background so
 // the *next* open is a plain cache hit with full Range support. It deliberately
 // uses a detached context: the user closing the tab must not abort it.
-func (a *App) buildCompatCache(p, cache, audioTrack, hw string) {
+func (a *App) buildCompatCache(p, cache, audioTrack, hw, mode string) {
 	compatMu.Lock()
 	if compatBuilds[cache] {
 		compatMu.Unlock()
@@ -2082,7 +2137,7 @@ func (a *App) buildCompatCache(p, cache, audioTrack, hw string) {
 		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Hour)
 		defer cancel()
 		tmp := cache + fmt.Sprintf(".bg-%d", os.Getpid())
-		pre, mid := compatArgs(ctx, p, audioTrack, hw)
+		pre, mid := compatArgs(ctx, p, audioTrack, hw, mode)
 		args := append([]string{"-hide_banner", "-loglevel", "error"}, pre...)
 		args = append(args, "-i", p)
 		args = append(args, mid...)
@@ -2113,7 +2168,11 @@ func (a *App) compat(w http.ResponseWriter, r *http.Request) {
 	// separately and never collide.
 	audioTrack := r.URL.Query().Get("audio_track")
 	hw := r.URL.Query().Get("hw")
-	cache := a.cacheKey(fmt.Sprintf("%s:%d:%d:%s:a%s", p, st.Size(), st.ModTime().UnixNano(), hw, audioTrack))
+	mode := r.URL.Query().Get("mode")
+	if mode != "remux" && mode != "audio_transcode" && mode != "full_transcode" {
+		mode = "audio_transcode"
+	}
+	cache := a.cacheKey(fmt.Sprintf("%s:%d:%d:%s:%s:a%s", p, st.Size(), st.ModTime().UnixNano(), hw, mode, audioTrack))
 	// Fully built cache: serve it with byte ranges so seeking works.
 	if f, e := os.Open(cache); e == nil {
 		defer f.Close()
@@ -2144,7 +2203,7 @@ func (a *App) compat(w http.ResponseWriter, r *http.Request) {
 	// about a second even for a multi-gigabyte source. Range is intentionally
 	// not honoured here (we answer 200 with the full stream); the seekable copy
 	// is produced in the background for the next open.
-	pre, mid := compatArgs(ctx, p, audioTrack, hw)
+	pre, mid := compatArgs(ctx, p, audioTrack, hw, mode)
 	args := append([]string{"-hide_banner", "-loglevel", "error"}, pre...)
 	args = append(args, "-i", p)
 	args = append(args, mid...)
@@ -2162,7 +2221,7 @@ func (a *App) compat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if env("COMPAT_PRECACHE", "1") != "0" {
-		a.buildCompatCache(p, cache, audioTrack, hw)
+		a.buildCompatCache(p, cache, audioTrack, hw, mode)
 	}
 	w.Header().Set("Content-Type", "video/mp4")
 	w.Header().Set("Accept-Ranges", "none")
