@@ -16,5 +16,5 @@ assert '#settingsModal {' in css and 'z-index:1300' in css
 assert '#settingsModal::backdrop' in css
 assert '<dialog class="modal-mask" id="settingsModal">' in html
 assert '.auth-mask { position:fixed; inset:0; z-index:2000;' in css
-assert 'v0.9.1' in html
-print('PASS: v0.9.1 local NFO/artwork/subtitle and top settings contracts')
+assert 'v0.9.2' in html
+print('PASS: v0.9.2 local NFO/artwork/subtitle and top settings contracts')
