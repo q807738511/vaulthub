@@ -9,6 +9,9 @@ on:
       - '.github/workflows/sync-dockerhub-to-ghcr.yml'
   schedule:
     - cron: '0 2 * * *'
+concurrency:
+  group: sync-all-ghcr-tags-to-dockerhub
+  cancel-in-progress: true
 jobs:
   sync-all-tags:
     runs-on: ubuntu-latest
@@ -23,6 +26,9 @@ jobs:
         run: |
           # 获取ghcr.io上所有vaulthub镜像标签
           TAGS=$(skopeo inspect docker://ghcr.io/q807738511/vaulthub | jq -r '.RepoTags[]')
+          # 当前稳定版优先，保证全量历史标签同步耗时较长时，新版本也能先交付。
+          PRIORITY_TAG=v0.9.2
+          TAGS=$(printf '%s\n%s\n' "$PRIORITY_TAG" "$TAGS" | awk 'NF && !seen[$0]++')
           echo "待同步标签列表：$TAGS"
           # 遍历所有标签执行同步，每个标签最多重试3次
           FAILED=0
