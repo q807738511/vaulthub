@@ -820,9 +820,19 @@ function openCustomBoard(id) {
 }
 
 /* ================= 弹窗 / Toast ================= */
-function openModal(id) { document.getElementById(id).classList.add("show"); }
-function closeModal(id) { document.getElementById(id).classList.remove("show"); }
-document.querySelectorAll(".modal-mask").forEach(m => m.addEventListener("click", e => { if (e.target === m) m.classList.remove("show"); }));
+function openModal(id) {
+  const modal = document.getElementById(id);
+  if (!modal) return;
+  modal.classList.add("show");
+  if (typeof modal.showModal === "function" && !modal.open) modal.showModal();
+}
+function closeModal(id) {
+  const modal = document.getElementById(id);
+  if (!modal) return;
+  modal.classList.remove("show");
+  if (typeof modal.close === "function" && modal.open) modal.close();
+}
+document.querySelectorAll(".modal-mask").forEach(m => m.addEventListener("click", e => { if (e.target === m) closeModal(m.id); }));
 
 let toastTimer;
 function toast(msg) {

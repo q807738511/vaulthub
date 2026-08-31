@@ -50,7 +50,6 @@ window.VAULTHUB_ASSET_VERSION = "0.9.1";
 
   <!-- 右侧信息区：只展示媒体库与首页信息，不再有任何导航按钮 -->
   <div class="tb-info" id="topInfo">
-    <span class="tb-stat" id="topLibStat" data-i18n="homeCountEmpty">尚未添加任何媒体库</span>
     <span class="tb-stat" id="topScanStat"></span>
     <span class="tb-stat" id="topPlayStat"></span>
   </div>
@@ -85,8 +84,6 @@ window.VAULTHUB_ASSET_VERSION = "0.9.1";
 
     <!-- ============ 首页 ============ -->
     <section class="view active" id="view-home">
-
-      <div class="filterbar"><span class="fcount" id="homeCount">正在统计媒体库…</span></div>
 
       <!-- ---- 第一栏：服务器监控 ---- -->
       <div class="section-title">
@@ -309,7 +306,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.1";
 </div>
 
 <!-- ===== 系统设置弹窗（媒体库管理与 Caddy 入口都在标签页里） ===== -->
-<div class="modal-mask" id="settingsModal">
+<dialog class="modal-mask" id="settingsModal">
   <div class="modal wide">
     <h3><span data-i18n="settingsTitle">系统设置</span><button class="close" onclick="closeModal('settingsModal')">✕</button></h3>
     <div class="lead" data-i18n="settingsLead">媒体库、反向代理、外观主题、刮削与硬件设置集中在此，Caddy 配置单独占用一整页。</div>
@@ -527,7 +524,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.1";
       </div>
     </div>
   </div>
-</div>
+</dialog>
 
 <!-- ===== Caddy 配置独立整页 ===== -->
 <div class="fullpage" id="caddyPage">

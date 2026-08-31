@@ -137,10 +137,10 @@ assert 'id="tb-info"' in header or 'class="tb-info"' in header, \
     "the top bar right side must be an info area"
 info = header[header.index('class="tb-info"'):]
 assert '<button' not in info, "the top bar info area must contain no buttons"
-for stat in ['id="topLibStat"', 'id="topScanStat"']:
-    assert stat in info, f"the info area must show {stat}"
-assert 'getElementById("topLibStat")' in home and 'getElementById("topScanStat")' in home, \
-    "the info area must be populated with real library/scan data"
+assert 'id="topScanStat"' in info, "the info area must show scan progress"
+assert 'id="topLibStat"' not in info, "the duplicate library/item total must be removed"
+assert 'getElementById("topLibStat")' not in home and 'getElementById("topScanStat")' in home, \
+    "the info area must only populate live scan data"
 # Account block sits before the info area, i.e. on the left.
 assert header.index('id="accountMenu"') < header.index('class="tb-info"'), \
     "the avatar/account menu must sit to the left of the info area"

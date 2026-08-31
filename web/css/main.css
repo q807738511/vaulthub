@@ -247,7 +247,7 @@
   .btn-danger { color: var(--red); }
   .btn-danger:hover { border-color: var(--red); color: var(--red); }
   .btn:disabled { opacity: .5; cursor: not-allowed; }
-  .content { padding: 18px 22px 56px; flex: 1; --media-chrome-offset: 104px; }
+  .content { padding: 8px 22px 56px; flex: 1; --media-chrome-offset: 104px; }
 
   /* Plex 式筛选 chip 条 */
   .filterbar { display: flex; align-items: center; gap: 8px; padding: 4px 0 14px; flex-wrap: wrap; }
@@ -688,8 +688,9 @@
     display: none; align-items: center; justify-content: center;
   }
   .modal-mask.show { display: flex; }
-  #settingsModal { inset: 0; z-index: 1300; }
-  body.sidebar-hidden .modal-mask { left: 62px; }
+  #settingsModal { inset:0; width:100vw; height:100vh; max-width:none; max-height:none; margin:0; padding:0; border:0; z-index:1300; color:inherit; }
+  #settingsModal::backdrop { background:rgba(0,0,0,.62); }
+  body.sidebar-hidden .modal-mask:not(#settingsModal) { left: 62px; }
   @media (max-width: 680px) { .modal-mask { left: 0; } }
   .modal {
     background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius);

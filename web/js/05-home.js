@@ -107,9 +107,7 @@ function renderHomeCount() {
     ? tf("homeCountFmt", { items: items.toLocaleString(curLang === "en" ? "en-US" : "zh-CN"), libs: libs.length })
     : t("homeCountEmpty");
   if (el) el.textContent = text;
-  /* 顶栏右侧信息区：媒体库总量与正在构建的索引，替代原来的导航按钮。 */
-  const topLib = document.getElementById("topLibStat");
-  if (topLib) topLib.textContent = text;
+  /* 顶栏只保留正在构建索引和播放状态，不再重复展示媒体库总数。 */
   const topScan = document.getElementById("topScanStat");
   if (topScan) {
     const scanning = Object.values(homeIndexStatus).filter(s => s && (s.running || s.state === "scanning"));
