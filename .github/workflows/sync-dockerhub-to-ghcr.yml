@@ -1,6 +1,12 @@
 name: Sync All GHCR vaulthub Tags to Docker Hub
 on:
   workflow_dispatch:
+  # 没有 GitHub API 调度令牌时，可通过仅修改本工作流来安全触发一次；
+  # 普通源码提交不会重复执行全量镜像同步。
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/sync-dockerhub-to-ghcr.yml'
   schedule:
     - cron: '0 2 * * *'
 jobs:
@@ -19,17 +25,24 @@ jobs:
           TAGS=$(skopeo inspect docker://ghcr.io/q807738511/vaulthub | jq -r '.RepoTags[]')
           echo "待同步标签列表：$TAGS"
           # 遍历所有标签执行同步，每个标签最多重试3次
+          FAILED=0
           for TAG in $TAGS; do
             echo "开始同步标签：$TAG"
+            SYNCED=0
             for i in {1..3}; do
-              skopeo copy --all \
-              docker://ghcr.io/q807738511/vaulthub:$TAG \
-              docker://docker.io/q807738511/vaulthub:$TAG
-              if [ $? -eq 0 ]; then
+              if skopeo copy --all \
+                docker://ghcr.io/q807738511/vaulthub:$TAG \
+                docker://docker.io/q807738511/vaulthub:$TAG; then
                 echo "标签 $TAG 同步成功"
+                SYNCED=1
                 break
               fi
               sleep 10
             done
+            if [ "$SYNCED" -ne 1 ]; then
+              echo "标签 $TAG 连续 3 次同步失败" >&2
+              FAILED=1
+            fi
           done
+          test "$FAILED" -eq 0
           echo "所有标签同步流程执行完成"
