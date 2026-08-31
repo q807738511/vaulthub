@@ -86,6 +86,10 @@ func (a *App) playbackPlan(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	if !writeAuth(r) {
+		errJSON(w, http.StatusUnauthorized, "login required")
+		return
+	}
 	var req struct {
 		LibraryID string         `json:"library_id"`
 		Path      string         `json:"path"`
@@ -141,6 +145,10 @@ func (a *App) playbackSessionsHandler(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, 405, "method not allowed")
 		return
 	}
+	if !writeAuth(r) {
+		errJSON(w, http.StatusUnauthorized, "login required")
+		return
+	}
 	var s playbackSession
 	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&s) != nil || s.LibraryID == "" || s.Path == "" {
 		errJSON(w, 400, "invalid session")
@@ -162,6 +170,21 @@ func (a *App) playbackSessionsHandler(w http.ResponseWriter, r *http.Request) {
 	if a.playbackSessions == nil {
 		a.playbackSessions = map[string]playbackSession{}
 	}
+	cutoff := time.Now().Add(-2 * time.Minute).UnixMilli()
+	for id, existing := range a.playbackSessions {
+		if existing.UpdatedAt < cutoff {
+			delete(a.playbackSessions, id)
+			if cancel := a.tasks[id]; cancel != nil {
+				cancel()
+				delete(a.tasks, id)
+			}
+		}
+	}
+	if len(a.playbackSessions) >= 64 {
+		a.mu.Unlock()
+		errJSON(w, http.StatusTooManyRequests, "too many playback sessions")
+		return
+	}
 	a.playbackSessions[s.ID] = s
 	a.mu.Unlock()
 	writeJSON(w, 200, s)
@@ -170,6 +193,10 @@ func (a *App) playbackSessionsHandler(w http.ResponseWriter, r *http.Request) {
 func (a *App) playbackSessionAction(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		errJSON(w, 405, "method not allowed")
+		return
+	}
+	if !writeAuth(r) {
+		errJSON(w, http.StatusUnauthorized, "login required")
 		return
 	}
 	rel := strings.TrimPrefix(r.URL.Path, "/api/media/playback/sessions/")

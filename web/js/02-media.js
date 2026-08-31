@@ -1023,9 +1023,9 @@ function scheduleVideoChromeHide(root) {
 async function createVideoPlaybackSession(root, lib, path, mode) {
   try {
     const response = await fetch('/api/media/playback/sessions', { method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:JSON.stringify({library_id:String(lib.id),path:String(path),mode:String(mode||'auto')}) });
-    if (!response.ok) return;
-    const session = await response.json(); root.dataset.playbackSession = session.id || '';
-  } catch(e) {}
+    if (!response.ok) return '';
+    const session = await response.json(); root.dataset.playbackSession = session.id || ''; return root.dataset.playbackSession;
+  } catch(e) { return ''; }
 }
 function reportVideoPlaybackSession(root, video, state) {
   const id=root?.dataset.playbackSession; if(!id)return;
@@ -1122,12 +1122,13 @@ async function initMovieCompatPlayer(root, lib, path) {
   });
   try {
     const plan = await requestPlaybackPlan(lib, path, "auto");
-    videoRoot.dataset.videoMetadata = formatMediaTime(Number(plan.media?.duration || 0)) !== "--:--" ? formatVideoMetadata(plan.media) : formatVideoMetadata(plan.media);
+    videoRoot.dataset.videoMetadata = formatVideoMetadata(plan.media);
     videoRoot.dataset.playbackMode = plan.mode || "auto";
     setMovieCompatStatus(videoRoot, `${playbackModeLabel(plan)} · ${plan.reason || "智能选择"}`);
+    const sessionID = await createVideoPlaybackSession(videoRoot, lib, path, plan.mode);
+    const plannedURL = plan.url && sessionID && plan.mode !== "direct" ? `${plan.url}&task=${encodeURIComponent(sessionID)}` : (plan.url || compat);
     if (plan.mode === "direct") useDirect(`${playbackModeLabel(plan)} · ${plan.reason}`);
-    else useCompat(`${playbackModeLabel(plan)} · ${plan.reason}`, plan.url || compat);
-    createVideoPlaybackSession(videoRoot, lib, path, plan.mode);
+    else useCompat(`${playbackModeLabel(plan)} · ${plan.reason}`, plannedURL);
   } catch (error) {
     const extRule = movieExtensionNeedsCompat(path) || browserSaysVideoContainerUnsupported(path);
     if (extRule) useCompat(`播放计划不可用，按容器规则降级：${error.message}`); else useDirect(`播放计划不可用，尝试原画：${error.message}`);

@@ -368,7 +368,7 @@ func errJSON(w http.ResponseWriter, c int, s string) {
 
 // managerSessionOK asks the co-located Go manager whether the caller's session
 // cookie is still valid. The manager owns the session store and idle timeout.
-func managerSessionOK(r *http.Request) bool {
+var managerSessionOK = func(r *http.Request) bool {
 	c, e := r.Cookie("vh_session")
 	if e != nil || c.Value == "" {
 		return false
@@ -2097,7 +2097,7 @@ var (
 func compatArgs(ctx context.Context, p, audioTrack, hw, mode string) (pre []string, mid []string) {
 	vcodec := ""
 	var post []string
-	if vc, _ := probeVideoCodec(ctx, p); vc == "h264" {
+	if vc, _ := probeVideoCodec(ctx, p); vc == "h264" && mode != "full_transcode" {
 		vcodec = "copy" // stream copy: no CPU transcode, starts instantly
 	} else {
 		hwInfo := detectHardware(ctx, hw)
@@ -2153,6 +2153,10 @@ func (a *App) buildCompatCache(p, cache, audioTrack, hw, mode string) {
 }
 
 func (a *App) compat(w http.ResponseWriter, r *http.Request) {
+	if !managerSessionOK(r) {
+		errJSON(w, http.StatusUnauthorized, "login required")
+		return
+	}
 	l, ok := a.find(r.URL.Query().Get("id"))
 	if !ok {
 		errJSON(w, 404, "invalid media path")

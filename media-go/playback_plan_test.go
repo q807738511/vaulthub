@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -39,6 +40,9 @@ func TestChoosePlaybackPlan(t *testing.T) {
 }
 
 func TestPlaybackPlanHandlerUsesSafeLibraryPath(t *testing.T) {
+	oldSession := managerSessionOK
+	managerSessionOK = func(*http.Request) bool { return true }
+	defer func() { managerSessionOK = oldSession }()
 	dir := t.TempDir()
 	media := filepath.Join(dir, "sample.mp4")
 	if err := os.WriteFile(media, []byte("fixture"), 0644); err != nil {
@@ -75,6 +79,9 @@ func TestPlaybackPlanHandlerUsesSafeLibraryPath(t *testing.T) {
 }
 
 func TestPlaybackSessionLifecycle(t *testing.T) {
+	oldSession := managerSessionOK
+	managerSessionOK = func(*http.Request) bool { return true }
+	defer func() { managerSessionOK = oldSession }()
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "movie.mkv"), []byte("fixture"), 0644); err != nil {
 		t.Fatal(err)

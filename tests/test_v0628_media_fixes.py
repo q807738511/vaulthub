@@ -16,7 +16,7 @@ compose = (ROOT / "docker-compose.yml").read_text() + "\n" + (ROOT / "vaulthub.e
 
 # 1. 媒体库写接口必须经过会话鉴权，且 ADMIN_TOKEN 为空时不得放行。
 assert "func writeAuth(" in media_go
-assert "func managerSessionOK(" in media_go
+assert "managerSessionOK = func(" in media_go
 assert "if !writeAuth(r) {" in media_go
 assert "if !auth(r) {" not in media_go, "写接口不能再使用 fail-open 的 auth()"
 assert '"/api/session/check"' in media_go
