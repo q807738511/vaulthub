@@ -49,6 +49,6 @@ assert 'mux.HandleFunc("/api/media/file/", a.serveLegacy)' in media_go
 assert "tasks/cancel" in media_go
 assert '"-f", "mp4"' in media_go
 assert "media-api.c" not in dockerfile
-assert "COPY media-go/go.mod" in dockerfile and "COPY media-go/main.go" in dockerfile
+assert "COPY media-go/go.mod" in dockerfile and "COPY media-go/*.go" in dockerfile
 
 print("PASS: idle auth, scoped media libraries, ZIP comics, TMDB and Go media API are wired")

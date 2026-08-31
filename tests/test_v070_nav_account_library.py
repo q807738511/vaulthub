@@ -106,31 +106,24 @@ for act in ['rebuildOneLibrary(', 'openHomeLibrary(', 'deleteMediaLibrary(']:
 assert 'ensureSessionForWrite(t("writeAddLibrary"))' in home, \
     "adding a library must verify the session first"
 
-# ---------------------------------------------------------------- 4. account avatar menu
+# ---------------------------------------------------------------- 4. account menu on Chinese mouse logo
 header = index[index.index('<header class="topbar">'):index.index('</header>')]
 assert 'id="accountMenu"' in header, "the top bar needs an account menu"
-assert 'onclick="toggleAccountMenu()"' in header, "the avatar must open the menu"
-for item in ["openAvatarSettings()", "openAccountMenuItem('settingsModal')",
-             "openAccountMenuItem('aboutModal')", "logoutVaultHub()"]:
+assert 'id="logoMenuButton"' in header and 'onclick="toggleAccountMenu()"' in header, "the mouse logo must open the menu"
+assert 'id="tbAvatar"' not in header, "the legacy account avatar must be removed"
+for item in ["openAccountMenuItem('settingsModal')", "openAccountMenuItem('aboutModal')", "logoutVaultHub()"]:
     assert item in header, f"the account menu must offer {item}"
 assert "onclick=\"openModal('settingsModal')\"" not in header, \
     "the standalone settings gear must be gone from the top bar"
 assert "onclick=\"openModal('aboutModal')\"" not in header, \
     "the standalone About button must be gone from the top bar"
-# Avatar settings: text, colour, uploaded image, persisted locally.
-assert 'id="avatarModal"' in index, "avatar settings dialog missing"
-for fn in ["function openAvatarSettings(", "function saveAvatarSettings(",
-           "function resetAvatarSettings(", "function uploadAvatarImage(",
-           "function applyAvatarConfig(", "function loadAvatarConfig("]:
-    assert fn in state, f"avatar settings needs {fn}"
-assert 'LS_AVATAR = "vaulthub_avatar_v1"' in state, "the avatar must persist per browser"
-assert "loadAvatarConfig();" in boot, "the saved avatar must be applied on boot"
-assert '.account-menu' in css and '.avatar-shot' in css, "account menu/avatar need styling"
-# Signing out must also close the new surfaces.
+assert 'id="avatarModal"' not in index, "legacy avatar dialog must be removed"
+assert 'getElementById("logoMenuButton")' in state, "account menu JS must target the logo"
+assert "loadAvatarConfig();" not in boot, "legacy avatar startup must be removed"
+assert '.account-menu' in css and '.logo-icon' in css, "logo account menu needs styling"
 logout = state[state.index("async function logoutVaultHub()"):]
 logout = logout[:logout.index("\n}") + 2]
-assert "closeAccountMenu()" in logout and "closeModal('avatarModal')" in logout, \
-    "sign-out must close the account menu and avatar dialog"
+assert "closeAccountMenu()" in logout, "sign-out must close the account menu"
 # Login state is visible in the menu itself.
 assert 'id="accountState"' in header and "getElementById('accountState')" in state, \
     "the account menu must show the live session state"

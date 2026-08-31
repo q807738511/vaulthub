@@ -15,7 +15,7 @@ WORKDIR /src/media
 # Copy module metadata first for layer caching, then download deps.
 COPY media-go/go.mod media-go/go.sum ./
 RUN go mod download
-COPY media-go/main.go media-go/playback.go ./
+COPY media-go/*.go ./
 RUN go build -trimpath -ldflags="-s -w" -o /out-media-api .
 WORKDIR /src/subtitle
 COPY subtitle-api/go.mod ./
@@ -55,7 +55,10 @@ ENV NAS_IP=192.168.112.3 \
     ADMIN_PASSWORD=ADMIN123 \
     TMDB_API_KEY= \
     TMDB_API_BASE=https://api.themoviedb.org/3 \
-    TMDB_IMAGE_BASE=https://image.tmdb.org/t/p
+    TMDB_IMAGE_BASE=https://image.tmdb.org/t/p \
+    TVDB_API_KEY= \
+    TVDB_API_BASE=https://api4.thetvdb.com/v4 \
+    SCRAPER_PROXY=
 
 EXPOSE 8088
 WORKDIR /srv

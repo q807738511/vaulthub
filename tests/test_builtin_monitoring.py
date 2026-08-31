@@ -43,7 +43,7 @@ for item in required_compose:
     assert item in compose, f"missing compose monitoring example: {item}"
 assert 'handle /api/system/*' in caddyfile, "default Caddyfile misses system route"
 assert 'handle /api/system/*' in manager, "persisted Caddyfile migration misses system route"
-assert ('AS go-build' in dockerfile and 'GO_IMAGE=golang:1.23-alpine' in dockerfile) and 'media-go/main.go' in dockerfile and 'out-media-api' in dockerfile, "Dockerfile does not compile Go media API"
+assert ('AS go-build' in dockerfile and 'GO_IMAGE=golang:1.23-alpine' in dockerfile) and 'media-go/*.go' in dockerfile and 'out-media-api' in dockerfile, "Dockerfile does not compile Go media API"
 dockerignore = (ROOT / ".dockerignore").read_text()
 assert 'vaulthub-manager.c' not in dockerignore, "Docker build context excludes manager source"
 

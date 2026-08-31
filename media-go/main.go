@@ -56,6 +56,9 @@ type App struct {
 	tmdbAPIKey       string
 	tmdbAPIBase      string
 	tmdbImageBase    string
+	tvdbAPIKey       string
+	tvdbAPIBase      string
+	scraperProxy     string
 	configTrusted    bool // false when config exists but cannot be read/decoded
 	// Hooks are test-only fault/interleaving instrumentation, nil in production.
 	scanWriteHook     func(string, int)
@@ -78,6 +81,10 @@ type RuntimeConfig struct {
 	TMDBAPIKey                string `json:"tmdb_api_key,omitempty"`
 	TMDBAPIBase               string `json:"tmdb_api_base"`
 	TMDBImageBase             string `json:"tmdb_image_base"`
+	TVDBAPIKey                string `json:"tvdb_api_key,omitempty"`
+	TVDBAPIBase               string `json:"tvdb_api_base"`
+	ScraperProxy              string `json:"scraper_proxy,omitempty"`
+	ScraperProxySet           bool   `json:"scraper_proxy_set,omitempty"`
 	CacheDir                  string `json:"cache_dir"`
 	CacheMaxBytes             int64  `json:"cache_max_bytes"`
 	CacheMaxAgeHours          int64  `json:"cache_max_age_hours"`
@@ -152,6 +159,9 @@ func (a *App) load() {
 	a.tmdbAPIKey = os.Getenv("TMDB_API_KEY")
 	a.tmdbAPIBase = strings.TrimRight(env("TMDB_API_BASE", "https://api.themoviedb.org/3"), "/")
 	a.tmdbImageBase = strings.TrimRight(env("TMDB_IMAGE_BASE", "https://image.tmdb.org/t/p"), "/")
+	a.tvdbAPIKey = os.Getenv("TVDB_API_KEY")
+	a.tvdbAPIBase = strings.TrimRight(env("TVDB_API_BASE", "https://api4.thetvdb.com/v4"), "/")
+	a.scraperProxy = os.Getenv("SCRAPER_PROXY")
 	a.loadRuntimeConfig()
 	b, e := os.ReadFile(a.config)
 	if e == nil {
@@ -403,11 +413,14 @@ func (a *App) runtimeConfigSnapshot(includeSecret bool) map[string]any {
 		"scraper_mode": a.scraperMode, "tmdb_enabled": a.tmdbAPIKey != "",
 		"tmdb_api_key_masked": a.tmdbAPIKey != "", "tmdb_api_base": a.tmdbAPIBase,
 		"tmdb_image_base": a.tmdbImageBase, "cache_dir": a.cacheDir,
+		"tvdb_enabled": a.tvdbAPIKey != "", "tvdb_api_key_masked": a.tvdbAPIKey != "", "tvdb_api_base": a.tvdbAPIBase,
+		"scraper_proxy": "", "scraper_proxy_display": maskedProxyURL(a.scraperProxy), "scraper_proxy_configured": a.scraperProxy != "",
 		"cache_max_bytes": a.cacheMaxBytes, "cache_max_age_hours": int64(a.cacheMaxAge / time.Hour),
 		"cache_cleanup_interval_hours": int64(a.cacheCleanup / time.Hour),
 	}
 	if includeSecret {
 		out["tmdb_api_key"] = a.tmdbAPIKey
+		out["tvdb_api_key"] = a.tvdbAPIKey
 	}
 	return out
 }
@@ -432,6 +445,15 @@ func (a *App) loadRuntimeConfig() {
 	if c.TMDBImageBase != "" {
 		a.tmdbImageBase = strings.TrimRight(c.TMDBImageBase, "/")
 	}
+	if c.TVDBAPIKey != "" {
+		a.tvdbAPIKey = c.TVDBAPIKey
+	}
+	if c.TVDBAPIBase != "" {
+		a.tvdbAPIBase = strings.TrimRight(c.TVDBAPIBase, "/")
+	}
+	if c.ScraperProxy != "" || c.ScraperProxySet {
+		a.scraperProxy = c.ScraperProxy
+	}
 	if c.CacheDir != "" {
 		a.cacheDir = c.CacheDir
 	}
@@ -454,7 +476,7 @@ func validHTTPBase(v string) bool {
 	if host == "" || host == "localhost" {
 		return false
 	}
-	if host == "api.themoviedb.org" || host == "image.tmdb.org" {
+	if host == "api.themoviedb.org" || host == "image.tmdb.org" || host == "api4.thetvdb.com" || host == "api.thetvdb.com" {
 		return u.Scheme == "https"
 	}
 	if ip := net.ParseIP(host); ip != nil {
@@ -512,6 +534,20 @@ func (a *App) saveRuntimeConfig(c RuntimeConfig) error {
 	if !validHTTPBase(c.TMDBAPIBase) || !validHTTPBase(c.TMDBImageBase) {
 		return fmt.Errorf("invalid TMDB URL")
 	}
+	if c.TVDBAPIBase == "" {
+		a.mu.RLock()
+		c.TVDBAPIBase = a.tvdbAPIBase
+		a.mu.RUnlock()
+		if c.TVDBAPIBase == "" {
+			c.TVDBAPIBase = "https://api4.thetvdb.com/v4"
+		}
+	}
+	if !validHTTPBase(c.TVDBAPIBase) {
+		return fmt.Errorf("invalid TVDB URL")
+	}
+	if _, err := validateProxyURL(c.ScraperProxy); err != nil {
+		return err
+	}
 	if !filepath.IsAbs(c.CacheDir) || c.CacheMaxBytes < 0 || c.CacheMaxAgeHours < 0 || c.CacheCleanupIntervalHours <= 0 {
 		return fmt.Errorf("invalid cache settings")
 	}
@@ -521,6 +557,16 @@ func (a *App) saveRuntimeConfig(c RuntimeConfig) error {
 	if c.TMDBAPIKey == "" {
 		a.mu.RLock()
 		c.TMDBAPIKey = a.tmdbAPIKey
+		a.mu.RUnlock()
+	}
+	if c.TVDBAPIKey == "" {
+		a.mu.RLock()
+		c.TVDBAPIKey = a.tvdbAPIKey
+		a.mu.RUnlock()
+	}
+	if c.ScraperProxy == "" && !c.ScraperProxySet {
+		a.mu.RLock()
+		c.ScraperProxy = a.scraperProxy
 		a.mu.RUnlock()
 	}
 	b, _ := json.MarshalIndent(c, "", "  ")
@@ -554,6 +600,7 @@ func (a *App) saveRuntimeConfig(c RuntimeConfig) error {
 	a.mu.Lock()
 	a.scraperMode, a.tmdbAPIKey = c.ScraperMode, c.TMDBAPIKey
 	a.tmdbAPIBase, a.tmdbImageBase = strings.TrimRight(c.TMDBAPIBase, "/"), strings.TrimRight(c.TMDBImageBase, "/")
+	a.tvdbAPIKey, a.tvdbAPIBase, a.scraperProxy = c.TVDBAPIKey, strings.TrimRight(c.TVDBAPIBase, "/"), c.ScraperProxy
 	a.cacheDir, a.cacheMaxBytes = c.CacheDir, c.CacheMaxBytes
 	a.cacheMaxAge, a.cacheCleanup = time.Duration(c.CacheMaxAgeHours)*time.Hour, time.Duration(c.CacheCleanupIntervalHours)*time.Hour
 	a.mu.Unlock()
@@ -2015,6 +2062,8 @@ func main() {
 	mux.HandleFunc("/api/media/subtitles/extract", a.extractSubtitle)
 	mux.HandleFunc("/api/media/subtitles/proxy", a.serve)
 	mux.HandleFunc("/api/media/tmdb", a.tmdb)
+	mux.HandleFunc("/api/media/tvdb", a.tvdb)
+	mux.HandleFunc("/api/media/network/speed", a.networkSpeed)
 	mux.HandleFunc("/api/media/compat", a.compat)
 	fmt.Println("VaultHub media API listening on 127.0.0.1:9100")
 	http.ListenAndServe("127.0.0.1:9100", mux)
@@ -2043,8 +2092,12 @@ func (a *App) subtitle(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"items": items})
 }
 func (a *App) tmdb(w http.ResponseWriter, r *http.Request) {
+	if !writeAuth(r) {
+		errJSON(w, 401, "login required")
+		return
+	}
 	a.mu.RLock()
-	key, base := a.tmdbAPIKey, a.tmdbAPIBase
+	key, base, proxy := a.tmdbAPIKey, a.tmdbAPIBase, a.scraperProxy
 	a.mu.RUnlock()
 	if key == "" {
 		errJSON(w, 400, "TMDB_API_KEY is not configured")
@@ -2073,7 +2126,12 @@ func (a *App) tmdb(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, "GET", u, nil)
-	res, e := safeHTTPClient().Do(req)
+	client, clientErr := outboundHTTPClient(proxy)
+	if clientErr != nil {
+		errJSON(w, 400, clientErr.Error())
+		return
+	}
+	res, e := client.Do(req)
 	if e != nil {
 		errJSON(w, 502, "tmdb scrape failed")
 		return

@@ -4,12 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VaultHub 蜀鼠之家 · 预览版</title>
-<link rel="stylesheet" href="/web/css/main.css?v=0.8.9">
+<link rel="stylesheet" href="/web/css/main.css?v=0.9.0">
 <script>
 /* 资源版本号：index.html 用它给所有静态资源打查询串，01-state.js 里的
    VAULTHUB_SCRIPT_VERSION 必须与它一致。两者不一致说明浏览器还在执行旧脚本，
    ensureFreshAssets() 会绕过缓存强制重载一次。 */
-window.VAULTHUB_ASSET_VERSION = "0.8.9";
+window.VAULTHUB_ASSET_VERSION = "0.9.0";
 </script>
 </head>
 <body data-theme="dark">
@@ -28,40 +28,23 @@ window.VAULTHUB_ASSET_VERSION = "0.8.9";
 
 <!-- ===== 顶栏：左侧 logo + 账户头像 / 关于；右侧全部留给媒体库与首页信息 ===== -->
 <header class="topbar">
-  <div class="logo">
-    <div class="logo-icon" aria-label="中华鼠图标">
+  <div class="logo account" id="accountWrap">
+    <button class="logo-icon" id="logoMenuButton" type="button" aria-label="中华鼠账户与设置菜单" aria-haspopup="menu" aria-expanded="false" onclick="toggleAccountMenu()">
       <svg class="mouse-logo" viewBox="0 0 32 32" role="img" aria-hidden="true">
         <path class="tail" d="M22 21c5 1 7-2 5-5" fill="none" stroke="#6b3e20" stroke-width="2" stroke-linecap="round"/>
-        <circle cx="10" cy="10" r="4" fill="#8a5a35"/>
-        <circle cx="20" cy="10" r="4" fill="#8a5a35"/>
-        <ellipse cx="16" cy="18" rx="10" ry="9" fill="#c78b4d"/>
-        <ellipse cx="16" cy="20" rx="6" ry="5" fill="#f0c98a"/>
-        <circle cx="12" cy="17" r="1.4" fill="#1f130b"/>
-        <circle cx="20" cy="17" r="1.4" fill="#1f130b"/>
+        <circle cx="10" cy="10" r="4" fill="#8a5a35"/><circle cx="20" cy="10" r="4" fill="#8a5a35"/>
+        <ellipse cx="16" cy="18" rx="10" ry="9" fill="#c78b4d"/><ellipse cx="16" cy="20" rx="6" ry="5" fill="#f0c98a"/>
+        <circle cx="12" cy="17" r="1.4" fill="#1f130b"/><circle cx="20" cy="17" r="1.4" fill="#1f130b"/>
         <path d="M15 20l1.1 1 1.1-1" fill="none" stroke="#5a3218" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
         <path class="whisker" d="M9 20H3m20 0h6M10 22l-5 2m17-2 5 2" fill="none" stroke="#5a3218" stroke-width="1" stroke-linecap="round"/>
       </svg>
-    </div>
-    <div class="brand-copy" title="蜀鼠之家，承包你的所有休闲内容">
-      <strong class="brand-title">VaultHub</strong>
-      <small data-i18n="appName">蜀鼠之家</small>
-    </div>
-  </div>
-
-  <!-- 账户头像：系统设置、关于、头像设置、退出登录全部收在这里，位于左侧 -->
-  <div class="account" id="accountWrap">
-    <button class="tb-avatar" id="tbAvatar" type="button" aria-haspopup="menu" aria-expanded="false"
-            onclick="toggleAccountMenu()" title="账户与设置" data-i18n-title="accountMenu">Q</button>
+    </button>
+    <div class="brand-copy" title="蜀鼠之家，承包你的所有休闲内容"><strong class="brand-title">VaultHub</strong><small data-i18n="appName">蜀鼠之家</small></div>
     <div class="account-menu" id="accountMenu" role="menu">
-      <div class="am-head">
-        <span class="am-name" id="accountName">VaultHub</span>
-        <span class="am-state" id="accountState" data-i18n="sessionChecking">正在检查登录状态…</span>
-      </div>
-      <button class="am-item" type="button" role="menuitem" onclick="openAvatarSettings()">🖼 <span data-i18n="avatarSettings">头像设置</span></button>
+      <div class="am-head"><span class="am-name" id="accountName">VaultHub</span><span class="am-state" id="accountState" data-i18n="sessionChecking">正在检查登录状态…</span></div>
       <button class="am-item" type="button" role="menuitem" onclick="openAccountMenuItem('settingsModal')">⚙ <span data-i18n="settingsTitle">系统设置</span></button>
       <button class="am-item" type="button" role="menuitem" onclick="openAccountMenuItem('aboutModal')">ℹ <span data-i18n="aboutTitle">关于</span></button>
-      <div class="am-sep"></div>
-      <button class="am-item danger" type="button" role="menuitem" onclick="closeAccountMenu(); logoutVaultHub()">🚪 <span data-i18n="setLogout">退出登录</span></button>
+      <div class="am-sep"></div><button class="am-item danger" type="button" role="menuitem" onclick="closeAccountMenu(); logoutVaultHub()">🚪 <span data-i18n="setLogout">退出登录</span></button>
     </div>
   </div>
 
@@ -91,7 +74,7 @@ window.VAULTHUB_ASSET_VERSION = "0.8.9";
     <div id="customNav"></div>
   </nav>
   <div class="sidebar-foot">
-    <span class="ver">v0.8.9 · Nav &amp; Layout Fix</span>
+    <span class="ver">v0.9.0 · TVDB &amp; Network Proxy</span>
     <button class="rail-btn" onclick="toggleBars()" title="折叠 / 展开侧栏" aria-label="折叠或展开侧栏">⇤</button>
   </div>
 </aside>
@@ -325,34 +308,6 @@ window.VAULTHUB_ASSET_VERSION = "0.8.9";
   </div>
 </div>
 
-<!-- ===== 头像设置弹窗 ===== -->
-<div class="modal-mask" id="avatarModal">
-  <div class="modal">
-    <h3><span data-i18n="avatarSettings">头像设置</span><button class="close" onclick="closeModal('avatarModal')">✕</button></h3>
-    <div class="lead" data-i18n="avatarLead">头像仅保存在本浏览器 localStorage，不上传服务器。可用文字缩写、emoji 或上传图片。</div>
-    <div class="avatar-preview">
-      <div class="avatar-shot" id="avatarPreview">Q</div>
-      <div class="hint" data-i18n="avatarPreview">预览效果</div>
-    </div>
-    <div class="cfg-field">
-      <label data-i18n="avatarText">显示文字（1-2 个字符或 emoji）</label>
-      <input id="avatarText" type="text" maxlength="4" placeholder="Q" oninput="previewAvatarSettings()">
-    </div>
-    <div class="cfg-field">
-      <label data-i18n="avatarColor">背景色</label>
-      <input id="avatarColor" type="color" value="#3fa7a7" oninput="previewAvatarSettings()">
-    </div>
-    <div class="cfg-field">
-      <label data-i18n="avatarUpload">上传头像图片（可选）</label>
-      <input id="avatarFile" type="file" accept="image/*" onchange="uploadAvatarImage(this)">
-    </div>
-    <div class="media-actions">
-      <button class="btn btn-primary" type="button" onclick="saveAvatarSettings()">💾 <span data-i18n="btnSave">保存</span></button>
-      <button class="btn btn-danger" type="button" onclick="resetAvatarSettings()">🗑 <span data-i18n="avatarReset">恢复默认</span></button>
-    </div>
-  </div>
-</div>
-
 <!-- ===== 系统设置弹窗（媒体库管理与 Caddy 入口都在标签页里） ===== -->
 <div class="modal-mask" id="settingsModal">
   <div class="modal wide">
@@ -517,12 +472,21 @@ window.VAULTHUB_ASSET_VERSION = "0.8.9";
         <h4>🔍 <span data-i18n="setScrapeSrc">刮削来源</span></h4>
         <p>环境变量作为首次启动默认值；在这里保存后写入 <code>/data/media-runtime.json</code> 并立即生效。API Key 留空会保留已保存的密钥。</p>
         <div class="form-2col">
-          <div class="cfg-field"><label for="mediaScraperMode">刮削方式</label><select id="mediaScraperMode" data-env="MEDIA_SCRAPER_MODE"><option value="auto">自动：TMDB → 豆瓣 → 文件名</option><option value="tmdb">仅 TMDB（失败回文件名）</option><option value="douban">仅豆瓣（失败回文件名）</option><option value="filename">仅使用文件名</option></select></div>
+          <div class="cfg-field"><label for="mediaScraperMode">刮削方式</label><select id="mediaScraperMode" data-env="MEDIA_SCRAPER_MODE"><option value="auto">自动：电视剧 TVDB → TMDB → 豆瓣 → 文件名</option><option value="tmdb">仅 TMDB（失败回文件名）</option><option value="douban">仅豆瓣（失败回文件名）</option><option value="filename">仅使用文件名</option></select></div>
           <div class="cfg-field"><label for="tmdbApiKey">TMDB API Key</label><input id="tmdbApiKey" type="password" autocomplete="new-password" placeholder="未设置；留空保留已有值" data-env="TMDB_API_KEY"></div>
           <div class="cfg-field"><label for="tmdbApiBase">TMDB API 调用链接</label><input id="tmdbApiBase" type="url" value="https://api.themoviedb.org/3" data-env="TMDB_API_BASE"></div>
           <div class="cfg-field"><label for="tmdbImageBase">TMDB 图片调用链接</label><input id="tmdbImageBase" type="url" value="https://image.tmdb.org/t/p" data-env="TMDB_IMAGE_BASE"></div>
+          <div class="cfg-field"><label for="tvdbApiKey">TVDB API Key（电视剧辅助刮削）</label><input id="tvdbApiKey" type="password" autocomplete="new-password" placeholder="未设置；留空保留已有值" data-env="TVDB_API_KEY"></div>
+          <div class="cfg-field"><label for="tvdbApiBase">TVDB API 调用链接</label><input id="tvdbApiBase" type="url" value="https://api4.thetvdb.com/v4" data-env="TVDB_API_BASE"></div>
+          <div class="cfg-field"><label for="scraperProxy">代理访问（HTTP/HTTPS）</label><input id="scraperProxy" placeholder="例：http://192.168.112.3:7890" data-env="SCRAPER_PROXY"><button class="btn" type="button" onclick="clearScraperProxy()">清除已保存代理</button></div>
         </div>
         <div class="media-actions"><span class="badge" id="mediaRuntimeStatus">读取中…</span><button class="btn btn-primary" type="button" onclick="saveMediaRuntimeSettings()">💾 保存刮削与缓存设置</button><button class="btn" type="button" onclick="loadMediaRuntimeSettings(true)">↻ 重新载入</button><button class="btn" type="button" onclick="rebuildAllLibraries()">🔄 <span data-i18n="libRescrape">全部重新刮削</span></button></div>
+      </div>
+      <div class="setblock">
+        <h4>🌐 API 网络链接测速</h4>
+        <p>并发测试固定白名单中的 TMDB、TVDB、通知与 GitHub API；配置代理后测速和刮削均走该代理。</p>
+        <div class="media-actions"><button class="btn btn-primary" id="networkSpeedButton" type="button" onclick="testScraperNetworks()">测速全部链接</button><span class="badge" id="networkSpeedSummary">尚未测速</span></div>
+        <div class="network-speed-grid" id="networkSpeedResults"></div>
       </div>
       <div class="setblock">
         <h4>💾 转码缓存</h4>
@@ -679,7 +643,7 @@ window.VAULTHUB_ASSET_VERSION = "0.8.9";
   <div class="modal">
     <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
     <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
-    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.8.9 · Nav &amp; Layout Fix</b></div>
+    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.9.0 · TVDB &amp; Network Proxy</b></div>
     <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>Go (media/manager/subtitle) · Caddy · FFmpeg · SQLite · HTML/CSS/JS</b></div>
     <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>VaultHub 内置系统监控</b></div>
     <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>
@@ -732,10 +696,10 @@ window.VAULTHUB_ASSET_VERSION = "0.8.9";
 
 <div class="toast" id="toast"></div>
 
-<script src="/web/js/01-state.js?v=0.8.9"></script>
-<script src="/web/js/02-media.js?v=0.8.9"></script>
-<script src="/web/js/03-features.js?v=0.8.9"></script>
-<script src="/web/js/05-home.js?v=0.8.9"></script>
-<script src="/web/js/04-boot.js?v=0.8.9"></script>
+<script src="/web/js/01-state.js?v=0.9.0"></script>
+<script src="/web/js/02-media.js?v=0.9.0"></script>
+<script src="/web/js/03-features.js?v=0.9.0"></script>
+<script src="/web/js/05-home.js?v=0.9.0"></script>
+<script src="/web/js/04-boot.js?v=0.9.0"></script>
 </body>
 </html>

@@ -198,19 +198,31 @@ async function loadMediaRuntimeSettings(notify = false) {
     const res = await fetch("/api/media/settings", { cache:"no-store" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const c = await res.json();
-    const values = { mediaScraperMode:c.scraper_mode, tmdbApiBase:c.tmdb_api_base, tmdbImageBase:c.tmdb_image_base, mediaCacheDir:c.cache_dir, mediaCacheMaxBytes:c.cache_max_bytes, mediaCacheMaxAge:c.cache_max_age_hours, mediaCacheCleanup:c.cache_cleanup_interval_hours };
+    const values = { mediaScraperMode:c.scraper_mode, tmdbApiBase:c.tmdb_api_base, tmdbImageBase:c.tmdb_image_base, tvdbApiBase:c.tvdb_api_base, mediaCacheDir:c.cache_dir, mediaCacheMaxBytes:c.cache_max_bytes, mediaCacheMaxAge:c.cache_max_age_hours, mediaCacheCleanup:c.cache_cleanup_interval_hours };
     Object.entries(values).forEach(([id,value]) => { const el=document.getElementById(id); if(el && value !== undefined) el.value=String(value); });
     const key=document.getElementById("tmdbApiKey"); if(key){ key.value=""; key.placeholder=c.tmdb_api_key_masked ? "已设置；留空保留" : "未设置"; }
+    const tvdbKey=document.getElementById("tvdbApiKey"); if(tvdbKey){ tvdbKey.value=""; tvdbKey.placeholder=c.tvdb_api_key_masked ? "已设置；留空保留" : "未设置"; }
+    const proxy=document.getElementById("scraperProxy"); if(proxy){ proxy.value=""; proxy.placeholder=c.scraper_proxy_configured ? `已配置 ${c.scraper_proxy_display||"代理"}；留空保留` : "例：http://192.168.112.3:7890"; proxy.dataset.configured=c.scraper_proxy_configured?"1":"0"; }
     if(status) status.textContent="✅ 已载入运行配置";
     if(notify) toast("✅ 已重新载入刮削与缓存设置");
   } catch(e) { if(status) status.textContent=`⚠ ${e.message}`; if(notify) toast("⚠️ 设置读取失败"); }
 }
 async function saveMediaRuntimeSettings() {
   const value=id=>document.getElementById(id)?.value?.trim() || "";
-  const payload={ scraper_mode:value("mediaScraperMode")||"auto", tmdb_api_key:value("tmdbApiKey"), tmdb_api_base:value("tmdbApiBase"), tmdb_image_base:value("tmdbImageBase"), cache_dir:value("mediaCacheDir"), cache_max_bytes:Number(value("mediaCacheMaxBytes")), cache_max_age_hours:Number(value("mediaCacheMaxAge")), cache_cleanup_interval_hours:Number(value("mediaCacheCleanup")) };
+  const proxyEl=document.getElementById("scraperProxy"), proxyValue=value("scraperProxy");
+  const payload={ scraper_mode:value("mediaScraperMode")||"auto", tmdb_api_key:value("tmdbApiKey"), tmdb_api_base:value("tmdbApiBase"), tmdb_image_base:value("tmdbImageBase"), tvdb_api_key:value("tvdbApiKey"), tvdb_api_base:value("tvdbApiBase"), scraper_proxy:proxyValue, scraper_proxy_set:!!proxyValue || proxyEl?.dataset.configured!=="1", cache_dir:value("mediaCacheDir"), cache_max_bytes:Number(value("mediaCacheMaxBytes")), cache_max_age_hours:Number(value("mediaCacheMaxAge")), cache_cleanup_interval_hours:Number(value("mediaCacheCleanup")) };
   const status=document.getElementById("mediaRuntimeStatus"); if(status) status.textContent="保存中…";
   try { const res=await fetch("/api/media/settings",{method:"PUT",headers:sessionWriteHeaders(true),body:JSON.stringify(payload)}); const data=await res.json(); if(!res.ok) throw new Error(data.error||`HTTP ${res.status}`); scraperStatus={...scraperStatus,...data,default:data.scraper_mode}; await loadMediaRuntimeSettings(false); toast("✅ 刮削与缓存设置已立即生效"); }
   catch(e){ if(status)status.textContent=`⚠ ${e.message}`; toast("⚠️ 保存失败："+e.message); }
+}
+async function clearScraperProxy() {
+  const proxy=document.getElementById("scraperProxy"); if(proxy){proxy.value="";proxy.dataset.configured="0";proxy.placeholder="保存后使用直连";} await saveMediaRuntimeSettings();
+}
+async function testScraperNetworks() {
+  const button=document.getElementById("networkSpeedButton"), summary=document.getElementById("networkSpeedSummary"), host=document.getElementById("networkSpeedResults");
+  if(button) button.disabled=true; if(summary) summary.textContent="测速中…"; if(host) host.innerHTML="";
+  try { const res=await fetch("/api/media/network/speed",{method:"POST",headers:sessionWriteHeaders(true),body:"{}"}); const data=await res.json(); if(!res.ok)throw new Error(data.error||`HTTP ${res.status}`); const ok=(data.results||[]).filter(x=>x.ok).length; if(summary)summary.textContent=`${data.proxy_enabled?"代理":"直连"} · ${ok}/${data.results.length} 可达`; if(host)host.innerHTML=(data.results||[]).map(x=>`<div class="network-speed-item ${x.ok?"ok":"bad"}"><b>${esc(x.host)}</b><span>${x.ok?`${x.latency_ms} ms · HTTP ${x.status_code}`:esc(x.error||"失败")}</span></div>`).join(""); }
+  catch(e){if(summary)summary.textContent=`⚠ ${e.message}`;toast("⚠️ 网络测速失败："+e.message);} finally {if(button)button.disabled=false;}
 }
 async function scrapeMovieMetadata(host, lib, files) {
   await loadScraperStatus();
@@ -224,6 +236,11 @@ async function scrapeMovieMetadata(host, lib, files) {
     // TMDB 已配置时优先使用官方刮削（电影走 search/movie，剧集走 search/tv），
     // 未配置或无结果时回落豆瓣，最后回落文件名展示。
     const mode = scraperStatus.scraper_mode || scraperStatus.default || "auto";
+    if (mediaType === "series" && mode === "auto" && scraperStatus.tvdb_enabled) try {
+      const tvdb = await fetch(`/api/media/tvdb?query=${encodeURIComponent(title)}`, { cache:"force-cache" });
+      const item = tvdb.ok ? (await tvdb.json())?.results?.[0] : null;
+      if (item) { all[path] = { ...fallback, tvdb_id:item.id, media_type:mediaType, title:item.name || fallback.title, year:String(item.first_air_date || fallback.year).slice(0,4), poster:item.poster_path || "", overview:item.overview || "", provider:"TVDB · 剧集", checkedAt:Date.now() }; writeMovieMetadata(all); renderMovieLibraryContent(host, lib, files); continue; }
+    } catch(e) {}
     if ((mode === "auto" || mode === "tmdb") && scraperStatus.tmdb_enabled) try {
       const tmdb = await fetch(`/api/media/tmdb?query=${encodeURIComponent(title)}&type=${encodeURIComponent(mediaType)}`, { cache:"force-cache" });
       const data = tmdb.ok ? await tmdb.json() : null;
@@ -845,7 +862,7 @@ function viewerShell(group, lib, path, body, url, opts = {}) {
   const chapterHtml = chapters.length ? `<aside class="ebook-chapters"><h4>目录 · ${chapters.length} 章</h4>${chapters.map((ch, i) => `<button data-chapter="${i}" onclick="jumpEbookChapter(${i})">${esc(ch.title)}</button>`).join("")}</aside>` : "";
   const toolbar = opts.ebook ? `<span class="ebook-toolbar"><button title="减小字号" onclick="changeEbookFontSize(-1)">A-</button><button title="增大字号" onclick="changeEbookFontSize(1)">A+</button><button id="ebookFontStyleButton" title="正体/斜体" onclick="toggleEbookFontStyle()">正体</button></span>` : "";
   const video = group === "movie";
-  const actions = video ? `<button class="media-reader-close" title="关闭播放器" onclick="closeLocalViewer('${esc(group)}')">✕</button>` : `${toolbar}<button class="btn" title="系统设置" onclick="openModal('settingsModal')">⚙ 设置</button><button class="btn" onclick="markReaderCompleted()">✓ 标记已读</button><button class="media-reader-close" title="关闭并返回书架" onclick="closeLocalViewer('${esc(group)}')">✕</button>`;
+  const actions = video ? `<button class="media-reader-close" title="关闭播放器" onclick="closeLocalViewer('${esc(group)}')">✕</button>` : `${toolbar}<button class="btn" onclick="markReaderCompleted()">✓ 标记已读</button><button class="media-reader-close" title="关闭并返回书架" onclick="closeLocalViewer('${esc(group)}')">✕</button>`;
   return `<div class="media-reader-overlay ${readerThemeClass()}"><div class="media-reader-head ${video ? "movie-player-head" : ""}"><strong class="media-reader-title" title="${esc(path)}">${esc(displayBookTitle(path))}</strong><div class="media-actions">${actions}</div></div><div class="media-reader-body" data-reader-scroll onscroll="trackReaderProgress(this)">${chapterHtml}<div class="media-reader-wrap">${body}</div></div></div>`;
 }
 let ebookFontSize = 17;
