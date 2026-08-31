@@ -1,20 +1,35 @@
-name: Sync Docker Hub vaulthub to GHCR
+name: Sync All GHCR vaulthub Tags to Docker Hub
 on:
-  schedule:
-    - cron: '0 3 * * *'
   workflow_dispatch:
+  schedule:
+    - cron: '0 2 * * *'
 jobs:
-  sync-image:
+  sync-all-tags:
     runs-on: ubuntu-latest
     steps:
-      - name: 原生安装Skopeo工具
-        run: sudo apt update && sudo apt install -y skopeo
-      - name: 登录Docker Hub源仓库
-        run: skopeo login docker.io -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: 登录GitHub GHCR目标仓库
+      - name: 安装Skopeo同步工具
+        run: sudo apt update && sudo apt install -y skopeo jq
+      - name: 登录GHCR源仓库
         run: skopeo login ghcr.io -u q807738511 -p ${{ secrets.GH_TOKEN }}
-      - name: 全量同步vaulthub镜像
+      - name: 登录Docker Hub目标仓库
+        run: skopeo login docker.io -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: 全量同步所有镜像标签
         run: |
-          skopeo copy --all \
-          docker://docker.io/q807738511/vaulthub:latest \
-          docker://ghcr.io/q807738511/vaulthub:latest
+          # 获取ghcr.io上所有vaulthub镜像标签
+          TAGS=$(skopeo inspect docker://ghcr.io/q807738511/vaulthub | jq -r '.RepoTags[]')
+          echo "待同步标签列表：$TAGS"
+          # 遍历所有标签执行同步，每个标签最多重试3次
+          for TAG in $TAGS; do
+            echo "开始同步标签：$TAG"
+            for i in {1..3}; do
+              skopeo copy --all \
+              docker://ghcr.io/q807738511/vaulthub:$TAG \
+              docker://docker.io/q807738511/vaulthub:$TAG
+              if [ $? -eq 0 ]; then
+                echo "标签 $TAG 同步成功"
+                break
+              fi
+              sleep 10
+            done
+          done
+          echo "所有标签同步流程执行完成"
