@@ -1,14 +1,14 @@
 name: Sync Docker Hub vaulthub to GHCR
 on:
   schedule:
-    - cron: '0 3 * * *' # 每日凌晨3点自动执行同步
-  workflow_dispatch: # 支持手动点击触发同步
+    - cron: '0 3 * * *'
+  workflow_dispatch:
 jobs:
   sync-image:
     runs-on: ubuntu-latest
     steps:
-      - name: 安装Skopeo镜像同步工具
-        uses: tterranova/setup-skopeo@v1
+      - name: 原生安装Skopeo工具
+        run: sudo apt update && sudo apt install -y skopeo
       - name: 登录Docker Hub源仓库
         run: skopeo login docker.io -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_TOKEN }}
       - name: 登录GitHub GHCR目标仓库
