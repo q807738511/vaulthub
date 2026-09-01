@@ -15,6 +15,6 @@ assert '.movie-detail-hero.has-art p' in CSS and 'rgba(255,255,255' in CSS
 assert '.movie-detail-strip article small' in CSS and 'color:var(--text2)' in CSS
 assert 'id="topLibStat"' not in HTML and 'id="homeCount"' not in HTML
 assert '<dialog class="modal-mask" id="settingsModal">' in HTML
-assert 'v0.9.10' in HTML
-assert 'ghcr.io/q807738511/vaulthub:v0.9.10' in COMPOSE
-print('PASS: v0.9.10 light movie details and prior UI fixes')
+assert 'v0.9.11' in HTML
+assert 'ghcr.io/q807738511/vaulthub:v0.9.11' in COMPOSE
+print('PASS: v0.9.11 light movie details and prior UI fixes')

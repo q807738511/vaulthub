@@ -15,7 +15,7 @@ assert 'heroArt.kind' in JS and 'poster-art' in JS and 'backdrop-art' in JS
 assert "meta.poster" in JS and "meta.backdrop" in JS
 assert ".movie-detail-hero.poster-art" in CSS
 assert ".movie-detail-hero.poster-art::before" in CSS
-assert "movie-detail-hero { background-image:var(--movie-hero-art" in CSS
+assert "background-image:var(--movie-hero-art" in CSS
 
 # 2. 系统设置按钮迁移到侧边栏底部，位于版本上方，跟随侧栏折叠/缩放。
 header = HTML[HTML.index('<header class="topbar">'):HTML.index('</header>')]
@@ -43,8 +43,30 @@ assert ".series-show-grid" in CSS and ".series-season-block" in CSS and ".series
 assert "data-series-show" in JS
 assert "S01E01" in JS and "Season 01" in JS
 
-# 4. v0.9.10 发布引用与 Docker Hub 同步优先标签。
-assert 'v0.9.10' in HTML
-assert 'ghcr.io/q807738511/vaulthub:v0.9.10' in COMPOSE
-assert 'PRIORITY_TAG=v0.9.10' in SYNC
-print('PASS: v0.9.10 poster hero, sidebar settings and Plex/Emby-style series grouping')
+# 4. v0.9.11 发布引用与 Docker Hub 同步优先标签。
+assert 'v0.9.11' in HTML
+assert 'ghcr.io/q807738511/vaulthub:v0.9.11' in COMPOSE
+assert 'PRIORITY_TAG=v0.9.11' in SYNC
+print('PASS: v0.9.11 poster hero, sidebar settings and Plex/Emby-style series grouping')
+
+# 折叠按钮必须有独立 id，避免 document.querySelector(".rail-btn") 命中侧栏设置按钮
+assert 'id="sidebarCollapseButton"' in HTML, "折叠按钮缺少 sidebarCollapseButton id"
+assert HTML.index('id="sidebarSettingsButton"') < HTML.index('id="sidebarCollapseButton"')
+assert 'document.querySelector(".rail-btn")' not in STATE, "toggleBars 仍用 .rail-btn 泛选择器"
+assert STATE.count('document.getElementById("sidebarCollapseButton")') == 2
+
+# CSS url() 注入硬化：外部海报地址进 style 前必须剔除引号/括号/反斜杠
+assert "function cssUrlValue(url)" in JS, "缺少 cssUrlValue 过滤器"
+assert "const safeArt = cssUrlValue(heroArt.url);" in JS
+assert "--movie-hero-art:url('${esc(safeArt)}')" in JS
+assert "url('${esc(heroArt.url)}')" not in JS, "hero style 仍直接插入未过滤的海报地址"
+
+# localStorage round-trip 后 seasons(Map) 会变成 {}，读回必须只依赖数组字段并回落
+assert "Array.isArray(show.seasonList)" in JS
+assert "Array.isArray(show.files)" in JS
+
+# hero 必须是定位元素，否则 ::before 遮罩会相对错误的祖先定位，文字失去对比度保护
+assert ".movie-detail-hero { position:relative;" in CSS, "hero 缺少 position:relative"
+# backdrop-art 必须与 poster-art 共享白字与遮罩规则（此前只写了 poster-art）
+assert ".movie-detail-hero.backdrop-art" in CSS, "backdrop-art 没有对应样式"
+assert ".movie-detail-hero.poster-art::before, .movie-detail-hero.backdrop-art::before" in CSS
