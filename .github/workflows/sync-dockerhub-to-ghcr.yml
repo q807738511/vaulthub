@@ -27,7 +27,7 @@ jobs:
           # 获取ghcr.io上所有vaulthub镜像标签
           TAGS=$(skopeo inspect docker://ghcr.io/q807738511/vaulthub | jq -r '.RepoTags[]')
           # 当前稳定版优先，保证全量历史标签同步耗时较长时，新版本也能先交付。
-          PRIORITY_TAG=v0.9.14
+          PRIORITY_TAG=v0.9.15
           TAGS=$(printf '%s\n%s\n' "$PRIORITY_TAG" "$TAGS" | awk 'NF && !seen[$0]++')
           echo "待同步标签列表：$TAGS"
           # 遍历所有标签执行同步，每个标签最多重试3次

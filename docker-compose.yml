@@ -1,6 +1,6 @@
 services:
   vaulthub:
-    image: ghcr.io/q807738511/vaulthub:v0.9.14
+    image: ghcr.io/q807738511/vaulthub:v0.9.15
     container_name: VaultHub
     pull_policy: always
 

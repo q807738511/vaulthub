@@ -43,11 +43,11 @@ assert ".series-show-grid" in CSS and ".series-season-block" in CSS and ".series
 assert "data-series-show" in JS
 assert "S01E01" in JS and "Season 01" in JS
 
-# 4. v0.9.14 发布引用与 Docker Hub 同步优先标签。
-assert 'v0.9.14' in HTML
-assert 'ghcr.io/q807738511/vaulthub:v0.9.14' in COMPOSE
-assert 'PRIORITY_TAG=v0.9.14' in SYNC
-print('PASS: v0.9.14 poster hero, sidebar settings and Plex/Emby-style series grouping')
+# 4. v0.9.15 发布引用与 Docker Hub 同步优先标签。
+assert 'v0.9.15' in HTML
+assert 'ghcr.io/q807738511/vaulthub:v0.9.15' in COMPOSE
+assert 'PRIORITY_TAG=v0.9.15' in SYNC
+print('PASS: v0.9.15 poster hero, sidebar settings and Plex/Emby-style series grouping')
 
 # 折叠按钮必须有独立 id，避免 document.querySelector(".rail-btn") 命中侧栏设置按钮
 assert 'id="sidebarCollapseButton"' in HTML, "折叠按钮缺少 sidebarCollapseButton id"
@@ -71,7 +71,7 @@ assert ".movie-detail-hero { position:relative;" in CSS, "hero 缺少 position:r
 assert ".movie-detail-hero.backdrop-art" in CSS, "backdrop-art 没有对应样式"
 assert ".movie-detail-hero.poster-art::before, .movie-detail-hero.backdrop-art::before" in CSS
 
-# v0.9.14：剧集库必须一次聚合整部剧，不能被 50 条一页的分页切成半截
+# v0.9.15：剧集库必须一次聚合整部剧，不能被 50 条一页的分页切成半截
 assert "function fetchRemainingLibraryFiles(libId, startOffset" in JS, "缺少剧集全量补齐函数"
 assert 'if (group === "movie" && lib?.type === "series" && data.has_more)' in JS
 assert "已聚合 ${files.length} / ${total} 集" in JS
