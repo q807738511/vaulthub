@@ -204,11 +204,30 @@ function buildSeriesShows(files) {
   });
   return [...shows.values()].sort((a,b)=>a.title.localeCompare(b.title,"zh-CN")).map(show => { show.seasonList = [...show.seasons.entries()].sort((a,b)=>a[0]-b[0]).map(([season, episodes]) => ({ season, episodes: episodes.sort((a,b)=>(a.parsed.episode||0)-(b.parsed.episode||0)) })); return show; });
 }
+const seriesShowMemory = {};
 function seriesShowStoreKey(libId, showKey) { return `vaulthub_series_show_${libId}_${showKey}`; }
-function rememberSeriesShow(libId, show) { try { localStorage.setItem(seriesShowStoreKey(libId, show.key), JSON.stringify(show)); } catch(e) {} }
+/* show.files 与 show.seasonList[*].episodes 是同一批条目的两份拷贝，show.seasons 又是
+   无法 JSON 序列化的 Map。整份写入会让一部 200 集的剧占掉约 120 KB，2 万集的库直接撞上
+   localStorage 5 MB 配额并静默失败（setItem 抛 QuotaExceededError）。这里只持久化
+   openSeriesDetails 真正会读的字段：季集结构，加上 hero 需要的首集路径。 */
+function seriesShowCacheShape(show) {
+  return {
+    key: show.key, title: show.title, poster: show.poster, backdrop: show.backdrop,
+    overview: show.overview, year: show.year, provider: show.provider,
+    files: show.files?.length ? [{ path: show.files[0].path }] : [],
+    seasonList: (show.seasonList || []).map(season => ({
+      season: season.season,
+      episodes: (season.episodes || []).map(ep => ({ path: ep.path, size: ep.size, parsed: ep.parsed, meta: ep.meta })),
+    })),
+  };
+}
+function rememberSeriesShow(libId, show) {
+  try { localStorage.setItem(seriesShowStoreKey(libId, show.key), JSON.stringify(seriesShowCacheShape(show))); }
+  catch(e) { /* 配额不足时退化为内存缓存，详情页仍能从本次渲染的数据打开 */ seriesShowMemory[seriesShowStoreKey(libId, show.key)] = seriesShowCacheShape(show); }
+}
 /* JSON.stringify 会把 seasons(Map) 序列化成 {}，因此读回后只有数组 seasonList 与 files 可用；
    openSeriesDetails 必须只依赖这两个字段，并对旧缓存缺字段的情况回落空数组。 */
-function readSeriesShow(libId, showKey) { try { const show = JSON.parse(localStorage.getItem(seriesShowStoreKey(libId, showKey)) || "null"); if (!show) return null; if (!Array.isArray(show.seasonList)) show.seasonList = []; if (!Array.isArray(show.files)) show.files = []; return show; } catch(e) { return null; } }
+function readSeriesShow(libId, showKey) { const key = seriesShowStoreKey(libId, showKey); try { const show = JSON.parse(localStorage.getItem(key) || "null") || seriesShowMemory[key] || null; if (!show) return null; if (!Array.isArray(show.seasonList)) show.seasonList = []; if (!Array.isArray(show.files)) show.files = []; return show; } catch(e) { return null; } }
 
 function movieTitleFromPath(path) {
   /* 先在原始文件名上剔除年份与发布规格，再做分隔符归一化：
@@ -493,6 +512,25 @@ function normalizeFilePayload(data) {
   const files = Array.isArray(data) ? data : (data?.files || data?.items || []);
   return files.map(item => typeof item === "string" ? { path: item } : item).filter(item => item?.path);
 }
+/* Plex / Emby 式剧集聚合必须先看到整部剧的全部季集，否则 50 条一页的分页会把
+   同一部剧切成「第 1 页 Season 01-02、第 2 页 Season 03-04」这种半截视图，
+   卡片上的季数集数也全是本页的局部统计。后端 /api/media/files 的 limit 上限是 500，
+   这里按 500 一批往后翻，直到 has_more 为假；上限 40 批（2 万条）防止异常库把页面拖死。 */
+async function fetchRemainingLibraryFiles(libId, startOffset, batch = 500, maxBatches = 40) {
+  const files = [];
+  let offset = startOffset, truncated = false;
+  for (let i = 0; i < maxBatches; i++) {
+    const res = await fetch(`/api/media/files?id=${encodeURIComponent(libId)}&offset=${offset}&limit=${batch}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const page = await res.json();
+    const list = normalizeFilePayload(page);
+    files.push(...list);
+    if (!page.has_more || !list.length) return { files, truncated: false };
+    offset += list.length;
+    truncated = true;
+  }
+  return { files, truncated };
+}
 async function loadLocalFiles(group, lib, offset = 0) {
   const target = document.getElementById("local-media-content-" + group);
   if (!target) return;
@@ -511,6 +549,15 @@ async function loadLocalFiles(group, lib, offset = 0) {
       return;
     }
     stopBuildProgressWatch(group);
+    /* 剧集库把本页之后的文件补齐再聚合，让 show 卡与详情页覆盖所有季集。 */
+    let seriesTruncated = false;
+    if (group === "movie" && lib?.type === "series" && data.has_more) {
+      const rest = await fetchRemainingLibraryFiles(lib.id, offset + files.length);
+      const extra = rest.files.filter(file => supportedLocalMediaFile(group, lib, String(file.path)));
+      files = files.concat(extra).sort((a, b) => String(a.path).localeCompare(String(b.path), "zh-CN"));
+      seriesTruncated = rest.truncated;
+      data.has_more = false;
+    }
     if (group === "comic") {
       files = files.filter(file => {
         const progress = Number(readingState(lib.id, String(file.path)).progress || 0);
@@ -523,7 +570,10 @@ async function loadLocalFiles(group, lib, offset = 0) {
        此时旧写法会算出「1-0 / 848」这种不成立的区间，改为显式提示本页为空。 */
     const total = Number(data.total) || files.length;
     const range = files.length ? `${offset + 1}-${offset + files.length}` : "本页无匹配";
-    const pager = `<div class="media-actions">${prev}<span class="media-file-meta">${range} / ${total}</span>${next}</div>`;
+    const seriesAllLoaded = group === "movie" && lib?.type === "series";
+    const pager = seriesAllLoaded
+      ? `<div class="media-actions"><span class="media-file-meta">已聚合 ${files.length} / ${total} 集${seriesTruncated ? "（超过 2 万集，仅聚合前 2 万条）" : ""}</span></div>`
+      : `<div class="media-actions">${prev}<span class="media-file-meta">${range} / ${total}</span>${next}</div>`;
     if (group === "comic") {
       const toolbar = `<div class="content-section-heading"><div><span class="eyebrow">我的媒体库</span><h3>${lib.type === "book" ? "电子书" : "漫画"}</h3></div><div class="comic-shelf-tabs"><button class="${comicShelfView === "completed" ? "active" : ""}" onclick="setComicShelfView(comicShelfView === \"completed\" ? \"shelf\" : \"completed\")">${comicShelfView === "completed" ? "← 返回未读" : "✓ 已读收藏"}</button></div></div>`;
       const emptyTip = comicShelfView === "completed"
