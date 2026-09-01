@@ -118,3 +118,41 @@ func TestV0913ArtworkCandidatesOnlyFromMediaDirectory(t *testing.T) {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 	}
 }
+
+func TestV0914CorruptOverrideStoreIsNotOverwritten(t *testing.T) {
+	d := t.TempDir()
+	os.WriteFile(filepath.Join(d, "Film.mkv"), []byte("v"), 0644)
+	store := filepath.Join(t.TempDir(), "overrides.json")
+	os.WriteFile(store, []byte("{broken"), 0600)
+	a := &App{libs: []Library{{ID: "movie", Type: "movie", Path: d}}, metadataOverrides: store}
+	withManagerSession(t)
+	w := httptest.NewRecorder()
+	a.metadataOverride(w, httptest.NewRequest(http.MethodPut, "/api/media/metadata/override?id=movie&path=Film.mkv", bytes.NewBufferString(`{"watched":true}`)))
+	if w.Code != 500 {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	b, _ := os.ReadFile(store)
+	if string(b) != "{broken" {
+		t.Fatalf("corrupt store was overwritten: %q", b)
+	}
+}
+
+func TestV0914ArtworkCandidatesSkipOversizedFiles(t *testing.T) {
+	d := t.TempDir()
+	os.WriteFile(filepath.Join(d, "Film.mkv"), []byte("v"), 0644)
+	f, err := os.Create(filepath.Join(d, "huge.jpg"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = f.Truncate((25 << 20) + 1); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	a := &App{libs: []Library{{ID: "movie", Type: "movie", Path: d}}}
+	withManagerSession(t)
+	w := httptest.NewRecorder()
+	a.artworkCandidates(w, httptest.NewRequest(http.MethodGet, "/api/media/metadata/artwork?id=movie&path=Film.mkv", nil))
+	if w.Code != 200 || strings.Contains(w.Body.String(), "huge.jpg") {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+}

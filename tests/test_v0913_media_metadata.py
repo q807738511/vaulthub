@@ -27,6 +27,16 @@ class V0913Contracts(unittest.TestCase):
         self.assertIn('movie-detail-logo', JS)
         self.assertIn('.movie-detail-logo', CSS)
 
+    def test_series_keeps_logo_fanart_and_uses_watched_state(self):
+        self.assertIn('logo: meta.logo || ""', JS)
+        self.assertIn('fanart: meta.fanart || ""', JS)
+        self.assertIn('logo:show.logo', JS)
+        self.assertIn('fanart:show.fanart', JS)
+        self.assertNotIn('toggleMovieReadState', JS)
+        movie_block = JS.split('function renderMoviePoster', 1)[1].split('function ', 1)[0]
+        self.assertNotIn('✓ 已读', movie_block)
+        self.assertIn('✓ 已观看', movie_block)
+
     def test_editor_supports_url_and_library_file(self):
         for token in ('mediaEditPosterUrl', 'mediaEditLogoUrl', 'mediaEditFanartUrl', 'mediaEditBackdropUrl', 'mediaEditArtworkChoices', 'mediaEditTags'):
             self.assertIn(token, HTML)
@@ -34,8 +44,8 @@ class V0913Contracts(unittest.TestCase):
         self.assertIn('/api/media/metadata/override?', JS)
 
     def test_version_is_0913(self):
-        self.assertIn('v0.9.13', HTML)
-        self.assertNotIn('?v=0.9.12', HTML)
+        self.assertIn('v0.9.14', HTML)
+        self.assertNotIn('?v=0.9.13', HTML)
 
 if __name__ == '__main__':
     unittest.main()

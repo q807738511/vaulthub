@@ -33,7 +33,10 @@ assert "📄 电子书</button>" not in media and "📚 漫画</button>" not in 
 for marker in ["openMovieDetails", "renderMovieDetails", "movie-detail-page", "电影介绍", "播放", "分享", "收藏", "评分", "演职人员", "视频推荐", "视频元数据"]:
     assert marker in media or marker in css, f"movie details missing: {marker}"
 assert "data-movie-settings" in media, "poster settings button missing"
-assert "toggleMovieReadState" in media
+assert "toggleMovieWatched" in media and "toggleMovieReadState" not in media
+assert "✓ 已观看" in media
+movie_block = media.split("function renderMoviePoster", 1)[1].split("function ", 1)[0]
+assert "✓ 已读" not in movie_block
 assert 'onclick="openLocalMediaButton(this)"' not in media.split("function renderMoviePoster", 1)[1].split("function ", 1)[0]
 
 # Player shell: no broken settings/download actions; info panel includes probed metadata.
@@ -47,5 +50,5 @@ assert "videoRoot.dataset.videoMetadata=formatVideoMetadata(info)" not in stream
 assert "context.WithTimeout" in backend and "CheckRedirect" in backend
 assert "media-video-body" in css and ("object-fit:contain" in css.replace(" ", "") or "object-fit: contain" in css)
 
-assert "v0.9.13" in index
-print("PASS: v0.9.13 runtime settings, split bookshelf, and movie details contracts")
+assert "v0.9.14" in index
+print("PASS: v0.9.14 runtime settings, split bookshelf, and movie details contracts")

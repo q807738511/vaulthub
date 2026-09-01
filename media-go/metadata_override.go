@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -24,16 +25,22 @@ func overrideKey(libID, mediaPath string) string {
 	return libID + "\n" + filepath.ToSlash(filepath.Clean(mediaPath))
 }
 
-func (a *App) loadMetadataOverrides() map[string]mediaMetadataOverride {
+func (a *App) loadMetadataOverrides() (map[string]mediaMetadataOverride, error) {
 	out := map[string]mediaMetadataOverride{}
 	if a.metadataOverrides == "" {
-		return out
+		return out, nil
 	}
 	b, err := os.ReadFile(a.metadataOverrides)
-	if err == nil {
-		_ = json.Unmarshal(b, &out)
+	if errors.Is(err, os.ErrNotExist) {
+		return out, nil
 	}
-	return out
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(b, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (a *App) saveMetadataOverrides(all map[string]mediaMetadataOverride) error {
@@ -65,7 +72,15 @@ func (a *App) saveMetadataOverrides(all map[string]mediaMetadataOverride) error 
 	if err = os.Chmod(tmp, 0600); err != nil {
 		return err
 	}
-	return os.Rename(tmp, a.metadataOverrides)
+	if err := os.Rename(tmp, a.metadataOverrides); err != nil {
+		return err
+	}
+	dir, err := os.Open(filepath.Dir(a.metadataOverrides))
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	return dir.Sync()
 }
 
 func validArtworkValue(lib Library, raw string) bool {
@@ -146,7 +161,11 @@ func (a *App) metadataOverride(w http.ResponseWriter, r *http.Request) {
 	}
 	a.configMu.Lock()
 	defer a.configMu.Unlock()
-	all := a.loadMetadataOverrides()
+	all, err := a.loadMetadataOverrides()
+	if err != nil {
+		errJSON(w, 500, "metadata override store is invalid")
+		return
+	}
 	all[overrideKey(lib.ID, mediaPath)] = in
 	if err := a.saveMetadataOverrides(all); err != nil {
 		errJSON(w, 500, "metadata override save failed")
@@ -156,7 +175,11 @@ func (a *App) metadataOverride(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) mergeMetadataOverride(lib Library, mediaPath string, m *localMediaMetadata) {
-	in, ok := a.loadMetadataOverrides()[overrideKey(lib.ID, mediaPath)]
+	all, err := a.loadMetadataOverrides()
+	if err != nil {
+		return
+	}
+	in, ok := all[overrideKey(lib.ID, mediaPath)]
 	if !ok {
 		return
 	}
@@ -209,7 +232,8 @@ func (a *App) artworkCandidates(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			continue
 		}
-		if _, _, err = safeFile(lib, rel); err != nil {
+		_, info, safeErr := safeFile(lib, rel)
+		if safeErr != nil || info.Size() > 25<<20 {
 			continue
 		}
 		items = append(items, map[string]string{"name": entry.Name(), "url": mediaAssetURL(lib.ID, rel)})
