@@ -195,12 +195,15 @@
   }
   .nav-item:hover .del { opacity: .8; }
   .nav-item .del:hover { opacity: 1; }
-  .sidebar-foot { padding: 8px 10px; border-top: 1px solid var(--border); display: flex; align-items: center; gap: 8px; }
+  .sidebar-foot { padding: 8px 10px; border-top: 1px solid var(--border); display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
+  .sidebar-foot-row { display:flex; align-items:center; gap:8px; min-width:0; }
   .sidebar-foot .ver { flex: 1; font-size: 10.5px; color: var(--text3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .rail-btn {
     width: 27px; height: 27px; border-radius: var(--radius-sm); border: 1px solid var(--border);
     background: var(--card2); color: var(--text2); font-size: 11.5px; flex-shrink: 0; cursor: pointer; padding: 0;
   }
+  .rail-settings { width:100%; justify-content:flex-start; display:flex; align-items:center; gap:9px; padding:0 10px; font-size:13px; }
+  .rail-settings .txt { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .rail-btn:hover { border-color: var(--accent); color: var(--accent); }
   /* 侧栏媒体库空态提示（v0.7.0：侧栏只列媒体库名称，没有库时给出引导） */
   .nav-empty { padding: 10px 11px; font-size: 11.5px; color: var(--text3); line-height: 1.6; }
@@ -217,11 +220,14 @@
   body.sidebar-hidden .nav-item .txt,
   body.sidebar-hidden .nav-item .cnt,
   body.sidebar-hidden .sidebar-foot .ver,
-  body.sidebar-hidden .nav-empty { display: none; }
+  body.sidebar-hidden .nav-empty,
+  body.sidebar-hidden .rail-settings .txt { display: none; }
   body.sidebar-hidden .nav { padding: 8px 6px; }
   body.sidebar-hidden .nav-item { justify-content: center; padding: 0; }
   body.sidebar-hidden .nav-item .ic { width: 24px; }
-  body.sidebar-hidden .sidebar-foot { justify-content: center; }
+  body.sidebar-hidden .sidebar-foot { justify-content: center; align-items:center; }
+  body.sidebar-hidden .sidebar-foot-row { justify-content:center; }
+  body.sidebar-hidden .rail-settings { width:27px; padding:0; justify-content:center; }
   body.sidebar-hidden .sidebar-resizer { display: none; }
   /* 边栏收起时，媒体操作按钮必须一并缩回，避免悬浮在 iframe 上方 */
   body.sidebar-hidden .nav-tools { display: none !important; }
@@ -515,8 +521,15 @@
   .movie-detail-scroll header { min-height:min(68vh,680px); display:flex; flex-direction:column; justify-content:flex-end; gap:16px; padding:clamp(80px,12vw,170px) clamp(24px,8vw,120px) clamp(40px,7vw,90px); background-size:cover; background-position:center; }
   .movie-detail-scroll header h1 { margin:0; font-size:clamp(34px,6vw,72px); }
   .movie-detail-scroll header p { max-width:760px; margin:0; line-height:1.8; }
+  .movie-detail-hero { background-image:var(--movie-hero-art, linear-gradient(145deg,var(--card),var(--bg2))); background-size:cover; background-position:center; }
+  .movie-detail-hero::before { content:""; position:absolute; inset:0; background:linear-gradient(90deg,rgba(0,0,0,.68),rgba(0,0,0,.18)); pointer-events:none; }
+  .movie-detail-hero > * { position:relative; z-index:1; }
   .movie-detail-hero.no-art { color:var(--text); background:linear-gradient(145deg,var(--card),var(--bg2)); border-bottom:1px solid var(--border); }
+  .movie-detail-hero.no-art::before { display:none; }
   .movie-detail-hero.no-art p { color:var(--text2); }
+  .movie-detail-hero.poster-art { color:#fff; text-shadow:0 1px 3px rgba(0,0,0,.72); }
+  .movie-detail-hero.poster-art::before { background:linear-gradient(90deg,rgba(0,0,0,.76),rgba(0,0,0,.22)); }
+  .movie-detail-hero.poster-art p { color:rgba(255,255,255,.92); }
   .movie-detail-hero.has-art { color:#fff; text-shadow:0 1px 3px rgba(0,0,0,.72); }
   .movie-detail-hero.has-art p { color:rgba(255,255,255,.9); }
   .movie-detail-actions { display:flex; gap:10px; flex-wrap:wrap; }
@@ -524,6 +537,15 @@
   .movie-detail-strip { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:12px; }
   .movie-detail-strip article { display:flex; flex-direction:column; gap:5px; min-height:70px; padding:14px; border:1px solid var(--border); border-radius:10px; color:var(--text); background:var(--card); }
   .movie-detail-strip article small { color:var(--text2); }
+  .movie-detail-strip article small { color:var(--text2); }
+  .series-show-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:16px; }
+  .series-show-card .media-poster-art { aspect-ratio: 2 / 3; }
+  .series-detail-page .movie-detail-scroll header { min-height: 52vh; }
+  .series-season-block { padding: 0 clamp(24px,8vw,120px) 20px; }
+  .series-season-block h3 { margin: 0 0 12px; font-size: 18px; }
+  .series-episode-row .media-actions { flex-wrap:wrap; }
+  .series-episode-row .media-file-name b { display:block; }
+  .series-episode-row .media-file-name small { display:block; margin-top:4px; }
   .movie-meta-list { display:grid; grid-template-columns:minmax(90px,160px) 1fr; gap:10px 16px; }
   .movie-meta-list dt { color:var(--text2); } .movie-meta-list dd { margin:0; overflow-wrap:anywhere; }
   .media-poster-info { padding:10px; }
