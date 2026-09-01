@@ -111,7 +111,7 @@ header = index[index.index('<header class="topbar">'):index.index('</header>')]
 assert 'id="accountMenu"' in header, "the top bar needs an account menu"
 assert 'id="logoMenuButton"' in header and 'onclick="toggleAccountMenu()"' in header, "the mouse logo must open the menu"
 assert 'id="tbAvatar"' not in header, "the legacy account avatar must be removed"
-for item in ["openAccountMenuItem('settingsModal')", "openAccountMenuItem('aboutModal')", "logoutVaultHub()"]:
+for item in ["openAccountMenuItem('aboutModal')", "logoutVaultHub()"]:
     assert item in header, f"the account menu must offer {item}"
 assert "onclick=\"openModal('settingsModal')\"" not in header, \
     "the standalone settings gear must be gone from the top bar"

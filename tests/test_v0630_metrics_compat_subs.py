@@ -56,7 +56,7 @@ assert "guardProtectedAction(()=>openModal('settingsModal'))" not in html, "sett
 # Caddy tab, and the settings modal itself opens from the top bar.
 assert "function openCaddyModal(" in state, "openCaddyModal must still exist as the Caddy entry point"
 assert "switchSetTab('caddy')" in html, "settings modal must expose the Caddy tab"
-assert 'id="logoMenuButton"' in html and "openAccountMenuItem('settingsModal')" in html
+assert 'id="sidebarSettingsButton"' in html and "openSettingsModalFromSidebar()" in html
 # Dead Caddy fields removed
 assert 'id="caddyToken"' not in html, "obsolete Caddy token field must be removed"
 assert 'id="caddyOrigin"' not in html, "obsolete Caddy origin field must be removed"
