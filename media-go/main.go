@@ -35,31 +35,34 @@ type Library struct {
 	Path string `json:"path"`
 }
 type App struct {
-	mu               sync.RWMutex
-	configMu         sync.Mutex // serializes runtime config read-modify-write transactions
-	libs             []Library
-	jobs             map[string]uint64             // library id -> running generation
-	generations      map[string]uint64             // invalidates stale scans after delete/recreate
-	deleting         map[string]bool               // blocks ID reuse until DB cleanup completes
-	scanCancel       map[string]context.CancelFunc // library id -> cancel its running scan
-	tasks            map[string]context.CancelFunc // transcode task id -> cancel
-	db               *sql.DB
-	scanGate         chan struct{} // size-1 semaphore: only one scan writes at a time
-	config, indexDir string
-	cacheDir         string
-	cacheMaxBytes    int64
-	cacheMaxAge      time.Duration
-	cacheCleanup     time.Duration
-	cacheWake        chan struct{}
-	runtimeConfig    string
-	scraperMode      string
-	tmdbAPIKey       string
-	tmdbAPIBase      string
-	tmdbImageBase    string
-	tvdbAPIKey       string
-	tvdbAPIBase      string
-	scraperProxy     string
-	configTrusted    bool // false when config exists but cannot be read/decoded
+	mu                sync.RWMutex
+	configMu          sync.Mutex // serializes runtime config read-modify-write transactions
+	audioScrapeMu     sync.Mutex // MusicBrainz public API: globally serialize to <= 1 request/second
+	audioScrapeLast   time.Time
+	libs              []Library
+	jobs              map[string]uint64             // library id -> running generation
+	generations       map[string]uint64             // invalidates stale scans after delete/recreate
+	deleting          map[string]bool               // blocks ID reuse until DB cleanup completes
+	scanCancel        map[string]context.CancelFunc // library id -> cancel its running scan
+	tasks             map[string]context.CancelFunc // transcode task id -> cancel
+	db                *sql.DB
+	scanGate          chan struct{} // size-1 semaphore: only one scan writes at a time
+	config, indexDir  string
+	cacheDir          string
+	cacheMaxBytes     int64
+	cacheMaxAge       time.Duration
+	cacheCleanup      time.Duration
+	cacheWake         chan struct{}
+	runtimeConfig     string
+	metadataOverrides string
+	scraperMode       string
+	tmdbAPIKey        string
+	tmdbAPIBase       string
+	tmdbImageBase     string
+	tvdbAPIKey        string
+	tvdbAPIBase       string
+	scraperProxy      string
+	configTrusted     bool // false when config exists but cannot be read/decoded
 	// Hooks are test-only fault/interleaving instrumentation, nil in production.
 	scanWriteHook     func(string, int)
 	removeHook        func(string)
@@ -155,6 +158,7 @@ func (a *App) load() {
 	a.cacheCleanup = time.Duration(envInt64("MEDIA_CACHE_CLEANUP_INTERVAL_HOURS", 24)) * time.Hour
 	a.cacheWake = make(chan struct{}, 1)
 	a.runtimeConfig = env("MEDIA_RUNTIME_CONFIG", "/data/media-runtime.json")
+	a.metadataOverrides = env("MEDIA_METADATA_OVERRIDES", "/data/media-metadata-overrides.json")
 	a.scraperMode = env("MEDIA_SCRAPER_MODE", "auto")
 	a.tmdbAPIKey = os.Getenv("TMDB_API_KEY")
 	a.tmdbAPIBase = strings.TrimRight(env("TMDB_API_BASE", "https://api.themoviedb.org/3"), "/")
@@ -2118,6 +2122,9 @@ func main() {
 	mux.HandleFunc("/api/media/tmdb", a.tmdb)
 	mux.HandleFunc("/api/media/tvdb", a.tvdb)
 	mux.HandleFunc("/api/media/metadata", a.localMetadata)
+	mux.HandleFunc("/api/media/metadata/override", a.metadataOverride)
+	mux.HandleFunc("/api/media/metadata/artwork", a.artworkCandidates)
+	mux.HandleFunc("/api/media/audio/metadata", a.audioMetadata)
 	mux.HandleFunc("/api/media/network/speed", a.networkSpeed)
 	mux.HandleFunc("/api/media/compat", a.compat)
 	fmt.Println("VaultHub media API listening on 127.0.0.1:9100")

@@ -82,12 +82,12 @@ for call in ["renderHomeLibraryNav", "renderHomeLibTable", "renderHomeCount",
              "syncHomeLibTypes", "renderHomeRecent", "renderNowPlaying", "refreshHardwareStatus"]:
     assert call in set_lang, f"setLang() must re-render {call}"
 
-# --- MusicBrainz results must be validated before overwriting local metadata. ---
-assert "AUDIO_MB_MIN_SCORE" in media, "a minimum score threshold must guard MusicBrainz matches"
-assert "function audioMatchAcceptable(" in media, "match validation helper must exist"
-assert 'recording:"' in media and 'artist:"' in media, "must use a structured MusicBrainz query"
-assert "list.find(rec => audioMatchAcceptable(" in media, \
-    "must pick the first acceptable match, not recordings[0]"
+# --- MusicBrainz results must be validated by the authenticated backend. ---
+audio_go = (ROOT / "media-go" / "audio_metadata.go").read_text(encoding="utf-8")
+assert "score < 88" in audio_go, "a minimum score threshold must guard MusicBrainz matches"
+assert "func audioCandidateMatches(" in audio_go, "backend match validation helper must exist"
+assert 'recording:\"' in audio_go and 'artist:\"' in audio_go, "must use a structured MusicBrainz query"
+assert "audioCandidateMatches(title, artist" in audio_go, "backend must reject unreliable candidates"
 assert "recordings?.[0]" not in media, "unconditional recordings[0] adoption must be gone"
 
 # --- Static markup keys added for previously hardcoded copy. ---

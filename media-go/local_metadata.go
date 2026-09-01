@@ -33,7 +33,11 @@ type localMediaMetadata struct {
 	TMDBID    string                  `json:"tmdb_id,omitempty"`
 	TVDBID    string                  `json:"tvdb_id,omitempty"`
 	Poster    string                  `json:"poster,omitempty"`
+	Logo      string                  `json:"logo,omitempty"`
+	Fanart    string                  `json:"fanart,omitempty"`
 	Backdrop  string                  `json:"backdrop,omitempty"`
+	Tags      []string                `json:"tags,omitempty"`
+	Watched   bool                    `json:"watched,omitempty"`
 	Subtitles []localMetadataSubtitle `json:"subtitles"`
 	Provider  string                  `json:"provider"`
 	NFO       string                  `json:"nfo,omitempty"`
@@ -173,9 +177,13 @@ func readLocalMediaMetadata(lib Library, mediaPath string) (localMediaMetadata, 
 		}
 	}
 	posterNames := []string{stem + "-poster.png", stem + "-poster.jpg", stem + ".png", stem + ".jpg", "poster.png", "poster.jpg", "folder.png", "folder.jpg", "cover.png", "cover.jpg"}
-	backdropNames := []string{stem + "-fanart.png", stem + "-fanart.jpg", "fanart.png", "fanart.jpg", "backdrop.png", "backdrop.jpg"}
+	logoNames := []string{stem + "-logo.png", stem + "-logo.webp", "logo.png", "logo.webp"}
+	fanartNames := []string{stem + "-fanart.jpg", stem + "-fanart.png", "fanart.jpg", "fanart.png"}
+	backdropNames := []string{stem + "-backdrop.jpg", stem + "-backdrop.png", "backdrop.jpg", "backdrop.png"}
 	if !commonAllowed {
 		posterNames = posterNames[:2]
+		logoNames = logoNames[:2]
+		fanartNames = fanartNames[:2]
 		backdropNames = backdropNames[:2]
 	}
 	for _, th := range doc.Thumbs {
@@ -183,9 +191,14 @@ func readLocalMediaMetadata(lib Library, mediaPath string) (localMediaMetadata, 
 			posterNames = append([]string{strings.TrimSpace(th.Value)}, posterNames...)
 		}
 	}
-	backdropNames = append(doc.FanartThumbs, backdropNames...)
+	fanartNames = append(doc.FanartThumbs, fanartNames...)
 	m.Poster = relativeAssetURL(lib, firstExistingFile(dir, posterNames))
+	m.Logo = relativeAssetURL(lib, firstExistingFile(dir, logoNames))
+	m.Fanart = relativeAssetURL(lib, firstExistingFile(dir, fanartNames))
 	m.Backdrop = relativeAssetURL(lib, firstExistingFile(dir, backdropNames))
+	if m.Backdrop == "" {
+		m.Backdrop = m.Fanart
+	}
 	ents, _ := os.ReadDir(dir)
 	for _, x := range ents {
 		if x.IsDir() {
@@ -225,6 +238,7 @@ func (a *App) localMetadata(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, 404, "invalid media path")
 		return
 	}
+	a.mergeMetadataOverride(lib, r.URL.Query().Get("path"), &m)
 	writeJSON(w, 200, m)
 }
 
