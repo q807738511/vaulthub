@@ -673,8 +673,10 @@ function applyModuleVisibility() {
   const mainIds = Object.keys(MODULE_GROUP).filter(k => MODULE_GROUP[k] === "main");
   const mainHeader = document.querySelector('.nav-group[data-nav-group="main"]');
   if (mainHeader) mainHeader.style.display = mainIds.every(id => hiddenModules.includes(id)) ? "none" : "";
+  /* v0.9.17：自定义分组标题里带「管理 ›」（模块设置入口），
+     即使还没有自定义模块也必须保持可见，否则模块设置无处可进。 */
   const customHeader = document.querySelector(`.nav-group[data-nav-group="custom"]`);
-  if (customHeader) customHeader.style.display = customBoards.length ? "" : "none";
+  if (customHeader) customHeader.style.display = "";
 }
 
 

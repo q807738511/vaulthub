@@ -653,6 +653,14 @@ func validID(s string) bool {
 	}
 	return true
 }
+
+// sqliteLikeEscape neutralises LIKE wildcards so a search for "100%" or "a_b"
+// matches those literal characters instead of turning into a wildcard query.
+// Callers must pair it with ESCAPE '\' in the SQL statement.
+func sqliteLikeEscape(s string) string {
+	r := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	return r.Replace(s)
+}
 func (a *App) saveLibrariesLocked(libs []Library) error {
 	if a.saveLibrariesHook != nil {
 		if e := a.saveLibrariesHook(libs); e != nil {
@@ -1285,6 +1293,33 @@ func (a *App) files(w http.ResponseWriter, r *http.Request) {
 	order := "path"
 	if r.URL.Query().Get("sort") == "mtime" {
 		order = "mtime DESC, path"
+	}
+	// q filters by path substring (case-insensitive) so the 媒体搜索 page can
+	// query the index directly instead of downloading every library page.
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if q != "" {
+		if len(q) > 200 {
+			q = q[:200]
+		}
+		like := "%" + strings.ToLower(sqliteLikeEscape(q)) + "%"
+		if e := a.db.QueryRow(`SELECT count(*) FROM files WHERE lib=? AND lower(path) LIKE ? ESCAPE '\'`, id, like).Scan(&total); e != nil {
+			total = 0
+		}
+		rows, e := a.db.Query(`SELECT path,size,mtime FROM files WHERE lib=? AND lower(path) LIKE ? ESCAPE '\' ORDER BY `+order+` LIMIT ? OFFSET ?`, id, like, lim, off)
+		if e == nil {
+			for rows.Next() {
+				var fe FileEntry
+				rows.Scan(&fe.Path, &fe.Size, &fe.Mtime)
+				files = append(files, fe)
+			}
+			rows.Close()
+		}
+		status := "ready"
+		if busy {
+			status = "indexing"
+		}
+		writeJSON(w, 200, map[string]any{"status": status, "total": total, "offset": off, "limit": lim, "query": q, "has_more": off+len(files) < total, "files": files})
+		return
 	}
 	rows, e := a.db.Query(`SELECT path,size,mtime FROM files WHERE lib=? ORDER BY `+order+` LIMIT ? OFFSET ?`, id, lim, off)
 	if e == nil {

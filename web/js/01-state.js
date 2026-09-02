@@ -8,7 +8,7 @@ const VAULTHUB_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
    历史故障：v0.8.3→v0.8.5 的前端修改在服务端已生效，但浏览器仍执行缓存里的
    旧 02-media.js，用户看到「没有更新」。现在入口页 no-store、静态资源带 ?v=，
    并在启动时做一次一致性自查，不一致就绕过缓存强制重载一次。 */
-const VAULTHUB_SCRIPT_VERSION = "0.9.16";
+const VAULTHUB_SCRIPT_VERSION = "0.9.17";
 function ensureFreshAssets() {
   /* expected 为空 = 浏览器执行的 index.html 早于 v0.8.6（旧版本入口页没有声明
      版本号），同样属于"页面是旧的"，也需要换 URL 重新取一次。 */
@@ -104,7 +104,6 @@ async function logoutVaultHub() {
   closeCaddyPage();
   closeModal('settingsModal');
   closeModal('avatarModal');
-  closeAccountMenu();
   showVaultHubLogin();
   const pass = document.getElementById('vaultHubPassword');
   if (pass) pass.value = '';
@@ -161,10 +160,11 @@ function openCaddyPage() {
   loadCaddyConfig();
 }
 function closeCaddyPage() { document.getElementById('caddyPage')?.classList.remove('show'); }
-/* 顶栏 🔀 按钮：打开系统设置并直接跳到 Caddy 标签页 */
+/* Caddy 入口：v0.9.17 起反向代理入口在「账户与登录」页里，
+   保留 openCaddyModal() 作为兼容入口，直接打开该页。 */
 function openCaddyModal() {
   openModal('settingsModal');
-  switchSetTab('caddy');
+  switchSetTab('account');
 }
 async function loadCaddyConfig() {
   const box = document.getElementById('caddyFile');
@@ -245,7 +245,12 @@ const I18N = {
     navGroupBook: "电子书刊", navGroupVideo: "影视作品", navGroupAudio: "音视作品",
     navGroupSys: "系统",
     navGroupCustom: "自定义",
-    settings: "系统设置", about: "关于", settingsLead: "媒体库、反向代理、外观主题、刮削与硬件、账户与登录集中在此，Caddy 配置有独立整页。",
+    settings: "系统设置", about: "关于", settingsLead: "媒体库、外观主题、刮削与硬件设置集中在此；账户与登录页内含登录状态、关于和 Caddy 反向代理入口。",
+    navMediaSearch: "媒体搜索", searchTitle: "媒体搜索", searchIdle: "输入关键词搜索媒体库",
+    searchPlaceholder: "搜索媒体库中的影视、书籍、音乐文件名", searchRun: "搜索", searchClear: "清空",
+    searchRunning: "正在搜索媒体库…", searchNoLibrary: "还没有已添加的媒体库，请先在系统设置中添加。",
+    searchEmpty: "没有找到与「{q}」匹配的媒体文件。", searchHits: "命中 {n} 个文件",
+    setAboutHint: "应用版本、技术栈和监控组件说明。", setAboutOpen: "查看关于信息",
     setLook: "外观主题", setScrape: "刮削与硬件", caddyRoutes: "反向代理服务域名",
     setAccount: "账户与登录", setAccountTitle: "当前登录状态", sessionChecking: "正在检查登录状态…", sessionRefresh: "刷新状态",
     sessionHint: "会话在最后一次操作后 30 分钟空闲自动失效；增删媒体库等写操作需要有效登录。",
@@ -480,7 +485,12 @@ const I18N = {
     testConnecting: "⏳ 正在驗證…",
     /* v0.6.30.Branch-update：Plex 風格改版新增的鍵 */ navMore: "更多 ›",
     navGroupBook: "電子書刊", navGroupVideo: "影視作品", navGroupAudio: "音視作品",
-    settingsLead: "媒體庫、反向代理、外觀主題、刮削與硬體設定集中在此，Caddy 設定有獨立整頁。",
+    settingsLead: "媒體庫、外觀主題、刮削與硬體設定集中在此；帳戶與登入頁內含登入狀態、關於與 Caddy 反向代理入口。",
+    navMediaSearch: "媒體搜尋", searchTitle: "媒體搜尋", searchIdle: "輸入關鍵字搜尋媒體庫",
+    searchPlaceholder: "搜尋媒體庫中的影視、書籍、音樂檔名", searchRun: "搜尋", searchClear: "清空",
+    searchRunning: "正在搜尋媒體庫…", searchNoLibrary: "還沒有已新增的媒體庫，請先在系統設定中新增。",
+    searchEmpty: "找不到與「{q}」相符的媒體檔案。", searchHits: "命中 {n} 個檔案",
+    setAboutHint: "應用版本、技術棧與監控元件說明。", setAboutOpen: "查看關於資訊",
     setLook: "外觀主題", setScrape: "刮削與硬體",
     caddyRoutes: "反向代理服務網域",
     caddyRoutesHint: "維護服務網域與內網上游位址的對應，儲存後由內建 Caddy 校驗並熱載入，失敗會自動回滾。",
@@ -646,7 +656,12 @@ const I18N = {
     testConnecting: "⏳ Verifying…",
     /* v0.6.30.Branch-update: keys added by the Plex-style redesign */ navMore: "More ›",
     navGroupBook: "Books & Comics", navGroupVideo: "Movies & TV", navGroupAudio: "Music & MV",
-    settingsLead: "Libraries, reverse proxy, appearance and scraping/hardware settings live here; the Caddy editor has its own full page.",
+    settingsLead: "Libraries, appearance and scraping/hardware settings live here; Account & Sign-in holds the session state, About and the Caddy reverse-proxy entry.",
+    navMediaSearch: "Media search", searchTitle: "Media search", searchIdle: "Type a keyword to search your libraries",
+    searchPlaceholder: "Search movie, book and music file names in your libraries", searchRun: "Search", searchClear: "Clear",
+    searchRunning: "Searching libraries…", searchNoLibrary: "No library added yet — add one in system settings first.",
+    searchEmpty: "No media file matches \"{q}\".", searchHits: "{n} files matched",
+    setAboutHint: "App version, tech stack and monitoring components.", setAboutOpen: "Open About",
     setLook: "Appearance", setScrape: "Scraping & hardware",
     caddyRoutes: "Reverse proxy hostnames",
     caddyRoutesHint: "Maintain hostname to LAN upstream mappings. Saving validates and hot-reloads the built-in Caddy; failures roll back automatically.",
@@ -936,18 +951,8 @@ document.addEventListener("click", event => {
   switchView(v);
 });
 
-/* ---------- 账户头像菜单：系统设置 / 关于 / 头像设置 / 退出登录 ---------- */
-function toggleAccountMenu(force) {
-  const menu = document.getElementById("accountMenu");
-  const btn = document.getElementById("logoMenuButton");
-  if (!menu) return;
-  const open = typeof force === "boolean" ? force : !menu.classList.contains("show");
-  menu.classList.toggle("show", open);
-  if (btn) btn.setAttribute("aria-expanded", open ? "true" : "false");
-  if (open) refreshSessionStatus(false);
-}
-function closeAccountMenu() { toggleAccountMenu(false); }
-function openAccountMenuItem(id) { closeAccountMenu(); openModal(id); }
+/* ---------- 账户与登录：v0.9.17 起登录状态 / 关于 / 退出登录都在
+   系统设置 → 账户与登录 里，顶栏 logo 不再是菜单按钮 ---------- */
 let movieDetailSidebarWasHidden = null;
 function enterMovieDetailSidebarMode() {
   if (movieDetailSidebarWasHidden === null) movieDetailSidebarWasHidden = document.body.classList.contains("sidebar-hidden");
@@ -958,11 +963,9 @@ function leaveMovieDetailSidebarMode() {
   document.body.classList.toggle("sidebar-hidden", movieDetailSidebarWasHidden);
   movieDetailSidebarWasHidden = null;
 }
-function openSettingsModalFromSidebar() { closeAccountMenu(); openModal("settingsModal"); }
-function openMediaSearchSettings() { openModal("settingsModal"); switchSetTab("scrape"); }
-document.addEventListener("click", event => {
-  if (!event.target.closest("#accountWrap")) closeAccountMenu();
-});
+function openSettingsModalFromSidebar() { openModal("settingsModal"); }
+/* 打开系统设置并直接跳到账户与登录页（登录状态 / Caddy / 关于 / 退出登录）。 */
+function openAccountSettings() { openModal("settingsModal"); switchSetTab("account"); }
 
 /* ---------- 头像设置：文字 / 颜色 / 上传图片，仅存本浏览器 ---------- */
 const LS_AVATAR = "vaulthub_avatar_v1";
@@ -989,7 +992,6 @@ function applyAvatarConfig() {
   }
 }
 function openAvatarSettings() {
-  closeAccountMenu();
   const text = document.getElementById("avatarText");
   const color = document.getElementById("avatarColor");
   if (text) text.value = avatarConfig.text || "";
@@ -1091,9 +1093,10 @@ function initSidebarResizer() {
 function switchSetTab(key) {
   document.querySelectorAll(".settab[data-settab]").forEach(el => el.classList.toggle("on", el.dataset.settab === key));
   document.querySelectorAll(".setpanel").forEach(el => el.classList.toggle("on", el.id === "setpanel-" + key));
-  if (key === "caddy") loadCaddyConfig();
   if (key === "scrape") { refreshHardwareStatus(); if (typeof loadMediaRuntimeSettings === "function") loadMediaRuntimeSettings(false); }
-  if (key === "account") refreshSessionStatus(false);
+  /* v0.9.17：账户与登录页同时承载登录状态、Caddy 反向代理入口和关于，
+     所以进入该页时既要刷新会话状态，也要把 Caddyfile 读回来更新路由计数。 */
+  if (key === "account") { refreshSessionStatus(false); loadCaddyConfig(); }
   /* 媒体库标签页：把已添加的库和外连服务都刷新一遍，避免看到上一次的旧列表。 */
   if (key === "library") {
     if (typeof refreshMediaLibraries === "function") refreshMediaLibraries(false);

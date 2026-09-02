@@ -78,7 +78,7 @@ assert 'const host = document.getElementById("libNavAll");' in home, \
 assert 'esc(lib.name)' in home, "sidebar entries must show the library name"
 assert "libNavEmpty" in home and "libNavEmpty" in state, "empty sidebar needs a translated hint"
 # Category labels only survive as scraping-source descriptions inside settings.
-settings_block = index[index.index('id="setpanel-library"'):index.index('id="setpanel-caddy"')]
+settings_block = index[index.index('id="setpanel-library"'):index.index('id="setpanel-look"')]
 for label in ['navGroupBook', 'navGroupVideo', 'navGroupAudio']:
     assert label in settings_block, f"{label} must still be selectable when configuring a library"
 
@@ -97,8 +97,12 @@ assert 'if (key === "library")' in state, "switching to the 媒体库 tab must r
 # The sidebar add-module button is gone; module settings moved into 外观主题.
 assert 'add-board-btn' not in index and 'add-board-btn' not in css, \
     "the sidebar 添加模块 button must be removed"
+# v0.9.17 moved 模块设置 out of 外观主题 into the sidebar 自定义 group header.
 assert 'onclick="openModuleModal()"' in index, "module settings must still be reachable"
-assert 'setModuleOpen' in state, "the module settings entry needs translated copy"
+look_panel = index[index.index('id="setpanel-look"'):index.index('id="setpanel-scrape"')]
+assert 'openModuleModal()' not in look_panel, "模块设置 must no longer live in 外观主题"
+assert 'data-nav-group="custom"' in index and index.index('data-nav-group="custom"') < index.index('id="customNav"'), \
+    "the 自定义 sidebar group must host the module settings entry"
 # Every library row keeps rescrape / open / delete actions.
 for act in ['rebuildOneLibrary(', 'openHomeLibrary(', 'deleteMediaLibrary(']:
     assert act in home, f"library rows must keep the {act} action"
@@ -106,27 +110,26 @@ for act in ['rebuildOneLibrary(', 'openHomeLibrary(', 'deleteMediaLibrary(']:
 assert 'ensureSessionForWrite(t("writeAddLibrary"))' in home, \
     "adding a library must verify the session first"
 
-# ---------------------------------------------------------------- 4. account menu on Chinese mouse logo
+# ------------------------------------------- 4. account state / About / sign-out live in settings
+# v0.9.17 removed the top-bar logo dropdown: everything moved into
+# 系统设置 → 账户与登录, which is the only place that state is rendered.
 header = index[index.index('<header class="topbar">'):index.index('</header>')]
-assert 'id="accountMenu"' in header, "the top bar needs an account menu"
-assert 'id="logoMenuButton"' in header and 'onclick="toggleAccountMenu()"' in header, "the mouse logo must open the menu"
+assert 'id="accountMenu"' not in header, "the top-bar account dropdown must be gone"
+assert 'toggleAccountMenu()' not in index, "the logo menu toggle must be removed"
 assert 'id="tbAvatar"' not in header, "the legacy account avatar must be removed"
-for item in ["openAccountMenuItem('aboutModal')", "logoutVaultHub()"]:
-    assert item in header, f"the account menu must offer {item}"
+assert 'logoutVaultHub()' not in header, "sign-out must no longer live in the top bar"
+assert 'aboutModal' not in header, "About must no longer live in the top bar"
 assert "onclick=\"openModal('settingsModal')\"" not in header, \
     "the standalone settings gear must be gone from the top bar"
-assert "onclick=\"openModal('aboutModal')\"" not in header, \
-    "the standalone About button must be gone from the top bar"
 assert 'id="avatarModal"' not in index, "legacy avatar dialog must be removed"
-assert 'getElementById("logoMenuButton")' in state, "account menu JS must target the logo"
 assert "loadAvatarConfig();" not in boot, "legacy avatar startup must be removed"
-assert '.account-menu' in css and '.logo-icon' in css, "logo account menu needs styling"
-logout = state[state.index("async function logoutVaultHub()"):]
-logout = logout[:logout.index("\n}") + 2]
-assert "closeAccountMenu()" in logout, "sign-out must close the account menu"
-# Login state is visible in the menu itself.
-assert 'id="accountState"' in header and "getElementById('accountState')" in state, \
-    "the account menu must show the live session state"
+assert '.logo-icon' in css, "the brand logo still needs styling"
+account_panel = index[index.index('id="setpanel-account"'):index.index('</dialog>')]
+for item in ["logoutVaultHub()", "openModal('aboutModal')", "openCaddyPage()", 'id="sessionStatusBadge"']:
+    assert item in account_panel, f"账户与登录 must offer {item}"
+assert 'id="accountState"' in account_panel and "getElementById('accountState')" in state, \
+    "账户与登录 must show the live session state"
+assert 'id="accountName"' in account_panel, "账户与登录 must show the account name"
 
 # ---------------------------------------------------------------- 5. top bar / info only
 assert 'class="topnav"' not in index, "the horizontal top nav must be removed"
@@ -141,9 +144,9 @@ assert 'id="topScanStat"' in info, "the info area must show scan progress"
 assert 'id="topLibStat"' not in info, "the duplicate library/item total must be removed"
 assert 'getElementById("topLibStat")' not in home and 'getElementById("topScanStat")' in home, \
     "the info area must only populate live scan data"
-# Account block sits before the info area, i.e. on the left.
-assert header.index('id="accountMenu"') < header.index('class="tb-info"'), \
-    "the avatar/account menu must sit to the left of the info area"
+# Brand block sits before the info area, i.e. on the left.
+assert header.index('id="accountWrap"') < header.index('class="tb-info"'), \
+    "the brand block must sit to the left of the info area"
 
 # ---------------------------------------------------------------- 6. home click-to-play
 assert 'onclick="openHomeMediaItem(' in home, \

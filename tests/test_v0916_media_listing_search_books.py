@@ -13,8 +13,8 @@ assert "group === \"movie\" ? 50 : 100" not in JS
 assert "fetchAllLibraryFiles" in JS or "fetchRemainingLibraryFiles" in JS
 assert "seriesTruncated" not in JS or "20,000" not in JS
 
-# 首页主导航的首页条目下方提供媒体搜索/刮削选择入口。
-assert "openMediaSearchSettings" in STATE or "openMediaSearchSettings" in HOME
+# v0.9.17：主导航「媒体搜索」直接搜索媒体库，不再打开系统设置。
+assert "openMediaSearch" in JS
 assert "媒体搜索" in HTML or "mediaSearch" in HTML
 
 # 影视详情打开时临时收起侧栏，关闭后恢复原来的用户状态。
@@ -28,5 +28,5 @@ for ext in ("epub", "pdf", "mobi", "azw3", "txt", "cbz", "cbr", "cb7", "cbt"):
 assert "MEDIA_FORMATS.book" in JS and "MEDIA_FORMATS.comic" in JS
 assert "archiveLike" in JS
 
-assert "v0.9.16" in HTML
-print("PASS: v0.9.16 full movie listing, media search nav, sidebar detail lifecycle and book/comic recognition contracts")
+assert "v0.9.17" in HTML
+print("PASS: v0.9.17 full movie listing, media search nav, sidebar detail lifecycle and book/comic recognition contracts")

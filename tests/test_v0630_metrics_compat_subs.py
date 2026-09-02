@@ -55,7 +55,10 @@ assert "guardProtectedAction(()=>openModal('settingsModal'))" not in html, "sett
 # reachable without a guard wrapper: openCaddyModal() opens settings on the
 # Caddy tab, and the settings modal itself opens from the top bar.
 assert "function openCaddyModal(" in state, "openCaddyModal must still exist as the Caddy entry point"
-assert "switchSetTab('caddy')" in html, "settings modal must expose the Caddy tab"
+# v0.9.17 folded the Caddy tab into 账户与登录, so the entry point now targets
+# that tab; the Caddyfile editor itself is still the standalone full page.
+assert "switchSetTab('account')" in state, "openCaddyModal must open the 账户与登录 tab"
+assert 'onclick="openCaddyPage()"' in html, "the settings modal must expose the Caddy editor entry"
 assert 'id="sidebarSettingsButton"' in html and "openSettingsModalFromSidebar()" in html
 # Dead Caddy fields removed
 assert 'id="caddyToken"' not in html, "obsolete Caddy token field must be removed"

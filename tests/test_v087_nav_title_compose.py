@@ -93,10 +93,14 @@ if m:
 check("selectLocalLibrary 写入 localMediaSelection 后重渲染",
       re.search(r"function selectLocalLibrary\(group,\s*id\)\s*\{[^}]*localMediaSelection\[group\]\s*=\s*id;[^}]*renderLocalMedia\(group\)", media, re.S) is not None)
 
-# 书架标题必须跟随当前媒体库类型（电子书/漫画），不能写死
-check("书架标题按媒体库类型渲染",
-      '"电子书" : "漫画"' in media or "'电子书' : '漫画'" in media,
-      "标题没有按 lib.type 区分")
+# v0.9.17：书架标题改为直接展示媒体库创建时填写的库名称，
+# 不再显示「电子书 / 漫画」等预设大类名。
+check("书架标题使用媒体库名称",
+      "function mediaLibraryHeading(lib" in media and "esc(name)" in media,
+      "标题没有使用 lib.name")
+check("书架标题不再写死预设大类名",
+      '"电子书" : "漫画"' not in media and "'电子书' : '漫画'" not in media,
+      "仍在按预设大类渲染标题")
 
 # ---------------------------------------------------------------- 需求 2
 css = read("web/css/main.css")
@@ -250,8 +254,8 @@ check("rollback.sh 还原 vaulthub.env",
 
 # 版本号
 check("index.html 版本号为 v0.8.7",
-      read("index.html").count("v0.9.16") >= 2,
-      f"出现 {read('index.html').count('v0.9.16')} 次")
+      read("index.html").count("v0.9.17") >= 2,
+      f"出现 {read('index.html').count('v0.9.17')} 次")
 
 # ---------------------------------------------------------------- 输出
 if FAILS:

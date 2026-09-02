@@ -4,10 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VaultHub 蜀鼠之家 · 预览版</title>
-<link rel="stylesheet" href="/web/css/main.css?v=0.9.16">
+<link rel="stylesheet" href="/web/css/main.css?v=0.9.17">
 <script>
 /* 资源版本号：index.html 用它给所有静态资源打查询串。 */
-window.VAULTHUB_ASSET_VERSION = "0.9.16";
+window.VAULTHUB_ASSET_VERSION = "0.9.17";
 </script>
 </head>
 <body data-theme="dark">
@@ -24,10 +24,11 @@ window.VAULTHUB_ASSET_VERSION = "0.9.16";
   </div>
 </div>
 
-<!-- ===== 顶栏：左侧 logo + 账户头像 / 关于；右侧全部留给媒体库与首页信息 ===== -->
+<!-- ===== 顶栏：左侧只保留品牌标识；登录状态 / 关于 / 退出登录已迁移到
+     系统设置 → 账户与登录（v0.9.17），右侧全部留给媒体库与首页信息 ===== -->
 <header class="topbar">
-  <div class="logo account" id="accountWrap">
-    <button class="logo-icon" id="logoMenuButton" type="button" aria-label="中华鼠账户与设置菜单" aria-haspopup="menu" aria-expanded="false" onclick="toggleAccountMenu()">
+  <div class="logo" id="accountWrap">
+    <span class="logo-icon" id="logoMenuButton" role="img" aria-label="VaultHub 蜀鼠之家">
       <svg class="mouse-logo" viewBox="0 0 32 32" role="img" aria-hidden="true">
         <path class="tail" d="M22 21c5 1 7-2 5-5" fill="none" stroke="#6b3e20" stroke-width="2" stroke-linecap="round"/>
         <circle cx="10" cy="10" r="4" fill="#8a5a35"/><circle cx="20" cy="10" r="4" fill="#8a5a35"/>
@@ -36,13 +37,8 @@ window.VAULTHUB_ASSET_VERSION = "0.9.16";
         <path d="M15 20l1.1 1 1.1-1" fill="none" stroke="#5a3218" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
         <path class="whisker" d="M9 20H3m20 0h6M10 22l-5 2m17-2 5 2" fill="none" stroke="#5a3218" stroke-width="1" stroke-linecap="round"/>
       </svg>
-    </button>
+    </span>
     <div class="brand-copy" title="蜀鼠之家，承包你的所有休闲内容"><strong class="brand-title">VaultHub</strong><small data-i18n="appName">蜀鼠之家</small></div>
-    <div class="account-menu" id="accountMenu" role="menu">
-      <div class="am-head"><span class="am-name" id="accountName">VaultHub</span><span class="am-state" id="accountState" data-i18n="sessionChecking">正在检查登录状态…</span></div>
-      <button class="am-item" type="button" role="menuitem" onclick="openAccountMenuItem('aboutModal')">ℹ <span data-i18n="aboutTitle">关于</span></button>
-      <div class="am-sep"></div><button class="am-item danger" type="button" role="menuitem" onclick="closeAccountMenu(); logoutVaultHub()">🚪 <span data-i18n="setLogout">退出登录</span></button>
-    </div>
   </div>
 
   <!-- 右侧信息区：只展示媒体库与首页信息，不再有任何导航按钮 -->
@@ -58,7 +54,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.16";
   <nav class="nav" id="mainNav">
     <div class="nav-group" data-nav-group="main" data-i18n="navGroupMain">主导航</div>
     <div class="nav-item active" data-view="home" data-module="home"><span class="ic">🏠</span><span class="txt" data-i18n="navHome">首页</span></div>
-    <div class="nav-item nav-search-settings" data-view="home" onclick="openMediaSearchSettings()"><span class="ic">🔍</span><span class="txt">媒体搜索设置</span></div>
+    <div class="nav-item nav-search-settings" data-view="search" onclick="openMediaSearch()"><span class="ic">🔍</span><span class="txt" data-i18n="navMediaSearch">媒体搜索</span></div>
     <div class="nav-item" data-view="pt" data-module="pt"><span class="ic">🌊</span><span class="txt" data-i18n="navPt">PT 管理</span></div>
 
     <div class="nav-group" data-nav-group="library">
@@ -67,13 +63,16 @@ window.VAULTHUB_ASSET_VERSION = "0.9.16";
     </div>
     <div id="libNavAll"></div>
 
-    <div class="nav-group" data-nav-group="custom" data-i18n="navGroupCustom">自定义</div>
+    <div class="nav-group" data-nav-group="custom">
+      <span data-i18n="navGroupCustom">自定义</span>
+      <span class="g-more" onclick="openModuleModal()" data-i18n="navManage">管理 ›</span>
+    </div>
     <div id="customNav"></div>
   </nav>
   <div class="sidebar-foot">
     <button class="rail-btn rail-settings" id="sidebarSettingsButton" type="button" onclick="openSettingsModalFromSidebar()" title="系统设置" aria-label="系统设置"><span class="ic">⚙</span><span class="txt" data-i18n="settingsTitle">系统设置</span></button>
     <div class="sidebar-foot-row">
-      <span class="ver">v0.9.16 · Local Metadata</span>
+      <span class="ver">v0.9.17 · Local Metadata</span>
       <button class="rail-btn rail-collapse" id="sidebarCollapseButton" type="button" onclick="toggleBars()" title="折叠 / 展开侧栏" aria-label="折叠或展开侧栏">⇤</button>
     </div>
   </div>
@@ -300,6 +299,23 @@ window.VAULTHUB_ASSET_VERSION = "0.9.16";
       <div class="media-wide-host" id="media-wide-audio"></div>
     </section>
 
+    <!-- ============ 媒体搜索：直接查询已索引的媒体库内容 ============ -->
+    <section class="view" id="view-search">
+      <div class="section-title">
+        <span class="idx">🔍</span>
+        <span data-i18n="searchTitle">媒体搜索</span>
+        <span class="badge" id="mediaSearchBadge" data-i18n="searchIdle">输入关键词搜索媒体库</span>
+      </div>
+      <div class="media-actions" style="margin-bottom:14px;flex-wrap:wrap;">
+        <input id="mediaSearchInput" type="search" placeholder="搜索媒体库中的影视、书籍、音乐文件名" data-i18n-ph="searchPlaceholder"
+               style="flex:1;min-width:240px;padding:9px 12px;border:1px solid var(--border);border-radius:8px;background:var(--card2);color:var(--text);"
+               oninput="scheduleMediaSearch()" onkeydown="if(event.key==='Enter')runMediaSearch()">
+        <button class="btn btn-primary" type="button" onclick="runMediaSearch()">🔍 <span data-i18n="searchRun">搜索</span></button>
+        <button class="btn" type="button" onclick="clearMediaSearch()" data-i18n="searchClear">清空</button>
+      </div>
+      <div id="mediaSearchResults"></div>
+    </section>
+
     <!-- ============ 动态自定义模块（JS 注入） ============ -->
     <div id="customViews"></div>
 
@@ -310,11 +326,10 @@ window.VAULTHUB_ASSET_VERSION = "0.9.16";
 <dialog class="modal-mask" id="settingsModal">
   <div class="modal wide">
     <h3><span data-i18n="settingsTitle">系统设置</span><button class="close" onclick="closeModal('settingsModal')">✕</button></h3>
-    <div class="lead" data-i18n="settingsLead">媒体库、反向代理、外观主题、刮削与硬件设置集中在此，Caddy 配置单独占用一整页。</div>
+    <div class="lead" data-i18n="settingsLead">媒体库、外观主题、刮削与硬件设置集中在此；账户与登录页内含登录状态、关于和 Caddy 反向代理入口。</div>
 
     <div class="settabs">
       <div class="settab on" data-settab="library" onclick="switchSetTab('library')">🗂 <span data-i18n="setLibrary">媒体库</span></div>
-      <div class="settab" data-settab="caddy" onclick="switchSetTab('caddy')">🔀 <span data-i18n="caddySettings">Caddy 配置</span></div>
       <div class="settab" data-settab="look" onclick="switchSetTab('look')">🎨 <span data-i18n="setLook">外观主题</span></div>
       <div class="settab" data-settab="scrape" onclick="switchSetTab('scrape')">🔍 <span data-i18n="setScrape">刮削与硬件</span></div>
       <div class="settab" data-settab="account" onclick="switchSetTab('account')">👤 <span data-i18n="setAccount">账户与登录</span></div>
@@ -408,19 +423,6 @@ window.VAULTHUB_ASSET_VERSION = "0.9.16";
       </div>
     </div>
 
-    <!-- Caddy 配置面板：仅作入口，真正的编辑在独立整页 #caddyPage 中 -->
-    <div class="setpanel" id="setpanel-caddy">
-      <div class="setblock">
-        <h4>🔀 <span data-i18n="caddyRoutes">反向代理服务域名</span></h4>
-        <p data-i18n="caddyRoutesHint">维护服务域名与内网上游地址的映射，保存后由内置 Caddy 校验并热加载，失败会自动回滚。</p>
-        <div class="media-actions">
-          <button class="btn btn-primary" onclick="openCaddyPage()">🔀 <span data-i18n="caddyOpenPage">打开 Caddy 配置页面</span></button>
-          <span class="badge" id="caddyRouteCount">--</span>
-        </div>
-        <div class="hint" data-i18n="caddyPageHint">Caddyfile 内容较长，单独占用一整页编辑，避免在弹窗里挤成一团。</div>
-      </div>
-    </div>
-
     <!-- 外观主题面板 -->
     <div class="setpanel" id="setpanel-look">
       <div class="modal-sec" data-i18n="langLbl">界面语言</div>
@@ -457,10 +459,6 @@ window.VAULTHUB_ASSET_VERSION = "0.9.16";
       <div class="toggle-row">
         <div class="l"><span data-i18n="setSidebarMem">侧栏宽度记忆</span><small data-i18n="setSidebarMemSub">拖拽侧栏右边缘调整宽度，自动写入本浏览器</small></div>
         <button class="btn" type="button" onclick="resetSidebarWidth()" data-i18n="setSidebarReset">恢复默认宽度</button>
-      </div>
-      <div class="toggle-row">
-        <div class="l"><span data-i18n="boardTitle">模块设置</span><small data-i18n="setModuleSub">侧栏不再放「添加模块」按钮，模块的显隐与自定义网页在这里管理</small></div>
-        <button class="btn" type="button" onclick="openModuleModal()" data-i18n="setModuleOpen">打开模块设置</button>
       </div>
     </div>
 
@@ -508,15 +506,32 @@ window.VAULTHUB_ASSET_VERSION = "0.9.16";
       </div>
     </div>
 
-    <!-- 账户与登录面板 -->
+    <!-- 账户与登录面板：v0.9.17 起顶栏账户菜单里的登录状态 / 关于 / 退出登录，
+         以及原「Caddy 配置」标签页的反向代理入口，全部集中在这一页。 -->
     <div class="setpanel" id="setpanel-account">
       <div class="setblock">
         <h4>👤 <span data-i18n="setAccountTitle">当前登录状态</span></h4>
         <div class="media-actions">
+          <span class="am-name" id="accountName">VaultHub</span>
+          <span class="am-state" id="accountState" data-i18n="sessionChecking">正在检查登录状态…</span>
           <span class="badge" id="sessionStatusBadge" data-i18n="sessionChecking">正在检查登录状态…</span>
           <button class="btn" type="button" onclick="refreshSessionStatus(true)" data-i18n="sessionRefresh">刷新状态</button>
         </div>
         <div class="hint" id="sessionStatusHint" data-i18n="sessionHint">会话在最后一次操作后 30 分钟空闲自动失效；增删媒体库等写操作需要有效登录。</div>
+      </div>
+      <div class="setblock">
+        <h4>🔀 <span data-i18n="caddyRoutes">反向代理服务域名</span></h4>
+        <p data-i18n="caddyRoutesHint">维护服务域名与内网上游地址的映射，保存后由内置 Caddy 校验并热加载，失败会自动回滚。</p>
+        <div class="media-actions">
+          <button class="btn btn-primary" onclick="openCaddyPage()">🔀 <span data-i18n="caddyOpenPage">打开 Caddy 配置页面</span></button>
+          <span class="badge" id="caddyRouteCount">--</span>
+        </div>
+        <div class="hint" data-i18n="caddyPageHint">Caddyfile 内容较长，单独占用一整页编辑，避免在弹窗里挤成一团。</div>
+      </div>
+      <div class="setblock">
+        <h4>ℹ <span data-i18n="aboutTitle">关于</span></h4>
+        <p data-i18n="setAboutHint">应用版本、技术栈和监控组件说明。</p>
+        <button class="btn" type="button" onclick="openModal('aboutModal')">ℹ <span data-i18n="setAboutOpen">查看关于信息</span></button>
       </div>
       <div class="setblock">
         <h4>🚪 <span data-i18n="setLogoutTitle">退出登录</span></h4>
@@ -641,7 +656,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.16";
   <div class="modal">
     <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
     <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
-    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.9.16 · Local Metadata</b></div>
+    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.9.17 · Local Metadata</b></div>
     <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>Go (media/manager/subtitle) · Caddy · FFmpeg · SQLite · HTML/CSS/JS</b></div>
     <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>VaultHub 内置系统监控</b></div>
     <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>
@@ -711,10 +726,10 @@ window.VAULTHUB_ASSET_VERSION = "0.9.16";
 
 <div class="toast" id="toast"></div>
 
-<script src="/web/js/01-state.js?v=0.9.16"></script>
-<script src="/web/js/02-media.js?v=0.9.16"></script>
-<script src="/web/js/03-features.js?v=0.9.16"></script>
-<script src="/web/js/05-home.js?v=0.9.16"></script>
-<script src="/web/js/04-boot.js?v=0.9.16"></script>
+<script src="/web/js/01-state.js?v=0.9.17"></script>
+<script src="/web/js/02-media.js?v=0.9.17"></script>
+<script src="/web/js/03-features.js?v=0.9.17"></script>
+<script src="/web/js/05-home.js?v=0.9.17"></script>
+<script src="/web/js/04-boot.js?v=0.9.17"></script>
 </body>
 </html>
