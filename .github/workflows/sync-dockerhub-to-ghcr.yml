@@ -64,12 +64,32 @@ jobs:
           SKIPPED=0
           FAILED_TAGS=()
 
+          # 单个标签的摘要探测必须容错：在 set -e 下直接调用 skopeo inspect，
+          # 任何一个历史标签探测失败都会整步中断，最新版本可能因此永远轮不到同步。
+          inspect_digest() {
+            local ref="$1" attempt digest
+            for attempt in 1 2 3; do
+              digest=$(skopeo inspect --format '{{.Digest}}' "$ref" 2>/dev/null || true)
+              if [ -n "$digest" ]; then
+                printf '%s' "$digest"
+                return 0
+              fi
+              sleep 5
+            done
+            return 1
+          }
+
           for TAG in "${TAGS[@]}"; do
             SOURCE_REF="$SOURCE_REPO:$TAG"
             TARGET_REF="$TARGET_REPO:$TAG"
             echo "::group::检查标签 $TAG"
 
-            SOURCE_DIGEST=$(skopeo inspect --format '{{.Digest}}' "$SOURCE_REF")
+            if ! SOURCE_DIGEST=$(inspect_digest "$SOURCE_REF"); then
+              echo "无法读取 GHCR 标签 $TAG 的摘要，记为失败并继续" >&2
+              FAILED_TAGS+=("$TAG")
+              echo "::endgroup::"
+              continue
+            fi
             TARGET_DIGEST=$(skopeo inspect --format '{{.Digest}}' "$TARGET_REF" 2>/dev/null || true)
             echo "GHCR 摘要：${SOURCE_DIGEST}"
             echo "Docker Hub 摘要：${TARGET_DIGEST:-不存在}"
