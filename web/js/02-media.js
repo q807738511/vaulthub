@@ -325,15 +325,21 @@ async function scrapeMovieMetadata(host, lib, files) {
     writeMovieMetadata(all); renderMovieLibraryContent(host, lib, files);
   }
 }
+/* v0.9.17：媒体库标题只展示添加媒体库时填写的库名称，
+   不再显示「电影 / 电视剧集 / 电子书 / 漫画 / 音乐与 MV」这类预设大类名。 */
+function mediaLibraryHeading(lib, badge, extra = "") {
+  const name = String(lib?.name || "").trim() || t("libNavEmpty");
+  return `<div class="content-section-heading"><div><span class="eyebrow">我的媒体库</span><h3>${esc(name)}</h3></div>${extra}${badge ? `<span class="badge">${esc(badge)}</span>` : ""}</div>`;
+}
 function renderMovieLibraryContent(host, lib, files) {
   if (lib?.type === "series") return renderSeriesLibraryContent(host, lib, files);
   const body = `<div class="media-poster-grid">${files.map(file => renderMoviePoster(lib, file)).join("")}</div>`;
-  host.innerHTML = `<section class="content-collection"><div class="content-section-heading"><div><span class="eyebrow">我的媒体库</span><h3>电影</h3></div><span class="badge">${files.length} 部</span></div>${body}</section>`;
+  host.innerHTML = `<section class="content-collection">${mediaLibraryHeading(lib, `${files.length} 部`)}${body}</section>`;
 }
 function renderSeriesLibraryContent(host, lib, files) {
   const shows = buildSeriesShows(files); shows.forEach(show => rememberSeriesShow(lib.id, show));
   const body = shows.length ? `<div class="series-show-grid">${shows.map(show => renderSeriesShowCard(lib, show)).join("")}</div>` : '<div class="empty-tip">该电视剧库暂无支持的剧集文件</div>';
-  host.innerHTML = `<section class="content-collection"><div class="content-section-heading"><div><span class="eyebrow">我的媒体库</span><h3>电视剧集</h3></div><span class="badge">${shows.length} 部剧 · ${files.length} 集</span></div>${body}</section>`;
+  host.innerHTML = `<section class="content-collection">${mediaLibraryHeading(lib, `${shows.length} 部剧 · ${files.length} 集`)}${body}</section>`;
 }
 function renderSeriesShowCard(lib, show) { const art=show.poster?`<img src="${esc(show.poster)}" alt="${esc(show.title)}" loading="lazy">`:`<span>${esc(show.title)}</span>`; const seasons=show.seasonList?.length||0, episodes=show.files?.length||0; return `<article class="media-poster-card series-show-card" data-series-show="${esc(show.key)}" onclick="openSeriesDetails(${jsAttrArg(lib.id)},${jsAttrArg(show.key)})"><div class="media-poster-art" style="${show.poster?"":`background:${coverGradient(show.title)}`}">${art}</div><div class="media-poster-info"><strong>${esc(show.title)}</strong><small>${esc([show.year, `${seasons} 季`, `${episodes} 集`, show.provider].filter(Boolean).join(" · "))}</small></div></article>`; }
 function openSeriesDetails(libId, showKey) { enterMovieDetailSidebarMode(); const lib=findMediaLibrary(libId), viewer=document.getElementById("local-media-viewer-movie"); if(!lib||!viewer)return; const show=readSeriesShow(libId,showKey); if(!show)return; const hero={title:show.title,overview:show.overview||"已按 Plex / Emby 风格根据根目录、Season 01 和 S01E01 规则聚合到同一剧集。",poster:show.poster,logo:show.logo,fanart:show.fanart,backdrop:show.backdrop,year:show.year,provider:show.provider,watched:show.watched,media_type:"series"}; const seasons=(show.seasonList||[]).map(season=>`<section class="series-season-block"><h3>Season ${String(season.season).padStart(2,"0")}</h3><div class="media-file-list">${season.episodes.map(ep=>renderSeriesEpisodeRow(lib,ep)).join("")}</div></section>`).join(""); viewer.innerHTML=`<div class="media-reader-overlay movie-detail-page series-detail-page"><div class="movie-detail-scroll"><button class="media-reader-close" onclick="closeMovieDetails()">✕</button>${renderMovieHero(lib,show.files?.[0]?.path||"",hero)}<section><h3>剧集列表</h3><div class="hint">按标准命名规则聚合：根目录剧名 / Season 01 / 剧名 S01E01 标题；刮削先锁定主剧集，再将本地多季多集挂载到同一条目。</div></section>${seasons}</div></div>`; scrollViewerIntoView(viewer); }
@@ -513,6 +519,95 @@ function selectLocalLibrary(group, id) {
   localMediaSelection[group] = id;
   renderLocalMedia(group);
 }
+
+/* ================= 媒体搜索（v0.9.17） =================
+   侧栏「媒体搜索」不再打开系统设置，而是切到 #view-search 页面并
+   直接检索所有已索引媒体库的文件名，命中结果可直接打开播放/阅读。 */
+let mediaSearchTimer = null;
+let mediaSearchToken = 0;
+function openMediaSearch() {
+  switchView("search");
+  const box = document.getElementById("mediaSearchInput");
+  if (box) { box.focus(); if (box.value.trim()) runMediaSearch(); }
+}
+function scheduleMediaSearch() {
+  clearTimeout(mediaSearchTimer);
+  mediaSearchTimer = setTimeout(runMediaSearch, 320);
+}
+function clearMediaSearch() {
+  clearTimeout(mediaSearchTimer);
+  const box = document.getElementById("mediaSearchInput");
+  if (box) { box.value = ""; box.focus(); }
+  const badge = document.getElementById("mediaSearchBadge");
+  if (badge) badge.textContent = t("searchIdle");
+  const host = document.getElementById("mediaSearchResults");
+  if (host) host.innerHTML = "";
+}
+function mediaSearchGroupOfLibrary(lib) {
+  return ["comic", "movie", "audio"].find(group => mediaTypesForGroup(group).includes(lib.type)) || "movie";
+}
+function mediaSearchDisplayTitle(group, path) {
+  if (group === "audio") return audioMetadataFor(String(path)).title || displayBookTitle(path);
+  if (group === "movie") return movieMetadataFor(String(path)).title || displayBookTitle(path);
+  return displayBookTitle(path);
+}
+async function runMediaSearch() {
+  clearTimeout(mediaSearchTimer);
+  const box = document.getElementById("mediaSearchInput");
+  const host = document.getElementById("mediaSearchResults");
+  const badge = document.getElementById("mediaSearchBadge");
+  if (!box || !host) return;
+  const query = String(box.value || "").trim();
+  if (!query) { clearMediaSearch(); return; }
+  const token = ++mediaSearchToken;
+  if (badge) badge.textContent = t("searchRunning");
+  host.innerHTML = `<div class="empty-tip">${esc(t("searchRunning"))}</div>`;
+  const libs = (localMediaLibraries || []).slice();
+  if (!libs.length) {
+    host.innerHTML = `<div class="empty-tip">${esc(t("searchNoLibrary"))}</div>`;
+    if (badge) badge.textContent = t("searchNoLibrary");
+    return;
+  }
+  const groups = [];
+  let total = 0;
+  for (const lib of libs) {
+    let files = [];
+    try {
+      const res = await fetch(`/api/media/files?id=${encodeURIComponent(lib.id)}&q=${encodeURIComponent(query)}&limit=500`, { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      files = normalizeFilePayload(data);
+    } catch (err) { files = []; }
+    if (token !== mediaSearchToken) return;
+    const group = mediaSearchGroupOfLibrary(lib);
+    const hits = files.filter(file => supportedLocalMediaFile(group, lib, String(file.path))).slice(0, 200);
+    if (!hits.length) continue;
+    total += hits.length;
+    groups.push({ lib, group, hits });
+  }
+  if (token !== mediaSearchToken) return;
+  if (!total) {
+    host.innerHTML = `<div class="empty-tip">${esc(tf("searchEmpty", { q: query }))}</div>`;
+    if (badge) badge.textContent = tf("searchHits", { n: 0 });
+    return;
+  }
+  host.innerHTML = groups.map(({ lib, group, hits }) => {
+    const rows = hits.map(file => {
+      const path = String(file.path);
+      return `<div class="media-file-row"><div class="media-file-name" title="${esc(path)}"><b>${esc(mediaSearchDisplayTitle(group, path))}</b><small>${esc(lib.name)} · ${esc(path)}</small></div>`
+        + `<span class="media-file-meta">${esc(fileExt(path).toUpperCase())}</span>`
+        + `<div class="media-actions"><button class="btn" onclick="openMediaSearchHit(${jsAttrArg(group)},${jsAttrArg(lib.id)},${jsAttrArg(path)})">${group === "audio" ? "▶ 播放" : group === "movie" ? "▶ 打开" : "📖 阅读"}</button></div></div>`;
+    }).join("");
+    return `<section class="content-collection"><div class="content-section-heading"><div><span class="eyebrow">${esc(lib.name)}</span><h3>${esc(mediaTypeName(lib.type))}</h3></div><span class="badge">${hits.length}</span></div><div class="media-file-list">${rows}</div></section>`;
+  }).join("");
+  if (badge) badge.textContent = tf("searchHits", { n: total });
+}
+function openMediaSearchHit(group, libId, path) {
+  selectLocalLibrary(group, libId);
+  switchView(group, libId);
+  if (group === "audio") { playAudioFile(libId, path); return; }
+  setTimeout(() => openLocalMedia(group, libId, path), 60);
+}
 function audioHasActivePlayback() { return !!activeAudio; }
 function normalizeFilePayload(data) {
   const files = Array.isArray(data) ? data : (data?.files || data?.items || []);
@@ -583,7 +678,7 @@ async function loadLocalFiles(group, lib, offset = 0) {
       ? `<div class="media-actions"><span class="media-file-meta">已加载全部 ${files.length} / ${total} 项${mediaTruncated ? "（加载未完成）" : ""}</span></div>`
       : `<div class="media-actions">${prev}<span class="media-file-meta">${range} / ${total}</span>${next}</div>`;
     if (group === "comic") {
-      const toolbar = `<div class="content-section-heading"><div><span class="eyebrow">我的媒体库</span><h3>${lib.type === "book" ? "电子书" : "漫画"}</h3></div><div class="comic-shelf-tabs"><button class="${comicShelfView === "completed" ? "active" : ""}" onclick="setComicShelfView(comicShelfView === \"completed\" ? \"shelf\" : \"completed\")">${comicShelfView === "completed" ? "← 返回未读" : "✓ 已读收藏"}</button></div></div>`;
+      const toolbar = mediaLibraryHeading(lib, "", `<div class="comic-shelf-tabs"><button class="${comicShelfView === "completed" ? "active" : ""}" onclick="setComicShelfView(comicShelfView === \"completed\" ? \"shelf\" : \"completed\")">${comicShelfView === "completed" ? "← 返回未读" : "✓ 已读收藏"}</button></div>`);
       const emptyTip = comicShelfView === "completed"
         ? "还没有读完的书；读完的书籍会自动归档到这里。"
         : (data.has_more ? "本页书籍都已读完，点击「下一页 →」继续查看未读书籍。" : "该媒体库暂无未读书籍。");
@@ -797,7 +892,8 @@ function renderAudioLibraryContent(host, lib, files) {
   const visibleFiles = audioArtistFilter ? files.filter(file => { const meta = audioMetadataFor(String(file.path)); return meta.artist === audioArtistFilter || meta.album === audioArtistFilter; }) : files;
   let body = audioView === "tracks" ? renderAudioTrackList(lib, visibleFiles) : audioView === "artists" ? renderAudioArtists(lib, files) : audioView === "favorites" ? renderAudioFavorites(lib) : renderAudioAlbums(lib, files);
   const latestGrid = audioView === "albums" && latest.length ? `<section class="content-collection latest-music"><div class="content-section-heading"><div><span class="eyebrow">最新音乐</span><h3>最近识别与入库</h3></div></div><div class="audio-latest-grid">${latest.map(file => renderAudioLatestCard(lib, file)).join("")}</div></section>` : "";
-  host.innerHTML = `<section class="content-collection"><div class="content-section-heading"><div><span class="eyebrow">我的媒体库</span><h3>音乐与 MV</h3></div><div class="audio-view-tabs"><button class="${audioView === "albums" ? "active" : ""}" onclick="setAudioView('albums')">专辑</button><button class="${audioView === "artists" ? "active" : ""}" onclick="setAudioView('artists')">歌手</button><button class="${audioView === "favorites" ? "active" : ""}" onclick="setAudioView('favorites')">♥ 喜欢</button><label class="page-size-picker">每页 <select id="audioPageSize" onchange="setAudioPageSize(this.value)"><option value="20"${audioPageSize===20?' selected':''}>20</option><option value="50"${audioPageSize===50?' selected':''}>50</option><option value="100"${audioPageSize===100?' selected':''}>100</option></select></label></div></div>${body}${audioView === "favorites" || audioView === "tracks" ? "" : pager}</section>${latestGrid}`;
+  const audioTabs = `<div class="audio-view-tabs"><button class="${audioView === "albums" ? "active" : ""}" onclick="setAudioView('albums')">专辑</button><button class="${audioView === "artists" ? "active" : ""}" onclick="setAudioView('artists')">歌手</button><button class="${audioView === "favorites" ? "active" : ""}" onclick="setAudioView('favorites')">♥ 喜欢</button><label class="page-size-picker">每页 <select id="audioPageSize" onchange="setAudioPageSize(this.value)"><option value="20"${audioPageSize===20?' selected':''}>20</option><option value="50"${audioPageSize===50?' selected':''}>50</option><option value="100"${audioPageSize===100?' selected':''}>100</option></select></label></div>`;
+  host.innerHTML = `<section class="content-collection">${mediaLibraryHeading(lib, "", audioTabs)}${body}${audioView === "favorites" || audioView === "tracks" ? "" : pager}</section>${latestGrid}`;
 }
 function renderAudioLatestCard(lib, file) { const path=String(file.path), meta=audioMetadataFor(path); return `<article class="audio-latest-card" onclick="playAudioFile(${jsAttrArg(lib.id)},${jsAttrArg(path)})"><div class="audio-latest-cover" style="background:${coverGradient(meta.title)}">${audioCoverData(meta, meta.title)}</div><div><strong>${esc(meta.title)}</strong><small>${esc(meta.artist)}</small></div><button class="btn" title="喜欢" onclick="event.stopPropagation();toggleAudioFavorite(${jsAttrArg(lib.id)},${jsAttrArg(path)})">${isAudioFavorite(lib.id,path)?"♥":"♡"}</button></article>`; }
 function renderAudioLibrary(lib, files) { const host = document.createElement("div"); renderAudioLibraryContent(host, lib, files); return host.innerHTML; }
