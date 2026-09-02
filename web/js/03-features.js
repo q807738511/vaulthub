@@ -8,6 +8,8 @@ function closeLocalViewer(group) {
   if (el) el.querySelectorAll(".media-video-body").forEach(root => { stopVideoPlaybackSession(root); terminateWasmVideo(root); });
   if (el) el.innerHTML = "";
   activeReader = null;
+  /* v0.9.30：关闭前把待写的阅读进度立刻落盘，避免 800ms 合并窗口内关闭丢进度。 */
+  if (typeof flushReadingProgressNow === "function") flushReadingProgressNow();
   if (group === "comic") {
     setComicShelfView("shelf");
     if (prior && readingState(prior.libId, prior.path).progress >= COMPLETED_PROGRESS) toast("📚 已读文档已移入收藏");
@@ -17,13 +19,13 @@ function closeLocalViewer(group) {
    group 可选，用于把「媒体库增加」表单预置成对应大类。 */
 function showMediaLibraryConfig(group) {
   if (group) mediaLibraryConfigGroup = group;
-  openModal("settingsModal");
-  switchSetTab("library");
+  openSettingsPage("library");
   if (group) {
-    const sel = document.getElementById("homeLibGroup");
-    if (sel) { sel.value = group; if (typeof syncHomeLibTypes === "function") syncHomeLibTypes(); }
+    /* v0.9.30：子类型/路径/库名称/添加按钮都在大类卡片里，
+       预置大类等于把对应卡片标为选中，并同步它自己的子类型下拉。 */
     document.querySelectorAll(".lib-kind[data-lib-group]").forEach(card =>
       card.classList.toggle("on", card.dataset.libGroup === group));
+    if (typeof syncHomeLibTypes === "function") syncHomeLibTypes(group);
   }
   setLibrarySource("local");
 }

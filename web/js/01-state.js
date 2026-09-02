@@ -8,7 +8,7 @@ const VAULTHUB_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
    历史故障：v0.8.3→v0.8.5 的前端修改在服务端已生效，但浏览器仍执行缓存里的
    旧 02-media.js，用户看到「没有更新」。现在入口页 no-store、静态资源带 ?v=，
    并在启动时做一次一致性自查，不一致就绕过缓存强制重载一次。 */
-const VAULTHUB_SCRIPT_VERSION = "0.9.17";
+const VAULTHUB_SCRIPT_VERSION = "0.9.30";
 function ensureFreshAssets() {
   /* expected 为空 = 浏览器执行的 index.html 早于 v0.8.6（旧版本入口页没有声明
      版本号），同样属于"页面是旧的"，也需要换 URL 重新取一次。 */
@@ -102,7 +102,6 @@ async function logoutVaultHub() {
   vaultHubAuthenticated = false;
   renderSessionStatus(false);
   closeCaddyPage();
-  closeModal('settingsModal');
   closeModal('avatarModal');
   showVaultHubLogin();
   const pass = document.getElementById('vaultHubPassword');
@@ -163,8 +162,7 @@ function closeCaddyPage() { document.getElementById('caddyPage')?.classList.remo
 /* Caddy 入口：v0.9.17 起反向代理入口在「账户与登录」页里，
    保留 openCaddyModal() 作为兼容入口，直接打开该页。 */
 function openCaddyModal() {
-  openModal('settingsModal');
-  switchSetTab('account');
+  openSettingsPage('account');
 }
 async function loadCaddyConfig() {
   const box = document.getElementById('caddyFile');
@@ -222,7 +220,7 @@ const I18N = {
     avatarUpload: "上传头像图片（可选）", avatarReset: "恢复默认", avatarSaved: "头像已保存",
     avatarTooLarge: "图片过大，无法保存到 localStorage", avatarResetDone: "头像已恢复默认",
     setLibrary: "媒体库", setLibExisting: "已添加的媒体库",
-    setLibExistingHint: "侧边栏只展示这里创建时填写的库名称。每个库都可以单独重新刮削、打开或删除。",
+    setLibExistingHint: "侧边栏只展示这里创建时填写的库名称。每个库都可以单独重新扫描、打开或删除。",
     setLibAdd: "媒体库增加",
     setLibAddHint: "先选来源：本地媒体库使用容器内已挂载的绝对路径；外连服务接入 Emby / Navidrome / Komga 等现成服务器。",
     libSrcLocal: "本地媒体库", libSrcExternal: "外连服务",
@@ -245,12 +243,13 @@ const I18N = {
     navGroupBook: "电子书刊", navGroupVideo: "影视作品", navGroupAudio: "音视作品",
     navGroupSys: "系统",
     navGroupCustom: "自定义",
-    settings: "系统设置", about: "关于", settingsLead: "媒体库、外观主题、刮削与硬件设置集中在此；账户与登录页内含登录状态、关于和 Caddy 反向代理入口。",
+    settings: "系统设置", about: "关于", settingsLead: "系统设置现在是独立配置页（不再是弹窗）：媒体库、外观主题、刮削与硬件都在这里；账户与登录页内含登录状态、关于和 Caddy 反向代理入口。",
     navMediaSearch: "媒体搜索", searchTitle: "媒体搜索", searchIdle: "输入关键词搜索媒体库",
     searchPlaceholder: "搜索媒体库中的影视、书籍、音乐文件名", searchRun: "搜索", searchClear: "清空",
     searchRunning: "正在搜索媒体库…", searchNoLibrary: "还没有已添加的媒体库，请先在系统设置中添加。",
     searchEmpty: "没有找到与「{q}」匹配的媒体文件。", searchHits: "命中 {n} 个文件",
     setAboutHint: "应用版本、技术栈和监控组件说明。", setAboutOpen: "查看关于信息",
+    settingsPageBadge: "独立配置页", settingsClose: "返回上一页",
     setLook: "外观主题", setScrape: "刮削与硬件", caddyRoutes: "反向代理服务域名",
     setAccount: "账户与登录", setAccountTitle: "当前登录状态", sessionChecking: "正在检查登录状态…", sessionRefresh: "刷新状态",
     sessionHint: "会话在最后一次操作后 30 分钟空闲自动失效；增删媒体库等写操作需要有效登录。",
@@ -278,8 +277,8 @@ const I18N = {
     kindVideoDesc: "子类型：电视剧集 / 电影 · 刮削源 TMDB、豆瓣",
     kindAudioDesc: "子类型：音乐 / 音乐 MV · 刮削源 MusicBrainz、网易云",
     libKind: "媒体大类", libSubType: "子类型", libPath: "媒体路径（容器内绝对路径）", libName: "库名称（手动命名，用于刮削）",
-    libAdd: "添加媒体库", libRefresh: "刷新", libRescrape: "全部重新刮削",
-    colLibName: "库名称", colLibKind: "大类 / 子类型", colLibPath: "媒体路径", colLibItems: "项目", colLibState: "刮削状态", colLibActs: "操作",
+    libAdd: "添加媒体库", libRefresh: "刷新", libRescanAll: "全部重新扫描",
+    colLibName: "库名称", colLibKind: "大类 / 子类型", colLibPath: "媒体路径", colLibItems: "项目", colLibState: "扫描状态", colLibActs: "操作",
     libEmpty: "尚未添加媒体库，填写上方表单即可开始刮削",
 
     secPt: "PT 管理", ptRefresh: "刷新", mpConn: "MoviePilot 登录", mpSettings: "设置",
@@ -348,11 +347,11 @@ const I18N = {
     /* v0.6.30.Branch-update：首页动态文案的模板键，供 05-home.js 使用 */
     homeCountFmt: "共 {items} 项 · {libs} 个媒体库", homeCountEmpty: "尚未添加媒体库",
     libCountFmt: "{n} 个库",
-    stateWait: "待扫描", stateScraping: "刮削中", stateFail: "失败",
+    stateWait: "待扫描", stateScraping: "扫描中", stateFail: "失败",
     stateCancelled: "已取消", stateDone: "已完成",
     homeEmptyLib: "尚未添加{kind}媒体库", homeLoading: "正在读取最近入库…",
     homeNoIndexed: "该分类暂无已索引的媒体文件",
-    actRescrape: "重新刮削", actOpenLib: "打开媒体库", actRemove: "移除",
+    actRescan: "重新扫描", actOpenLib: "打开媒体库", actRemove: "移除",
     nowBadge: "视频 / 音乐播放 · 含刮削信息",
     /* 媒体子类型名称，供 mediaTypeName() 使用 */
     typeAudio: "音乐", typeMusicvideo: "音乐视频（歌曲 MV）", typeComic: "漫画",
@@ -387,7 +386,7 @@ const I18N = {
     avatarUpload: "上傳頭像圖片（可選）", avatarReset: "恢復預設", avatarSaved: "頭像已保存",
     avatarTooLarge: "圖片過大，無法保存到 localStorage", avatarResetDone: "頭像已恢復預設",
     setLibrary: "媒體庫", setLibExisting: "已新增的媒體庫",
-    setLibExistingHint: "側邊欄只顯示這裡建立時填寫的庫名稱。每個庫都可以單獨重新刮削、開啟或刪除。",
+    setLibExistingHint: "側邊欄只顯示這裡建立時填寫的庫名稱。每個庫都可以單獨重新掃描、開啟或刪除。",
     setLibAdd: "媒體庫新增",
     setLibAddHint: "先選來源：本地媒體庫使用容器內已掛載的絕對路徑；外連服務接入 Emby / Navidrome / Komga 等現成伺服器。",
     libSrcLocal: "本地媒體庫", libSrcExternal: "外連服務",
@@ -485,12 +484,13 @@ const I18N = {
     testConnecting: "⏳ 正在驗證…",
     /* v0.6.30.Branch-update：Plex 風格改版新增的鍵 */ navMore: "更多 ›",
     navGroupBook: "電子書刊", navGroupVideo: "影視作品", navGroupAudio: "音視作品",
-    settingsLead: "媒體庫、外觀主題、刮削與硬體設定集中在此；帳戶與登入頁內含登入狀態、關於與 Caddy 反向代理入口。",
+    settingsLead: "系統設定現在是獨立設定頁（不再是彈窗）：媒體庫、外觀主題、刮削與硬體都在這裡；帳戶與登入頁內含登入狀態、關於與 Caddy 反向代理入口。",
     navMediaSearch: "媒體搜尋", searchTitle: "媒體搜尋", searchIdle: "輸入關鍵字搜尋媒體庫",
     searchPlaceholder: "搜尋媒體庫中的影視、書籍、音樂檔名", searchRun: "搜尋", searchClear: "清空",
     searchRunning: "正在搜尋媒體庫…", searchNoLibrary: "還沒有已新增的媒體庫，請先在系統設定中新增。",
     searchEmpty: "找不到與「{q}」相符的媒體檔案。", searchHits: "命中 {n} 個檔案",
     setAboutHint: "應用版本、技術棧與監控元件說明。", setAboutOpen: "查看關於資訊",
+    settingsPageBadge: "獨立設定頁", settingsClose: "返回上一頁",
     setLook: "外觀主題", setScrape: "刮削與硬體",
     caddyRoutes: "反向代理服務網域",
     caddyRoutesHint: "維護服務網域與內網上游位址的對應，儲存後由內建 Caddy 校驗並熱載入，失敗會自動回滾。",
@@ -514,17 +514,17 @@ const I18N = {
     kindAudioDesc: "子類型：音樂 / 音樂 MV · 刮削源 MusicBrainz、網易雲",
     libKind: "媒體大類", libSubType: "子類型",
     libPath: "媒體路徑（容器內絕對路徑）", libName: "庫名稱（手動命名，用於刮削）",
-    libAdd: "新增媒體庫", libRefresh: "重新整理", libRescrape: "全部重新刮削",
+    libAdd: "新增媒體庫", libRefresh: "重新整理", libRescanAll: "全部重新掃描",
     colLibName: "庫名稱", colLibKind: "大類 / 子類型", colLibPath: "媒體路徑",
-    colLibItems: "項目", colLibState: "刮削狀態", colLibActs: "操作",
+    colLibItems: "項目", colLibState: "掃描狀態", colLibActs: "操作",
     libEmpty: "尚未新增媒體庫，填寫上方表單即可開始刮削",
     homeCountFmt: "共 {items} 項 · {libs} 個媒體庫", homeCountEmpty: "尚未新增媒體庫",
     libCountFmt: "{n} 個庫",
-    stateWait: "待掃描", stateScraping: "刮削中", stateFail: "失敗",
+    stateWait: "待掃描", stateScraping: "掃描中", stateFail: "失敗",
     stateCancelled: "已取消", stateDone: "已完成",
     homeEmptyLib: "尚未新增{kind}媒體庫", homeLoading: "正在讀取最近入庫…",
     homeNoIndexed: "該分類暫無已索引的媒體檔案",
-    actRescrape: "重新刮削", actOpenLib: "開啟媒體庫", actRemove: "移除",
+    actRescan: "重新掃描", actOpenLib: "開啟媒體庫", actRemove: "移除",
     nowBadge: "影片 / 音樂播放 · 含刮削資訊",
     typeAudio: "音樂", typeMusicvideo: "音樂影片（歌曲 MV）", typeComic: "漫畫",
     typeBook: "電子書", typeMovie: "電影", typeSeries: "電視劇集",
@@ -558,7 +558,7 @@ const I18N = {
     avatarUpload: "Upload avatar image (optional)", avatarReset: "Reset to default", avatarSaved: "Avatar saved",
     avatarTooLarge: "Image too large for localStorage", avatarResetDone: "Avatar reset to default",
     setLibrary: "Libraries", setLibExisting: "Existing libraries",
-    setLibExistingHint: "The sidebar shows only the library names you enter here. Each library can be rescraped, opened or removed.",
+    setLibExistingHint: "The sidebar shows only the library names you enter here. Each library can be rescanned, opened or removed.",
     setLibAdd: "Add a library",
     setLibAddHint: "Pick a source: local libraries use absolute paths mounted inside the container; external services connect to Emby / Navidrome / Komga and friends.",
     libSrcLocal: "Local library", libSrcExternal: "External service",
@@ -656,12 +656,13 @@ const I18N = {
     testConnecting: "⏳ Verifying…",
     /* v0.6.30.Branch-update: keys added by the Plex-style redesign */ navMore: "More ›",
     navGroupBook: "Books & Comics", navGroupVideo: "Movies & TV", navGroupAudio: "Music & MV",
-    settingsLead: "Libraries, appearance and scraping/hardware settings live here; Account & Sign-in holds the session state, About and the Caddy reverse-proxy entry.",
+    settingsLead: "Settings is now a dedicated page (no longer a modal): libraries, appearance and scraping/hardware live here; Account & Sign-in holds the session state, About and the Caddy reverse-proxy entry.",
     navMediaSearch: "Media search", searchTitle: "Media search", searchIdle: "Type a keyword to search your libraries",
     searchPlaceholder: "Search movie, book and music file names in your libraries", searchRun: "Search", searchClear: "Clear",
     searchRunning: "Searching libraries…", searchNoLibrary: "No library added yet — add one in system settings first.",
     searchEmpty: "No media file matches \"{q}\".", searchHits: "{n} files matched",
     setAboutHint: "App version, tech stack and monitoring components.", setAboutOpen: "Open About",
+    settingsPageBadge: "Dedicated page", settingsClose: "Back",
     setLook: "Appearance", setScrape: "Scraping & hardware",
     caddyRoutes: "Reverse proxy hostnames",
     caddyRoutesHint: "Maintain hostname to LAN upstream mappings. Saving validates and hot-reloads the built-in Caddy; failures roll back automatically.",
@@ -685,17 +686,17 @@ const I18N = {
     kindAudioDesc: "Subtypes: music / music video · scrapers MusicBrainz, NetEase",
     libKind: "Category", libSubType: "Subtype",
     libPath: "Media path (absolute path inside the container)", libName: "Library name (manual, used for scraping)",
-    libAdd: "Add library", libRefresh: "Refresh", libRescrape: "Rescrape all",
+    libAdd: "Add library", libRefresh: "Refresh", libRescanAll: "Rescan all",
     colLibName: "Library", colLibKind: "Category / subtype", colLibPath: "Media path",
-    colLibItems: "Items", colLibState: "Scraping state", colLibActs: "Actions",
+    colLibItems: "Items", colLibState: "Scan state", colLibActs: "Actions",
     libEmpty: "No library yet. Fill in the form above to start scraping.",
     homeCountFmt: "{items} items · {libs} libraries", homeCountEmpty: "No library yet",
     libCountFmt: "{n} libraries",
-    stateWait: "Pending", stateScraping: "Scraping", stateFail: "Failed",
+    stateWait: "Pending", stateScraping: "Scanning", stateFail: "Failed",
     stateCancelled: "Cancelled", stateDone: "Done",
     homeEmptyLib: "No {kind} library yet", homeLoading: "Loading recently added…",
     homeNoIndexed: "No indexed media files in this category yet",
-    actRescrape: "Rescrape", actOpenLib: "Open library", actRemove: "Remove",
+    actRescan: "Rescan", actOpenLib: "Open library", actRemove: "Remove",
     nowBadge: "Video / music playback · includes scraped info",
     typeAudio: "Music", typeMusicvideo: "Music video", typeComic: "Comic",
     typeBook: "E-book", typeMovie: "Movie", typeSeries: "TV series",
@@ -934,6 +935,9 @@ function switchView(v, libId) {
   document.querySelectorAll(".view").forEach(s => s.classList.remove("active"));
   const view = document.getElementById("view-" + v);
   if (view) view.classList.add("active");
+  /* v0.9.30：系统设置是独立配置页，侧栏底部的设置按钮要跟着高亮，
+     否则进入设置后侧栏没有任何选中态，用户不知道自己在哪一页。 */
+  document.getElementById("sidebarSettingsButton")?.classList.toggle("active", v === "settings");
   /* 音乐播放器只在音视作品视图显示，出现方式为屏幕居中浮层。 */
   const player = document.getElementById("audio-bottom-player");
   if (player) player.classList.toggle("show", v === "audio" && typeof audioHasActivePlayback === "function" && audioHasActivePlayback());
@@ -963,9 +967,23 @@ function leaveMovieDetailSidebarMode() {
   document.body.classList.toggle("sidebar-hidden", movieDetailSidebarWasHidden);
   movieDetailSidebarWasHidden = null;
 }
-function openSettingsModalFromSidebar() { openModal("settingsModal"); }
+function openSettingsModalFromSidebar() { openSettingsPage(); }
 /* 打开系统设置并直接跳到账户与登录页（登录状态 / Caddy / 关于 / 退出登录）。 */
-function openAccountSettings() { openModal("settingsModal"); switchSetTab("account"); }
+function openAccountSettings() { openSettingsPage("account"); }
+/* v0.9.30：系统设置改为独立配置页 #view-settings。
+   settingsReturnView 记住进入设置前所在的视图，关闭时回到那里而不是硬跳首页。 */
+let settingsReturnView = "home";
+function openSettingsPage(tab) {
+  const current = document.querySelector(".view.active");
+  if (current && current.id !== "view-settings") settingsReturnView = current.id.replace(/^view-/, "");
+  switchView("settings");
+  switchSetTab(tab || currentSetTab || "library");
+}
+function closeSettingsPage() {
+  const back = settingsReturnView && document.getElementById("view-" + settingsReturnView) ? settingsReturnView : "home";
+  switchView(back);
+}
+function settingsPageOpen() { return !!document.getElementById("view-settings")?.classList.contains("active"); }
 
 /* ---------- 头像设置：文字 / 颜色 / 上传图片，仅存本浏览器 ---------- */
 const LS_AVATAR = "vaulthub_avatar_v1";
@@ -1089,8 +1107,10 @@ function initSidebarResizer() {
   window.addEventListener("touchend", stop);
 }
 
-/* ================= 设置弹窗内的标签页（含 Caddy 配置） ================= */
+/* ================= 系统设置配置页内的标签页（含 Caddy 配置入口） ================= */
+let currentSetTab = "library";
 function switchSetTab(key) {
+  currentSetTab = key;
   document.querySelectorAll(".settab[data-settab]").forEach(el => el.classList.toggle("on", el.dataset.settab === key));
   document.querySelectorAll(".setpanel").forEach(el => el.classList.toggle("on", el.id === "setpanel-" + key));
   if (key === "scrape") { refreshHardwareStatus(); if (typeof loadMediaRuntimeSettings === "function") loadMediaRuntimeSettings(false); }
