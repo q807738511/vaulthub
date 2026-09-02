@@ -1,6 +1,11 @@
 name: Sync All GHCR vaulthub Tags to Docker Hub
 on:
   workflow_dispatch:
+  # 镜像构建完成后再同步：直接用 push 触发会和「Build and publish container」并发，
+  # 新的 sha-<commit> / latest 标签此时还没推到 GHCR，同步必然把它们记成失败。
+  workflow_run:
+    workflows: ["Build and publish container"]
+    types: [completed]
   # 没有 GitHub API 调度令牌时，可通过仅修改本工作流来安全触发一次；
   # 普通源码提交不会重复执行全量镜像同步。
   push:
@@ -15,6 +20,8 @@ concurrency:
 jobs:
   sync-all-tags:
     runs-on: ubuntu-latest
+    # 构建失败时不要同步半成品镜像。
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: 安装Skopeo同步工具
         run: sudo apt update && sudo apt install -y skopeo jq
