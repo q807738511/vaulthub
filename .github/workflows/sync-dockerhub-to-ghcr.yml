@@ -19,36 +19,107 @@ jobs:
       - name: 安装Skopeo同步工具
         run: sudo apt update && sudo apt install -y skopeo jq
       - name: 登录GHCR源仓库
-        run: skopeo login ghcr.io -u q807738511 -p ${{ secrets.GH_TOKEN }}
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: printf '%s' "$GH_TOKEN" | skopeo login ghcr.io -u q807738511 --password-stdin
       - name: 登录Docker Hub目标仓库
-        run: skopeo login docker.io -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: 全量同步所有镜像标签
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: printf '%s' "$DOCKERHUB_TOKEN" | skopeo login docker.io -u "$DOCKERHUB_USERNAME" --password-stdin
+      - name: 检测摘要并增量同步镜像标签
+        shell: bash
         run: |
-          # 获取ghcr.io上所有vaulthub镜像标签
-          TAGS=$(skopeo inspect docker://ghcr.io/q807738511/vaulthub | jq -r '.RepoTags[]')
-          # 当前稳定版优先，保证全量历史标签同步耗时较长时，新版本也能先交付。
-          PRIORITY_TAG=v0.9.15
-          TAGS=$(printf '%s\n%s\n' "$PRIORITY_TAG" "$TAGS" | awk 'NF && !seen[$0]++')
-          echo "待同步标签列表：$TAGS"
-          # 遍历所有标签执行同步，每个标签最多重试3次
-          FAILED=0
-          for TAG in $TAGS; do
-            echo "开始同步标签：$TAG"
+          set -Eeuo pipefail
+
+          SOURCE_REPO=docker://ghcr.io/q807738511/vaulthub
+          TARGET_REPO=docker://docker.io/q807738511/vaulthub
+
+          # 获取 GHCR 全部标签，并自动选出最高语义版本作为优先同步标签。
+          mapfile -t ALL_TAGS < <(
+            skopeo list-tags "$SOURCE_REPO" |
+              jq -r '.Tags[]' |
+              awk 'NF && !seen[$0]++'
+          )
+          LATEST_TAG=$(
+            printf '%s\n' "${ALL_TAGS[@]}" |
+              grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' |
+              sort -V |
+              tail -n 1 || true
+          )
+          if [ -z "$LATEST_TAG" ]; then
+            echo "未在 GHCR 找到 vX.Y.Z 格式的版本标签" >&2
+            exit 1
+          fi
+
+          # 最新版本先同步，其余标签去重后继续增量检查。
+          mapfile -t TAGS < <(
+            printf '%s\n' "$LATEST_TAG" "${ALL_TAGS[@]}" |
+              awk 'NF && !seen[$0]++'
+          )
+          echo "最新版本：$LATEST_TAG"
+          printf '待检查标签：%s\n' "${TAGS[*]}"
+
+          UPDATED=0
+          SKIPPED=0
+          FAILED_TAGS=()
+
+          for TAG in "${TAGS[@]}"; do
+            SOURCE_REF="$SOURCE_REPO:$TAG"
+            TARGET_REF="$TARGET_REPO:$TAG"
+            echo "::group::检查标签 $TAG"
+
+            SOURCE_DIGEST=$(skopeo inspect --format '{{.Digest}}' "$SOURCE_REF")
+            TARGET_DIGEST=$(skopeo inspect --format '{{.Digest}}' "$TARGET_REF" 2>/dev/null || true)
+            echo "GHCR 摘要：${SOURCE_DIGEST}"
+            echo "Docker Hub 摘要：${TARGET_DIGEST:-不存在}"
+
+            if [ -n "$TARGET_DIGEST" ] && [ "$SOURCE_DIGEST" = "$TARGET_DIGEST" ]; then
+              echo "标签 $TAG 内容未变化，跳过推送"
+              SKIPPED=$((SKIPPED + 1))
+              echo "::endgroup::"
+              continue
+            fi
+
             SYNCED=0
-            for i in {1..3}; do
-              if skopeo copy --all \
-                docker://ghcr.io/q807738511/vaulthub:$TAG \
-                docker://docker.io/q807738511/vaulthub:$TAG; then
-                echo "标签 $TAG 同步成功"
-                SYNCED=1
-                break
+            for ATTEMPT in 1 2 3; do
+              echo "第 $ATTEMPT 次同步标签 $TAG"
+              if skopeo copy --all --preserve-digests "$SOURCE_REF" "$TARGET_REF"; then
+                # 写入后必须从目标仓库读回并核对摘要，不能只依赖 copy 的退出码。
+                READBACK_DIGEST=$(skopeo inspect --format '{{.Digest}}' "$TARGET_REF" 2>/dev/null || true)
+                if [ "$READBACK_DIGEST" = "$SOURCE_DIGEST" ]; then
+                  echo "标签 $TAG 同步并读回校验成功：$READBACK_DIGEST"
+                  SYNCED=1
+                  UPDATED=$((UPDATED + 1))
+                  break
+                fi
+                echo "标签 $TAG 读回摘要不一致：${READBACK_DIGEST:-不存在}" >&2
               fi
               sleep 10
             done
+
             if [ "$SYNCED" -ne 1 ]; then
-              echo "标签 $TAG 连续 3 次同步失败" >&2
-              FAILED=1
+              FAILED_TAGS+=("$TAG")
+              echo "标签 $TAG 连续 3 次同步或读回校验失败" >&2
             fi
+            echo "::endgroup::"
           done
-          test "$FAILED" -eq 0
-          echo "所有标签同步流程执行完成"
+
+          {
+            echo "## GHCR → Docker Hub 增量同步"
+            echo "- 最新版本：\`$LATEST_TAG\`"
+            echo "- 已更新：$UPDATED"
+            echo "- 未变化并跳过：$SKIPPED"
+            echo "- 失败：${#FAILED_TAGS[@]}"
+            if [ "${#FAILED_TAGS[@]}" -gt 0 ]; then
+              echo "- 失败标签：\`${FAILED_TAGS[*]}\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # 最新版本必须成功；历史标签失败也保留红灯，避免静默漏同步。
+          if printf '%s\n' "${FAILED_TAGS[@]:-}" | grep -Fxq "$LATEST_TAG"; then
+            echo "最新版本 $LATEST_TAG 未同步成功" >&2
+            exit 1
+          fi
+          test "${#FAILED_TAGS[@]}" -eq 0
+          echo "所有标签增量同步检查完成"

@@ -336,7 +336,7 @@ function renderSeriesLibraryContent(host, lib, files) {
   host.innerHTML = `<section class="content-collection"><div class="content-section-heading"><div><span class="eyebrow">我的媒体库</span><h3>电视剧集</h3></div><span class="badge">${shows.length} 部剧 · ${files.length} 集</span></div>${body}</section>`;
 }
 function renderSeriesShowCard(lib, show) { const art=show.poster?`<img src="${esc(show.poster)}" alt="${esc(show.title)}" loading="lazy">`:`<span>${esc(show.title)}</span>`; const seasons=show.seasonList?.length||0, episodes=show.files?.length||0; return `<article class="media-poster-card series-show-card" data-series-show="${esc(show.key)}" onclick="openSeriesDetails(${jsAttrArg(lib.id)},${jsAttrArg(show.key)})"><div class="media-poster-art" style="${show.poster?"":`background:${coverGradient(show.title)}`}">${art}</div><div class="media-poster-info"><strong>${esc(show.title)}</strong><small>${esc([show.year, `${seasons} 季`, `${episodes} 集`, show.provider].filter(Boolean).join(" · "))}</small></div></article>`; }
-function openSeriesDetails(libId, showKey) { const lib=findMediaLibrary(libId), viewer=document.getElementById("local-media-viewer-movie"); if(!lib||!viewer)return; const show=readSeriesShow(libId,showKey); if(!show)return; const hero={title:show.title,overview:show.overview||"已按 Plex / Emby 风格根据根目录、Season 01 和 S01E01 规则聚合到同一剧集。",poster:show.poster,logo:show.logo,fanart:show.fanart,backdrop:show.backdrop,year:show.year,provider:show.provider,watched:show.watched,media_type:"series"}; const seasons=(show.seasonList||[]).map(season=>`<section class="series-season-block"><h3>Season ${String(season.season).padStart(2,"0")}</h3><div class="media-file-list">${season.episodes.map(ep=>renderSeriesEpisodeRow(lib,ep)).join("")}</div></section>`).join(""); viewer.innerHTML=`<div class="media-reader-overlay movie-detail-page series-detail-page"><div class="movie-detail-scroll"><button class="media-reader-close" onclick="closeMovieDetails()">✕</button>${renderMovieHero(lib,show.files?.[0]?.path||"",hero)}<section><h3>剧集列表</h3><div class="hint">按标准命名规则聚合：根目录剧名 / Season 01 / 剧名 S01E01 标题；刮削先锁定主剧集，再将本地多季多集挂载到同一条目。</div></section>${seasons}</div></div>`; scrollViewerIntoView(viewer); }
+function openSeriesDetails(libId, showKey) { enterMovieDetailSidebarMode(); const lib=findMediaLibrary(libId), viewer=document.getElementById("local-media-viewer-movie"); if(!lib||!viewer)return; const show=readSeriesShow(libId,showKey); if(!show)return; const hero={title:show.title,overview:show.overview||"已按 Plex / Emby 风格根据根目录、Season 01 和 S01E01 规则聚合到同一剧集。",poster:show.poster,logo:show.logo,fanart:show.fanart,backdrop:show.backdrop,year:show.year,provider:show.provider,watched:show.watched,media_type:"series"}; const seasons=(show.seasonList||[]).map(season=>`<section class="series-season-block"><h3>Season ${String(season.season).padStart(2,"0")}</h3><div class="media-file-list">${season.episodes.map(ep=>renderSeriesEpisodeRow(lib,ep)).join("")}</div></section>`).join(""); viewer.innerHTML=`<div class="media-reader-overlay movie-detail-page series-detail-page"><div class="movie-detail-scroll"><button class="media-reader-close" onclick="closeMovieDetails()">✕</button>${renderMovieHero(lib,show.files?.[0]?.path||"",hero)}<section><h3>剧集列表</h3><div class="hint">按标准命名规则聚合：根目录剧名 / Season 01 / 剧名 S01E01 标题；刮削先锁定主剧集，再将本地多季多集挂载到同一条目。</div></section>${seasons}</div></div>`; scrollViewerIntoView(viewer); }
 function renderSeriesEpisodeRow(lib, ep) { const path=String(ep.path), meta=ep.meta||movieMetadataFor(path), parsed=ep.parsed||parseSeriesEpisode(path); return `<div class="media-file-row series-episode-row"><div class="media-file-name" title="${esc(path)}"><b>${esc(parsed.label)} · ${esc(meta.title||parsed.title)}</b><small>${esc([meta.year,meta.provider].filter(Boolean).join(" · "))}</small></div><span class="media-file-meta">${esc(fileExt(path).toUpperCase())} · ${formatFileSize(ep.size)}</span><div class="media-actions"><button class="btn" onclick="openLocalMedia('movie',${jsAttrArg(lib.id)},${jsAttrArg(path)})">▶ 播放</button><button class="btn" onclick="openMovieDetails(${jsAttrArg(lib.id)},${jsAttrArg(path)})">详情</button></div></div>`; }
 function renderMovieLibrary(lib, files) { const host = document.createElement("div"); renderMovieLibraryContent(host, lib, files); return host.innerHTML; }
 function renderMovieRow(lib, file) { const path=String(file.path), meta=movieMetadataFor(path); return `<div class="media-file-row"><div class="media-file-name" title="${esc(path)}"><b>${esc(meta.title)}</b><small>${esc([meta.year, meta.provider].filter(Boolean).join(" · "))}</small></div><span class="media-file-meta">${esc(fileExt(path).toUpperCase())} · ${formatFileSize(file.size)}</span><div class="media-actions"><button class="btn" data-media-group="movie" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openLocalMediaButton(this)">▶ 播放</button></div></div>`; }
@@ -351,8 +351,8 @@ function chooseMediaArtwork(url){const role=document.getElementById("mediaEditAr
 async function saveMediaMetadataEditor(){const libId=document.getElementById("mediaEditLibId").value,path=document.getElementById("mediaEditPath").value,meta=movieMetadataFor(path);const values={poster:document.getElementById("mediaEditPosterUrl").value.trim(),logo:document.getElementById("mediaEditLogoUrl").value.trim(),fanart:document.getElementById("mediaEditFanartUrl").value.trim(),backdrop:document.getElementById("mediaEditBackdropUrl").value.trim(),tags:document.getElementById("mediaEditTags").value.split(/[,，]/).map(x=>x.trim()).filter(Boolean),watched:!!meta.watched};try{const saved=await saveMovieMetadataOverride(libId,path,values),all=readMovieMetadata();all[path]={...meta,...saved};writeMovieMetadata(all);closeModal("mediaMetadataEditorModal");await openMovieDetails(libId,path);toast("✅ 媒体信息已保存");}catch(e){toast("⚠️ 保存失败："+e.message);}}
 function rateMovie(libId,path){const raw=prompt("请为该视频评分（0-10）",localStorage.getItem(movieStateKey("rating",libId,path))||"");if(raw===null)return;const n=Number(raw);if(!Number.isFinite(n)||n<0||n>10){toast("⚠️ 评分应为 0-10");return;}localStorage.setItem(movieStateKey("rating",libId,path),String(n));document.querySelector("[data-user-rating]")?.replaceChildren(document.createTextNode(`我的评分 ${n.toFixed(1)}`));}
 async function shareMovie(title){try{if(navigator.share)await navigator.share({title,text:title,url:location.href});else{await navigator.clipboard.writeText(location.href);toast("✅ 页面链接已复制");}}catch(e){}}
-async function openMovieDetails(libId,path){const lib=findMediaLibrary(libId),viewer=document.getElementById("local-media-viewer-movie");if(!lib||!viewer)return;let meta=movieMetadataFor(path);viewer.innerHTML=renderMovieDetails(lib,path,meta);try{const res=await fetch(`/api/media/metadata?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}`,{cache:"no-store"});if(res.ok){const local=await res.json();if(local.nfo||local.poster||local.logo||local.fanart||local.backdrop||local.tags?.length||local.watched||local.subtitles?.length){meta={...meta,...local,title:local.title||meta.title,year:local.year||meta.year};const all=readMovieMetadata();all[path]=meta;writeMovieMetadata(all);viewer.innerHTML=renderMovieDetails(lib,path,meta);}}}catch(e){}if(meta.tmdb_id&&meta.provider!=="本地 NFO"){try{const res=await fetch(`/api/media/tmdb?id=${encodeURIComponent(meta.tmdb_id)}&type=${encodeURIComponent(meta.media_type||lib.type)}`,{cache:"force-cache"});if(res.ok){const detail=await res.json();meta={...meta,overview:detail.overview||meta.overview,rating:Number(detail.vote_average||meta.rating||0),runtime:detail.runtime||detail.episode_run_time?.[0],genres:(detail.genres||[]).map(x=>x.name),cast:(detail.credits?.cast||[]).slice(0,12),recommendations:(detail.recommendations?.results||[]).slice(0,8)};viewer.innerHTML=renderMovieDetails(lib,path,meta);}}catch(e){}}scrollViewerIntoView(viewer);}
-function closeMovieDetails(){const viewer=document.getElementById("local-media-viewer-movie");if(viewer)viewer.innerHTML="";}
+async function openMovieDetails(libId,path){enterMovieDetailSidebarMode();const lib=findMediaLibrary(libId),viewer=document.getElementById("local-media-viewer-movie");if(!lib||!viewer)return;let meta=movieMetadataFor(path);viewer.innerHTML=renderMovieDetails(lib,path,meta);try{const res=await fetch(`/api/media/metadata?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}`,{cache:"no-store"});if(res.ok){const local=await res.json();if(local.nfo||local.poster||local.logo||local.fanart||local.backdrop||local.tags?.length||local.watched||local.subtitles?.length){meta={...meta,...local,title:local.title||meta.title,year:local.year||meta.year};const all=readMovieMetadata();all[path]=meta;writeMovieMetadata(all);viewer.innerHTML=renderMovieDetails(lib,path,meta);}}}catch(e){}if(meta.tmdb_id&&meta.provider!=="本地 NFO"){try{const res=await fetch(`/api/media/tmdb?id=${encodeURIComponent(meta.tmdb_id)}&type=${encodeURIComponent(meta.media_type||lib.type)}`,{cache:"force-cache"});if(res.ok){const detail=await res.json();meta={...meta,overview:detail.overview||meta.overview,rating:Number(detail.vote_average||meta.rating||0),runtime:detail.runtime||detail.episode_run_time?.[0],genres:(detail.genres||[]).map(x=>x.name),cast:(detail.credits?.cast||[]).slice(0,12),recommendations:(detail.recommendations?.results||[]).slice(0,8)};viewer.innerHTML=renderMovieDetails(lib,path,meta);}}catch(e){}}scrollViewerIntoView(viewer);}
+function closeMovieDetails(){const viewer=document.getElementById("local-media-viewer-movie");if(viewer)viewer.innerHTML="";leaveMovieDetailSidebarMode();}
 /* esc() 只做 HTML 实体转义，浏览器解析 style 属性时会把 &#39; 还原成单引号，
    足以闭合 url('…') 并注入任意 CSS 声明。海报地址可能来自本地 NFO、TMDB 或豆瓣，
    都属于外部内容，因此进 CSS 前必须先剔除引号、反斜杠、括号与换行。 */
@@ -409,8 +409,8 @@ const MEDIA_FORMATS = {
 function supportedLocalMediaFile(group, lib, path) {
   const ext = fileExt(path);
   if (!ext) return false;
-  if (group === "comic") return (lib?.type === "book" ? MEDIA_FORMATS.book : MEDIA_FORMATS.comic).includes(ext);
-  // 音乐视频（歌曲 MV）库存放的是视频文件，因此按影视扩展名判定。
+  // 电子书与漫画库统一接受可阅读的电子书/漫画格式；库类型只影响展示标题。
+  if (group === "comic") return [...new Set([...MEDIA_FORMATS.book, ...MEDIA_FORMATS.comic])].includes(ext);
   if (group === "audio") return (lib?.type === "musicvideo" ? MEDIA_FORMATS.movie : MEDIA_FORMATS.audio).includes(ext);
   return (MEDIA_FORMATS[group] || []).includes(ext);
 }
@@ -518,30 +518,32 @@ function normalizeFilePayload(data) {
   const files = Array.isArray(data) ? data : (data?.files || data?.items || []);
   return files.map(item => typeof item === "string" ? { path: item } : item).filter(item => item?.path);
 }
-/* Plex / Emby 式剧集聚合必须先看到整部剧的全部季集，否则 50 条一页的分页会把
-   同一部剧切成「第 1 页 Season 01-02、第 2 页 Season 03-04」这种半截视图，
-   卡片上的季数集数也全是本页的局部统计。后端 /api/media/files 的 limit 上限是 500，
-   这里按 500 一批往后翻，直到 has_more 为假；上限 40 批（2 万条）防止异常库把页面拖死。 */
-async function fetchRemainingLibraryFiles(libId, startOffset, batch = 500, maxBatches = 40) {
-  const files = [];
-  let offset = startOffset, truncated = false;
-  for (let i = 0; i < maxBatches; i++) {
-    const res = await fetch(`/api/media/files?id=${encodeURIComponent(libId)}&offset=${offset}&limit=${batch}`, { cache: "no-store" });
+async function fetchAllLibraryFiles(libId, firstPage, firstOffset = 0) {
+  const files = normalizeFilePayload(firstPage);
+  let offset = firstOffset + files.length;
+  while (firstPage.has_more) {
+    const res = await fetch(`/api/media/files?id=${encodeURIComponent(libId)}&offset=${offset}&limit=500`, { cache: "no-store" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const page = await res.json();
     const list = normalizeFilePayload(page);
     files.push(...list);
-    if (!page.has_more || !list.length) return { files, truncated: false };
-    offset += list.length;
-    truncated = true;
+    if (!page.has_more || !list.length) break;
+    const nextOffset = offset + list.length;
+    if (nextOffset <= offset) throw new Error("媒体列表分页游标未前进");
+    offset = nextOffset;
+    firstPage = page;
   }
-  return { files, truncated };
+  return files;
+}
+/* 影视库和剧集聚合统一加载全部索引，不显示固定数量分页。 */
+async function fetchRemainingLibraryFiles(libId, startOffset) {
+  return { files: await fetchAllLibraryFiles(libId, { has_more: true }, startOffset), truncated: false };
 }
 async function loadLocalFiles(group, lib, offset = 0) {
   const target = document.getElementById("local-media-content-" + group);
   if (!target) return;
   try {
-    const pageSize = group === "comic" ? (comicShelfView === "completed" ? 100000 : mediaPageSize) : group === "audio" ? audioPageSize : group === "movie" ? 50 : 100;
+    const pageSize = group === "comic" ? (comicShelfView === "completed" ? 100000 : mediaPageSize) : group === "audio" ? audioPageSize : group === "movie" ? 500 : 100;
     const res = await fetch(`/api/media/files?id=${encodeURIComponent(lib.id)}&offset=${offset}&limit=${pageSize}`, { cache: "no-store" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
@@ -555,13 +557,13 @@ async function loadLocalFiles(group, lib, offset = 0) {
       return;
     }
     stopBuildProgressWatch(group);
-    /* 剧集库把本页之后的文件补齐再聚合，让 show 卡与详情页覆盖所有季集。 */
-    let seriesTruncated = false;
-    if (group === "movie" && lib?.type === "series" && data.has_more) {
-      const rest = await fetchRemainingLibraryFiles(lib.id, offset + files.length);
+    /* 影视库统一补齐全部索引，电影和电视剧均不再显示分页或截断提示。 */
+    let mediaTruncated = false;
+    if (group === "movie" && data.has_more) {
+      const rest = await fetchRemainingLibraryFiles(lib.id, offset + normalizeFilePayload(data).length);
       const extra = rest.files.filter(file => supportedLocalMediaFile(group, lib, String(file.path)));
       files = files.concat(extra).sort((a, b) => String(a.path).localeCompare(String(b.path), "zh-CN"));
-      seriesTruncated = rest.truncated;
+      mediaTruncated = rest.truncated;
       data.has_more = false;
     }
     if (group === "comic") {
@@ -576,9 +578,9 @@ async function loadLocalFiles(group, lib, offset = 0) {
        此时旧写法会算出「1-0 / 848」这种不成立的区间，改为显式提示本页为空。 */
     const total = Number(data.total) || files.length;
     const range = files.length ? `${offset + 1}-${offset + files.length}` : "本页无匹配";
-    const seriesAllLoaded = group === "movie" && lib?.type === "series";
+    const seriesAllLoaded = group === "movie";
     const pager = seriesAllLoaded
-      ? `<div class="media-actions"><span class="media-file-meta">已聚合 ${files.length} / ${total} 集${seriesTruncated ? "（超过 2 万集，仅聚合前 2 万条）" : ""}</span></div>`
+      ? `<div class="media-actions"><span class="media-file-meta">已加载全部 ${files.length} / ${total} 项${mediaTruncated ? "（加载未完成）" : ""}</span></div>`
       : `<div class="media-actions">${prev}<span class="media-file-meta">${range} / ${total}</span>${next}</div>`;
     if (group === "comic") {
       const toolbar = `<div class="content-section-heading"><div><span class="eyebrow">我的媒体库</span><h3>${lib.type === "book" ? "电子书" : "漫画"}</h3></div><div class="comic-shelf-tabs"><button class="${comicShelfView === "completed" ? "active" : ""}" onclick="setComicShelfView(comicShelfView === \"completed\" ? \"shelf\" : \"completed\")">${comicShelfView === "completed" ? "← 返回未读" : "✓ 已读收藏"}</button></div></div>`;
