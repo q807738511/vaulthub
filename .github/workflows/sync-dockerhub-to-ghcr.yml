@@ -36,11 +36,15 @@ jobs:
         run: printf '%s' "$DOCKERHUB_TOKEN" | skopeo login docker.io -u "$DOCKERHUB_USERNAME" --password-stdin
       - name: 检测摘要并增量同步镜像标签
         shell: bash
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
           set -Eeuo pipefail
 
           SOURCE_REPO=docker://ghcr.io/q807738511/vaulthub
           TARGET_REPO=docker://docker.io/q807738511/vaulthub
+          TARGET_PATH=q807738511/vaulthub
 
           # 获取 GHCR 全部标签，并自动选出最高语义版本作为优先同步标签。
           mapfile -t ALL_TAGS < <(
@@ -60,9 +64,13 @@ jobs:
           fi
 
           # 最新版本先同步，其余标签去重后继续增量检查。
+          # 浮动标签（latest）排在最后：它与某个 sha-<commit> 指向同一个 manifest，
+          # 内容先随固定标签落到 Docker Hub 之后，浮动标签就只需要写一次 tag，
+          # 必要时可以用 manifest PUT 原样重指，不必再转换格式。
           mapfile -t TAGS < <(
             printf '%s\n' "$LATEST_TAG" "${ALL_TAGS[@]}" |
-              awk 'NF && !seen[$0]++'
+              awk 'NF && !seen[$0]++' |
+              awk '{ if ($0 == "latest") floating = floating $0 "\n"; else print } END { printf "%s", floating }'
           )
           echo "最新版本：$LATEST_TAG"
           printf '待检查标签：%s\n' "${TAGS[*]}"
@@ -87,6 +95,58 @@ jobs:
             return 1
           }
 
+          dockerhub_push_token() {
+            curl -fsSL -u "$DOCKERHUB_USERNAME:$DOCKERHUB_TOKEN" \
+              "https://auth.docker.io/token?service=registry.docker.io&scope=repository:${TARGET_PATH}:pull,push" |
+              jq -r '.token // empty'
+          }
+
+          # 用原始 manifest 字节写标签。
+          #
+          # skopeo copy --all --preserve-digests 把 OCI image index 推到 Docker Hub 时会报
+          #   "Manifest list must be converted to type application/vnd.docker.distribution.manifest.list.v2+json
+          #    to be written to destination, but we cannot modify it: Instructed to preserve digests"
+          # 也就是 skopeo 认为目标需要 docker manifest list，而保留摘要又禁止改写。
+          # 去掉 --preserve-digests 会让摘要变化，与「两端摘要必须一致」的验收标准冲突。
+          # 这里直接把 GHCR 的 manifest 字节按原 mediaType PUT 到 Docker Hub：字节不变，
+          # 摘要自然一致。前提是被引用的子 manifest / blob 已在目标仓库（浮动标签排在
+          # 固定标签之后同步，正是为了满足这个前提）。
+          retag_by_manifest_put() {
+            local tag="$1" raw media token code body
+            raw=$(mktemp)
+            if ! skopeo inspect --raw "$SOURCE_REPO:$tag" >"$raw" 2>/dev/null; then
+              LAST_ERROR="无法读取 GHCR $tag 的原始 manifest"
+              rm -f "$raw"
+              return 1
+            fi
+            media=$(jq -r '.mediaType // empty' <"$raw")
+            if [ -z "$media" ]; then
+              LAST_ERROR="GHCR $tag 的 manifest 缺少 mediaType"
+              rm -f "$raw"
+              return 1
+            fi
+            if ! token=$(dockerhub_push_token) || [ -z "$token" ]; then
+              LAST_ERROR="获取 Docker Hub 推送令牌失败"
+              rm -f "$raw"
+              return 1
+            fi
+            code=$(curl -sS -o /tmp/manifest-put.out -w '%{http_code}' -X PUT \
+              -H "Authorization: Bearer $token" \
+              -H "Content-Type: $media" \
+              --data-binary "@$raw" \
+              "https://registry-1.docker.io/v2/${TARGET_PATH}/manifests/${tag}" || true)
+            rm -f "$raw"
+            case "$code" in
+              200|201|202)
+                echo "标签 $tag 已按原始 manifest 字节写入（HTTP $code）"
+                return 0
+                ;;
+            esac
+            body=$(tr -d '\n' </tmp/manifest-put.out | tail -c 300 || true)
+            LAST_ERROR="manifest PUT HTTP ${code}: ${body}"
+            return 1
+          }
+
           for TAG in "${TAGS[@]}"; do
             SOURCE_REF="$SOURCE_REPO:$TAG"
             TARGET_REF="$TARGET_REPO:$TAG"
@@ -95,6 +155,7 @@ jobs:
             if ! SOURCE_DIGEST=$(inspect_digest "$SOURCE_REF"); then
               echo "无法读取 GHCR 标签 $TAG 的摘要，记为失败并继续" >&2
               FAILED_TAGS+=("$TAG")
+              echo "::error title=同步失败 $TAG::无法读取 GHCR 摘要"
               echo "::endgroup::"
               continue
             fi
@@ -112,8 +173,24 @@ jobs:
             SYNCED=0
             for ATTEMPT in 1 2 3; do
               echo "第 $ATTEMPT 次同步标签 $TAG"
+              PUSHED=0
               if skopeo copy --all --preserve-digests "$SOURCE_REF" "$TARGET_REF" 2>"/tmp/skopeo-$ATTEMPT.err"; then
-                # 写入后必须从目标仓库读回并核对摘要，不能只依赖 copy 的退出码。
+                PUSHED=1
+              else
+                LAST_ERROR=$(tr '\n' ' ' <"/tmp/skopeo-$ATTEMPT.err" | tail -c 400)
+                echo "标签 $TAG 推送失败：$LAST_ERROR" >&2
+                # 只有「保留摘要 + 需要转换格式」这一类失败才改走 manifest PUT；
+                # 其它错误（网络、权限）继续按原路径重试。
+                if grep -qi "preserve digests" "/tmp/skopeo-$ATTEMPT.err"; then
+                  echo "改用原始 manifest 字节写入标签 $TAG"
+                  if retag_by_manifest_put "$TAG"; then
+                    PUSHED=1
+                  fi
+                fi
+              fi
+
+              if [ "$PUSHED" -eq 1 ]; then
+                # 写入后必须从目标仓库读回并核对摘要，不能只依赖退出码。
                 READBACK_DIGEST=$(skopeo inspect --format '{{.Digest}}' "$TARGET_REF" 2>/dev/null || true)
                 if [ "$READBACK_DIGEST" = "$SOURCE_DIGEST" ]; then
                   echo "标签 $TAG 同步并读回校验成功：$READBACK_DIGEST"
@@ -123,9 +200,6 @@ jobs:
                 fi
                 echo "标签 $TAG 读回摘要不一致：${READBACK_DIGEST:-不存在}" >&2
                 LAST_ERROR="读回摘要 ${READBACK_DIGEST:-不存在} != 源摘要 $SOURCE_DIGEST"
-              else
-                LAST_ERROR=$(tr '\n' ' ' < "/tmp/skopeo-$ATTEMPT.err" | tail -c 400)
-                echo "标签 $TAG 推送失败：$LAST_ERROR" >&2
               fi
               sleep 10
             done
