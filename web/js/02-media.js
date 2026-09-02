@@ -115,7 +115,7 @@ function renderMediaHome(group) {
 function openExternalService(id) {
   const svc = findExternalService(id);
   if (!svc) { toast("⚠️ " + t("homeOpenFail")); return; }
-  closeModal("settingsModal");
+  if (typeof closeSettingsPage === "function" && typeof settingsPageOpen === "function" && settingsPageOpen()) closeSettingsPage();
   openExternalServiceWindow(svc.id);
 }
 function openExternalServiceWindow(id) {
@@ -372,13 +372,65 @@ function toggleMediaResourceView(group) { mediaResourceView = mediaResourceView 
 function refreshMovieMetadata() { try { localStorage.removeItem(movieMetadataCache); } catch(e) {} const lib=findMediaLibrary(localMediaSelection.movie); if(lib) loadLocalFiles("movie", lib, 0); toast("🔄 正在重新刮削影视信息"); }
 
 function mediaStateKey(libId, path) { return `vaulthub_reading_${libId}_${path}`; }
+/* v0.9.30：阅读进度改为服务端持久化（/api/media/reading/progress）。
+   localStorage 仍然写一份，用于换页/离线时的即时渲染，但真正的权威值来自
+   服务端；否则换浏览器或清缓存后进度全丢，表现为「关闭后回到第一页」。
+   渲染路径（renderBookCard 等）是同步的，所以服务端值先拉进内存缓存。 */
+const readingProgressCache = {};   // libId -> { path: progress }
+const readingProgressLoaded = {};  // libId -> Promise
+let readingProgressFlushTimer = null;
+const readingProgressPending = new Map(); // `${libId}\n${path}` -> progress
 function readingState(libId, path) {
+  const remote = readingProgressCache[libId];
+  if (remote && Object.prototype.hasOwnProperty.call(remote, path)) return { progress: Number(remote[path]) || 0 };
   try { return JSON.parse(localStorage.getItem(mediaStateKey(libId, path))) || { progress: 0 }; } catch (e) { return { progress: 0 }; }
+}
+async function loadReadingProgress(libId, force = false) {
+  if (!libId) return {};
+  if (!force && readingProgressLoaded[libId]) return readingProgressLoaded[libId];
+  readingProgressLoaded[libId] = (async () => {
+    try {
+      const res = await fetch(`/api/media/reading/progress?id=${encodeURIComponent(libId)}`, { cache: "no-store", credentials: "same-origin" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const map = {};
+      for (const [path, item] of Object.entries(data.items || {})) map[path] = Number(item?.progress) || 0;
+      readingProgressCache[libId] = map;
+      return map;
+    } catch (e) {
+      /* 服务端不可用时保留已有内存值，读取仍能回落 localStorage。 */
+      return readingProgressCache[libId] || {};
+    }
+  })();
+  return readingProgressLoaded[libId];
+}
+function flushReadingProgress() {
+  readingProgressFlushTimer = null;
+  const items = [...readingProgressPending.entries()];
+  readingProgressPending.clear();
+  for (const [key, progress] of items) {
+    const [libId, path] = key.split("\n");
+    fetch(`/api/media/reading/progress?id=${encodeURIComponent(libId)}&path=${encodeURIComponent(path)}`, {
+      method: "PUT",
+      headers: sessionWriteHeaders(true),
+      credentials: "same-origin",
+      body: JSON.stringify({ progress })
+    }).catch(() => {});
+  }
 }
 function saveReadingProgress(libId, path, progress) {
   const value = Math.max(0, Math.min(100, Number(progress) || 0));
   try { localStorage.setItem(mediaStateKey(libId, path), JSON.stringify({ progress: value, updatedAt: Date.now() })); } catch (e) {}
+  if (!readingProgressCache[libId]) readingProgressCache[libId] = {};
+  readingProgressCache[libId][path] = value;
+  /* 滚动会高频触发，合并 800ms 内的写入，避免刷爆后端。 */
+  readingProgressPending.set(`${libId}\n${path}`, value);
+  if (!readingProgressFlushTimer) readingProgressFlushTimer = setTimeout(flushReadingProgress, 800);
   return value;
+}
+function flushReadingProgressNow() {
+  if (readingProgressFlushTimer) { clearTimeout(readingProgressFlushTimer); readingProgressFlushTimer = null; }
+  if (readingProgressPending.size) flushReadingProgress();
 }
 function setComicShelfView(view) {
   comicShelfView = view === "completed" ? "completed" : "shelf";
@@ -652,6 +704,9 @@ async function loadLocalFiles(group, lib, offset = 0) {
       return;
     }
     stopBuildProgressWatch(group);
+    /* v0.9.30：书刊书架要按服务端保存的阅读进度分「未读 / 已读收藏」，
+       所以过滤前必须先把该库的持久化进度拉回来，否则清缓存后全部回到未读。 */
+    if (group === "comic") await loadReadingProgress(lib.id);
     /* 影视库统一补齐全部索引，电影和电视剧均不再显示分页或截断提示。 */
     let mediaTruncated = false;
     if (group === "movie" && data.has_more) {
@@ -1075,7 +1130,33 @@ function viewerShell(group, lib, path, body, url, opts = {}) {
   const toolbar = opts.ebook ? `<span class="ebook-toolbar"><button title="减小字号" onclick="changeEbookFontSize(-1)">A-</button><button title="增大字号" onclick="changeEbookFontSize(1)">A+</button><button id="ebookFontStyleButton" title="正体/斜体" onclick="toggleEbookFontStyle()">正体</button></span>` : "";
   const video = group === "movie";
   const actions = video ? `<button class="media-reader-close" title="关闭播放器" onclick="closeLocalViewer('${esc(group)}')">✕</button>` : `${toolbar}<button class="btn" onclick="markReaderCompleted()">✓ 标记已读</button><button class="media-reader-close" title="关闭并返回书架" onclick="closeLocalViewer('${esc(group)}')">✕</button>`;
-  return `<div class="media-reader-overlay ${readerThemeClass()}"><div class="media-reader-head ${video ? "movie-player-head" : ""}"><strong class="media-reader-title" title="${esc(path)}">${esc(displayBookTitle(path))}</strong><div class="media-actions">${actions}</div></div><div class="media-reader-body" data-reader-scroll onscroll="trackReaderProgress(this)">${chapterHtml}<div class="media-reader-wrap">${body}</div></div></div>`;
+  /* v0.9.30：文档类阅读器（TXT 正文、ZIP 漫画整页）标记 reader-doc，
+     让正文区改成内容驱动高度并跟随主题上色，避免纸张只有一屏、
+     其余正文落在深色底上，以及漫画页左右露出下层底色。
+     PDF/图片/音频仍用固定一屏高度（iframe 需要 height:100%）。 */
+  const doc = !video && opts.doc === true;
+  return `<div class="media-reader-overlay ${readerThemeClass()}${doc ? " reader-doc" : ""}"><div class="media-reader-head ${video ? "movie-player-head" : ""}"><strong class="media-reader-title" title="${esc(path)}">${esc(displayBookTitle(path))}</strong><div class="media-actions">${actions}</div></div><div class="media-reader-body" data-reader-scroll onscroll="trackReaderProgress(this)">${chapterHtml}<div class="media-reader-wrap">${body}</div></div></div>`;
+}
+/* v0.9.30：重新打开文档时必须回到上次的阅读位置。
+   之前只写进度、从不回填 scrollTop，所以关闭再打开永远从第一页开始，
+   而第一屏的滚动事件又会把进度覆盖成 0 —— 进度看起来「保存不了」。
+   漫画页是 lazy 图片，scrollHeight 会持续增长，所以按重试逐步逼近目标。 */
+let readerRestoring = false;
+function restoreReaderProgress(viewer, libId, path, tries = 24) {
+  const scroller = viewer?.querySelector(".media-reader-body[data-reader-scroll]");
+  if (!scroller) return;
+  const target = Number(readingState(libId, path).progress || 0);
+  if (!(target > 0) || target >= COMPLETED_PROGRESS) return;
+  readerRestoring = true;
+  let left = tries;
+  const tick = () => {
+    const max = scroller.scrollHeight - scroller.clientHeight;
+    if (max > 2) scroller.scrollTop = Math.round(max * target / 100);
+    if (--left > 0) { setTimeout(tick, 120); return; }
+    /* 全部重试结束后才解除抑制，中途的滚动事件不会把进度改写成 0。 */
+    readerRestoring = false;
+  };
+  tick();
 }
 let ebookFontSize = 17;
 let ebookFontItalic = false;
@@ -1111,6 +1192,9 @@ function jumpEbookChapter(index) {
 }
 function trackReaderProgress(scroller) {
   if (!activeReader) return;
+  /* 正在恢复上次位置时不要记录：此刻 scrollTop 还是 0，
+     记下来会立刻把已保存的进度覆盖成 0。 */
+  if (readerRestoring) return;
   const max = scroller.scrollHeight - scroller.clientHeight;
   if (max <= 2) return;
   const progress = Math.min(100, scroller.scrollTop / max * 100);
@@ -1407,23 +1491,25 @@ async function openLocalMedia(group, libId, path) {
   activeReader = { group, libId, path };
   let body = "";
   if ((group === "comic" || group === "movie" || group === "audio") && ["zip","cbz"].includes(ext)) {
-    viewer.innerHTML = viewerShell(group, lib, path, '<div class="empty-tip">正在读取压缩包图片...</div>', url);
+    viewer.innerHTML = viewerShell(group, lib, path, '<div class="empty-tip">正在读取压缩包图片...</div>', url, { doc: true });
     try {
       const res = await fetch(`/api/media/archive/zip?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}`, { cache:"no-store" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const entries = data.entries || data.items || [];
       body = entries.length ? `<div class="comic-archive-pages">${entries.map((entry,index)=>`<img loading="lazy" src="${esc(entry.url || `/api/media/archive/zip/register?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}&entry=${encodeURIComponent(entry.raw || entry.name)}`)}" alt="${esc(entry.name || ("第 " + (index+1) + " 页"))}">`).join("")}</div>` : '<div class="media-error">压缩包中没有可读取的图片</div>';
-      viewer.innerHTML = viewerShell(group, lib, path, body, url);
+      viewer.innerHTML = viewerShell(group, lib, path, body, url, { doc: true });
+      /* v0.9.30：漫画重新打开必须回到上次页，否则每次都从第一页开始。 */
+      if (entries.length) restoreReaderProgress(viewer, lib.id, path);
       return;
-    } catch (err) { viewer.innerHTML = viewerShell(group, lib, path, `<div class="media-error">ZIP 漫画读取失败：${esc(err.message)}</div>`, url); return; }
+    } catch (err) { viewer.innerHTML = viewerShell(group, lib, path, `<div class="media-error">ZIP 漫画读取失败：${esc(err.message)}</div>`, url, { doc: true }); return; }
   }
   if (["mp3","flac","m4a","ogg","wav"].includes(ext)) body = `<div class="media-viewer-body"><audio controls autoplay preload="metadata" src="${esc(url)}"></audio></div>`;
   else if (MEDIA_FORMATS.movie.includes(ext)) body = `<div class="media-viewer-body media-video-body" data-video-controls-visible="true" data-video-engine="native"><div class="movie-compat-bar"><strong>三层播放</strong><button class="btn" type="button" data-engine-choice="native" data-movie-direct>Direct Play</button><button class="btn" type="button" data-engine-choice="compat" data-movie-compat>Smart Stream</button><button class="btn" type="button" data-engine-choice="wasm" data-movie-wasm>WASM Fallback</button><span class="movie-compat-status">正在上报浏览器能力并生成播放计划...</span></div><button class="video-menu-button" type="button" title="字幕和音轨" aria-label="字幕和音轨" onclick="toggleVideoTrackMenu(this)">☷</button><button class="video-info-button" type="button" title="播放及媒体元数据" aria-label="播放及媒体元数据" aria-expanded="false" onclick="toggleVideoStatusPanel(this)">!</button><video data-movie-player controls playsinline preload="metadata" onloadedmetadata="this.muted=false;this.volume=1" onvolumechange="this.dataset.volume=String(this.volume)"></video><div class="video-timeline"><span class="video-time-label">00:00 / 00:00</span><div class="video-progress-shell" role="slider" aria-label="播放进度" onclick="seekVideoTimeline(event,this)"><span class="video-buffered-range"></span><span class="video-played-range"></span></div></div><div class="video-track-menu video-audio-menu" data-video-track-menu><h4>音源</h4><div class="video-audio-options" data-video-audio-options>读取音源中...</div><h4>字幕</h4><div class="video-subtitle-menu" data-video-subtitle-options>暂无外挂字幕</div><button type="button" onclick="searchVideoSubtitles(this)">搜索并挂载字幕</button></div><div class="video-status-panel"><span class="status-main" data-video-status>准备播放</span><span class="status-detail" data-video-detail>--:-- / --:-- · 媒体元数据待识别</span></div></div>`;
   else if (["jpg","jpeg","png","webp","gif","bmp","avif"].includes(ext)) body = `<img src="${esc(url)}" alt="${esc(path)}">`;
   else if (ext === "pdf") body = `<iframe src="${esc(url)}#view=FitH" title="${esc(path)}"></iframe>`;
   else if (ext === "txt") {
-    viewer.innerHTML = viewerShell(group, lib, path, '<div class="empty-tip">正在读取文本...</div>', url);
+    viewer.innerHTML = viewerShell(group, lib, path, '<div class="empty-tip">正在读取文本...</div>', url, { doc: true });
     try {
       const bytes = await fetchCompleteTextFile(url);
       const text = decodeTextBytes(bytes);
@@ -1431,15 +1517,17 @@ async function openLocalMedia(group, libId, path) {
       window.__ebookChapters = chapters;
       window.__ebookTextLength = text.length;
       body = `<pre class="media-text" id="ebookText">${esc(text)}</pre>`;
-      viewer.innerHTML = viewerShell(group, lib, path, body, url, { chapters, ebook: true });
+      viewer.innerHTML = viewerShell(group, lib, path, body, url, { chapters, ebook: true, doc: true });
     } catch (err) {
       body = `<div class="media-error">文本读取失败：${esc(err.message)}</div>`;
-      viewer.innerHTML = viewerShell(group, lib, path, body, url);
+      viewer.innerHTML = viewerShell(group, lib, path, body, url, { doc: true });
       return;
     }
     /* 滚动定位放在 try 之外：它失败只是没滚到位，不能被报成「文本读取失败」，
        否则正文其实已经渲染好了，用户却看到一条读取失败的红字。 */
     scrollViewerIntoView(viewer);
+    /* v0.9.30：电子书同样恢复上次阅读位置。 */
+    restoreReaderProgress(viewer, lib.id, path);
     return;
   } else {
     const note = MEDIA_FORMATS.comic.includes(ext) ? "该漫画/压缩格式已加入书架。当前浏览器不能直接解析时，可下载后用专业阅读器打开。" : MEDIA_FORMATS.book.includes(ext) ? "该电子书格式已加入书架。浏览器不支持直接解析时，可在新窗口打开或下载阅读。" : "该格式可下载或交给浏览器打开。";

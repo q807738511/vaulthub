@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""v0.9.17 契约测试
+"""v0.9.30 契约测试
 
 1. 顶栏左上角 logo 的登录状态 / 关于 / 退出登录迁移到 系统设置 → 账户与登录
 2. Caddy 配置入口迁移到 账户与登录（不再有独立 Caddy 标签页）
@@ -19,7 +19,7 @@ GO = (ROOT / "media-go/main.go").read_text(encoding="utf-8")
 COMPOSE = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
 
 HEADER = HTML[HTML.index('<header class="topbar">'):HTML.index("</header>")]
-ACCOUNT = HTML[HTML.index('id="setpanel-account"'):HTML.index("</dialog>")]
+ACCOUNT = HTML[HTML.index('id="setpanel-account"'):HTML.index('id="customViews"')]
 LOOK = HTML[HTML.index('id="setpanel-look"'):HTML.index('id="setpanel-scrape"')]
 SIDEBAR = HTML[HTML.index('<aside class="sidebar"'):HTML.index("</aside>")]
 
@@ -48,7 +48,7 @@ assert 'id="caddyRouteCount"' in ACCOUNT, "Caddy 路由计数徽标必须随入�
 assert 'id="caddyPage"' in HTML and 'id="caddyFile"' in HTML, "Caddyfile 独立整页编辑器必须保留"
 assert 'if (key === "account") { refreshSessionStatus(false); loadCaddyConfig(); }' in STATE, \
     "进入账户与登录页必须同时刷新会话状态与 Caddyfile"
-assert "switchSetTab('account')" in STATE, "openCaddyModal 必须打开账户与登录页"
+assert "openSettingsPage('account')" in STATE, "openCaddyModal 必须打开账户与登录页"
 
 # ---------------------------------------------------------------- 3. 外观与主题移除模块设置
 assert "openModuleModal" not in LOOK, "外观与主题不能再包含模块设置入口"
@@ -90,11 +90,11 @@ for preset in ["<h3>电影</h3>", "<h3>电视剧集</h3>", "<h3>音乐与 MV</h3
 assert '"电子书" : "漫画"' not in JS, "书刊标题不能按预设大类渲染"
 
 # ---------------------------------------------------------------- 版本与发布引用
-assert "v0.9.17" in HTML and HTML.count("v0.9.17") >= 2, "关于与侧栏版本必须是 v0.9.17"
-assert 'VAULTHUB_ASSET_VERSION = "0.9.17"' in HTML, "资源版本必须是 0.9.17"
-assert 'VAULTHUB_SCRIPT_VERSION = "0.9.17"' in STATE, "脚本版本必须是 0.9.17"
-assert "ghcr.io/q807738511/vaulthub:v0.9.17" in COMPOSE, "Compose 必须指向 v0.9.17"
-assert (ROOT / ".github/RELEASE_NOTES_0.9.17.md").exists(), "缺少 v0.9.17 release notes"
+assert "v0.9.30" in HTML and HTML.count("v0.9.30") >= 2, "关于与侧栏版本必须是 v0.9.30"
+assert 'VAULTHUB_ASSET_VERSION = "0.9.30"' in HTML, "资源版本必须是 0.9.30"
+assert 'VAULTHUB_SCRIPT_VERSION = "0.9.30"' in STATE, "脚本版本必须是 0.9.30"
+assert "ghcr.io/q807738511/vaulthub:v0.9.30" in COMPOSE, "Compose 必须指向 v0.9.30"
+assert (ROOT / ".github/RELEASE_NOTES_0.9.30.md").exists(), "缺少 v0.9.30 release notes"
 
 # 历史契约不能回退
 assert 'if (group === "movie" && data.has_more)' in JS, "影视库全量加载不能回退"
@@ -103,4 +103,4 @@ assert "MEDIA_FORMATS.book" in JS and "MEDIA_FORMATS.comic" in JS, "书刊格式
 assert ".audio-player { position:fixed" in CSS and "transform:translateX(-50%)" in CSS, "播放器居中不能回退"
 assert 'id="audioFavoriteButton"' in HTML, "播放器喜欢按钮不能回退"
 
-print("PASS: v0.9.17 账户与登录聚合、Caddy 迁移、模块设置移出外观、媒体搜索直查、媒体库名称标题")
+print("PASS: v0.9.30 账户与登录聚合、Caddy 迁移、模块设置移出外观、媒体搜索直查、媒体库名称标题")

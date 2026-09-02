@@ -12,9 +12,11 @@ assert '"/api/media/metadata"' in main
 assert 'a.externalSubtitle' in main
 assert '/api/media/metadata?id=${encodeURIComponent(lib.id)}' in js
 assert 'meta?.subtitles?.length' in js
-assert '#settingsModal {' in css and 'z-index:1300' in css
-assert '#settingsModal::backdrop' in css
-assert '<dialog class="modal-mask" id="settingsModal">' in html
+# v0.9.30：系统设置改为独立配置页 #view-settings（不再是 dialog 顶层弹窗）。
+assert '.settings-view .setpanel' in css
+assert '#settingsModal' not in css
+assert '<section class="view settings-view" id="view-settings">' in html
+assert '<dialog' not in html
 assert '.auth-mask { position:fixed; inset:0; z-index:2000;' in css
-assert 'v0.9.17' in html
-print('PASS: v0.9.17 local NFO/artwork/subtitle and top settings contracts')
+assert 'v0.9.30' in html
+print('PASS: v0.9.30 local NFO/artwork/subtitle and top settings contracts')

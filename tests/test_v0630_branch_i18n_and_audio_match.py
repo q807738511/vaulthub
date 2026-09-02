@@ -70,7 +70,7 @@ assert "navDocker" not in state, "navDocker key must be gone along with the Dock
 assert "HOME_GROUP_LABEL" not in home, "hardcoded group labels must be replaced by homeGroupLabel()"
 assert "const homeGroupLabel" in home, "homeGroupLabel() must resolve labels via t()"
 for key in ["homeCountFmt", "libCountFmt", "homeEmptyLib", "homeLoading", "homeNoIndexed",
-            "stateWait", "stateScraping", "stateDone", "actRescrape"]:
+            "stateWait", "stateScraping", "stateDone", "actRescan"]:
     assert key in home, f"05-home.js must use i18n key {key}"
 assert 'mediaTypeName' in media and '"type" + String(type)' in media, \
     "mediaTypeName() must resolve subtype names via i18n keys"

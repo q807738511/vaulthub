@@ -13,7 +13,7 @@ assert "group === \"movie\" ? 50 : 100" not in JS
 assert "fetchAllLibraryFiles" in JS or "fetchRemainingLibraryFiles" in JS
 assert "seriesTruncated" not in JS or "20,000" not in JS
 
-# v0.9.17：主导航「媒体搜索」直接搜索媒体库，不再打开系统设置。
+# v0.9.30：主导航「媒体搜索」直接搜索媒体库，不再打开系统设置。
 assert "openMediaSearch" in JS
 assert "媒体搜索" in HTML or "mediaSearch" in HTML
 
@@ -28,5 +28,5 @@ for ext in ("epub", "pdf", "mobi", "azw3", "txt", "cbz", "cbr", "cb7", "cbt"):
 assert "MEDIA_FORMATS.book" in JS and "MEDIA_FORMATS.comic" in JS
 assert "archiveLike" in JS
 
-assert "v0.9.17" in HTML
-print("PASS: v0.9.17 full movie listing, media search nav, sidebar detail lifecycle and book/comic recognition contracts")
+assert "v0.9.30" in HTML
+print("PASS: v0.9.30 full movie listing, media search nav, sidebar detail lifecycle and book/comic recognition contracts")

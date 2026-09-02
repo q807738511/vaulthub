@@ -52,5 +52,5 @@ assert 'textContent = activeAudio && isAudioFavorite(activeAudio.libId, activeAu
 assert 'audioLoopMode === "single"' in html, "single-track loop mode missing"
 assert 'audioLoopMode === "random"' in html, "random play mode missing"
 assert 'bar.classList.toggle("show", document.getElementById("view-audio")?.classList.contains("active"))' in html, "player is not restricted to the audio view"
-assert 'viewerShell(group, lib, path, body, url, { chapters, ebook: true })' in html, "ebook reader does not render chapter sidebar and typography toolbar"
+assert 'viewerShell(group, lib, path, body, url, { chapters, ebook: true, doc: true })' in html, "ebook reader does not render chapter sidebar and typography toolbar"
 print("PASS: audio controls, metadata views, Bangumi source, and stable ebook URLs are present")

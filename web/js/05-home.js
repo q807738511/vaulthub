@@ -349,18 +349,32 @@ async function renderHomeRecent() {
 }
 
 /* ---------- 媒体库路径管理 ---------- */
-function syncHomeLibTypes() {
-  const group = document.getElementById("homeLibGroup")?.value || "comic";
-  const sel = document.getElementById("homeLibType");
-  if (!sel) return;
-  const types = mediaTypesForGroup(group);
-  sel.innerHTML = types.map(x => `<option value="${esc(x)}">${esc(mediaTypeName(x))}</option>`).join("");
+/* v0.9.30：子类型/媒体路径/库名称/添加按钮都在大类卡片内，
+   每个大类各有一套 id 后缀（homeLibType-comic 等），不再有公共下拉。
+   传 group 只同步该大类，不传则三张卡片一起同步。 */
+const LIB_KIND_GROUPS = ["comic", "movie", "audio"];
+function activeLibKindGroup() {
+  const card = document.querySelector(".lib-kind.on[data-lib-group]");
+  return card?.dataset.libGroup || mediaLibraryConfigGroup || "comic";
 }
-async function addHomeMediaLibrary() {
-  const group = document.getElementById("homeLibGroup")?.value || "comic";
-  const type = document.getElementById("homeLibType")?.value || mediaTypeForGroup(group);
-  const path = (document.getElementById("homeLibPath")?.value || "").trim().replace(/\/$/, "");
-  const name = (document.getElementById("homeLibName")?.value || "").trim();
+function syncHomeLibTypes(group) {
+  const groups = group ? [group] : LIB_KIND_GROUPS;
+  for (const g of groups) {
+    const sel = document.getElementById("homeLibType-" + g);
+    if (!sel) continue;
+    const keep = sel.value;
+    const types = mediaTypesForGroup(g);
+    sel.innerHTML = types.map(x => `<option value="${esc(x)}">${esc(mediaTypeName(x))}</option>`).join("");
+    if (types.includes(keep)) sel.value = keep;
+  }
+}
+async function addHomeMediaLibrary(group) {
+  const g = LIB_KIND_GROUPS.includes(group) ? group : activeLibKindGroup();
+  const type = document.getElementById("homeLibType-" + g)?.value || mediaTypeForGroup(g);
+  const pathInput = document.getElementById("homeLibPath-" + g);
+  const nameInput = document.getElementById("homeLibName-" + g);
+  const path = (pathInput?.value || "").trim().replace(/\/$/, "");
+  const name = (nameInput?.value || "").trim();
   if (!name || !path) { toast("⚠️ 请填写媒体路径与库名称"); return; }
   if (!path.startsWith("/")) { toast("⚠️ 路径必须是容器内已挂载的绝对路径"); return; }
   /* v0.7.0：新增媒体库是唯一的添加入口（旧弹窗已删除），
@@ -381,11 +395,11 @@ async function addHomeMediaLibrary() {
       if (/id already exists/i.test(detail)) { toast("✅ 该媒体路径已添加"); return; }
       throw new Error(detail || `HTTP ${res.status}`);
     }
-    document.getElementById("homeLibPath").value = "";
-    document.getElementById("homeLibName").value = "";
+    document.getElementById("homeLibPath-" + g).value = "";
+    document.getElementById("homeLibName-" + g).value = "";
     await refreshMediaLibraries(false);
     await refreshHomeData();
-    toast(`✅ 媒体库「${name}」已添加，开始刮削`);
+    toast(`✅ 媒体库「${name}」已添加，开始扫描`);
   } catch (err) { toast("⚠️ 添加失败：" + err.message); }
 }
 async function rebuildAllLibraries() {
@@ -393,7 +407,7 @@ async function rebuildAllLibraries() {
     const res = await fetch("/api/media/index/rebuild", { method: "POST", headers: sessionWriteHeaders(), credentials: "same-origin" });
     if (!await handleProtectedResponse(res)) { toast("⚠️ 会话已过期，请重新登录"); return; }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    toast("🔄 已触发全部媒体库重新刮削");
+    toast("🔄 已触发全部媒体库重新扫描");
     setTimeout(refreshHomeData, 1500);
   } catch (err) { toast("⚠️ 触发失败：" + err.message); }
 }
@@ -402,7 +416,7 @@ async function rebuildOneLibrary(id) {
     const res = await fetch(`/api/media/index/rebuild?id=${encodeURIComponent(id)}`, { method: "POST", headers: sessionWriteHeaders(), credentials: "same-origin" });
     if (!await handleProtectedResponse(res)) { toast("⚠️ 会话已过期，请重新登录"); return; }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    toast("🔄 已触发重新刮削");
+    toast("🔄 已触发重新扫描");
     setTimeout(refreshHomeData, 1500);
   } catch (err) { toast("⚠️ 触发失败：" + err.message); }
 }
@@ -446,7 +460,7 @@ function renderHomeLibTable() {
       <td>${st ? Number(st.total || 0).toLocaleString(curLang === "en" ? "en-US" : "zh-CN") : "--"}</td>
       <td>${homeLibStatePill(st)}</td>
       <td><div class="row-acts">
-        <button class="icon-btn" title="${esc(t("actRescrape"))}" onclick="rebuildOneLibrary('${esc(lib.id)}')">🔄</button>
+        <button class="icon-btn" title="${esc(t("actRescan"))}" onclick="rebuildOneLibrary('${esc(lib.id)}')">🔄</button>
         <button class="icon-btn" title="${esc(t("actOpenLib"))}" onclick="openHomeLibrary('${esc(group)}','${esc(lib.id)}')">↗</button>
         <button class="icon-btn" title="${esc(t("actRemove"))}" onclick="deleteMediaLibrary('${esc(lib.id)}')">✕</button>
       </div></td>
@@ -455,12 +469,15 @@ function renderHomeLibTable() {
 }
 function initLibKindCards() {
   document.querySelectorAll(".lib-kind[data-lib-group]").forEach(card => {
-    card.addEventListener("click", () => {
+    card.addEventListener("click", event => {
+      /* v0.9.30：卡片内含子类型/路径/库名称/添加按钮，点这些控件不能被
+         当成「切换大类」，否则输入焦点会在每次点击时被重置。 */
+      if (event.target.closest(".lib-kind-form")) return;
       document.querySelectorAll(".lib-kind").forEach(x => x.classList.toggle("on", x === card));
-      const sel = document.getElementById("homeLibGroup");
-      if (sel) { sel.value = card.dataset.libGroup; syncHomeLibTypes(); }
+      syncHomeLibTypes(card.dataset.libGroup);
     });
   });
+  syncHomeLibTypes();
 }
 
 /* ---------- 汇总刷新 ---------- */

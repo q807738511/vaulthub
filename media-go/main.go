@@ -166,6 +166,8 @@ func (a *App) load() {
 	a.tvdbAPIKey = os.Getenv("TVDB_API_KEY")
 	a.tvdbAPIBase = strings.TrimRight(env("TVDB_API_BASE", "https://api4.thetvdb.com/v4"), "/")
 	a.scraperProxy = os.Getenv("SCRAPER_PROXY")
+	/* v0.9.30：符号链接边界 = MEDIA_ROOT 挂载点，媒体卷之间互链可用，系统路径仍禁止。 */
+	mediaRootPath = env("MEDIA_ROOT", "/media")
 	a.loadRuntimeConfig()
 	b, e := os.ReadFile(a.config)
 	if e == nil {
@@ -719,7 +721,13 @@ func safeFile(lib Library, rel string) (string, os.FileInfo, error) {
 	if e != nil {
 		return "", nil, e
 	}
-	if p != root && !strings.HasPrefix(p, root+string(os.PathSeparator)) {
+	// v0.9.30: the resolved path may stay inside the library root or inside the
+	// media mount point (MEDIA_ROOT). Libraries routinely link folders from a
+	// second media volume, and the old library-only rule made those items both
+	// unscannable and unservable. System paths outside MEDIA_ROOT remain denied,
+	// and the request itself still cannot contain "..", an absolute path or a
+	// backslash, so only links placed inside the library can reach the boundary.
+	if !allowedRealPath(root, p) {
 		return "", nil, fmt.Errorf("path outside media root")
 	}
 	st, e := os.Stat(p)
@@ -930,20 +938,19 @@ func (a *App) start(l Library) {
 		}
 		var rows []row
 		cancelled := false
-		walkErr := filepath.Walk(l.Path, func(p string, fi os.FileInfo, e error) error {
-			if ctx.Err() != nil {
-				cancelled = true
-				return io.EOF
+		// v0.9.30: 深度扫描。filepath.Walk 用 lstat 判断类型，符号链接目录不会
+		// 被递归、符号链接文件被当成非普通文件跳过，NAS 上常见的「季目录/合集
+		// 指向别处」于是整块缺失。walkLibraryFiles 改用 stat 穿透链接，并保留
+		// 「解析后必须仍在媒体根内」和「访问过的真实目录去重防环」两条约束。
+		walkErr := walkLibraryFiles(ctx, l.Path, scanMaxDepth(), func(f scannedFile) {
+			rows = append(rows, row{f.Rel, f.Size, f.MTime})
+			if len(rows)%5000 == 0 {
+				a.setStatusIfCurrent(l.ID, generation, "scanning", len(rows), 0, start, 0, "")
 			}
-			if e == nil && fi.Mode().IsRegular() {
-				rel, _ := filepath.Rel(l.Path, p)
-				rows = append(rows, row{rel, fi.Size(), fi.ModTime().Unix()})
-				if len(rows)%5000 == 0 {
-					a.setStatusIfCurrent(l.ID, generation, "scanning", len(rows), 0, start, 0, "")
-				}
-			}
-			return nil
 		})
+		if ctx.Err() != nil {
+			cancelled = true
+		}
 		if cancelled {
 			a.finishScan(l.ID, generation, "cancelled", len(rows), "scan cancelled")
 			return
@@ -2159,6 +2166,7 @@ func main() {
 	mux.HandleFunc("/api/media/metadata", a.localMetadata)
 	mux.HandleFunc("/api/media/metadata/override", a.metadataOverride)
 	mux.HandleFunc("/api/media/metadata/artwork", a.artworkCandidates)
+	mux.HandleFunc("/api/media/reading/progress", a.readingProgress)
 	mux.HandleFunc("/api/media/audio/metadata", a.audioMetadata)
 	mux.HandleFunc("/api/media/network/speed", a.networkSpeed)
 	mux.HandleFunc("/api/media/compat", a.compat)

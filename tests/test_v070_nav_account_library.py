@@ -92,12 +92,14 @@ assert 'id="homeLibBody"' in settings_block, \
     "the library table (path management) must live inside the 媒体库 tab"
 assert 'id="libKinds"' in settings_block, \
     "the category cards must live inside the 媒体库 tab only"
-assert 'onclick="addHomeMediaLibrary()"' in settings_block, "add-library button must be in settings"
+# v0.9.30：添加按钮随子类型/路径/库名称一起搬进大类卡片，按大类传参。
+assert 'onclick="addHomeMediaLibrary(\'comic\')"' in settings_block, "add-library button must be in settings"
+assert settings_block.count("addHomeMediaLibrary(") == 3, "每个媒体大类卡片都要有自己的添加按钮"
 assert 'if (key === "library")' in state, "switching to the 媒体库 tab must refresh its data"
 # The sidebar add-module button is gone; module settings moved into 外观主题.
 assert 'add-board-btn' not in index and 'add-board-btn' not in css, \
     "the sidebar 添加模块 button must be removed"
-# v0.9.17 moved 模块设置 out of 外观主题 into the sidebar 自定义 group header.
+# v0.9.30 moved 模块设置 out of 外观主题 into the sidebar 自定义 group header.
 assert 'onclick="openModuleModal()"' in index, "module settings must still be reachable"
 look_panel = index[index.index('id="setpanel-look"'):index.index('id="setpanel-scrape"')]
 assert 'openModuleModal()' not in look_panel, "模块设置 must no longer live in 外观主题"
@@ -111,7 +113,7 @@ assert 'ensureSessionForWrite(t("writeAddLibrary"))' in home, \
     "adding a library must verify the session first"
 
 # ------------------------------------------- 4. account state / About / sign-out live in settings
-# v0.9.17 removed the top-bar logo dropdown: everything moved into
+# v0.9.30 removed the top-bar logo dropdown: everything moved into
 # 系统设置 → 账户与登录, which is the only place that state is rendered.
 header = index[index.index('<header class="topbar">'):index.index('</header>')]
 assert 'id="accountMenu"' not in header, "the top-bar account dropdown must be gone"
@@ -124,7 +126,8 @@ assert "onclick=\"openModal('settingsModal')\"" not in header, \
 assert 'id="avatarModal"' not in index, "legacy avatar dialog must be removed"
 assert "loadAvatarConfig();" not in boot, "legacy avatar startup must be removed"
 assert '.logo-icon' in css, "the brand logo still needs styling"
-account_panel = index[index.index('id="setpanel-account"'):index.index('</dialog>')]
+# v0.9.30：系统设置是 <section id="view-settings">，不再是 <dialog>。
+account_panel = index[index.index('id="setpanel-account"'):index.index('id="customViews"')]
 for item in ["logoutVaultHub()", "openModal('aboutModal')", "openCaddyPage()", 'id="sessionStatusBadge"']:
     assert item in account_panel, f"账户与登录 must offer {item}"
 assert 'id="accountState"' in account_panel and "getElementById('accountState')" in state, \
