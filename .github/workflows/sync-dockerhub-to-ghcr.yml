@@ -69,6 +69,7 @@ jobs:
 
           UPDATED=0
           SKIPPED=0
+          LAST_ERROR=""
           FAILED_TAGS=()
 
           # 单个标签的摘要探测必须容错：在 set -e 下直接调用 skopeo inspect，
@@ -111,7 +112,7 @@ jobs:
             SYNCED=0
             for ATTEMPT in 1 2 3; do
               echo "第 $ATTEMPT 次同步标签 $TAG"
-              if skopeo copy --all --preserve-digests "$SOURCE_REF" "$TARGET_REF"; then
+              if skopeo copy --all --preserve-digests "$SOURCE_REF" "$TARGET_REF" 2>"/tmp/skopeo-$ATTEMPT.err"; then
                 # 写入后必须从目标仓库读回并核对摘要，不能只依赖 copy 的退出码。
                 READBACK_DIGEST=$(skopeo inspect --format '{{.Digest}}' "$TARGET_REF" 2>/dev/null || true)
                 if [ "$READBACK_DIGEST" = "$SOURCE_DIGEST" ]; then
@@ -121,13 +122,19 @@ jobs:
                   break
                 fi
                 echo "标签 $TAG 读回摘要不一致：${READBACK_DIGEST:-不存在}" >&2
+                LAST_ERROR="读回摘要 ${READBACK_DIGEST:-不存在} != 源摘要 $SOURCE_DIGEST"
+              else
+                LAST_ERROR=$(tr '\n' ' ' < "/tmp/skopeo-$ATTEMPT.err" | tail -c 400)
+                echo "标签 $TAG 推送失败：$LAST_ERROR" >&2
               fi
               sleep 10
             done
 
             if [ "$SYNCED" -ne 1 ]; then
               FAILED_TAGS+=("$TAG")
-              echo "标签 $TAG 连续 3 次同步或读回校验失败" >&2
+              # 用 ::error:: 输出，失败原因才会写进 check-run annotations，
+              # 不必下载完整日志就能定位是哪个标签、什么原因失败。
+              echo "::error title=同步失败 $TAG::${LAST_ERROR:-未知错误}"
             fi
             echo "::endgroup::"
           done
