@@ -11,10 +11,10 @@ assert 'watched: !!meta.watched' in JS, "剧集聚合未保存首集持久化 wa
 assert 'watched: show.watched' in JS, "剧集紧凑缓存未保存 watched 状态"
 assert 'watched:show.watched' in JS, "剧集详情 hero 未接收持久化 watched 状态"
 assert 'toggleMovieReadState' not in JS, "影视已读旧状态不应恢复"
-assert 'v0.9.42' in HTML
+assert 'v0.9.50' in HTML
 assert 'ghcr.io/q807738511/vaulthub:latest' in COMPOSE
-assert 'v0.9.42' in COMPOSE
+assert 'v0.9.41' in COMPOSE  # v0.9.42 起 compose 不写当前版本号，只留固定版回滚注释
 # v0.9.30：两端摘要统一按 registry HEAD + OCI Accept 读取。
 assert 'docker-content-digest' in SYNC.lower()
 assert 'skopeo copy --all --preserve-digests' in SYNC
-print('PASS: v0.9.42 series watched state follows persistent metadata')
+print('PASS: v0.9.50 series watched state follows persistent metadata')

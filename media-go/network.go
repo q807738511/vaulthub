@@ -39,7 +39,7 @@ func validateProxyURL(raw string) (*url.URL, error) {
 	}
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
-		return nil, fmt.Errorf("代理仅支持 http/https 地址，例如 http://192.168.112.3:7890")
+		return nil, fmt.Errorf("代理仅支持 http/https 地址，例如 http://192.0.2.10:7890")
 	}
 	if u.Port() != "" {
 		if p, err := strconv.Atoi(u.Port()); err != nil || p < 1 || p > 65535 {

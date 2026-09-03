@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 
-TARGET_DIR="${1:-/vol1/1000/Docker/vaulthub}"
+TARGET_DIR="${1:-/srv/vaulthub}"
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PROJECT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 FILES_DIR="$PROJECT_DIR"
@@ -92,7 +92,7 @@ if curl -s http://127.0.0.1:8088/healthz 2>/dev/null | grep -q ok; then
   echo "      当前容器："
   docker ps --filter name=VaultHub --format '        {{.Names}}  {{.Image}}  {{.Ports}}'
   echo ""
-  echo "      访问：http://192.168.112.3:8088"
+  echo "      访问：http://192.0.2.10:8088"
 else
   echo "      ⚠️ 健康检查未通过，最近日志："
   docker logs VaultHub 2>&1 | tail -20 || true

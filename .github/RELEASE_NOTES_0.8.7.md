@@ -193,7 +193,7 @@ image: ghcr.nju.edu.cn/q807738511/vaulthub:v0.8.7
 已存在时保留用户改动；`upgrade.sh` 也会把它一起备份并计入 `SHA256SUMS`。
 
 ```bash
-cd /vol1/1000/Docker/vaulthub
+cd /srv/vaulthub
 docker compose pull
 docker compose up -d --force-recreate
 ```

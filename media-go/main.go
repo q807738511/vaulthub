@@ -123,7 +123,7 @@ type playbackPlan struct {
 	AudioAction string        `json:"audio_action"`
 	Hardware    string        `json:"hardware"`
 	// MaxHeight caps the output height when the caller asked for an explicit
-	// transcode quality (v0.9.42 播放器设置 → 转码质量). 0 means "no cap".
+	// transcode quality (v0.9.50 播放器设置 → 转码质量). 0 means "no cap".
 	MaxHeight   int           `json:"max_height,omitempty"`
 	Media       playbackMedia `json:"media"`
 }
@@ -1483,9 +1483,25 @@ func (a *App) archive(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 			defer rc.Close()
-			w.Header().Set("Content-Type", mime(display[i]))
+			/* v0.9.50：ZIP/CBZ 内图片可能没有可靠扩展名（部分压包工具把小图存成
+			   无扩展/大写扩展），且 nosniff 下 octet-stream 会被浏览器直接拒绝渲染。
+			   先读前 512 字节做真实内容嗅探：能认出图片类型就用嗅探结果，认不出
+			   再回落扩展名映射；两者都给不出图片类型时保持 nosniff + octet-stream。 */
+			head := make([]byte, 512)
+			n, _ := io.ReadFull(rc, head)
+			head = head[:n]
+			contentType := http.DetectContentType(head)
+			if !strings.HasPrefix(contentType, "image/") {
+				if mt := mime(display[i]); strings.HasPrefix(mt, "image/") {
+					contentType = mt
+				}
+			}
+			w.Header().Set("Content-Type", contentType)
 			w.Header().Set("X-Content-Type-Options", "nosniff")
 			w.Header().Set("Cache-Control", "private, max-age=3600")
+			if n > 0 {
+				w.Write(head)
+			}
 			io.Copy(w, rc)
 			return
 		}
@@ -1547,7 +1563,13 @@ func naturalLess(a, b string) bool {
 
 func mime(p string) string {
 	e := strings.ToLower(filepath.Ext(p))
-	m := map[string]string{".mkv": "video/x-matroska", ".mp4": "video/mp4", ".mp3": "audio/mpeg", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".srt": "application/x-subrip", ".vtt": "text/vtt"}
+	m := map[string]string{
+		".mkv": "video/x-matroska", ".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime",
+		".mp3": "audio/mpeg", ".flac": "audio/flac", ".m4a": "audio/mp4", ".ogg": "audio/ogg", ".wav": "audio/wav",
+		".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp",
+		".gif": "image/gif", ".bmp": "image/bmp", ".avif": "image/avif", ".tif": "image/tiff", ".tiff": "image/tiff",
+		".srt": "application/x-subrip", ".vtt": "text/vtt",
+	}
 	if x := m[e]; x != "" {
 		return x
 	}
@@ -1740,7 +1762,7 @@ func systemMetrics(w http.ResponseWriter, r *http.Request) {
 	iface, rx, tx := pickInterface(proc, os.Getenv("SYSTEM_MONITOR_INTERFACE"))
 
 	// Filesystem capacity: statfs each configured volume, mounted read-only at
-	// volRoot/<name> (e.g. /host/vol1). Absolute paths are used verbatim.
+	// volRoot/<name> (e.g. /host/srv). Absolute paths are used verbatim.
 	fslist := []map[string]any{}
 	for _, name := range strings.Split(env("SYSTEM_MONITOR_FILESYSTEMS", ""), ",") {
 		name = strings.TrimSpace(name)
@@ -2265,7 +2287,7 @@ func compatArgs(ctx context.Context, p, audioTrack, hw, mode string) (pre []stri
 }
 
 // compatArgsScaled builds the ffmpeg arguments for the compatibility stream.
-// maxHeight > 0 caps the output height (v0.9.42 播放器 设置 → 转码质量); a cap
+// maxHeight > 0 caps the output height (v0.9.50 播放器 设置 → 转码质量); a cap
 // forces a real re-encode because you cannot scale a copied stream.
 func compatArgsScaled(ctx context.Context, p, audioTrack, hw, mode string, maxHeight int) (pre []string, mid []string) {
 	vcodec := ""
@@ -2386,7 +2408,7 @@ func (a *App) compat(w http.ResponseWriter, r *http.Request) {
 	if mode != "remux" && mode != "audio_transcode" && mode != "full_transcode" {
 		mode = "audio_transcode"
 	}
-	// v0.9.42: height caps the output resolution (播放器 设置 → 转码质量). It is part
+	// v0.9.50: height caps the output resolution (播放器 设置 → 转码质量). It is part
 	// of the cache key so 1080p and 720p renditions never collide on disk.
 	maxHeight := 0
 	if n, err := strconv.Atoi(r.URL.Query().Get("height")); err == nil && n >= 144 && n <= 4320 {

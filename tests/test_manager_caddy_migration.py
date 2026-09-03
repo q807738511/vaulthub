@@ -24,7 +24,7 @@ assert "TestMigratedCaddyfileValidates" in manager_test
 # 早期用 on-failure:1 是为了避免 Caddyfile 损坏时无限重启，现已由
 # injectCachePolicy 的跳过条件 + caddy validate 覆盖。
 assert "restart: unless-stopped" in compose, "Compose restart policy missing"
-assert "/vol3/1000/komga/漫画/mh:/mh:ro" in compose, "comic bind mount has no target"
+assert "/srv/media/comics:/mh:ro" in compose, "comic bind mount has no target"
 
 proc = subprocess.run(
     ["go", "test", "./..."],

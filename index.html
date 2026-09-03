@@ -3,11 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>VaultHub 蜀鼠之家 · 预览版</title>
-<link rel="stylesheet" href="/web/css/main.css?v=0.9.42">
+<title>VaultHub 蜀鼠之家</title>
+<link rel="stylesheet" href="/web/css/main.css?v=0.9.50">
 <script>
 /* 资源版本号：index.html 用它给所有静态资源打查询串。 */
-window.VAULTHUB_ASSET_VERSION = "0.9.42";
+window.VAULTHUB_ASSET_VERSION = "0.9.50";
 </script>
 </head>
 <body data-theme="dark">
@@ -72,7 +72,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.42";
   <div class="sidebar-foot">
     <button class="rail-btn rail-settings" id="sidebarSettingsButton" type="button" onclick="openSettingsModalFromSidebar()" title="系统设置" aria-label="系统设置"><span class="ic">⚙</span><span class="txt" data-i18n="settingsTitle">系统设置</span></button>
     <div class="sidebar-foot-row">
-      <span class="ver">v0.9.42 · Floating Player</span>
+      <span class="ver">v0.9.50 · Floating Player</span>
       <button class="rail-btn rail-collapse" id="sidebarCollapseButton" type="button" onclick="toggleBars()" title="折叠 / 展开侧栏" aria-label="折叠或展开侧栏">⇤</button>
     </div>
   </div>
@@ -376,7 +376,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.42";
                 <div class="kd" data-i18n="kindBookDesc">子类型：电子书 / 漫画 · 刮削源 Google Books、Bangumi</div>
                 <div class="lib-kind-form">
                   <div class="cfg-field"><label for="homeLibType-comic" data-i18n="libSubType">子类型</label><select id="homeLibType-comic"></select></div>
-                  <div class="cfg-field"><label for="homeLibPath-comic" data-i18n="libPath">媒体路径（容器内绝对路径）</label><input id="homeLibPath-comic" type="text" placeholder="/vol2/1000/Books/技术书籍"></div>
+                  <div class="cfg-field"><label for="homeLibPath-comic" data-i18n="libPath">媒体路径（容器内绝对路径）</label><input id="homeLibPath-comic" type="text" placeholder="/srv/Books/技术书籍"></div>
                   <div class="cfg-field"><label for="homeLibName-comic" data-i18n="libName">库名称（手动命名，用于刮削）</label><input id="homeLibName-comic" type="text" placeholder="例：技术藏书"></div>
                   <button class="btn btn-primary" type="button" onclick="addHomeMediaLibrary('comic')">＋ <span data-i18n="libAdd">添加媒体库</span></button>
                 </div>
@@ -386,7 +386,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.42";
                 <div class="kd" data-i18n="kindVideoDesc">子类型：电视剧集 / 电影 · 刮削源 TMDB、豆瓣</div>
                 <div class="lib-kind-form">
                   <div class="cfg-field"><label for="homeLibType-movie" data-i18n="libSubType">子类型</label><select id="homeLibType-movie"></select></div>
-                  <div class="cfg-field"><label for="homeLibPath-movie" data-i18n="libPath">媒体路径（容器内绝对路径）</label><input id="homeLibPath-movie" type="text" placeholder="/vol2/1000/Movies/电影"></div>
+                  <div class="cfg-field"><label for="homeLibPath-movie" data-i18n="libPath">媒体路径（容器内绝对路径）</label><input id="homeLibPath-movie" type="text" placeholder="/srv/Movies/电影"></div>
                   <div class="cfg-field"><label for="homeLibName-movie" data-i18n="libName">库名称（手动命名，用于刮削）</label><input id="homeLibName-movie" type="text" placeholder="例：家庭影院"></div>
                   <button class="btn btn-primary" type="button" onclick="addHomeMediaLibrary('movie')">＋ <span data-i18n="libAdd">添加媒体库</span></button>
                 </div>
@@ -396,7 +396,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.42";
                 <div class="kd" data-i18n="kindAudioDesc">子类型：音乐 / 音乐 MV · 刮削源 MusicBrainz、网易云</div>
                 <div class="lib-kind-form">
                   <div class="cfg-field"><label for="homeLibType-audio" data-i18n="libSubType">子类型</label><select id="homeLibType-audio"></select></div>
-                  <div class="cfg-field"><label for="homeLibPath-audio" data-i18n="libPath">媒体路径（容器内绝对路径）</label><input id="homeLibPath-audio" type="text" placeholder="/vol2/1000/Music/无损"></div>
+                  <div class="cfg-field"><label for="homeLibPath-audio" data-i18n="libPath">媒体路径（容器内绝对路径）</label><input id="homeLibPath-audio" type="text" placeholder="/srv/Music/无损"></div>
                   <div class="cfg-field"><label for="homeLibName-audio" data-i18n="libName">库名称（手动命名，用于刮削）</label><input id="homeLibName-audio" type="text" placeholder="例：我的音乐库"></div>
                   <button class="btn btn-primary" type="button" onclick="addHomeMediaLibrary('audio')">＋ <span data-i18n="libAdd">添加媒体库</span></button>
                 </div>
@@ -415,7 +415,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.42";
                   <option value="audio" data-i18n="navGroupAudio">音视作品</option>
                 </select></div>
               <div class="cfg-field"><label data-i18n="extLibName">服务名称</label><input id="extLibName" type="text" placeholder="例：家庭 Emby"></div>
-              <div class="cfg-field"><label data-i18n="extLibLan">内网地址</label><input id="extLibLan" type="text" placeholder="http://192.168.1.10:8096"></div>
+              <div class="cfg-field"><label data-i18n="extLibLan">内网地址</label><input id="extLibLan" type="text" placeholder="http://192.0.2.11:8096"></div>
               <div class="cfg-field"><label data-i18n="extLibProxy">反代 / 外网域名（可选）</label><input id="extLibProxy" type="text" placeholder="https://emby.example.com"></div>
             </div>
             <div class="media-actions">
@@ -480,7 +480,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.42";
             <div class="cfg-field"><label for="tmdbImageBase">TMDB 图片调用链接</label><input id="tmdbImageBase" type="url" value="https://image.tmdb.org/t/p" data-env="TMDB_IMAGE_BASE"></div>
             <div class="cfg-field"><label for="tvdbApiKey">TVDB API Key（电视剧辅助刮削）</label><input id="tvdbApiKey" type="password" autocomplete="new-password" placeholder="未设置；留空保留已有值" data-env="TVDB_API_KEY"></div>
             <div class="cfg-field"><label for="tvdbApiBase">TVDB API 调用链接</label><input id="tvdbApiBase" type="url" value="https://api4.thetvdb.com/v4" data-env="TVDB_API_BASE"></div>
-            <div class="cfg-field"><label for="scraperProxy">代理访问（HTTP/HTTPS）</label><input id="scraperProxy" placeholder="例：http://192.168.112.3:7890" data-env="SCRAPER_PROXY"><button class="btn" type="button" onclick="clearScraperProxy()">清除已保存代理</button></div>
+            <div class="cfg-field"><label for="scraperProxy">代理访问（HTTP/HTTPS）</label><input id="scraperProxy" placeholder="例：http://192.0.2.10:7890" data-env="SCRAPER_PROXY"><button class="btn" type="button" onclick="clearScraperProxy()">清除已保存代理</button></div>
           </div>
           <div class="media-actions"><span class="badge" id="mediaRuntimeStatus">读取中…</span><button class="btn btn-primary" type="button" onclick="saveMediaRuntimeSettings()">💾 保存刮削与缓存设置</button><button class="btn" type="button" onclick="loadMediaRuntimeSettings(true)">↻ 重新载入</button><button class="btn" type="button" onclick="rebuildAllLibraries()">🔄 <span data-i18n="libRescanAll">全部重新扫描</span></button></div>
         </div>
@@ -603,7 +603,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.42";
         </div>
         <div class="cfg-field">
           <label data-i18n="boardAddr">服务器 IP 或域名</label>
-          <input id="nbAddr" type="text" placeholder="192.168.112.3 或 nas.enged.top">
+          <input id="nbAddr" type="text" placeholder="192.0.2.10 或 nas.example.com">
         </div>
       </div>
       <div class="form-2col">
@@ -666,7 +666,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.42";
   <div class="modal">
     <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
     <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
-    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.9.42 · Floating Player</b></div>
+    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.9.50 · Floating Player</b></div>
     <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>Go (media/manager/subtitle) · Caddy · FFmpeg · SQLite · HTML/CSS/JS</b></div>
     <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>VaultHub 内置系统监控</b></div>
     <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>
@@ -736,10 +736,10 @@ window.VAULTHUB_ASSET_VERSION = "0.9.42";
 
 <div class="toast" id="toast"></div>
 
-<script src="/web/js/01-state.js?v=0.9.42"></script>
-<script src="/web/js/02-media.js?v=0.9.42"></script>
-<script src="/web/js/03-features.js?v=0.9.42"></script>
-<script src="/web/js/05-home.js?v=0.9.42"></script>
-<script src="/web/js/04-boot.js?v=0.9.42"></script>
+<script src="/web/js/01-state.js?v=0.9.50"></script>
+<script src="/web/js/02-media.js?v=0.9.50"></script>
+<script src="/web/js/03-features.js?v=0.9.50"></script>
+<script src="/web/js/05-home.js?v=0.9.50"></script>
+<script src="/web/js/04-boot.js?v=0.9.50"></script>
 </body>
 </html>

@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 
-TARGET_DIR="${1:-/vol1/1000/Docker/vaulthub}"
+TARGET_DIR="${1:-/srv/vaulthub}"
 BACKUP_DIR="${2:-}"
 
 if [ -z "$BACKUP_DIR" ]; then

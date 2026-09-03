@@ -1,8 +1,8 @@
 #!/usr/bin/env sh
 set -eu
 
-TARGET_DIR="${1:-/vol1/1000/Docker/vaulthub}"
-LEGACY_DIR="/vol1/1000/Docker/hermes/data/docker-webui-container"
+TARGET_DIR="${1:-/srv/vaulthub}"
+LEGACY_DIR="/srv/Docker/hermes/data/docker-webui-container"
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PROJECT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 FILES_DIR="$PROJECT_DIR"

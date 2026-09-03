@@ -51,7 +51,7 @@ assert ".audio-player" in css and re.search(r"\.audio-player\s*\{[^}]*left:\s*50
 assert "MEDIA_CACHE_DIR" in backend
 assert "MEDIA_CACHE_MAX_BYTES" in backend and "MEDIA_CACHE_MAX_AGE_HOURS" in backend
 assert "cacheJanitor" in backend and "cleanCache" in backend
-assert "/data/transcode-cache" in compose and "MEDIA_CACHE_CLEANUP_INTERVAL_HOURS" in compose
+assert "./data:/data" in compose and "MEDIA_CACHE_CLEANUP_INTERVAL_HOURS" in compose
 assert "removeAttribute(\"src\")" in media and "activeAudio=null" in media
 assert "setComicShelfView" in media
 

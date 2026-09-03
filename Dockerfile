@@ -31,7 +31,13 @@ RUN go build -trimpath -ldflags="-s -w" -o /out-vaulthub-manager .
 # hardware transcoding still works once nvidia-container-toolkit injects them —
 # no CUDA base image needed on GPU-less hosts.
 FROM ${RUNTIME_IMAGE}
-RUN apt-get update \
+# v0.9.50：apt 源参数化 —— 海外 CI（GitHub Actions）默认用官方源；
+# 中国大陆构建传 --build-arg APT_MIRROR=http://mirrors.aliyun.com/debian 提速。
+RUN if [ -n "${APT_MIRROR:-}" ]; then \
+      sed -i "s|http://deb.debian.org/debian|${APT_MIRROR}|g; s|http://security.debian.org/debian-security|${APT_MIRROR}-security|g" /etc/apt/sources.list.d/debian.sources 2>/dev/null || \
+      sed -i "s|http://deb.debian.org/debian|${APT_MIRROR}|g; s|http://security.debian.org/debian-security|${APT_MIRROR}-security|g" /etc/apt/sources.list; \
+    fi \
+ && apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl ffmpeg \
  && rm -rf /var/lib/apt/lists/*
 COPY caddy /usr/bin/caddy
@@ -43,10 +49,10 @@ COPY Caddyfile /etc/caddy/Caddyfile
 COPY index.html /srv/index.html
 COPY web /srv/web
 
-# v0.9.42：以下默认值与 vaulthub.env 模板逐键对齐。env 文件变为可选覆盖层，
+# v0.9.50：以下默认值与 vaulthub.env 模板逐键对齐。env 文件变为可选覆盖层，
 # 缺失/过期时容器仍按这些内置默认值运行；需要覆盖时再放本地 vaulthub.env/.env。
-ENV NAS_IP=192.168.112.3 \
-    DASHBOARD_ORIGIN=https://home.enged.top \
+ENV NAS_IP=192.0.2.10 \
+    DASHBOARD_ORIGIN=https://home.example.com \
     WEB_ROOT=/srv \
     MEDIA_ROOT=/media \
     SUBTITLE_API_ADDR=127.0.0.1:9120 \

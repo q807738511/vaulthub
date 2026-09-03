@@ -1,14 +1,19 @@
-# VaultHub 蜀鼠之家 v0.9.42：部署简化 —— latest 自动跟新、env 文件可选
+# VaultHub 蜀鼠之家 v0.9.50：正式版准备 —— 播放器双皮肤、ZIP 修复、全库脱敏
 
-v0.9.42 把「升级要同步维护 compose 与 env 文件」从根上简化：
-- **镜像跟随 GHCR `latest`**：正式版本（tag vX.Y.Z）发布时 CI 同时推送 `vX.Y.Z` 与 `latest` 指向同一 digest；日常升级不再改 compose，`docker compose pull && up -d --force-recreate` 即到新版。测试/回滚永远用固定版本号标签。
-- **`vaulthub.env` 变为可选**：全部默认值已内置进镜像（Dockerfile ENV 与模板逐键对齐），文件缺失/过期不再影响启动；要覆盖默认值才放本文件。
-- **CI 只在版本 tag 时更新 latest**：普通 main 提交只产生 `sha-xxxx`，不会再推动生产跟随的 `latest`。
-- 新增 `scripts/merge-env.sh`：不依赖 git 的键级合并工具，为本地可选 env 文件补齐新版新增的键。
+v0.9.50 是「正式版发布前的准备」版本，共六项：
 
-镜像：`ghcr.io/q807738511/vaulthub:latest`（跟随最新正式版；固定版如 `ghcr.io/q807738511/vaulthub:v0.9.42`；Docker Hub 同步 `q807738511/vaulthub` 固定版本号标签）。
+- **播放器双皮肤与图标美化**：全部控制按钮从 Unicode 字形/emoji 换成内联 SVG 图标集；暗色/自定义主题用 **PotPlayer 风格**（半透明圆角方钮 + 细描边），亮色主题用 **Apple 风格**（白色玻璃圆钮 + 深色图标 + 毛玻璃）。浮层面板、进度条、全屏/循环/播放列表等同步换肤。
+- **左上角角标加大居中**：最小化（`⌄`）与还原（`⌃`）按钮统一 42–44px，正常态在顶条垂直居中、小窗态在小窗左缘垂直居中，两状态观感一致。
+- **视频标题常显**：播放器内标题/年份/时间固定白色 + 阴影，修复亮色主题下主标题继承深色文字、压在深色渐变上看不清的问题。
+- **播放中断自动恢复**：转码流/基础流全失败且原片超过软解上限时，自动重建一次完整播放计划（新转码会话），仍失败才提示并支持点击画面重试；最小化前先退出全屏，切换片源自动清理旧转码会话。
+- **ZIP/CBZ 漫画图片修复**：图片 MIME 补全 webp/gif/bmp/avif/tiff，读取时先做 512B 内容嗅探——修复 `nosniff` + `octet-stream` 组合下浏览器拒绝渲染图片的问题。
+- **全仓库洗版 + 撤销预览版标识**：真实域名 → `example.com`、内网 IP → `192.0.2.x` 文档网段、NAS `/vol*` 路径 → `/srv` 通用示例（含历史 release notes，只替换敏感值、保留语义）；移除页面标题/副标题与登录提示里的「预览版」字样。
 
-## v0.9.42 更新
+> 部署模型沿用 v0.9.42（compose 跟随 GHCR `latest`、`vaulthub.env` 可选），详见下节。
+> 镜像内置默认值已全部示例化（`192.0.2.10` / `home.example.com`），首次部署请按自己的环境在
+> `docker-compose.yml`（卷映射、ADMIN 账号）与 `vaulthub.env`（域名、代理、刮削密钥）里覆盖。
+
+## v0.9.42 更新（部署模型，v0.9.50 沿用）
 
 ### 部署模型：latest 跟新 + 固定版本测试
 
@@ -16,7 +21,7 @@ v0.9.42 把「升级要同步维护 compose 与 env 文件」从根上简化：
 - 发布流程不变：测试按具体版本号（`v0.9.42`）验证 → 推送 main 与 tag → CI 构建并把 **`v0.9.42` 与 `latest` 指向同一 digest**。
 - 日常升级（NAS 上一条命令，之后无需再改 compose）：
   ```bash
-  cd /vol1/1000/Docker/vaulthub
+  cd /srv/vaulthub
   docker compose pull && docker compose up -d --force-recreate
   ```
 - 回滚/锁定：临时把 compose 镜像行改回 `ghcr.io/q807738511/vaulthub:v0.9.41` 再 `docker compose up -d --force-recreate`。
@@ -563,7 +568,7 @@ docker compose up -d --force-recreate
 旧的变量化 `.env` 写法仍兼容，但当前家庭 NAS 固定部署不再要求使用：
 
 - ~~`WEBUI_PORT=8088`~~
-- ~~`NAS_IP=192.168.112.3`~~
+- ~~`NAS_IP=192.0.2.10`~~
 - ~~`DASHBOARD_ORIGIN=https://home.examples.top`~~
 - ~~`ADMIN_TOKEN`~~（v0.8.0 已删除，写接口统一使用登录 Session）
 
@@ -573,9 +578,9 @@ docker compose up -d --force-recreate
 
 ~~先在 `.env` 中填写 NAS 的宿主机目录：~~（旧的变量化媒体路径方式，仍兼容但不再推荐。）
 
-- ~~`MUSIC_PATH=/vol2/link/音乐`~~
-- ~~`COMIC_PATH=/vol3/漫画`~~
-- ~~`BOOK_PATH=/vol4/电子书`~~
+- ~~`MUSIC_PATH=/srv/音乐`~~
+- ~~`COMIC_PATH=/srv/漫画`~~
+- ~~`BOOK_PATH=/srv/电子书`~~
 
 ~~Compose 会把它们只读映射为 `/media/music`、`/media/comics`、`/media/books`。~~
 
@@ -592,9 +597,9 @@ volumes:
 ```yaml
 volumes:
   - ./data:/data
-  - /vol2/link/音乐:/media/music:ro
-  - /vol3/漫画:/media/comics:ro
-  - /vol3/1000/komga/书画:/media/books:ro
+  - /srv/音乐:/media/music:ro
+  - /srv/漫画:/media/comics:ro
+  - /srv/komga/书画:/media/books:ro
 ```
 
 宿主机路径写在冒号左边，容器路径写在右边，`:ro` 表示只读。容器路径在
@@ -650,9 +655,9 @@ VaultHub 支持两种公网接入方式：
 在 Cloudflare Zero Trust → Networks → Tunnels → Public Hostnames 添加：
 
 ```text
-home.examples.top  -> HTTP -> 192.168.112.3:8088   # VaultHub 主页
-kom.examples.top   -> HTTP -> 192.168.112.3:8088   # Caddy 再转 Komga :25600
-yy.examples.top    -> HTTP -> 192.168.112.3:8088   # Caddy 再转 Navidrome :4533
+home.examples.top  -> HTTP -> 192.0.2.10:8088   # VaultHub 主页
+kom.examples.top   -> HTTP -> 192.0.2.10:8088   # Caddy 再转 Komga :25600
+yy.examples.top    -> HTTP -> 192.0.2.10:8088   # Caddy 再转 Navidrome :4533
 ```
 
 Cloudflare 提供公网 HTTPS，Tunnel 到 NAS 使用内网 HTTP。三条记录应属于同一个在线 Tunnel，DNS CNAME 应指向同一个 `<tunnel-id>.cfargotunnel.com`。
@@ -666,7 +671,7 @@ curl -I https://yy.examples.top/app/
 curl -sI https://kom.examples.top/ | grep -i content-security-policy
 ```
 
-最后一条应包含 `frame-ancestors https://home.examples.top`。若返回 522，先检查该域名的 Public Hostname 是否指向 `192.168.112.3:8088`，再确认 DNS 没有指向旧 Tunnel。
+最后一条应包含 `frame-ancestors https://home.examples.top`。若返回 522，先检查该域名的 Public Hostname 是否指向 `192.0.2.10:8088`，再确认 DNS 没有指向旧 Tunnel。
 
 ### 方案二：公网 DNS + Lucky/NPM 传统反向代理
 
@@ -679,7 +684,7 @@ curl -sI https://kom.examples.top/ | grep -i content-security-policy
   -> 公网 DNS（home/kom/yy 指向家庭公网 IP）
   -> 路由器 TCP 443 端口转发
   -> Lucky 或 Nginx Proxy Manager
-  -> http://192.168.112.3:8088
+  -> http://192.0.2.10:8088
   -> VaultHub 内置 Caddy 按 Host 分流
 ```
 
@@ -709,9 +714,9 @@ A     yy    -> 家庭公网 IPv4
 创建 HTTPS Web 服务监听（通常为 443），申请 `home.examples.top`、`kom.examples.top`、`yy.examples.top` 证书，并建立三个按主机名匹配的子规则：
 
 ```text
-前端域名 home.examples.top -> 后端 http://192.168.112.3:8088
-前端域名 kom.examples.top  -> 后端 http://192.168.112.3:8088
-前端域名 yy.examples.top   -> 后端 http://192.168.112.3:8088
+前端域名 home.examples.top -> 后端 http://192.0.2.10:8088
+前端域名 kom.examples.top  -> 后端 http://192.0.2.10:8088
+前端域名 yy.examples.top   -> 后端 http://192.0.2.10:8088
 ```
 
 启用 WebSocket，保留原始 `Host` 请求头，并设置 `X-Forwarded-Proto: https`。不要使用 Lucky 管理端口 `16601` 作为反代入口。
@@ -723,13 +728,13 @@ A     yy    -> 家庭公网 IPv4
 ```text
 Domain Names: home.examples.top / kom.examples.top / yy.examples.top
 Scheme:       http
-Forward Host: 192.168.112.3
+Forward Host: 192.0.2.10
 Forward Port: 8088
 Websockets:   开启
 SSL:          为每个域名申请证书，开启 Force SSL
 ```
 
-NPM 默认会转发原始 Host；不要在 Advanced 中覆盖成 `Host 192.168.112.3`。三个域名虽然共用同一个目标端口，但 Caddy 会根据原始 Host 分别返回 VaultHub、Komga 和 Navidrome。
+NPM 默认会转发原始 Host；不要在 Advanced 中覆盖成 `Host 192.0.2.10`。三个域名虽然共用同一个目标端口，但 Caddy 会根据原始 Host 分别返回 VaultHub、Komga 和 Navidrome。
 
 #### 5. 安全与验证
 

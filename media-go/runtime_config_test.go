@@ -34,12 +34,12 @@ func TestRuntimeConfigPersistsAndPreservesSecret(t *testing.T) {
 
 func TestRuntimeConfigPersistsTVDBAndProxy(t *testing.T) {
 	d := t.TempDir()
-	a := &App{runtimeConfig: filepath.Join(d, "runtime.json"), tmdbAPIKey: "tmdb-secret", tvdbAPIKey: "tvdb-secret", scraperProxy: "http://192.168.112.3:7890", cacheDir: filepath.Join(d, "old"), cacheWake: make(chan struct{}, 1)}
+	a := &App{runtimeConfig: filepath.Join(d, "runtime.json"), tmdbAPIKey: "tmdb-secret", tvdbAPIKey: "tvdb-secret", scraperProxy: "http://192.0.2.10:7890", cacheDir: filepath.Join(d, "old"), cacheWake: make(chan struct{}, 1)}
 	c := RuntimeConfig{ScraperMode: "auto", TMDBAPIBase: "https://api.themoviedb.org/3", TMDBImageBase: "https://image.tmdb.org/t/p", TVDBAPIBase: "https://api4.thetvdb.com/v4", CacheDir: filepath.Join(d, "cache"), CacheMaxBytes: 1, CacheMaxAgeHours: 1, CacheCleanupIntervalHours: 1}
 	if err := a.saveRuntimeConfig(c); err != nil {
 		t.Fatal(err)
 	}
-	if a.tvdbAPIKey != "tvdb-secret" || a.scraperProxy != "http://192.168.112.3:7890" {
+	if a.tvdbAPIKey != "tvdb-secret" || a.scraperProxy != "http://192.0.2.10:7890" {
 		t.Fatalf("secret/proxy not preserved: %#v", a)
 	}
 	b, err := os.ReadFile(a.runtimeConfig)
@@ -47,14 +47,14 @@ func TestRuntimeConfigPersistsTVDBAndProxy(t *testing.T) {
 		t.Fatal(err)
 	}
 	var saved RuntimeConfig
-	if json.Unmarshal(b, &saved) != nil || saved.TVDBAPIKey != "tvdb-secret" || saved.ScraperProxy != "http://192.168.112.3:7890" {
+	if json.Unmarshal(b, &saved) != nil || saved.TVDBAPIKey != "tvdb-secret" || saved.ScraperProxy != "http://192.0.2.10:7890" {
 		t.Fatalf("runtime values not persisted: %s", b)
 	}
 }
 
 func TestRuntimeConfigCanClearProxyExplicitly(t *testing.T) {
 	d := t.TempDir()
-	a := &App{runtimeConfig: filepath.Join(d, "runtime.json"), scraperProxy: "http://192.168.112.3:7890", cacheDir: filepath.Join(d, "old"), cacheWake: make(chan struct{}, 1)}
+	a := &App{runtimeConfig: filepath.Join(d, "runtime.json"), scraperProxy: "http://192.0.2.10:7890", cacheDir: filepath.Join(d, "old"), cacheWake: make(chan struct{}, 1)}
 	c := RuntimeConfig{ScraperMode: "auto", TMDBAPIBase: "https://api.themoviedb.org/3", TMDBImageBase: "https://image.tmdb.org/t/p", TVDBAPIBase: "https://api4.thetvdb.com/v4", ScraperProxySet: true, CacheDir: filepath.Join(d, "cache"), CacheMaxBytes: 1, CacheMaxAgeHours: 1, CacheCleanupIntervalHours: 1}
 	if err := a.saveRuntimeConfig(c); err != nil {
 		t.Fatal(err)
@@ -71,7 +71,7 @@ func TestLoadRuntimeConfigKeepsExplicitlyClearedProxy(t *testing.T) {
 	if os.WriteFile(p, b, 0600) != nil {
 		t.Fatal("write fixture")
 	}
-	a := &App{runtimeConfig: p, scraperProxy: "http://192.168.112.3:7890"}
+	a := &App{runtimeConfig: p, scraperProxy: "http://192.0.2.10:7890"}
 	a.loadRuntimeConfig()
 	if a.scraperProxy != "" {
 		t.Fatalf("restart restored cleared proxy: %q", a.scraperProxy)
@@ -91,7 +91,7 @@ func TestRuntimeConfigRejectsUnsafeValues(t *testing.T) {
 	if a.saveRuntimeConfig(bad) == nil {
 		t.Fatal("accepted non-http TMDB URL")
 	}
-	for _, target := range []string{"http://127.0.0.1:9099", "http://localhost:9099", "http://169.254.169.254/latest", "http://192.168.1.10/api"} {
+	for _, target := range []string{"http://127.0.0.1:9099", "http://localhost:9099", "http://169.254.169.254/latest", "http://10.10.10.10/api"} { // 10.10.10.10 = 测试专用 RFC1918 私网示例（校验器应拒绝）
 		bad = base
 		bad.TMDBAPIBase = target
 		if a.saveRuntimeConfig(bad) == nil {

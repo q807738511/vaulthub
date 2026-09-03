@@ -33,27 +33,33 @@ services:
       - ADMIN_PASSWORD=admin123
       - TMDB_API_KEY=
       - MEDIA_SCRAPER_MODE=auto
-      - SYSTEM_MONITOR_FILESYSTEMS=vol1,vol2,vol3
+      # 系统监控的卷名列表（逗号分隔），与下方 /host/<卷名> 只读挂载一一对应；
+      # 只需监控一个卷时填单个卷名即可（示例：vh-data）。
+      - SYSTEM_MONITOR_FILESYSTEMS=vh-data
 
     volumes:
+      # 应用数据：运行时配置、阅读进度、转码缓存等持久化目录
       - ./data:/data
-      - /media:/media:ro
-      - /vol3/1000/监控/date:/data/transcode-cache
-      - /vol3/1000/komga/音乐:/yy:ro
-      - /vol3/1000/komga/漫画/mh:/mh:ro
-      - /vol3/1000/komga/BOOK:/txt:ro
-      - /vol4/1000/AMO:/AMO:ro
-      - /vol2/1000/ATV:/ATV:ro
+      # 媒体库映射（示例）：冒号左侧是本机路径，右侧是容器内路径。
+      # 请按自己的目录结构增删 —— 电影/剧集/音乐/漫画/书籍/文档都挂进容器即可，
+      # 然后在 Web 界面「媒体库」里登记这些容器内路径（:ro 表示只读）。
+      - /srv/media/films:/media/films:ro
+      - /srv/media/series:/media/series:ro
+      - /srv/media/music:/yy:ro
+      - /srv/media/comics:/mh:ro
+      - /srv/media/books:/txt:ro
 
-      # Docker 状态监控
+      # Docker 状态监控（容器页面/刮削辅助需要）
       - /var/run/docker.sock:/var/run/docker.sock:ro
 
-      # 系统监控
+      # 系统监控：/proc 与 /sys 为必需只读挂载。
+      # 卷监控：把要监控的卷根目录挂到 /host/<卷名>:ro 并同步修改上面的
+      # SYSTEM_MONITOR_FILESYSTEMS，例如：
+      #   - /mnt/vh-data:/host/vh-data:ro
+      #   - /mnt/vh-media:/host/vh-media:ro
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
-      - /vol1:/host/vol1:ro
-      - /vol2:/host/vol2:ro
-      - /vol3:/host/vol3:ro
+      - /srv:/host/vh-data:ro
 
     tmpfs:
       - /tmp:size=32m,mode=1777

@@ -178,7 +178,7 @@ check("详情页关闭按钮避开顶栏",
 compose = read("docker-compose.yml")
 env_file = read("vaulthub.env")
 
-# compose 必须引用 env_file（v0.9.42 起为可选覆盖层：path + required: false）
+# compose 必须引用 env_file（v0.9.50 起为可选覆盖层：path + required: false）
 check("compose 通过 env_file 引用 vaulthub.env",
       re.search(r"env_file:\s*\n\s*-\s*path:\s*\.?/?vaulthub\.env\s*\n\s*required:\s*false", compose) is not None,
       "compose 未声明可选 env_file")
@@ -231,8 +231,8 @@ if env_block:
     lost = [k for k in common if not re.search(rf"-\s*{k}=", env_block.group(1))]
     check("常用项仍展示在 compose", not lost, "缺少: " + ",".join(lost))
 
-# v0.9.42：compose 跟随 GHCR 可写 latest（每次正式版本 tag 与版本号同 digest）
-check("compose 跟随 GHCR latest（v0.9.42 起）",
+# v0.9.50：compose 跟随 GHCR 可写 latest（每次正式版本 tag 与版本号同 digest）
+check("compose 跟随 GHCR latest（v0.9.50 起）",
       "image: ghcr.io/q807738511/vaulthub:latest" in compose, "未引用 vaulthub:latest")
 check("compose 保留固定版本回滚说明",
       "v0.9.41" in compose or ":latest" in compose, "缺少回滚指引")
@@ -241,7 +241,7 @@ check("compose 保留固定版本回滚说明",
 readme = read("README.md")
 check("README 说明 vaulthub.env", "vaulthub.env" in readme)
 
-# env_file 在 v0.9.42 已是可选（required: false，缺失不报错）；历史安装/升级脚本
+# env_file 在 v0.9.50 已是可选（required: false，缺失不报错）；历史安装/升级脚本
 # 仍会投递 vaulthub.env，且不能覆盖用户已改过的值。
 for script in ["scripts/install.sh", "scripts/upgrade.sh"]:
     text = read(script)
@@ -257,8 +257,8 @@ check("rollback.sh 还原 vaulthub.env",
 
 # 版本号
 check("index.html 版本号为 v0.8.7",
-      read("index.html").count("v0.9.42") >= 2,
-      f"出现 {read('index.html').count('v0.9.42')} 次")
+      read("index.html").count("v0.9.50") >= 2,
+      f"出现 {read('index.html').count('v0.9.50')} 次")
 
 # ---------------------------------------------------------------- 输出
 if FAILS:

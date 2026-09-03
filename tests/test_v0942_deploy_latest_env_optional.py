@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""VaultHub v0.9.42 deployment contracts: latest-follow + optional env file.
+"""VaultHub v0.9.50 deployment contracts: latest-follow + optional env file.
 
 Asserts against the real repo files:
   * docker-compose.yml tracks the mutable GHCR `latest` tag (release-time
@@ -11,7 +11,7 @@ Asserts against the real repo files:
   * Dockerfile ENV bakes defaults aligned with the vaulthub.env template
     (spot keys incl. TZ / MEDIA_SCAN_MAX_DEPTH / VAAPI_DEVICE / cache bytes),
     so the image runs with sane values even with no env file;
-  * the v0.9.42 release notes exist and frontend/JS carry version 0.9.42.
+  * the v0.9.50 release notes exist and frontend/JS carry version 0.9.50.
 """
 from pathlib import Path
 
@@ -22,7 +22,7 @@ dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
 wf = (ROOT / ".github/workflows/publish-image.yml").read_text(encoding="utf-8")
 index = (ROOT / "index.html").read_text(encoding="utf-8")
 state = (ROOT / "web/js/01-state.js").read_text(encoding="utf-8")
-release = (ROOT / ".github/RELEASE_NOTES_0.9.42.md").read_text(encoding="utf-8")
+release = (ROOT / ".github/RELEASE_NOTES_0.9.50.md").read_text(encoding="utf-8")
 
 
 def test_compose_tracks_ghcr_latest():
@@ -74,9 +74,9 @@ def test_dockerfile_bakes_template_defaults():
 
 
 def test_version_strings():
-    assert "0.9.42" in index
-    assert 'VAULTHUB_SCRIPT_VERSION = "0.9.42"' in state
-    assert "VaultHub v0.9.42" in release
+    assert "0.9.50" in index
+    assert 'VAULTHUB_SCRIPT_VERSION = "0.9.50"' in state
+    assert "VaultHub v0.9.50" in release
 
 
 if __name__ == "__main__":

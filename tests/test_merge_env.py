@@ -26,7 +26,7 @@ TZ=${TZ:-Asia/Shanghai}
 
 # ---------- 缓存清理 ----------
 MEDIA_CACHE_MAX_BYTES=${MEDIA_CACHE_MAX_BYTES:-30737418240}
-# 例：http://192.168.112.3:7890；留空表示直连
+# 例：http://192.0.2.10:7890；留空表示直连
 SCRAPER_PROXY=${SCRAPER_PROXY:-}
 
 # 字幕端点（URL 内含 = 号，必须原样保留）
@@ -70,7 +70,7 @@ class MergeEnvTests(unittest.TestCase):
         self.assertEqual(merged.count("TZ="), 1, "must not duplicate existing keys")
         # 缺失键被补入：默认值 + 紧邻注释
         self.assertIn("SCRAPER_PROXY=${SCRAPER_PROXY:-}", merged)
-        self.assertIn("# 例：http://192.168.112.3:7890；留空表示直连", merged)
+        self.assertIn("# 例：http://192.0.2.10:7890；留空表示直连", merged)
         self.assertIn("SUBTITLE_ENDPOINT=${SUBTITLE_ENDPOINT:-https://api.example.com/sub?site=a&=1}", merged)
         self.assertIn("# 字幕端点（URL 内含 = 号，必须原样保留）", merged)
         # 备份已生成且内容等于原文件

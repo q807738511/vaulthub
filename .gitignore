@@ -23,3 +23,8 @@ Thumbs.db
 # Temporary test files
 .tmp/
 tmp/
+
+# Go build artifacts (module-root binaries from local go build)
+/media-go/media-go
+/manager/manager
+/subtitle-api/subtitle-api

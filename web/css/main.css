@@ -600,7 +600,7 @@
   .media-reader-close { flex:0 0 auto; width:36px; height:36px; border-radius:50%; border:1px solid var(--border); color:var(--text); background:var(--card2); cursor:pointer; font-size:18px; }
   /* overlay 现在从顶栏下方开始，正文高度要同时扣掉顶栏和阅读器顶栏。 */
   .media-reader-body { flex:1; min-height:0; height:calc(100vh - var(--topbar-h) - 51px); overflow:auto; display:flex; align-items:stretch; justify-content:center; background:#17191d; }
-  /* v0.9.42：播放器不再渲染外层 .media-reader-head —— video 模式正文要从
+  /* v0.9.50：播放器不再渲染外层 .media-reader-head —— video 模式正文要从
      顶栏下直接撑满，而不是再让出 head 的 51px。 */
   .media-reader-overlay.movie-player > .media-reader-body { height:calc(100vh - var(--topbar-h)); }
   .media-reader-overlay.movie-player .media-video-body { min-height:0; }
@@ -657,7 +657,7 @@
   .media-video-body.video-controls-visible .vc-top,
   .media-video-body.video-controls-visible .vc-bottom { pointer-events:auto; }
   .vc-top { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
-  /* v0.9.42：标题移入左上角（⌄ 右侧），与 ⌄ 同行的 .vc-heading 可收缩。 */
+  /* v0.9.50：标题移入左上角（⌄ 右侧），与 ⌄ 同行的 .vc-heading 可收缩。 */
   .vc-heading { flex:0 1 auto; min-width:0; display:flex; flex-direction:column; gap:1px; align-self:center; text-align:left; }
   .vc-heading .vc-title { font-size:14px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .vc-heading .vc-sub { font-size:12px; color:rgba(255,255,255,.82); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -686,15 +686,15 @@
   .vc-icon.vc-play { width:46px; height:46px; font-size:20px; border-color:rgba(255,255,255,.6); background:rgba(0,0,0,.6); }
   .vc-icon.vc-stop:hover { border-color:var(--red); color:var(--red); }
   .vc-collapse,.vc-fullscreen { flex:0 0 auto; }
-  /* v0.9.42：播放列表按钮只在电视剧集类型播放时展示（电影单文件播放隐藏，
+  /* v0.9.50：播放列表按钮只在电视剧集类型播放时展示（电影单文件播放隐藏，
      不把整批电影库文件当成一部电影的播放列表）。 */
   .media-video-body .vc-playlist-toggle { display:none; }
   .media-video-body[data-video-playlist-eligible="true"] .vc-playlist-toggle { display:inline-flex; }
-  /* v0.9.42：音量滑条移入设置浮层（右下角静音按钮已删除）。 */
+  /* v0.9.50：音量滑条移入设置浮层（右下角静音按钮已删除）。 */
   .vc-volume-row { display:flex; align-items:center; gap:10px; }
   .vc-volume-row .vc-volume-range { flex:1 1 auto; width:auto; min-width:0; accent-color:var(--accent); cursor:pointer; }
   .vc-volume-row .vc-volume-label { flex:0 0 auto; min-width:44px; font:12px/1 ui-monospace,Consolas,monospace; text-align:right; }
-  /* v0.9.42：左上角 ⌄ 最小化整个播放器 —— 外层 .media-reader-overlay 缩小成
+  /* v0.9.50：左上角 ⌄ 最小化整个播放器 —— 外层 .media-reader-overlay 缩小成
      右下角小窗继续播放，只剩左下角 ⌃ 用于还原整屏播放器。 */
   .media-reader-overlay.movie-player.video-minimized { position:fixed; left:auto; right:clamp(8px,2vw,20px); top:auto; bottom:clamp(8px,2vh,16px); width:min(380px,calc(100vw - 24px)); height:auto; z-index:400; border:1px solid rgba(255,255,255,.22); border-radius:14px; overflow:hidden; box-shadow:0 18px 44px rgba(0,0,0,.55); }
   .media-reader-overlay.movie-player.video-minimized .media-reader-body,
@@ -1048,4 +1048,103 @@
     .tb-info { display: none; }
     .brand-copy { display: none; }
   }
+
+/* ================= v0.9.50 播放器双皮肤 =================
+   视频播放器 overlay 自带 reader-theme-dark/light/custom 类（跟随媒体阅读主题）：
+   · 暗色 / 自定义 → PotPlayer 风格：半透明圆角方钮 + 细描边，hover 渐亮、激活 accent 高亮
+   · 亮色          → Apple 风格：白色半透明玻璃圆钮 + 深色图标，毛玻璃、弹性 hover、accent 激活
+   以下规则比旧 .vc-* 更靠后且选择器更具体，直接覆盖。 */
+.media-reader-overlay.movie-player .vc-svg { width:21px; height:21px; display:block; pointer-events:none; }
+.media-reader-overlay.movie-player .vc-panel-ic { display:inline-flex; vertical-align:-3px; width:15px; height:15px; margin-right:6px; }
+.media-reader-overlay.movie-player .vc-panel-ic .vc-svg { width:15px; height:15px; }
+
+/* —— v0.9.50 T2：标题/年份/时间/状态行在播放器 chrome 内一律固定白色 + 阴影。
+   旧 .vc-title 没有显式 color，亮色主题下会继承深色文字压在深色渐变上，
+   于是「主标题看不清、只有选中才看得见」。这里统一钉死白色系。 */
+.media-reader-overlay.movie-player .vc-heading .vc-title,
+.media-reader-overlay.movie-player .vc-title { color:#fff; font-size:15px; letter-spacing:.01em; text-shadow:0 1px 4px rgba(0,0,0,.85); }
+.media-reader-overlay.movie-player .vc-heading .vc-sub,
+.media-reader-overlay.movie-player .vc-sub { color:rgba(255,255,255,.86); text-shadow:0 1px 3px rgba(0,0,0,.8); }
+.media-reader-overlay.movie-player .video-time-label { color:#fff; text-shadow:0 1px 3px #000; }
+
+/* —— v0.9.50 T1：左上角角标（⌄ 最小化 / ⌃ 还原）加大且两状态位置统一。
+   旧版：正常态 ⌄ 贴顶偏上、小窗态 ⌃ 36px 缩在左下偏下 —— 观感不一致。
+   现在：顶条按钮垂直居中于 vc-top，小窗还原钮垂直居中于小窗左缘，同为 42px 级。 */
+.media-reader-overlay.movie-player .vc-top { align-items:center; }
+.media-reader-overlay.movie-player .vc-collapse,
+.media-reader-overlay.movie-player .vc-fullscreen { flex:0 0 auto; width:42px; height:42px; }
+.media-reader-overlay.movie-player.video-minimized .vc-restore { left:10px; top:50%; bottom:auto; transform:translateY(-50%); }
+.media-reader-overlay.movie-player .vc-restore { width:44px; height:44px; }
+
+/* —— v0.9.50 皮肤 A：PotPlayer（暗色/自定义主题）—— */
+.media-reader-overlay.movie-player .vc-icon {
+  width:42px; height:42px; padding:0; border-radius:11px;
+  border:1px solid rgba(255,255,255,.26); color:rgba(255,255,255,.93);
+  background:rgba(14,18,24,.58); font:600 15px/1 sans-serif;
+  backdrop-filter:blur(5px); -webkit-backdrop-filter:blur(5px);
+  transition:background .14s,border-color .14s,color .14s,transform .08s,box-shadow .14s;
+}
+.media-reader-overlay.movie-player .vc-icon:hover { border-color:rgba(255,255,255,.9); color:#fff; background:rgba(255,255,255,.16); }
+.media-reader-overlay.movie-player .vc-icon:active { transform:scale(.93); }
+.media-reader-overlay.movie-player .vc-icon.on,
+.media-reader-overlay.movie-player .vc-icon[aria-expanded="true"],
+.media-reader-overlay.movie-player .vc-icon[aria-pressed="true"] { border-color:var(--accent); color:#fff; background:rgba(88,166,255,.34); box-shadow:0 0 0 1px var(--accent) inset; }
+.media-reader-overlay.movie-player .vc-icon.vc-play { width:56px; height:56px; border-radius:15px; border-color:rgba(255,255,255,.55); background:rgba(255,255,255,.15); box-shadow:0 4px 18px rgba(0,0,0,.35); }
+.media-reader-overlay.movie-player .vc-icon.vc-play .vc-svg { width:30px; height:30px; }
+.media-reader-overlay.movie-player .vc-icon.vc-play:hover { background:rgba(255,255,255,.26); }
+.media-reader-overlay.movie-player .vc-icon.vc-stop:hover { border-color:var(--red); color:#ff8a83; background:rgba(248,81,73,.2); }
+.media-reader-overlay.movie-player .vc-restore {
+  border-radius:12px; border:1px solid rgba(255,255,255,.42); color:#fff;
+  background:rgba(14,18,24,.68); backdrop-filter:blur(5px); -webkit-backdrop-filter:blur(5px);
+  box-shadow:0 4px 16px rgba(0,0,0,.4);
+}
+.media-reader-overlay.movie-player .vc-restore:hover { border-color:var(--accent); color:var(--accent); background:rgba(0,0,0,.82); }
+.media-reader-overlay.movie-player .vc-restore .vc-svg { width:24px; height:24px; }
+
+/* —— v0.9.50 皮肤 B：Apple（亮色主题）—— */
+.media-reader-overlay.movie-player.reader-theme-light .video-chrome {
+  background:linear-gradient(180deg,rgba(8,10,14,.52) 0%,rgba(8,10,14,0) 30%,rgba(8,10,14,0) 60%,rgba(8,10,14,.6) 100%);
+}
+.media-reader-overlay.movie-player.reader-theme-light .vc-icon {
+  border-radius:50%; border:1px solid rgba(255,255,255,.6); color:#1d1d1f;
+  background:rgba(255,255,255,.92); box-shadow:0 2px 12px rgba(0,0,0,.28), inset 0 0 0 .5px rgba(0,0,0,.05);
+  backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+}
+.media-reader-overlay.movie-player.reader-theme-light .vc-icon:hover { background:#fff; transform:scale(1.07); box-shadow:0 5px 16px rgba(0,0,0,.34); }
+.media-reader-overlay.movie-player.reader-theme-light .vc-icon:active { transform:scale(.92); }
+.media-reader-overlay.movie-player.reader-theme-light .vc-icon.on,
+.media-reader-overlay.movie-player.reader-theme-light .vc-icon[aria-expanded="true"],
+.media-reader-overlay.movie-player.reader-theme-light .vc-icon[aria-pressed="true"] { border-color:#0a84ff; color:#fff; background:#0a84ff; box-shadow:0 3px 12px rgba(10,132,255,.5); }
+.media-reader-overlay.movie-player.reader-theme-light .vc-icon.vc-play { width:58px; height:58px; border-color:#0a84ff; color:#fff; background:#0a84ff; box-shadow:0 6px 20px rgba(10,132,255,.55); }
+.media-reader-overlay.movie-player.reader-theme-light .vc-icon.vc-play:hover { background:#3395ff; transform:scale(1.05); }
+.media-reader-overlay.movie-player.reader-theme-light .vc-icon.vc-play .vc-svg { width:32px; height:32px; }
+.media-reader-overlay.movie-player.reader-theme-light .vc-icon.vc-stop:hover { border-color:#ff3b30; color:#ff3b30; background:rgba(255,255,255,.95); }
+.media-reader-overlay.movie-player.reader-theme-light .vc-restore { border-radius:50%; border:1px solid rgba(255,255,255,.65); color:#1d1d1f; background:rgba(255,255,255,.92); box-shadow:0 2px 12px rgba(0,0,0,.3); }
+.media-reader-overlay.movie-player.reader-theme-light .vc-restore:hover { color:#0a84ff; border-color:#0a84ff; background:#fff; }
+.media-reader-overlay.movie-player.reader-theme-light .vc-restore .vc-svg { width:24px; height:24px; }
+
+/* 亮色皮肤下的进度条与浮层 */
+.media-reader-overlay.movie-player.reader-theme-light .video-progress-shell { background:rgba(255,255,255,.5); box-shadow:0 0 0 1px rgba(0,0,0,.25); }
+.media-reader-overlay.movie-player.reader-theme-light .video-buffered-range { background:rgba(255,255,255,.8); }
+.media-reader-overlay.movie-player.reader-theme-light .video-played-range { background:#0a84ff; box-shadow:0 0 8px rgba(10,132,255,.9); }
+.media-reader-overlay.movie-player.reader-theme-light .video-progress-knob { background:#fff; box-shadow:0 1px 5px rgba(0,0,0,.45); }
+.media-reader-overlay.movie-player.reader-theme-light .vc-panel { background:rgba(250,250,252,.97); border-color:rgba(0,0,0,.14); color:#1d1d1f; box-shadow:0 14px 38px rgba(0,0,0,.38); }
+.media-reader-overlay.movie-player.reader-theme-light .vc-panel h4 { color:rgba(0,0,0,.72); }
+.media-reader-overlay.movie-player.reader-theme-light .vc-panel button { color:#1d1d1f; border-color:rgba(0,0,0,.16); background:rgba(0,0,0,.05); }
+.media-reader-overlay.movie-player.reader-theme-light .vc-panel button:hover { border-color:#0a84ff; background:rgba(10,132,255,.13); }
+.media-reader-overlay.movie-player.reader-theme-light .vc-panel button.active { border-color:#0a84ff; color:#0a84ff; background:rgba(10,132,255,.18); }
+.media-reader-overlay.movie-player.reader-theme-light .movie-compat-status { background:rgba(0,0,0,.5); color:#fff; }
+.media-reader-overlay.movie-player.reader-theme-light .video-status-panel { color:#1d1d1f; }
+
+/* 窄屏下双皮肤按钮同步缩小，避免溢出 */
+@media (max-width: 768px) {
+  .media-reader-overlay.movie-player .vc-icon { width:36px; height:36px; border-radius:10px; }
+  .media-reader-overlay.movie-player .vc-icon .vc-svg { width:18px; height:18px; }
+  .media-reader-overlay.movie-player .vc-icon.vc-play { width:48px; height:48px; border-radius:13px; }
+  .media-reader-overlay.movie-player .vc-icon.vc-play .vc-svg { width:26px; height:26px; }
+  .media-reader-overlay.movie-player.reader-theme-light .vc-icon { border-radius:50%; }
+  .media-reader-overlay.movie-player .vc-collapse,
+  .media-reader-overlay.movie-player .vc-fullscreen { width:38px; height:38px; }
+  .media-reader-overlay.movie-player .vc-restore { width:40px; height:40px; }
+}
 

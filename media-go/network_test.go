@@ -9,7 +9,7 @@ import (
 )
 
 func TestValidateProxyURL(t *testing.T) {
-	for _, raw := range []string{"", "http://192.168.112.3:7890", "https://proxy.example.com:8443"} {
+	for _, raw := range []string{"", "http://192.0.2.10:7890", "https://proxy.example.com:8443"} {
 		if _, err := validateProxyURL(raw); err != nil {
 			t.Fatalf("valid proxy %q rejected: %v", raw, err)
 		}

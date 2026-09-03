@@ -8,7 +8,7 @@ const VAULTHUB_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
    历史故障：v0.8.3→v0.8.5 的前端修改在服务端已生效，但浏览器仍执行缓存里的
    旧 02-media.js，用户看到「没有更新」。现在入口页 no-store、静态资源带 ?v=，
    并在启动时做一次一致性自查，不一致就绕过缓存强制重载一次。 */
-const VAULTHUB_SCRIPT_VERSION = "0.9.42";
+const VAULTHUB_SCRIPT_VERSION = "0.9.50";
 function ensureFreshAssets() {
   /* expected 为空 = 浏览器执行的 index.html 早于 v0.8.6（旧版本入口页没有声明
      版本号），同样属于"页面是旧的"，也需要换 URL 重新取一次。 */
@@ -237,7 +237,7 @@ const I18N = {
     buildWaiting: "正在统计文件数量…", buildRefresh: "手动刷新",
     homeOpenFail: "无法打开：媒体库或文件不存在",
 
-    caddySettings: "Caddy 配置", caddyOrigin: "WebUI 外部域名", caddyAdminToken: "管理令牌", caddyFile: "Caddyfile", caddySave: "保存并应用", caddyReload: "重新载入", caddyHint: "保存后会校验并热加载容器内的 Caddy 配置；失败时会回滚。", superComicTitle: "Komga / Kavita / Calibre-Web · 统一书库", appName: "蜀鼠之家", appSub: "VaultHub · 家庭 NAS 控制台 · 预览版",
+    caddySettings: "Caddy 配置", caddyOrigin: "WebUI 外部域名", caddyAdminToken: "管理令牌", caddyFile: "Caddyfile", caddySave: "保存并应用", caddyReload: "重新载入", caddyHint: "保存后会校验并热加载容器内的 Caddy 配置；失败时会回滚。", superComicTitle: "Komga / Kavita / Calibre-Web · 统一书库", appName: "蜀鼠之家", appSub: "VaultHub · 家庭 NAS 控制台",
     navGroupMain: "主导航", navHome: "首页", navPt: "PT 管理", navMore: "更多 ›",
     navGroupMedia: "媒体", navComic: "电子书刊", navMovie: "影视作品", navAudio: "音视作品",
     navGroupBook: "电子书刊", navGroupVideo: "影视作品", navGroupAudio: "音视作品",
@@ -250,7 +250,7 @@ const I18N = {
     searchEmpty: "没有找到与「{q}」匹配的媒体文件。", searchHits: "命中 {n} 个文件",
     setAboutHint: "应用版本、技术栈和监控组件说明。", setAboutOpen: "查看关于信息",
     settingsPageBadge: "独立配置页", settingsClose: "返回上一页",
-    /* ---- v0.9.42：视频播放器悬浮控制栏 ---- */
+    /* ---- v0.9.50：视频播放器悬浮控制栏 ---- */
     vpCollapse: "最小化整个播放器",
     vpExpand: "还原播放器",
     vpPreparing: "正在准备播放…",
@@ -361,7 +361,7 @@ const I18N = {
     kavitaHint: "提示：Kavita 内建阅读器，支持书架管理。",
     ebookHint: "提示：可搭配 Calibre-Web Automated 实现 PT 下载后自动刮削入库。",
     plexHint: "提示：Plex 需关闭「要求安全连接」或配置自定义域名访问。",
-    embyHint: "提示：Emby 回调 MP 时填写 https://mp.enged.top/api/v1/webhook?token=…",
+    embyHint: "提示：Emby 回调 MP 时填写 https://mp.example.com/api/v1/webhook?token=…",
     jellyfinHint: "提示：Jellyfin 开源免费，无数量限制。",
     ndHint: "提示：Navidrome 走 Cloudflare Tunnel 若播放卡顿，关闭 HTTP/3 并强制 cloudflared http2。",
     dlyHint: "提示：道理鱼为本地音乐服务，反代域名需在 DNS 解析至 Tunnel。",
@@ -452,7 +452,7 @@ const I18N = {
     buildWaiting: "正在統計檔案數量…", buildRefresh: "手動重新整理",
     homeOpenFail: "無法開啟：媒體庫或檔案不存在",
 
-    caddySettings: "Caddy 設定", caddyOrigin: "WebUI 外部網域", caddyAdminToken: "管理權杖", caddyFile: "Caddyfile", caddySave: "儲存並套用", caddyReload: "重新載入", caddyHint: "儲存後會驗證並熱載入容器內的 Caddy 設定；失敗時會回滾。", superComicTitle: "Komga / Kavita / Calibre-Web · 統一書庫", appName: "蜀鼠之家", appSub: "VaultHub · 家庭 NAS 控制台 · 預覽版",
+    caddySettings: "Caddy 設定", caddyOrigin: "WebUI 外部網域", caddyAdminToken: "管理權杖", caddyFile: "Caddyfile", caddySave: "儲存並套用", caddyReload: "重新載入", caddyHint: "儲存後會驗證並熱載入容器內的 Caddy 設定；失敗時會回滾。", superComicTitle: "Komga / Kavita / Calibre-Web · 統一書庫", appName: "蜀鼠之家", appSub: "VaultHub · 家庭 NAS 控制台",
     navGroupMain: "主導覽", navHome: "首頁", navPt: "PT 管理",
     navGroupMedia: "媒體", navComic: "超漫畫", navMovie: "影視", navAudio: "音訊",
     navGroupSys: "系統",
@@ -499,7 +499,7 @@ const I18N = {
     kavitaHint: "提示：Kavita 內建閱讀器，支援書架管理。",
     ebookHint: "提示：可搭配 Calibre-Web Automated 實現 PT 下載後自動刮削入庫。",
     plexHint: "提示：Plex 需關閉「要求安全連線」或設定自訂網域存取。",
-    embyHint: "提示：Emby 回呼 MP 時填寫 https://mp.enged.top/api/v1/webhook?token=…",
+    embyHint: "提示：Emby 回呼 MP 時填寫 https://mp.example.com/api/v1/webhook?token=…",
     jellyfinHint: "提示：Jellyfin 開源免費，無數量限制。",
     ndHint: "提示：Navidrome 走 Cloudflare Tunnel 若播放卡頓，關閉 HTTP/3 並強制 cloudflared http2。",
     dlyHint: "提示：道理魚為本地音樂服務，代理網域需在 DNS 解析至 Tunnel。",
@@ -540,7 +540,7 @@ const I18N = {
     searchEmpty: "找不到與「{q}」相符的媒體檔案。", searchHits: "命中 {n} 個檔案",
     setAboutHint: "應用版本、技術棧與監控元件說明。", setAboutOpen: "查看關於資訊",
     settingsPageBadge: "獨立設定頁", settingsClose: "返回上一頁",
-    /* ---- v0.9.42：视频播放器悬浮控制栏 ---- */
+    /* ---- v0.9.50：视频播放器悬浮控制栏 ---- */
     vpCollapse: "最小化整個播放器",
     vpExpand: "還原播放器",
     vpPreparing: "正在準備播放…",
@@ -673,7 +673,7 @@ const I18N = {
     buildWaiting: "Counting files…", buildRefresh: "Refresh now",
     homeOpenFail: "Cannot open: library or file is missing",
 
-    caddySettings: "Caddy Config", caddyOrigin: "WebUI public domain", caddyAdminToken: "Admin token", caddyFile: "Caddyfile", caddySave: "Save & apply", caddyReload: "Reload", caddyHint: "Save will validate and hot-reload the container Caddy config; failures roll back.", superComicTitle: "Komga / Kavita / Calibre-Web · Unified Library", appName: "VaultHub", appSub: "VaultHub · Home NAS console · Preview",
+    caddySettings: "Caddy Config", caddyOrigin: "WebUI public domain", caddyAdminToken: "Admin token", caddyFile: "Caddyfile", caddySave: "Save & apply", caddyReload: "Reload", caddyHint: "Save will validate and hot-reload the container Caddy config; failures roll back.", superComicTitle: "Komga / Kavita / Calibre-Web · Unified Library", appName: "VaultHub", appSub: "VaultHub · Home NAS console",
     navGroupMain: "Main", navHome: "Home", navPt: "PT Manager",
     navGroupMedia: "Media", navComic: "Super Comics", navMovie: "Movies", navAudio: "Audio",
     navGroupSys: "System",
@@ -720,7 +720,7 @@ const I18N = {
     kavitaHint: "Tip: Kavita has built-in reader with bookshelf support.",
     ebookHint: "Tip: Pair with Calibre-Web Automated for auto-scrape after PT download.",
     plexHint: "Tip: Plex: disable 'Secure connections required' or set custom domain.",
-    embyHint: "Tip: Emby webhook to MP: https://mp.enged.top/api/v1/webhook?token=…",
+    embyHint: "Tip: Emby webhook to MP: https://mp.example.com/api/v1/webhook?token=…",
     jellyfinHint: "Tip: Jellyfin is open-source and unlimited.",
     ndHint: "Tip: If Navidrome stutters via Cloudflare Tunnel, disable HTTP/3 and force cloudflared http2.",
     dlyHint: "Tip: DLY is a local music service; proxy domain must resolve to Tunnel.",
@@ -761,7 +761,7 @@ const I18N = {
     searchEmpty: "No media file matches \"{q}\".", searchHits: "{n} files matched",
     setAboutHint: "App version, tech stack and monitoring components.", setAboutOpen: "Open About",
     settingsPageBadge: "Dedicated page", settingsClose: "Back",
-    /* ---- v0.9.42：视频播放器悬浮控制栏 ---- */
+    /* ---- v0.9.50：视频播放器悬浮控制栏 ---- */
     vpCollapse: "Minimize player",
     vpExpand: "Restore player",
     vpPreparing: "Preparing playback…",
@@ -913,15 +913,30 @@ const LS_BG = "dwu_bgimg";
 let settings = {
   theme: "dark",
   hardwareAcceleration: "auto",
-  /* 容器版默认经同源 Caddy 代理；外部浏览器无需直连 192.168.x.x */
+  /* 容器版默认经同源 Caddy 代理；外部浏览器无需直连家庭内网地址 */
   mp: { mpUrl: "/api/mp", username: "", password: "", token: "", tokenUser: "" }
 };
 
+/* v0.9.50 洗版：迁移逻辑不再引用任何具体内网 IP —— 按 RFC1918 网段判定历史
+   默认内网 MoviePilot 地址（旧版 localStorage 里保存的 http://<内网IP>:3000 等），
+   命中即改走同源代理路径，用户主动填写的域名/其他地址保持不变。 */
+function isLegacyMpDefaultUrl(url) {
+  try {
+    const parsed = new URL(String(url || ""));
+    const host = parsed.hostname;
+    if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return false;
+    const octets = host.split(".").map(Number);
+    const a = octets[0], b = octets[1];
+    const rfc1918 = a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+    if (!rfc1918) return false;
+    const port = parsed.port;
+    return port === "" || port === "61208" || port === "3000";
+  } catch (e) { return false; }
+}
 function preferContainerProxy(url, proxyPath) {
   const raw = String(url || "").trim();
   if (!raw || raw === proxyPath) return proxyPath;
-  /* 只迁移本项目历史默认内网地址；用户主动填写的域名或其他地址保持不变 */
-  if (/^https?:\/\/192\.168\.112\.3(?::(?:61208|3000))?\/?$/i.test(raw)) return proxyPath;
+  if (isLegacyMpDefaultUrl(raw)) return proxyPath;
   return raw;
 }
 

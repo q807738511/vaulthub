@@ -297,7 +297,7 @@ async function loginMp() {
       body: body.toString()
     }, 8000);
     if (res.status === 401 && res.headers.get("X-MFA-Required")) {
-      toast("⚠️ " + (curLang === "en" ? "MFA 2FA required — not supported in preview" : "账号开启了二次验证(MFA)，预览版暂不支持"));
+      toast("⚠️ " + (curLang === "en" ? "MFA 2FA required — sign in is not supported on this account" : "账号开启了二次验证(MFA)，暂不支持登录"));
       return;
     }
     if (!res.ok) { toast("❌ " + (curLang === "en" ? "Login failed (HTTP " + res.status + ")" : "登录失败（HTTP " + res.status + "）")); return; }
