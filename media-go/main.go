@@ -122,6 +122,9 @@ type playbackPlan struct {
 	VideoAction string        `json:"video_action"`
 	AudioAction string        `json:"audio_action"`
 	Hardware    string        `json:"hardware"`
+	// MaxHeight caps the output height when the caller asked for an explicit
+	// transcode quality (v0.9.40 播放器设置 → 转码质量). 0 means "no cap".
+	MaxHeight   int           `json:"max_height,omitempty"`
 	Media       playbackMedia `json:"media"`
 }
 
@@ -2258,15 +2261,25 @@ var (
 // background cache build: pick the video codec (copy when the source is already
 // H.264), map the requested audio track, and always deliver stereo AAC.
 func compatArgs(ctx context.Context, p, audioTrack, hw, mode string) (pre []string, mid []string) {
+	return compatArgsScaled(ctx, p, audioTrack, hw, mode, 0)
+}
+
+// compatArgsScaled builds the ffmpeg arguments for the compatibility stream.
+// maxHeight > 0 caps the output height (v0.9.40 播放器 设置 → 转码质量); a cap
+// forces a real re-encode because you cannot scale a copied stream.
+func compatArgsScaled(ctx context.Context, p, audioTrack, hw, mode string, maxHeight int) (pre []string, mid []string) {
 	vcodec := ""
 	var post []string
-	if vc, _ := probeVideoCodec(ctx, p); vc == "h264" && mode != "full_transcode" {
+	if vc, _ := probeVideoCodec(ctx, p); vc == "h264" && mode != "full_transcode" && maxHeight <= 0 {
 		vcodec = "copy" // stream copy: no CPU transcode, starts instantly
 	} else {
 		hwInfo := detectHardware(ctx, hw)
 		mode, _ := hwInfo["selected"].(string)
 		dev, _ := hwInfo["vaapi_device"].(string)
 		pre, vcodec, post = hwEncodeArgs(mode, dev)
+		if maxHeight > 0 {
+			post = withScaleFilter(post, vcodec, maxHeight)
+		}
 	}
 	mid = []string{"-map", "0:v:0"}
 	if n, err := strconv.Atoi(audioTrack); audioTrack != "" && err == nil && n >= 0 {
@@ -2276,7 +2289,7 @@ func compatArgs(ctx context.Context, p, audioTrack, hw, mode string) (pre []stri
 	}
 	mid = append(mid, "-c:v", vcodec)
 	mid = append(mid, post...)
-	if mode == "remux" {
+	if mode == "remux" && maxHeight <= 0 {
 		mid = append(mid, "-c:a", "copy")
 	} else {
 		mid = append(mid, "-c:a", "aac", "-ac", "2", "-b:a", "160k")
@@ -2284,10 +2297,44 @@ func compatArgs(ctx context.Context, p, audioTrack, hw, mode string) (pre []stri
 	return pre, mid
 }
 
+// scaleFilterValue returns the downscale filter for the chosen encoder. VAAPI
+// frames live in GPU memory and must use scale_vaapi; everything else uses the
+// software scaler. -2 keeps the width even, which H.264 requires, and
+// min(ih,cap) means a source already below the cap is left alone rather than
+// upscaled.
+func scaleFilterValue(vcodec string, maxHeight int) string {
+	if maxHeight <= 0 {
+		return ""
+	}
+	if strings.HasSuffix(vcodec, "_vaapi") {
+		return fmt.Sprintf("scale_vaapi=w=-2:h=min(ih\\,%d):format=nv12", maxHeight)
+	}
+	return fmt.Sprintf("scale=-2:min(ih\\,%d)", maxHeight)
+}
+
+// withScaleFilter installs the downscale filter into an encoder's output args.
+// ffmpeg honours only the last -vf, so an existing filter (VAAPI's
+// scale_vaapi=format=nv12) must be replaced instead of appended to.
+func withScaleFilter(post []string, vcodec string, maxHeight int) []string {
+	filter := scaleFilterValue(vcodec, maxHeight)
+	if filter == "" {
+		return post
+	}
+	out := make([]string, 0, len(post)+2)
+	for i := 0; i < len(post); i++ {
+		if post[i] == "-vf" || post[i] == "-filter:v" {
+			i++ // drop the flag together with its value
+			continue
+		}
+		out = append(out, post[i])
+	}
+	return append(out, "-vf", filter)
+}
+
 // buildCompatCache produces the seekable (faststart) MP4 in the background so
 // the *next* open is a plain cache hit with full Range support. It deliberately
 // uses a detached context: the user closing the tab must not abort it.
-func (a *App) buildCompatCache(p, cache, audioTrack, hw, mode string) {
+func (a *App) buildCompatCache(p, cache, audioTrack, hw, mode string, maxHeight int) {
 	compatMu.Lock()
 	if compatBuilds[cache] {
 		compatMu.Unlock()
@@ -2300,7 +2347,7 @@ func (a *App) buildCompatCache(p, cache, audioTrack, hw, mode string) {
 		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Hour)
 		defer cancel()
 		tmp := cache + fmt.Sprintf(".bg-%d", os.Getpid())
-		pre, mid := compatArgs(ctx, p, audioTrack, hw, mode)
+		pre, mid := compatArgsScaled(ctx, p, audioTrack, hw, mode, maxHeight)
 		args := append([]string{"-hide_banner", "-loglevel", "error"}, pre...)
 		args = append(args, "-i", p)
 		args = append(args, mid...)
@@ -2339,7 +2386,13 @@ func (a *App) compat(w http.ResponseWriter, r *http.Request) {
 	if mode != "remux" && mode != "audio_transcode" && mode != "full_transcode" {
 		mode = "audio_transcode"
 	}
-	cache := a.cacheKey(fmt.Sprintf("%s:%d:%d:%s:%s:a%s", p, st.Size(), st.ModTime().UnixNano(), hw, mode, audioTrack))
+	// v0.9.40: height caps the output resolution (播放器 设置 → 转码质量). It is part
+	// of the cache key so 1080p and 720p renditions never collide on disk.
+	maxHeight := 0
+	if n, err := strconv.Atoi(r.URL.Query().Get("height")); err == nil && n >= 144 && n <= 4320 {
+		maxHeight = n
+	}
+	cache := a.cacheKey(fmt.Sprintf("%s:%d:%d:%s:%s:a%s:h%d", p, st.Size(), st.ModTime().UnixNano(), hw, mode, audioTrack, maxHeight))
 	// Fully built cache: serve it with byte ranges so seeking works.
 	if f, e := os.Open(cache); e == nil {
 		defer f.Close()
@@ -2370,7 +2423,7 @@ func (a *App) compat(w http.ResponseWriter, r *http.Request) {
 	// about a second even for a multi-gigabyte source. Range is intentionally
 	// not honoured here (we answer 200 with the full stream); the seekable copy
 	// is produced in the background for the next open.
-	pre, mid := compatArgs(ctx, p, audioTrack, hw, mode)
+	pre, mid := compatArgsScaled(ctx, p, audioTrack, hw, mode, maxHeight)
 	args := append([]string{"-hide_banner", "-loglevel", "error"}, pre...)
 	args = append(args, "-i", p)
 	args = append(args, mid...)
@@ -2388,7 +2441,7 @@ func (a *App) compat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if env("COMPAT_PRECACHE", "1") != "0" {
-		a.buildCompatCache(p, cache, audioTrack, hw, mode)
+		a.buildCompatCache(p, cache, audioTrack, hw, mode, maxHeight)
 	}
 	w.Header().Set("Content-Type", "video/mp4")
 	w.Header().Set("Accept-Ranges", "none")

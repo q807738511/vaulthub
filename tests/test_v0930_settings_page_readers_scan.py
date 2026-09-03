@@ -114,11 +114,11 @@ assert ".media-reader-overlay.reader-theme-custom .media-reader-body" in CSS, "�
 assert "readerThemeClass()" in JS, "阅读器必须应用主题类"
 
 # ---------------------------------------------------------------- 版本与发布引用
-assert HTML.count("v0.9.30") >= 2, "关于与侧栏版本必须是 v0.9.30"
-assert 'VAULTHUB_ASSET_VERSION = "0.9.30"' in HTML, "资源版本必须是 0.9.30"
-assert 'VAULTHUB_SCRIPT_VERSION = "0.9.30"' in STATE, "脚本版本必须是 0.9.30"
-assert "ghcr.io/q807738511/vaulthub:v0.9.30" in COMPOSE, "Compose 必须指向 v0.9.30"
-assert (ROOT / ".github/RELEASE_NOTES_0.9.30.md").exists(), "缺少 v0.9.30 release notes"
+assert HTML.count("v0.9.40") >= 2, "关于与侧栏版本必须是 v0.9.40"
+assert 'VAULTHUB_ASSET_VERSION = "0.9.40"' in HTML, "资源版本必须是 0.9.40"
+assert 'VAULTHUB_SCRIPT_VERSION = "0.9.40"' in STATE, "脚本版本必须是 0.9.40"
+assert "ghcr.io/q807738511/vaulthub:v0.9.40" in COMPOSE, "Compose 必须指向 v0.9.40"
+assert (ROOT / ".github/RELEASE_NOTES_0.9.40.md").exists(), "缺少 v0.9.40 release notes"
 
 # ---------------------------------------------------------------- 历史契约不回退
 assert 'id="view-search"' in HTML and "function runMediaSearch()" in JS, "媒体搜索不能回退"

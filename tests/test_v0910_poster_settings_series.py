@@ -43,16 +43,16 @@ assert ".series-show-grid" in CSS and ".series-season-block" in CSS and ".series
 assert "data-series-show" in JS
 assert "S01E01" in JS and "Season 01" in JS
 
-# 4. v0.9.30 发布引用与增量同步工作流。
-assert 'v0.9.30' in HTML
-assert 'ghcr.io/q807738511/vaulthub:v0.9.30' in COMPOSE
+# 4. v0.9.40 发布引用与增量同步工作流。
+assert 'v0.9.40' in HTML
+assert 'ghcr.io/q807738511/vaulthub:v0.9.40' in COMPOSE
 # v0.9.30：摘要比较改为两端统一的 registry HEAD（Docker Hub 会为不接受 OCI 的
 # 客户端即时转换 manifest，skopeo inspect 在两端读到的摘要因此不同）；
 # 真正的推送仍然用 skopeo copy --all --preserve-digests。
 assert 'registry_digest()' in SYNC, '需要统一的 registry 摘要读取函数'
 assert 'docker-content-digest' in SYNC.lower(), '摘要必须来自 registry 的 Docker-Content-Digest'
 assert 'skopeo copy --all --preserve-digests' in SYNC
-print('PASS: v0.9.30 poster hero, sidebar settings and Plex/Emby-style series grouping')
+print('PASS: v0.9.40 poster hero, sidebar settings and Plex/Emby-style series grouping')
 
 # 折叠按钮必须有独立 id，避免 document.querySelector(".rail-btn") 命中侧栏设置按钮
 assert 'id="sidebarCollapseButton"' in HTML, "折叠按钮缺少 sidebarCollapseButton id"

@@ -18,5 +18,5 @@ assert '#settingsModal' not in css
 assert '<section class="view settings-view" id="view-settings">' in html
 assert '<dialog' not in html
 assert '.auth-mask { position:fixed; inset:0; z-index:2000;' in css
-assert 'v0.9.30' in html
-print('PASS: v0.9.30 local NFO/artwork/subtitle and top settings contracts')
+assert 'v0.9.40' in html
+print('PASS: v0.9.40 local NFO/artwork/subtitle and top settings contracts')

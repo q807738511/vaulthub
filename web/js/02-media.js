@@ -342,7 +342,10 @@ function renderSeriesLibraryContent(host, lib, files) {
   host.innerHTML = `<section class="content-collection">${mediaLibraryHeading(lib, `${shows.length} 部剧 · ${files.length} 集`)}${body}</section>`;
 }
 function renderSeriesShowCard(lib, show) { const art=show.poster?`<img src="${esc(show.poster)}" alt="${esc(show.title)}" loading="lazy">`:`<span>${esc(show.title)}</span>`; const seasons=show.seasonList?.length||0, episodes=show.files?.length||0; return `<article class="media-poster-card series-show-card" data-series-show="${esc(show.key)}" onclick="openSeriesDetails(${jsAttrArg(lib.id)},${jsAttrArg(show.key)})"><div class="media-poster-art" style="${show.poster?"":`background:${coverGradient(show.title)}`}">${art}</div><div class="media-poster-info"><strong>${esc(show.title)}</strong><small>${esc([show.year, `${seasons} 季`, `${episodes} 集`, show.provider].filter(Boolean).join(" · "))}</small></div></article>`; }
-function openSeriesDetails(libId, showKey) { enterMovieDetailSidebarMode(); const lib=findMediaLibrary(libId), viewer=document.getElementById("local-media-viewer-movie"); if(!lib||!viewer)return; const show=readSeriesShow(libId,showKey); if(!show)return; const hero={title:show.title,overview:show.overview||"已按 Plex / Emby 风格根据根目录、Season 01 和 S01E01 规则聚合到同一剧集。",poster:show.poster,logo:show.logo,fanart:show.fanart,backdrop:show.backdrop,year:show.year,provider:show.provider,watched:show.watched,media_type:"series"}; const seasons=(show.seasonList||[]).map(season=>`<section class="series-season-block"><h3>Season ${String(season.season).padStart(2,"0")}</h3><div class="media-file-list">${season.episodes.map(ep=>renderSeriesEpisodeRow(lib,ep)).join("")}</div></section>`).join(""); viewer.innerHTML=`<div class="media-reader-overlay movie-detail-page series-detail-page"><div class="movie-detail-scroll"><button class="media-reader-close" onclick="closeMovieDetails()">✕</button>${renderMovieHero(lib,show.files?.[0]?.path||"",hero)}<section><h3>剧集列表</h3><div class="hint">按标准命名规则聚合：根目录剧名 / Season 01 / 剧名 S01E01 标题；刮削先锁定主剧集，再将本地多季多集挂载到同一条目。</div></section>${seasons}</div></div>`; scrollViewerIntoView(viewer); }
+function openSeriesDetails(libId, showKey) { enterMovieDetailSidebarMode(); const lib=findMediaLibrary(libId), viewer=document.getElementById("local-media-viewer-movie"); if(!lib||!viewer)return; const show=readSeriesShow(libId,showKey); if(!show)return; const hero={title:show.title,overview:show.overview||"已按 Plex / Emby 风格根据根目录、Season 01 和 S01E01 规则聚合到同一剧集。",poster:show.poster,logo:show.logo,fanart:show.fanart,backdrop:show.backdrop,year:show.year,provider:show.provider,watched:show.watched,media_type:"series"}; /* v0.9.40：进入剧集详情即把该剧的分集按季/集顺序设为播放队列，
+     这样播放器的「上一个 / 下一个 / 播放列表」走的是同一部剧而不是整库。 */
+  setVideoPlaylist(libId, (show.seasonList||[]).flatMap(season=>(season.episodes||[]).map(ep=>({path:ep.path}))));
+  const seasons=(show.seasonList||[]).map(season=>`<section class="series-season-block"><h3>Season ${String(season.season).padStart(2,"0")}</h3><div class="media-file-list">${season.episodes.map(ep=>renderSeriesEpisodeRow(lib,ep)).join("")}</div></section>`).join(""); viewer.innerHTML=`<div class="media-reader-overlay movie-detail-page series-detail-page"><div class="movie-detail-scroll"><button class="media-reader-close" onclick="closeMovieDetails()">✕</button>${renderMovieHero(lib,show.files?.[0]?.path||"",hero)}<section><h3>剧集列表</h3><div class="hint">按标准命名规则聚合：根目录剧名 / Season 01 / 剧名 S01E01 标题；刮削先锁定主剧集，再将本地多季多集挂载到同一条目。</div></section>${seasons}</div></div>`; scrollViewerIntoView(viewer); }
 function renderSeriesEpisodeRow(lib, ep) { const path=String(ep.path), meta=ep.meta||movieMetadataFor(path), parsed=ep.parsed||parseSeriesEpisode(path); return `<div class="media-file-row series-episode-row"><div class="media-file-name" title="${esc(path)}"><b>${esc(parsed.label)} · ${esc(meta.title||parsed.title)}</b><small>${esc([meta.year,meta.provider].filter(Boolean).join(" · "))}</small></div><span class="media-file-meta">${esc(fileExt(path).toUpperCase())} · ${formatFileSize(ep.size)}</span><div class="media-actions"><button class="btn" onclick="openLocalMedia('movie',${jsAttrArg(lib.id)},${jsAttrArg(path)})">▶ 播放</button><button class="btn" onclick="openMovieDetails(${jsAttrArg(lib.id)},${jsAttrArg(path)})">详情</button></div></div>`; }
 function renderMovieLibrary(lib, files) { const host = document.createElement("div"); renderMovieLibraryContent(host, lib, files); return host.innerHTML; }
 function renderMovieRow(lib, file) { const path=String(file.path), meta=movieMetadataFor(path); return `<div class="media-file-row"><div class="media-file-name" title="${esc(path)}"><b>${esc(meta.title)}</b><small>${esc([meta.year, meta.provider].filter(Boolean).join(" · "))}</small></div><span class="media-file-meta">${esc(fileExt(path).toUpperCase())} · ${formatFileSize(file.size)}</span><div class="media-actions"><button class="btn" data-media-group="movie" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openLocalMediaButton(this)">▶ 播放</button></div></div>`; }
@@ -746,6 +749,8 @@ async function loadLocalFiles(group, lib, offset = 0) {
       scrapeAudioMetadata(target, lib, files);
     } else if (group === "movie") {
       target.innerHTML = renderMovieLibrary(lib, files, data) + pager;
+      /* v0.9.40：播放器的「上一个 / 下一个 / 播放列表」用这批已排序的文件作为队列。 */
+      setVideoPlaylist(lib.id, files);
       if (lib?.type === "series") scrapeSeriesMetadata(target, lib, files);
       else scrapeMovieMetadata(target, lib, files);
     } else {
@@ -1318,20 +1323,311 @@ function toggleVideoStatusPanel(button) {
   const open = panel.classList.toggle("show");
   button.setAttribute("aria-expanded", String(open));
 }
+/* ================= v0.9.40 视频播放器悬浮控制栏 =================
+   触发规则：播放中滑动鼠标（pointermove）唤出控制栏，3 秒内没有任何操作重新隐藏。
+   暂停、控制栏内悬停、任一浮层（更多/设置/播放列表/声音）打开时都不隐藏，
+   否则用户刚点开设置就被收走。手动折叠（左上 ⌄）是显式意图，鼠标移动不再唤出，
+   只能点左下角的 ⌃ 恢复。 */
+const VIDEO_CHROME_HIDE_MS = 3000;
+function videoChromeCollapsed(root) { return root?.dataset.videoChromeCollapsed === "true"; }
+function videoChromeLocked(root) {
+  if (!root) return false;
+  if (root.querySelector("video")?.paused) return true;
+  if (root.querySelector("[data-video-panel].show")) return true;
+  if (root.querySelector(".video-status-panel.show")) return true;
+  return root.dataset.videoChromeHover === "true";
+}
+function hideVideoChrome(root) {
+  if (!root) return;
+  root.classList.remove("video-controls-visible");
+  root.dataset.videoControlsVisible = "false";
+  closeVideoPanels(root);
+  const panel = root.querySelector(".video-status-panel");
+  const button = root.querySelector(".video-info-button");
+  panel?.classList.remove("show");
+  button?.setAttribute("aria-expanded", "false");
+}
 function scheduleVideoChromeHide(root) {
+  if (!root) return;
   clearTimeout(root.__videoChromeTimer);
+  if (videoChromeCollapsed(root)) return;
   root.classList.add("video-controls-visible");
   root.dataset.videoControlsVisible = "true";
   root.__videoChromeTimer = setTimeout(() => {
-    if (!root.querySelector("video")?.paused) {
-      root.classList.remove("video-controls-visible");
-      root.dataset.videoControlsVisible = "false";
-      const panel = root.querySelector(".video-status-panel");
-      const button = root.querySelector(".video-info-button");
-      panel?.classList.remove("show");
-      button?.setAttribute("aria-expanded", "false");
+    if (!videoChromeLocked(root)) hideVideoChrome(root);
+    else scheduleVideoChromeHide(root);
+  }, VIDEO_CHROME_HIDE_MS);
+}
+function videoRootOf(el) { return el?.closest(".media-video-body") || null; }
+function videoElementOf(el) { return videoRootOf(el)?.querySelector("video[data-movie-player]") || null; }
+/* 左上角 ⌄：向下收起整条控制栏，左下角出现 ⌃ 用于展开。 */
+function collapseVideoChrome(el) {
+  const root = videoRootOf(el);
+  if (!root) return;
+  clearTimeout(root.__videoChromeTimer);
+  root.dataset.videoChromeCollapsed = "true";
+  hideVideoChrome(root);
+}
+function expandVideoChrome(el) {
+  const root = videoRootOf(el);
+  if (!root) return;
+  root.dataset.videoChromeCollapsed = "false";
+  scheduleVideoChromeHide(root);
+}
+/* 右上角全屏：优先整块播放区全屏（控制栏一起进全屏），浏览器拒绝时回落到 video 元素。 */
+async function toggleVideoFullscreen(el) {
+  const root = videoRootOf(el);
+  if (!root) return;
+  const button = root.querySelector(".vc-fullscreen");
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else if (root.requestFullscreen) await root.requestFullscreen();
+    else if (root.querySelector("video")?.webkitEnterFullscreen) root.querySelector("video").webkitEnterFullscreen();
+  } catch (e) {
+    try { await root.querySelector("video")?.requestFullscreen?.(); } catch (err) { toast("⚠️ " + t("vpFsDenied")); }
+  }
+  const active = !!document.fullscreenElement;
+  button?.setAttribute("aria-pressed", String(active));
+  if (button) button.title = active ? t("vpFullscreenExit") : t("vpFullscreen");
+  scheduleVideoChromeHide(root);
+}
+function videoTogglePlay(el) {
+  const video = videoElementOf(el);
+  if (!video) return;
+  if (video.paused) video.play().catch(() => {}); else video.pause();
+  syncVideoChromeState(videoRootOf(el), video);
+  scheduleVideoChromeHide(videoRootOf(el));
+}
+function videoSkip(el, seconds) {
+  const video = videoElementOf(el);
+  if (!video || !Number.isFinite(video.currentTime)) return;
+  const limit = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : Infinity;
+  video.currentTime = Math.max(0, Math.min(limit, video.currentTime + Number(seconds || 0)));
+  saveVideoPlaybackState(video);
+  updateVideoTimeline(video);
+  scheduleVideoChromeHide(videoRootOf(el));
+}
+function closeVideoPlayer(el) {
+  const root = videoRootOf(el);
+  const group = root?.dataset.mediaGroup || "movie";
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  closeLocalViewer(group);
+}
+/* ---------- 浮层（更多 / 设置 / 播放列表 / 声音）---------- */
+function closeVideoPanels(root, keep) {
+  root?.querySelectorAll("[data-video-panel]").forEach(panel => {
+    if (panel.dataset.videoPanel === keep) return;
+    panel.classList.remove("show");
+  });
+  root?.querySelectorAll("[data-video-panel-button]").forEach(button => {
+    if (button.dataset.videoPanelButton === keep) return;
+    button.setAttribute("aria-expanded", "false");
+  });
+}
+function toggleVideoPanel(el, name) {
+  const root = videoRootOf(el);
+  const panel = root?.querySelector(`[data-video-panel="${name}"]`);
+  if (!panel) return;
+  const open = !panel.classList.contains("show");
+  closeVideoPanels(root, open ? name : undefined);
+  panel.classList.toggle("show", open);
+  el?.setAttribute("aria-expanded", String(open));
+  if (open && name === "playlist") renderVideoPlaylist(root);
+  scheduleVideoChromeHide(root);
+}
+/* 旧入口保留：字幕/音轨菜单现在就是设置浮层。 */
+function toggleVideoTrackMenu(button) { toggleVideoPanel(button, "settings"); }
+/* ---------- 重复 / 随机 ---------- */
+const VIDEO_REPEAT_ORDER = ["off", "one", "all"];
+function videoRepeatLabel(mode) { return t(mode === "one" ? "vpRepeatOne" : mode === "all" ? "vpRepeatAll" : "vpRepeatOff"); }
+const VIDEO_REPEAT_ICON = { off: "🔁", one: "🔂", all: "🔁" };
+function videoRepeatMode(root) { return VIDEO_REPEAT_ORDER.includes(root?.dataset.videoRepeat) ? root.dataset.videoRepeat : "off"; }
+function cycleVideoRepeat(el) {
+  const root = videoRootOf(el);
+  if (!root) return;
+  const next = VIDEO_REPEAT_ORDER[(VIDEO_REPEAT_ORDER.indexOf(videoRepeatMode(root)) + 1) % VIDEO_REPEAT_ORDER.length];
+  root.dataset.videoRepeat = next;
+  const video = root.querySelector("video");
+  if (video) video.loop = next === "one";
+  const button = root.querySelector("[data-video-repeat-button]");
+  if (button) {
+    button.textContent = VIDEO_REPEAT_ICON[next];
+    button.title = `${t("vpRepeat")}：${videoRepeatLabel(next)}`;
+    button.classList.toggle("on", next !== "off");
+  }
+  toast(`🔁 ${videoRepeatLabel(next)}`);
+  scheduleVideoChromeHide(root);
+}
+function videoShuffleOn(root) { return root?.dataset.videoShuffle === "on"; }
+function toggleVideoShuffle(el) {
+  const root = videoRootOf(el);
+  if (!root) return;
+  const next = videoShuffleOn(root) ? "off" : "on";
+  root.dataset.videoShuffle = next;
+  const button = root.querySelector("[data-video-shuffle-button]");
+  if (button) { button.title = `${t("vpShuffle")}：${t(next === "on" ? "vpShuffleOn" : "vpShuffleOff")}`; button.classList.toggle("on", next === "on"); }
+  toast(`🔀 ${t(next === "on" ? "vpShuffleOn" : "vpShuffleOff")}`);
+  scheduleVideoChromeHide(root);
+}
+/* ---------- 声音 ---------- */
+function setVideoVolume(el, value) {
+  const root = videoRootOf(el);
+  const video = root?.querySelector("video");
+  if (!video) return;
+  const level = Math.max(0, Math.min(100, Number(value) || 0));
+  video.volume = level / 100;
+  video.muted = level === 0;
+  syncVideoVolumeUI(root, video);
+  scheduleVideoChromeHide(root);
+}
+function toggleVideoMute(el) {
+  const root = videoRootOf(el);
+  const video = root?.querySelector("video");
+  if (!video) return;
+  video.muted = !video.muted;
+  if (!video.muted && video.volume === 0) video.volume = 1;
+  syncVideoVolumeUI(root, video);
+  scheduleVideoChromeHide(root);
+}
+function syncVideoVolumeUI(root, video) {
+  if (!root || !video) return;
+  const level = video.muted ? 0 : Math.round((video.volume || 0) * 100);
+  const range = root.querySelector("[data-video-volume]");
+  const label = root.querySelector("[data-video-volume-label]");
+  const icon = video.muted || level === 0 ? "🔇" : level < 45 ? "🔉" : "🔊";
+  if (range && document.activeElement !== range) range.value = String(level);
+  if (label) label.textContent = `${level}%`;
+  root.querySelector("[data-video-mute]")?.replaceChildren(document.createTextNode(icon));
+  const trigger = root.querySelector('[data-video-panel-button="volume"]');
+  if (trigger) trigger.textContent = icon;
+}
+/* ---------- 转码质量 ---------- */
+function setVideoQuality(el, quality) {
+  const root = videoRootOf(el);
+  if (!root) return;
+  root.dataset.videoQuality = quality;
+  root.querySelectorAll("[data-quality]").forEach(button => button.classList.toggle("active", button.dataset.quality === quality));
+  const lib = findMediaLibrary(root.dataset.library);
+  if (lib && root.dataset.path) applyVideoQuality(root, lib, root.dataset.path, quality);
+  scheduleVideoChromeHide(root);
+}
+async function applyVideoQuality(root, lib, path, quality) {
+  const video = root.querySelector("video[data-movie-player]");
+  if (!video) return;
+  const resume = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+  try {
+    const plan = await requestPlaybackPlan(lib, path, quality);
+    root.dataset.videoMetadata = formatVideoMetadata(plan.media);
+    root.dataset.playbackMode = plan.mode || "auto";
+    setMovieCompatStatus(root, `${playbackModeLabel(plan)} · ${plan.reason || "智能选择"}`);
+    const sessionID = await createVideoPlaybackSession(root, lib, path, plan.mode);
+    const url = plan.url && sessionID && plan.mode !== "direct" ? `${plan.url}&task=${encodeURIComponent(sessionID)}` : (plan.url || mediaCompatUrl(lib, path));
+    setVideoEngine(root, plan.mode === "direct" ? VIDEO_ENGINE_NATIVE : VIDEO_ENGINE_COMPAT, `${playbackModeLabel(plan)} · ${plan.reason || "画质切换"}`);
+    switchMovieSource(video, url);
+    /* 切流后必须自己回填进度：switchMovieSource 只在旧 currentTime > 2 时恢复，
+       而这里的 URL 变化会重置 currentTime，所以显式带上 resume。 */
+    video.addEventListener("loadedmetadata", () => { if (resume > 2) video.currentTime = Math.min(resume, video.duration || resume); }, { once: true });
+  } catch (error) { toast("⚠️ " + t("vpQualityFail") + "：" + error.message); }
+}
+/* ---------- 播放列表 ---------- */
+let videoPlaylist = [];
+function setVideoPlaylist(libId, files) {
+  videoPlaylist = (files || []).map(file => ({ libId: String(libId), path: String(file.path || file) })).filter(item => item.path);
+}
+function videoPlaylistIndex(libId, path) { return videoPlaylist.findIndex(item => item.libId === String(libId) && item.path === String(path)); }
+function videoPlaylistLabel(item) {
+  const parsed = parseSeriesEpisode(item.path);
+  const meta = movieMetadataFor(item.path);
+  const lib = findMediaLibrary(item.libId);
+  if (lib?.type === "series") return `${parsed.label} · ${meta.title || parsed.title}`;
+  return meta.title || displayBookTitle(item.path);
+}
+function renderVideoPlaylist(root) {
+  const host = root?.querySelector("[data-video-playlist]");
+  if (!host) return;
+  if (!videoPlaylist.length) { host.innerHTML = `<div class="empty-tip">${esc(t("vpPlaylistEmpty"))}</div>`; return; }
+  const current = videoPlaylistIndex(root.dataset.library, root.dataset.path);
+  host.innerHTML = videoPlaylist.map((item, index) => `<button type="button" class="${index === current ? "active" : ""}" onclick="playVideoFromPlaylist(${index})">${esc(String(index + 1).padStart(2, "0"))} · ${esc(videoPlaylistLabel(item))}</button>`).join("");
+}
+function playVideoFromPlaylist(index) {
+  const item = videoPlaylist[index];
+  if (!item) return;
+  openLocalMedia("movie", item.libId, item.path);
+}
+function videoPlayNeighbour(el, step) {
+  const root = videoRootOf(el);
+  if (!root) return;
+  if (!videoPlaylist.length) { toast("⚠️ " + t("vpPlaylistNone")); return; }
+  const current = videoPlaylistIndex(root.dataset.library, root.dataset.path);
+  let next;
+  if (videoShuffleOn(root) && videoPlaylist.length > 1) {
+    do { next = Math.floor(Math.random() * videoPlaylist.length); } while (next === current);
+  } else {
+    next = current < 0 ? 0 : current + Number(step || 1);
+    if (next < 0 || next >= videoPlaylist.length) {
+      if (videoRepeatMode(root) !== "all") { toast("⚠️ " + t(next < 0 ? "vpFirstItem" : "vpLastItem")); return; }
+      next = (next + videoPlaylist.length) % videoPlaylist.length;
     }
-  }, 3000);
+  }
+  playVideoFromPlaylist(next);
+}
+function videoPlaybackEnded(root, video) {
+  if (!root) return;
+  const mode = videoRepeatMode(root);
+  if (mode === "one") { video.currentTime = 0; video.play().catch(() => {}); return; }
+  if (mode === "all" || videoShuffleOn(root)) { videoPlayNeighbour(root, 1); return; }
+  const current = videoPlaylistIndex(root.dataset.library, root.dataset.path);
+  if (current >= 0 && current + 1 < videoPlaylist.length) videoPlayNeighbour(root, 1);
+}
+/* ---------- 左下角标题：剧集显示集数 + 分集标题，电影显示年份 ---------- */
+function videoChromeTitle(lib, path) {
+  const meta = movieMetadataFor(path);
+  const parsed = parseSeriesEpisode(path);
+  /* 剧集判定不能只看库类型：电影库里混放的 S01E02 也应显示集数。
+     分集标题优先用 NFO/TMDB 的 title（show_title 存在说明这是分集条目），
+     否则回落文件名解析出的标题，最后兜底「第 N 集」。 */
+  const isEpisode = lib?.type === "series" || (!!parsed.episode && /[sS]\d{1,2}[eE]\d{1,3}|\d{1,2}x\d{1,3}|第\s*\d+\s*集/.test(String(path)));
+  if (isEpisode) {
+    const episodeTitle = (meta.show_title ? meta.title : "") || parsed.title || `第 ${parsed.episode || "?"} 集`;
+    return { main: `${meta.show_title || parsed.show} · ${parsed.label}`, sub: episodeTitle };
+  }
+  return { main: meta.title || displayBookTitle(path), sub: meta.year ? `(${meta.year})` : "" };
+}
+function applyVideoChromeTitle(root, lib, path) {
+  const info = videoChromeTitle(lib, path);
+  const title = root?.querySelector("[data-video-title]");
+  const sub = root?.querySelector("[data-video-meta-line]");
+  if (title) { title.textContent = info.main; title.title = String(path); }
+  if (sub) sub.textContent = info.sub;
+}
+function syncVideoChromeState(root, video) {
+  if (!root || !video) return;
+  const button = root.querySelector("[data-video-play]");
+  if (button) { button.textContent = video.paused ? "▶" : "Ⅱ"; button.title = video.paused ? t("vpPlay") : t("vpPause"); }
+  syncVideoVolumeUI(root, video);
+}
+function openVideoDetailsFromPlayer(el) {
+  const root = videoRootOf(el);
+  if (!root?.dataset.library || !root.dataset.path) return;
+  const libId = root.dataset.library, path = root.dataset.path;
+  closeLocalViewer(root.dataset.mediaGroup || "movie");
+  openMovieDetails(libId, path);
+}
+async function copyVideoPlaybackInfo(el) {
+  const root = videoRootOf(el);
+  const video = root?.querySelector("video");
+  if (!root || !video) return;
+  const text = [
+    `文件：${root.dataset.path || ""}`,
+    `媒体库：${findMediaLibrary(root.dataset.library)?.name || root.dataset.library || ""}`,
+    `播放模式：${root.dataset.playbackMode || "auto"} · 引擎 ${VIDEO_ENGINE_LABELS[root.dataset.videoEngine] || root.dataset.videoEngine || ""}`,
+    `画质选择：${root.dataset.videoQuality || "auto"}`,
+    `解码信息：${root.dataset.videoMetadata || "媒体元数据待识别"}`,
+    `分辨率：${video.videoWidth ? `${video.videoWidth}×${video.videoHeight}` : "待获取"}`,
+    `进度：${formatMediaTime(video.currentTime)} / ${formatMediaTime(video.duration)}`,
+  ].join("\n");
+  try { await navigator.clipboard.writeText(text); toast("✅ " + t("vpDiagOk")); }
+  catch (e) { toast("⚠️ " + t("vpDiagFail")); }
 }
 async function createVideoPlaybackSession(root, lib, path, mode) {
   try {
@@ -1354,9 +1650,32 @@ function bindVideoStatus(root, video) {
   ["progress","loadedmetadata","durationchange","canplay"].forEach(ev=>video.addEventListener(ev,()=>{ updateVideoTimeline(video); if(ev==='loadedmetadata')restoreVideoPlaybackState(video); }));
   video.addEventListener('keydown',e=>handleVideoKeyboard(e,video));
   video.tabIndex=0;
-  ["pointermove","mouseenter","click"].forEach(ev => root.addEventListener(ev, () => scheduleVideoChromeHide(root), { passive:true }));
-  video.addEventListener("pause", () => root.classList.add("video-controls-visible"));
-  video.addEventListener("play", () => scheduleVideoChromeHide(root));
+  /* v0.9.40：滑动鼠标触发识别。pointermove 是唯一的「滑动」信号，click/mouseenter
+     一并唤出；控制栏自身 hover 时打标记，避免 3 秒到点把鼠标下的按钮收走。 */
+  ["pointermove","mouseenter","click","touchstart"].forEach(ev => root.addEventListener(ev, () => scheduleVideoChromeHide(root), { passive:true }));
+  /* hover 锁只绑在真正的顶部/底部条上：控制层是全屏铺满的，绑在它上面会让
+     「鼠标停在画面中央」也被当成停在控制栏上，3 秒定时器永远不触发隐藏。 */
+  root.querySelectorAll(".vc-top,.vc-bottom,[data-video-panel]").forEach(bar => {
+    bar.addEventListener("pointerenter", () => { root.dataset.videoChromeHover = "true"; }, { passive:true });
+    bar.addEventListener("pointerleave", () => { root.dataset.videoChromeHover = "false"; scheduleVideoChromeHide(root); }, { passive:true });
+  });
+  /* 暂停时控制栏常驻（videoChromeLocked 保证不会被定时器收走）。 */
+  video.addEventListener("pause", () => { syncVideoChromeState(root, video); if (!videoChromeCollapsed(root)) { root.classList.add("video-controls-visible"); root.dataset.videoControlsVisible = "true"; } });
+  video.addEventListener("play", () => { syncVideoChromeState(root, video); scheduleVideoChromeHide(root); });
+  video.addEventListener("volumechange", () => syncVideoVolumeUI(root, video));
+  video.addEventListener("ended", () => videoPlaybackEnded(root, video));
+  video.addEventListener("loadedmetadata", () => syncVideoChromeState(root, video));
+  /* 点画面切换播放/暂停，与主流播放器一致；控制栏内的点击不冒泡到这里。 */
+  video.addEventListener("click", () => { if (video.paused) video.play().catch(()=>{}); else video.pause(); });
+  /* 只拦控制条与浮层内的点击；画面本身的点击必须落到 video 上。 */
+  root.querySelectorAll(".vc-top,.vc-bottom,[data-video-panel],.vc-restore").forEach(el => el.addEventListener("click", event => event.stopPropagation()));
+  document.addEventListener("fullscreenchange", () => {
+    const button = root.querySelector(".vc-fullscreen");
+    const active = document.fullscreenElement === root || root.contains(document.fullscreenElement);
+    button?.setAttribute("aria-pressed", String(active));
+    if (button) button.title = active ? t("vpFullscreenExit") : t("vpFullscreen");
+  });
+  syncVideoChromeState(root, video);
 }
 function formatVideoTime(value) { return formatMediaTime(value); }
 function videoPlaybackKey(lib, path) { return `vaulthub_video_${lib.id}_${path}`; }
@@ -1373,18 +1692,56 @@ function updateVideoTimeline(video) {
   const root=video?.closest('.media-video-body'); if(!root) return;
   const duration=Number.isFinite(video.duration)&&video.duration>0?video.duration:0;
   const played=duration?video.currentTime/duration*100:0;
-  const buffered=video.buffered?.length?video.buffered.end(video.buffered.length-1)/duration*100:0;
+  const buffered=duration&&video.buffered?.length?video.buffered.end(video.buffered.length-1)/duration*100:0;
   const p=root.querySelector('.video-played-range'), b=root.querySelector('.video-buffered-range'), label=root.querySelector('.video-time-label');
   if(p)p.style.width=`${Math.min(100,played)}%`; if(b)b.style.width=`${Math.min(100,buffered)}%`;
-  if(label)label.textContent=`${formatVideoTime(video.currentTime)} / ${formatVideoTime(video.duration)}  ·  已读 ${formatVideoTime(video.buffered?.length?video.buffered.end(video.buffered.length-1):0)}`;
+  /* v0.9.40：进度点跟着已播比例走，让用户看得出可以拖动。 */
+  const knob=root.querySelector('.video-progress-knob');
+  if(knob)knob.style.left=`${Math.min(100,Math.max(0,played))}%`;
+  const shell=root.querySelector('.video-progress-shell');
+  if(shell)shell.setAttribute('aria-valuenow',String(Math.round(Math.min(100,Math.max(0,played)))));
+  /* v0.9.40：左下角只显示「当前时间 / 视频时长」，缓冲量移到「获取信息」面板。 */
+  if(label)label.textContent=`${formatVideoTime(video.currentTime)} / ${formatVideoTime(video.duration)}`;
 }
-function seekVideoTimeline(event, shell) { const video=shell.closest('.media-video-body')?.querySelector('video'); if(!video||!video.duration)return; const r=shell.getBoundingClientRect(); video.currentTime=Math.max(0,Math.min(video.duration,(event.clientX-r.left)/r.width*video.duration)); saveVideoPlaybackState(video); }
+/* v0.9.40：进度条支持点击定位与按住拖动；键盘左右键也能移动，便于无鼠标操作。 */
+function videoSeekRatio(event, shell) { const r=shell.getBoundingClientRect(); if(!(r.width>0))return 0; return Math.max(0,Math.min(1,(event.clientX-r.left)/r.width)); }
+function seekVideoTimeline(event, shell) {
+  const root=shell.closest('.media-video-body');
+  const video=root?.querySelector('video');
+  if(!video||!Number.isFinite(video.duration)||video.duration<=0)return;
+  video.currentTime=videoSeekRatio(event,shell)*video.duration;
+  saveVideoPlaybackState(video);
+  updateVideoTimeline(video);
+  scheduleVideoChromeHide(root);
+}
+function bindVideoTimelineDrag(root) {
+  const shell=root?.querySelector('.video-progress-shell');
+  const video=root?.querySelector('video');
+  if(!shell||!video)return;
+  let dragging=false;
+  const apply=event=>{ if(!Number.isFinite(video.duration)||video.duration<=0)return; video.currentTime=videoSeekRatio(event,shell)*video.duration; updateVideoTimeline(video); };
+  shell.addEventListener('pointerdown',event=>{ dragging=true; shell.setPointerCapture?.(event.pointerId); apply(event); });
+  shell.addEventListener('pointermove',event=>{ if(dragging)apply(event); });
+  const finish=()=>{ if(!dragging)return; dragging=false; saveVideoPlaybackState(video); scheduleVideoChromeHide(root); };
+  shell.addEventListener('pointerup',finish);
+  shell.addEventListener('pointercancel',finish);
+  shell.addEventListener('keydown',event=>{
+    if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+    event.preventDefault();
+    const limit=Number.isFinite(video.duration)&&video.duration>0?video.duration:0;
+    if(!limit)return;
+    if(event.key==='Home')video.currentTime=0;
+    else if(event.key==='End')video.currentTime=Math.max(0,limit-1);
+    else video.currentTime=Math.max(0,Math.min(limit,video.currentTime+(event.key==='ArrowRight'?5:-5)));
+    saveVideoPlaybackState(video);
+    updateVideoTimeline(video);
+  });
+}
 function handleVideoKeyboard(event, video) {
   if(!video || event.target.matches('input,textarea,select,button')) return;
   if(event.repeat) return;
   if(['ArrowLeft','ArrowRight',' ','k','K'].includes(event.key)) { event.preventDefault(); if(event.key==='ArrowLeft')video.currentTime=Math.max(0,video.currentTime-10); else if(event.key==='ArrowRight')video.currentTime=Math.min(video.duration||Infinity,video.currentTime+10); else video.paused?video.play().catch(()=>{}):video.pause(); saveVideoPlaybackState(video); }
 }
-function toggleVideoTrackMenu(button) { const root=button?.closest('.media-video-body'); root?.querySelector('[data-video-track-menu]')?.classList.toggle('show'); }
 function selectVideoAudioTrack(video, index) { const root=video.closest('.media-video-body'); const lib={id:root.dataset.library}; const path=root.dataset.path; const url=mediaCompatUrl(lib,path)+`&audio_track=${encodeURIComponent(index)}`; const time=video.currentTime; const paused=video.paused; video.src=url; video.dataset.currentSrc=url; video.load(); video.addEventListener('loadedmetadata',()=>{video.currentTime=Math.min(time,video.duration||time); if(!paused)video.play().catch(()=>{});},{once:true}); }
 function attachVideoSubtitle(video, url, label) { let track=[...video.textTracks].find(t=>t.label===label); if(track)track.mode='showing'; else { const el=document.createElement('track'); el.kind='subtitles'; el.label=label||'外挂字幕'; el.srclang='und'; el.src=url; el.default=true; video.appendChild(el); } [...video.textTracks].forEach(t=>{t.mode=t.label===label?'showing':'disabled';}); }
 async function searchVideoSubtitles(button) { const root=button.closest('.media-video-body'); const box=root.querySelector('[data-video-subtitle-options]'); box.textContent='搜索中...'; try { const res=await fetch(`/api/media/subtitles/search?id=${encodeURIComponent(root.dataset.library)}&path=${encodeURIComponent(root.dataset.path)}`,{cache:'no-store'}); const data=await res.json(); box.innerHTML=(data.items||[]).map((x,i)=>`<button type="button" onclick="attachVideoSubtitle(this.closest('.media-video-body').querySelector('video'), '${esc(x.url)}', '${esc(x.label||`字幕 ${i+1}`)}')">${esc(x.label||`字幕 ${i+1}`)}</button>`).join('')||'没有找到字幕'; } catch(e) { box.textContent='字幕搜索失败'; } }
@@ -1415,12 +1772,19 @@ async function initMovieCompatPlayer(root, lib, path) {
   if (!video) return;
   const videoRoot = video.closest('.media-video-body');
   videoRoot.dataset.library=String(lib.id); videoRoot.dataset.path=String(path);
-  fetch(`/api/media/metadata?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}`,{cache:'no-store'}).then(r=>r.ok?r.json():null).then(meta=>{if(meta?.subtitles?.length){const box=videoRoot.querySelector('[data-video-subtitle-options]');if(box)box.innerHTML=meta.subtitles.map((s,i)=>`<button type="button" onclick="attachVideoSubtitle(this.closest('.media-video-body').querySelector('video'),${jsAttrArg(s.url)},${jsAttrArg(s.label||`本地字幕 ${i+1}`)})">${esc(s.label||`本地字幕 ${i+1}`)}</button>`).join('');}}).catch(()=>{});
-  const showThreeLayerButtons = () => { const bar=videoRoot.querySelector('.movie-compat-bar'); if(bar)bar.hidden=false; };
-  showThreeLayerButtons();
+  /* v0.9.40：关闭播放要知道自己属于哪个媒体分组；标题/剧集信息与播放列表在这里绑定。 */
+  videoRoot.dataset.mediaGroup="movie";
+  applyVideoChromeTitle(videoRoot, lib, path);
+  renderVideoPlaylist(videoRoot);
+  bindVideoTimelineDrag(videoRoot);
+  fetch(`/api/media/metadata?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}`,{cache:'no-store'}).then(r=>r.ok?r.json():null).then(meta=>{if(meta&&(meta.title||meta.year||meta.show_title)){const all=readMovieMetadata();all[path]={...movieMetadataFor(path),...meta};writeMovieMetadata(all);applyVideoChromeTitle(videoRoot,lib,path);}if(meta?.subtitles?.length){const box=videoRoot.querySelector('[data-video-subtitle-options]');if(box)box.innerHTML=meta.subtitles.map((s,i)=>`<button type="button" onclick="attachVideoSubtitle(this.closest('.media-video-body').querySelector('video'),${jsAttrArg(s.url)},${jsAttrArg(s.label||`本地字幕 ${i+1}`)})">${esc(s.label||`本地字幕 ${i+1}`)}</button>`).join('');}}).catch(()=>{});
   const direct = mediaFileUrl(lib, path);
   const compat = mediaCompatUrl(lib, path);
-  bindVideoStatus(root, video);
+  /* v0.9.40 修复：以前这里传的是外层 viewer，于是 .video-controls-visible
+     被加到 viewer 上，而 CSS 选择器是 .media-video-body.video-controls-visible，
+     永远不匹配 —— 这就是悬浮控制栏/进度条一直不出现的根因。 */
+  bindVideoStatus(videoRoot, video);
+  scheduleVideoChromeHide(videoRoot);
   const useDirect = (reason="原片直连") => { terminateWasmVideo(videoRoot); setVideoEngine(videoRoot, VIDEO_ENGINE_NATIVE, reason); switchMovieSource(video, direct); };
   const useCompat = (reason, url=compat) => { terminateWasmVideo(videoRoot); setVideoEngine(videoRoot, VIDEO_ENGINE_COMPAT, reason || `Smart Stream · ${settings.hardwareAcceleration}`); switchMovieSource(video, url); };
   const useWasm = async () => { try { await startWasmVideoFallback(videoRoot, video, direct); } catch (error) { setVideoEngine(videoRoot, VIDEO_ENGINE_WASM, `启动失败：${error.message}`); } };
@@ -1435,7 +1799,8 @@ async function initMovieCompatPlayer(root, lib, path) {
     try { await advanceVideoEngine(videoRoot, video, { direct, useCompat }); } finally { setTimeout(() => { engineFailurePending = false; }, 1000); }
   });
   try {
-    const plan = await requestPlaybackPlan(lib, path, "auto");
+    /* v0.9.40：画质选择（设置 → 转码质量）决定播放计划，默认仍是 auto。 */
+    const plan = await requestPlaybackPlan(lib, path, videoRoot.dataset.videoQuality || "auto");
     videoRoot.dataset.videoMetadata = formatVideoMetadata(plan.media);
     videoRoot.dataset.playbackMode = plan.mode || "auto";
     setMovieCompatStatus(videoRoot, `${playbackModeLabel(plan)} · ${plan.reason || "智能选择"}`);
@@ -1505,7 +1870,72 @@ async function openLocalMedia(group, libId, path) {
     } catch (err) { viewer.innerHTML = viewerShell(group, lib, path, `<div class="media-error">ZIP 漫画读取失败：${esc(err.message)}</div>`, url, { doc: true }); return; }
   }
   if (["mp3","flac","m4a","ogg","wav"].includes(ext)) body = `<div class="media-viewer-body"><audio controls autoplay preload="metadata" src="${esc(url)}"></audio></div>`;
-  else if (MEDIA_FORMATS.movie.includes(ext)) body = `<div class="media-viewer-body media-video-body" data-video-controls-visible="true" data-video-engine="native"><div class="movie-compat-bar"><strong>三层播放</strong><button class="btn" type="button" data-engine-choice="native" data-movie-direct>Direct Play</button><button class="btn" type="button" data-engine-choice="compat" data-movie-compat>Smart Stream</button><button class="btn" type="button" data-engine-choice="wasm" data-movie-wasm>WASM Fallback</button><span class="movie-compat-status">正在上报浏览器能力并生成播放计划...</span></div><button class="video-menu-button" type="button" title="字幕和音轨" aria-label="字幕和音轨" onclick="toggleVideoTrackMenu(this)">☷</button><button class="video-info-button" type="button" title="播放及媒体元数据" aria-label="播放及媒体元数据" aria-expanded="false" onclick="toggleVideoStatusPanel(this)">!</button><video data-movie-player controls playsinline preload="metadata" onloadedmetadata="this.muted=false;this.volume=1" onvolumechange="this.dataset.volume=String(this.volume)"></video><div class="video-timeline"><span class="video-time-label">00:00 / 00:00</span><div class="video-progress-shell" role="slider" aria-label="播放进度" onclick="seekVideoTimeline(event,this)"><span class="video-buffered-range"></span><span class="video-played-range"></span></div></div><div class="video-track-menu video-audio-menu" data-video-track-menu><h4>音源</h4><div class="video-audio-options" data-video-audio-options>读取音源中...</div><h4>字幕</h4><div class="video-subtitle-menu" data-video-subtitle-options>暂无外挂字幕</div><button type="button" onclick="searchVideoSubtitles(this)">搜索并挂载字幕</button></div><div class="video-status-panel"><span class="status-main" data-video-status>准备播放</span><span class="status-detail" data-video-detail>--:-- / --:-- · 媒体元数据待识别</span></div></div>`;
+  else if (MEDIA_FORMATS.movie.includes(ext)) body = `<div class="media-viewer-body media-video-body" data-video-controls-visible="true" data-video-engine="native" data-video-chrome-collapsed="false" data-video-repeat="off" data-video-shuffle="off" data-video-quality="auto">
+<video data-movie-player playsinline preload="metadata" onloadedmetadata="this.muted=false;this.volume=1" onvolumechange="this.dataset.volume=String(this.volume)"></video>
+<div class="video-chrome" data-video-chrome>
+<div class="vc-top">
+<button class="vc-icon vc-collapse" type="button" title="${esc(t("vpCollapse"))}" aria-label="${esc(t("vpCollapse"))}" onclick="collapseVideoChrome(this)">⌄</button>
+<span class="movie-compat-status">正在上报浏览器能力并生成播放计划...</span>
+<button class="vc-icon vc-fullscreen" type="button" title="${esc(t("vpFullscreen"))}" aria-label="${esc(t("vpFullscreen"))}" aria-pressed="false" onclick="toggleVideoFullscreen(this)">⛶</button>
+</div>
+<div class="vc-bottom">
+<div class="video-timeline">
+<div class="video-progress-shell" role="slider" aria-label="${esc(t("vpProgress"))}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0" onclick="seekVideoTimeline(event,this)"><span class="video-buffered-range"></span><span class="video-played-range"></span><span class="video-progress-knob"></span></div>
+</div>
+<div class="vc-bar">
+<div class="vc-left">
+<strong class="vc-title" data-video-title>${esc(t("vpTitleLoading"))}</strong>
+<span class="vc-sub" data-video-meta-line></span>
+<span class="video-time-label">00:00 / 00:00</span>
+</div>
+<div class="vc-center">
+<button class="vc-icon" type="button" title="${esc(t("vpPrev"))}" aria-label="${esc(t("vpPrev"))}" onclick="videoPlayNeighbour(this,-1)">⏮</button>
+<button class="vc-icon" type="button" title="${esc(t("vpRewind"))}" aria-label="${esc(t("vpRewind"))}" onclick="videoSkip(this,-10)">⏪</button>
+<button class="vc-icon vc-play" type="button" title="${esc(t("vpPlayPause"))}" aria-label="${esc(t("vpPlayPause"))}" data-video-play onclick="videoTogglePlay(this)">Ⅱ</button>
+<button class="vc-icon" type="button" title="${esc(t("vpForward"))}" aria-label="${esc(t("vpForward"))}" onclick="videoSkip(this,10)">⏩</button>
+<button class="vc-icon" type="button" title="${esc(t("vpNext"))}" aria-label="${esc(t("vpNext"))}" onclick="videoPlayNeighbour(this,1)">⏭</button>
+<button class="vc-icon vc-stop" type="button" title="${esc(t("vpClose"))}" aria-label="${esc(t("vpClose"))}" onclick="closeVideoPlayer(this)">✕</button>
+</div>
+<div class="vc-right">
+<button class="vc-icon" type="button" title="${esc(t("vpMore"))}" aria-label="${esc(t("vpMore"))}" aria-expanded="false" data-video-panel-button="more" onclick="toggleVideoPanel(this,'more')">⋯</button>
+<button class="vc-icon" type="button" title="${esc(t("vpRepeat") + "：" + t("vpRepeatOff"))}" aria-label="${esc(t("vpRepeat"))}" data-video-repeat-button onclick="cycleVideoRepeat(this)">🔁</button>
+<button class="vc-icon" type="button" title="${esc(t("vpShuffle") + "：" + t("vpShuffleOff"))}" aria-label="${esc(t("vpShuffle"))}" data-video-shuffle-button onclick="toggleVideoShuffle(this)">🔀</button>
+<button class="vc-icon" type="button" title="${esc(t("vpSettings"))}" aria-label="${esc(t("vpSettings"))}" aria-expanded="false" data-video-panel-button="settings" onclick="toggleVideoPanel(this,'settings')">⚙</button>
+<button class="vc-icon" type="button" title="${esc(t("vpPlaylist"))}" aria-label="${esc(t("vpPlaylist"))}" aria-expanded="false" data-video-panel-button="playlist" onclick="toggleVideoPanel(this,'playlist')">☰</button>
+<button class="vc-icon" type="button" title="${esc(t("vpVolume"))}" aria-label="${esc(t("vpVolume"))}" aria-expanded="false" data-video-panel-button="volume" onclick="toggleVideoPanel(this,'volume')">🔊</button>
+</div>
+</div>
+</div>
+</div>
+<button class="vc-restore" type="button" title="${esc(t("vpExpand"))}" aria-label="${esc(t("vpExpand"))}" onclick="expandVideoChrome(this)">⌃</button>
+<div class="vc-panel vc-panel-more" data-video-panel="more">
+<h4>${esc(t("vpMore"))}</h4>
+<button class="video-info-button" type="button" title="播放及媒体元数据" aria-label="播放及媒体元数据" aria-expanded="false" onclick="toggleVideoStatusPanel(this)">ⓘ ${esc(t("vpInfo"))}</button>
+<button type="button" onclick="openVideoDetailsFromPlayer(this)">🎬 ${esc(t("vpDetails"))}</button>
+<button type="button" onclick="copyVideoPlaybackInfo(this)">⧉ ${esc(t("vpDiag"))}</button>
+</div>
+<div class="vc-panel vc-panel-settings video-track-menu video-audio-menu" data-video-panel="settings" data-video-track-menu>
+<h4>${esc(t("vpQuality"))}</h4>
+<div class="video-quality-options" data-video-quality-options><button type="button" class="active" data-quality="auto" onclick="setVideoQuality(this,'auto')">${esc(t("vpQualityAuto"))}</button><button type="button" data-quality="original" onclick="setVideoQuality(this,'original')">${esc(t("vpQualityOriginal"))}</button><button type="button" data-quality="1080p" onclick="setVideoQuality(this,'1080p')">1080p</button><button type="button" data-quality="720p" onclick="setVideoQuality(this,'720p')">720p</button><button type="button" data-quality="480p" onclick="setVideoQuality(this,'480p')">480p</button></div>
+<h4>${esc(t("vpEngine"))}</h4>
+<div class="movie-compat-bar"><strong>三层播放</strong><button class="btn" type="button" data-engine-choice="native" data-movie-direct>Direct Play</button><button class="btn" type="button" data-engine-choice="compat" data-movie-compat>Smart Stream</button><button class="btn" type="button" data-engine-choice="wasm" data-movie-wasm>WASM Fallback</button></div>
+<h4>${esc(t("vpAudioStream"))}</h4>
+<div class="video-audio-options" data-video-audio-options>${esc(t("vpAudioLoading"))}</div>
+<h4>${esc(t("vpSubtitle"))}</h4>
+<div class="video-subtitle-menu" data-video-subtitle-options>${esc(t("vpSubtitleNone"))}</div>
+<button type="button" onclick="searchVideoSubtitles(this)">${esc(t("vpSubtitleSearch"))}</button>
+</div>
+<div class="vc-panel vc-panel-playlist" data-video-panel="playlist">
+<h4>${esc(t("vpPlaylist"))}</h4>
+<div class="video-playlist-items" data-video-playlist>${esc(t("vpPlaylistLoading"))}</div>
+</div>
+<div class="vc-panel vc-panel-volume" data-video-panel="volume">
+<button class="vc-icon" type="button" title="${esc(t("vpMute"))}" aria-label="${esc(t("vpMute"))}" data-video-mute onclick="toggleVideoMute(this)">🔊</button>
+<input class="vc-volume-range" type="range" min="0" max="100" step="1" value="100" aria-label="${esc(t("vpVolume"))}" data-video-volume oninput="setVideoVolume(this,this.value)">
+<span class="vc-volume-label" data-video-volume-label>100%</span>
+</div>
+<div class="video-status-panel"><span class="status-main" data-video-status>准备播放</span><span class="status-detail" data-video-detail>--:-- / --:-- · 媒体元数据待识别</span></div>
+</div>`;
   else if (["jpg","jpeg","png","webp","gif","bmp","avif"].includes(ext)) body = `<img src="${esc(url)}" alt="${esc(path)}">`;
   else if (ext === "pdf") body = `<iframe src="${esc(url)}#view=FitH" title="${esc(path)}"></iframe>`;
   else if (ext === "txt") {

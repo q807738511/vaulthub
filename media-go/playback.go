@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -54,6 +55,21 @@ var probePlaybackMedia = func(ctx context.Context, path string) (playbackMedia, 
 	return m, nil
 }
 
+// qualityMaxHeight maps a UI quality choice to a vertical pixel cap.
+// "auto" and "original" impose no cap; an explicit 1080p/720p/480p choice does.
+// v0.9.40: the floating player's 设置 → 转码质量 selector sends these values.
+func qualityMaxHeight(quality string) int {
+	switch strings.ToLower(strings.TrimSpace(quality)) {
+	case "1080p":
+		return 1080
+	case "720p":
+		return 720
+	case "480p":
+		return 480
+	}
+	return 0
+}
+
 func choosePlaybackPlan(m playbackMedia, c playbackClient, quality, hardware string) playbackPlan {
 	if quality == "" {
 		quality = "auto"
@@ -62,6 +78,22 @@ func choosePlaybackPlan(m playbackMedia, c playbackClient, quality, hardware str
 	audioOK := m.AudioCodec == "" || (m.AudioCodec == "aac" && c.AAC) || (m.AudioCodec == "opus" && c.Opus) || m.AudioCodec == "mp3"
 	containerOK := (m.Container == "mp4" || m.Container == "m4v") && c.MP4
 	plan := playbackPlan{Media: m, Hardware: hardware, VideoAction: "copy", AudioAction: "copy"}
+	// An explicit resolution cap always wins: the point of picking 720p is to
+	// stop shipping the 4K original, so a compatible source must still be
+	// re-encoded. Sources already at or below the cap are never upscaled.
+	if cap := qualityMaxHeight(quality); cap > 0 {
+		if m.Height == 0 || m.Height > cap {
+			plan.Layer, plan.Mode = "smart_stream", "full_transcode"
+			plan.Reason = fmt.Sprintf("按所选画质限制到 %dp，转换为 H.264/AAC", cap)
+			plan.VideoAction, plan.AudioAction = "h264", "aac"
+			plan.MaxHeight = cap
+			return plan
+		}
+		// Source already fits the cap: fall through to the normal decision as if
+		// the user had chosen 自动, so a 720p file under a 1080p cap still gets
+		// direct play instead of a pointless remux.
+		quality = "auto"
+	}
 	switch {
 	case quality == "original" && containerOK && videoOK && audioOK:
 		plan.Layer, plan.Mode, plan.Reason = "direct_play", "direct", "原画模式：浏览器支持当前封装、视频和音频编码"
@@ -127,6 +159,9 @@ func (a *App) playbackPlan(w http.ResponseWriter, r *http.Request) {
 	} else {
 		q.Set("hw", selected)
 		q.Set("mode", plan.Mode)
+		if plan.MaxHeight > 0 {
+			q.Set("height", strconv.Itoa(plan.MaxHeight))
+		}
 		plan.URL = "/api/media/compat?" + q.Encode()
 	}
 	writeJSON(w, 200, plan)

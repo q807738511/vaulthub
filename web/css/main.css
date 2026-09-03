@@ -235,10 +235,10 @@
   body.sidebar-hidden .nav-tools { display: none !important; }
   body.module-hidden-pt .nav-item[data-view="pt"],
   body.module-hidden-pt #view-pt { display:none !important; }
-  .video-info-button { position:absolute; top:12px; right:12px; z-index:5; width:34px; height:34px; padding:0; border-radius:50%; border:1px solid rgba(255,255,255,.48); color:#fff; background:rgba(0,0,0,.58); font:800 18px/1 sans-serif; cursor:pointer; opacity:0; pointer-events:none; transition:opacity .18s,background .18s; }
-  .media-video-body.video-controls-visible .video-info-button, .media-video-body[data-video-controls-visible="true"] .video-info-button { opacity:1; pointer-events:auto; }
-  .video-info-button:hover,.video-info-button[aria-expanded="true"] { background:var(--accent); color:var(--accent-ink); }
-  .video-status-panel { position:absolute; top:54px; right:12px; z-index:4; display:none; width:min(370px,calc(100% - 24px)); color:#fff; font-size:12px; padding:10px 12px; border-radius:9px; background:rgba(0,0,0,.76); box-shadow:0 8px 24px rgba(0,0,0,.35); pointer-events:none; }
+  /* v0.9.40：「获取信息」搬进右下角「更多操作」浮层，由 .vc-panel button 定样式；
+     这里只保留展开态高亮，不再绝对定位到右上角。 */
+  .video-info-button[aria-expanded="true"] { border-color:var(--accent); background:rgba(88,166,255,.28); }
+  .video-status-panel { position:absolute; right:clamp(12px,2vw,24px); bottom:96px; z-index:9; display:none; width:min(370px,calc(100% - 32px)); color:#fff; font-size:12px; padding:10px 12px; border-radius:9px; background:rgba(0,0,0,.86); box-shadow:0 8px 24px rgba(0,0,0,.45); pointer-events:none; }
   .video-status-panel.show { display:flex; align-items:flex-start; gap:5px; flex-direction:column; }
   .video-status-panel .status-main { font-weight:700; }
   .video-status-panel .status-detail { color:rgba(255,255,255,.78); }
@@ -639,24 +639,74 @@
   .media-viewer-body { padding: 12px; max-height: none; overflow: auto; }
   .media-video-body { position:relative; width:100%; height:100%; min-height:calc(100vh - var(--topbar-h) - 54px); padding:clamp(0px,1.5vw,20px); box-sizing:border-box; margin:0; overflow:hidden; background:#000; display:flex; align-items:center; justify-content:center; }
   .media-video-body video { width:100%; height:100%; max-width:none; max-height:none; object-fit:contain; background:#000; }
-  .video-timeline { position:absolute; left:20px; right:20px; bottom:18px; z-index:6; height:28px; display:flex; align-items:center; gap:10px; opacity:0; transition:opacity .18s; }
-  .media-video-body.video-controls-visible .video-timeline { opacity:1; }
-  .video-progress-shell { position:relative; flex:1; height:8px; border-radius:999px; overflow:hidden; background:rgba(255,255,255,.18); cursor:pointer; box-shadow:0 0 0 1px rgba(0,0,0,.3); }
-  .video-buffered-range,.video-played-range { position:absolute; left:0; top:0; bottom:0; width:0; pointer-events:none; }
-  .video-buffered-range { background:rgba(255,255,255,.52); }
+  /* ================= v0.9.40 视频播放器悬浮控制栏 =================
+     一整块 .video-chrome 盖在 video 之上：顶部左 ⌄ 折叠、右 ⛶ 全屏，
+     底部是「进度条 + 左信息 / 中传输键 / 右功能键」。整块只靠
+     .video-controls-visible 淡入淡出；未触发识别时 pointer-events:none，
+     不会挡住画面上的点击切换播放。 */
+  .video-chrome { position:absolute; inset:0; z-index:6; display:flex; flex-direction:column; justify-content:space-between; padding:12px clamp(12px,2vw,24px); box-sizing:border-box; opacity:0; pointer-events:none; transition:opacity .18s; background:linear-gradient(180deg,rgba(0,0,0,.62) 0%,rgba(0,0,0,0) 22%,rgba(0,0,0,0) 58%,rgba(0,0,0,.72) 100%); }
+  .media-video-body.video-controls-visible .video-chrome { opacity:1; }
+  /* 控制层铺满整个播放区，但它本身永远不接收指针事件：否则鼠标停在画面中央
+     也算「停在控制栏上」，3 秒定时器永远不会触发隐藏；而且画面点击会被这层
+     吞掉，点画面无法暂停/播放。只有顶部条、底部条和浮层可点。 */
+  .vc-top,.vc-bottom { pointer-events:none; }
+  .media-video-body.video-controls-visible .vc-top,
+  .media-video-body.video-controls-visible .vc-bottom { pointer-events:auto; }
+  .vc-top { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+  .vc-top .movie-compat-status { flex:1 1 auto; min-width:0; margin:0 8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:center; }
+  .vc-bottom { display:flex; flex-direction:column; gap:8px; }
+  /* 进度条在「左下到右下的方框」上方，横跨整条控制栏。 */
+  .video-timeline { display:flex; align-items:center; gap:10px; }
+  .video-progress-shell { position:relative; flex:1; height:8px; border-radius:999px; background:rgba(255,255,255,.22); cursor:pointer; box-shadow:0 0 0 1px rgba(0,0,0,.3); touch-action:none; }
+  .video-progress-shell:focus-visible { outline:2px solid #58a6ff; outline-offset:3px; }
+  .video-buffered-range,.video-played-range { position:absolute; left:0; top:0; bottom:0; width:0; border-radius:999px; pointer-events:none; }
+  .video-buffered-range { background:rgba(255,255,255,.42); }
   .video-played-range { background:#58a6ff; box-shadow:0 0 8px rgba(88,166,255,.75); }
-  .video-time-label { min-width:112px; color:#fff; font:12px/1.2 ui-monospace,Consolas,monospace; text-shadow:0 1px 3px #000; }
-  .video-track-menu { position:absolute; right:20px; bottom:58px; z-index:7; display:none; width:min(330px,calc(100% - 40px)); max-height:55vh; overflow:auto; padding:10px; border:1px solid rgba(255,255,255,.28); border-radius:10px; color:#fff; background:rgba(15,17,21,.94); box-shadow:0 10px 32px rgba(0,0,0,.5); }
-  .video-track-menu.show { display:block; }
-  .video-track-menu h4 { margin:5px 0 8px; font-size:13px; }
-  .video-track-menu button { display:block; width:100%; margin:5px 0; padding:7px 9px; text-align:left; border:1px solid rgba(255,255,255,.18); border-radius:7px; color:#fff; background:rgba(255,255,255,.08); cursor:pointer; }
+  .video-progress-knob { position:absolute; top:50%; left:0; width:14px; height:14px; margin-left:-7px; border-radius:50%; background:#fff; box-shadow:0 1px 6px rgba(0,0,0,.6); transform:translateY(-50%); pointer-events:none; }
+  /* 三栏：左下信息 / 中部传输键 / 右下功能键。中列 auto + 两侧 1fr 保证
+     剧集标题再长也不会把播放键推离中心。 */
+  .vc-bar { display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); align-items:center; gap:10px; }
+  .vc-left { display:flex; flex-direction:column; gap:2px; min-width:0; color:#fff; text-shadow:0 1px 3px rgba(0,0,0,.7); }
+  .vc-title { font-size:14px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .vc-sub { font-size:12px; color:rgba(255,255,255,.82); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .video-time-label { color:#fff; font:12px/1.3 ui-monospace,Consolas,monospace; text-shadow:0 1px 3px #000; }
+  .vc-center { display:flex; align-items:center; justify-content:center; gap:6px; }
+  .vc-right { display:flex; align-items:center; justify-content:flex-end; gap:4px; flex-wrap:nowrap; }
+  .vc-icon { display:inline-flex; align-items:center; justify-content:center; width:36px; height:36px; padding:0; border:1px solid rgba(255,255,255,.34); border-radius:50%; color:#fff; background:rgba(0,0,0,.46); cursor:pointer; font:600 16px/1 sans-serif; transition:background .15s,border-color .15s,color .15s; }
+  .vc-icon:hover { border-color:var(--accent); color:var(--accent); background:rgba(0,0,0,.72); }
+  .vc-icon.on,.vc-icon[aria-expanded="true"],.vc-icon[aria-pressed="true"] { border-color:var(--accent); color:var(--accent-ink); background:var(--accent); }
+  .vc-icon.vc-play { width:46px; height:46px; font-size:20px; border-color:rgba(255,255,255,.6); background:rgba(0,0,0,.6); }
+  .vc-icon.vc-stop:hover { border-color:var(--red); color:var(--red); }
+  .vc-collapse,.vc-fullscreen { flex:0 0 auto; }
+  /* 折叠后整条控制栏隐藏，只在左下角留一个向上的 V 形尖角用于展开。 */
+  .vc-restore { position:absolute; left:clamp(12px,2vw,24px); bottom:14px; z-index:7; display:none; width:36px; height:36px; align-items:center; justify-content:center; border:1px solid rgba(255,255,255,.42); border-radius:50%; color:#fff; background:rgba(0,0,0,.6); cursor:pointer; font:700 16px/1 sans-serif; }
+  .vc-restore:hover { border-color:var(--accent); color:var(--accent); }
+  .media-video-body[data-video-chrome-collapsed="true"] .vc-restore { display:flex; }
+  .media-video-body[data-video-chrome-collapsed="true"] .video-chrome { opacity:0; pointer-events:none; }
+  /* 浮层：更多 / 设置 / 播放列表 / 声音，都从右下角向上弹出。 */
+  .vc-panel { position:absolute; right:clamp(12px,2vw,24px); bottom:96px; z-index:8; display:none; width:min(360px,calc(100% - 32px)); max-height:min(60vh,420px); overflow:auto; padding:12px; border:1px solid rgba(255,255,255,.26); border-radius:12px; color:#fff; background:rgba(15,17,21,.96); box-shadow:0 12px 34px rgba(0,0,0,.55); }
+  .media-video-body.video-controls-visible .vc-panel.show { display:block; }
+  .vc-panel h4 { margin:6px 0 8px; font-size:13px; color:rgba(255,255,255,.9); }
+  .vc-panel h4:first-child { margin-top:0; }
+  .vc-panel button { display:block; width:100%; margin:5px 0; padding:8px 10px; text-align:left; border:1px solid rgba(255,255,255,.18); border-radius:8px; color:#fff; background:rgba(255,255,255,.08); cursor:pointer; font-size:13px; }
+  .vc-panel button:hover { border-color:#58a6ff; background:rgba(88,166,255,.2); }
+  .vc-panel button.active { border-color:#58a6ff; background:rgba(88,166,255,.3); }
+  .video-quality-options,.video-audio-options,.video-subtitle-menu,.video-playlist-items { display:flex; flex-direction:column; gap:2px; }
+  .video-playlist-items { max-height:260px; overflow:auto; }
+  /* 声音浮层是横向一条：静音按钮 + 音量滑条 + 百分比。 */
+  .vc-panel-volume { display:none; width:auto; padding:10px 14px; }
+  .media-video-body.video-controls-visible .vc-panel-volume.show { display:flex; align-items:center; gap:10px; }
+  .vc-panel-volume .vc-icon { flex:0 0 auto; }
+  .vc-volume-range { width:150px; accent-color:var(--accent); cursor:pointer; }
+  .vc-volume-label { min-width:44px; font:12px/1 ui-monospace,Consolas,monospace; text-align:right; }
+  /* v0.9.40：字幕/音轨菜单与转码质量合并进设置浮层，沿用 .video-track-menu 类名，
+     位置与外观交给 .vc-panel，这里只保留列表项状态。 */
+  .video-track-menu h4 { margin:6px 0 8px; font-size:13px; }
   .video-track-menu button.active { border-color:#58a6ff; background:rgba(88,166,255,.28); }
-  .video-menu-button { position:absolute; right:58px; top:12px; z-index:6; width:34px; height:34px; border:1px solid rgba(255,255,255,.48); border-radius:50%; color:#fff; background:rgba(0,0,0,.58); cursor:pointer; opacity:0; pointer-events:none; }
-  .media-video-body.video-controls-visible .video-menu-button { opacity:1; pointer-events:auto; }
-  .movie-compat-bar { position:absolute; top:12px; left:12px; right:12px; z-index:2; display:flex; align-items:center; gap:8px; flex-wrap:wrap; pointer-events:none; }
-  .movie-compat-bar { opacity:0; transition:opacity .18s; }
-  .media-video-body.video-controls-visible .movie-compat-bar { opacity:1; }
-  .movie-compat-bar button,.movie-compat-bar span { pointer-events:auto; }
+  /* 三层播放按钮排进设置浮层，不再是顶部横条。 */
+  .vc-panel .movie-compat-bar { position:static; display:flex; align-items:center; gap:6px; flex-wrap:wrap; padding:0; opacity:1; pointer-events:auto; }
+  .vc-panel .movie-compat-bar strong { flex:0 0 100%; font-size:12px; color:rgba(255,255,255,.72); }
+  .vc-panel .movie-compat-bar .btn { flex:1 1 auto; width:auto; margin:0; padding:7px 9px; text-align:center; font-size:12px; }
   .movie-compat-status { color:#fff; font-size:12px; padding:6px 10px; border-radius:999px; background:rgba(0,0,0,.48); }
   .media-viewer img { display: block; max-width: 100%; height: auto; margin: 0 auto; }
   .media-viewer audio { width: 100%; }
@@ -712,8 +762,16 @@
     /* 窄屏按钮更窄，标题相应多让出一点，但仍保证按钮不被压住。 */
     .media-reader-title { max-width:calc(100% - 150px); }
     .media-reader-head.movie-player-head .media-reader-title { max-width:calc(100% - 52px); }
-    .video-info-button { top:8px; right:8px; }
-    .video-status-panel { top:48px; right:8px; width:calc(100% - 16px); }
+    /* v0.9.40 窄屏：三栏改成两行（信息在上，键位在下），键位缩小以免溢出。 */
+    .video-chrome { padding:10px; }
+    .vc-bar { grid-template-columns:1fr; gap:6px; }
+    .vc-left { align-items:flex-start; }
+    .vc-center,.vc-right { justify-content:center; flex-wrap:wrap; }
+    .vc-icon { width:32px; height:32px; font-size:14px; }
+    .vc-icon.vc-play { width:40px; height:40px; font-size:18px; }
+    .vc-panel,.video-status-panel { right:8px; left:8px; width:auto; bottom:132px; }
+    .vc-panel-volume { left:auto; }
+    .vc-restore { left:10px; bottom:10px; }
     .docker-scan-bar { display:grid; grid-template-columns:1fr; }
     .docker-scan-bar .btn { width:100%; }
     .media-login-grid { grid-template-columns: 1fr; }
