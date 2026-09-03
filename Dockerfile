@@ -43,6 +43,8 @@ COPY Caddyfile /etc/caddy/Caddyfile
 COPY index.html /srv/index.html
 COPY web /srv/web
 
+# v0.9.42：以下默认值与 vaulthub.env 模板逐键对齐。env 文件变为可选覆盖层，
+# 缺失/过期时容器仍按这些内置默认值运行；需要覆盖时再放本地 vaulthub.env/.env。
 ENV NAS_IP=192.168.112.3 \
     DASHBOARD_ORIGIN=https://home.enged.top \
     WEB_ROOT=/srv \
@@ -58,7 +60,23 @@ ENV NAS_IP=192.168.112.3 \
     TMDB_IMAGE_BASE=https://image.tmdb.org/t/p \
     TVDB_API_KEY= \
     TVDB_API_BASE=https://api4.thetvdb.com/v4 \
-    SCRAPER_PROXY=
+    SCRAPER_PROXY= \
+    TZ=Asia/Shanghai \
+    SYSTEM_MONITOR_ENABLED=true \
+    SYSTEM_MONITOR_PROC_ROOT=/host/proc \
+    SYSTEM_MONITOR_SYS_ROOT=/host/sys \
+    SYSTEM_MONITOR_INTERVAL=3 \
+    SYSTEM_MONITOR_INTERFACE= \
+    MEDIA_RUNTIME_CONFIG=/data/media-runtime.json \
+    MEDIA_READING_PROGRESS=/data/media-reading-progress.json \
+    MEDIA_SCAN_MAX_DEPTH=32 \
+    MEDIA_CACHE_MAX_BYTES=30737418240 \
+    MEDIA_CACHE_MAX_AGE_HOURS=168 \
+    MEDIA_CACHE_CLEANUP_INTERVAL_HOURS=24 \
+    FFMPEG_HWACCEL=auto \
+    VAAPI_DEVICE=/dev/dri/renderD128 \
+    NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,video,utility
 
 EXPOSE 8088
 WORKDIR /srv

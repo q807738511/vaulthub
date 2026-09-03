@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// v0.9.41: the floating player's 设置 → 转码质量 selector must actually change what
+// v0.9.42: the floating player's 设置 → 转码质量 selector must actually change what
 // ffmpeg produces. An explicit resolution cap has to force a real re-encode (you
 // cannot scale a copied stream) and must never upscale a smaller source.
 

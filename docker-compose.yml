@@ -1,6 +1,10 @@
 services:
   vaulthub:
-    image: ghcr.io/q807738511/vaulthub:v0.9.41
+    # v0.9.42：镜像跟随 GHCR 可写标签 latest —— 每次正式版本发布（tag vX.Y.Z）会
+    # 同时更新 vX.Y.Z 与 latest 指向同一 digest；日常升级无需再改本文件：
+    #   docker compose pull && docker compose up -d --force-recreate
+    # 需要锁定/回滚到具体版本时，把下面改成 ghcr.io/q807738511/vaulthub:v0.9.41 即可。
+    image: ghcr.io/q807738511/vaulthub:latest
     container_name: VaultHub
     pull_policy: always
 
@@ -17,8 +21,12 @@ services:
     ports:
       - "8088:8088"
 
+    # v0.9.42：env 文件变为「可选覆盖层」——全部默认值已内置进镜像
+    # （Dockerfile ENV 与 vaulthub.env 模板逐键对齐），文件缺失/过期都不影响启动；
+    # 需要覆盖默认值时才放本文件（可配合 scripts/merge-env.sh 补齐新键）。
     env_file:
-      - ./vaulthub.env
+      - path: ./vaulthub.env
+        required: false
 
     environment:
       - ADMIN_USERNAME=admin

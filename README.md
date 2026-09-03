@@ -1,8 +1,41 @@
-# VaultHub 蜀鼠之家 v0.9.41：播放器启动/引擎/列表/最小化修正
+# VaultHub 蜀鼠之家 v0.9.42：部署简化 —— latest 自动跟新、env 文件可选
 
-v0.9.41 在 v0.9.40 悬浮控制栏之上修正播放体验：点击视频直接播放（不再需要二次点击）；播放计划 20 秒超时不卡住；隐藏「浏览器原生 / FFmpeg 兼容流 / WebAssembly」引擎展示；删除右下角静音按钮，音量滑条并入设置浮层；播放列表只在电视剧集播放时展示，电影播完停在结尾、剧集自动连播；左上角 `⌄` 将整个播放器最小化为右下角小窗（左下角 `⌃` 还原）；播放器外层标题条与 ✕ 删除，标题移入播放器左上角 `⌄` 右侧；智能转码流失败自动切换基础兼容流重试，超过 256 MB 的原片不再触发注定失败的浏览器软解。
+v0.9.42 把「升级要同步维护 compose 与 env 文件」从根上简化：
+- **镜像跟随 GHCR `latest`**：正式版本（tag vX.Y.Z）发布时 CI 同时推送 `vX.Y.Z` 与 `latest` 指向同一 digest；日常升级不再改 compose，`docker compose pull && up -d --force-recreate` 即到新版。测试/回滚永远用固定版本号标签。
+- **`vaulthub.env` 变为可选**：全部默认值已内置进镜像（Dockerfile ENV 与模板逐键对齐），文件缺失/过期不再影响启动；要覆盖默认值才放本文件。
+- **CI 只在版本 tag 时更新 latest**：普通 main 提交只产生 `sha-xxxx`，不会再推动生产跟随的 `latest`。
+- 新增 `scripts/merge-env.sh`：不依赖 git 的键级合并工具，为本地可选 env 文件补齐新版新增的键。
 
-镜像：`ghcr.io/q807738511/vaulthub:v0.9.41`（Docker Hub 同步 `q807738511/vaulthub:v0.9.41`）。
+镜像：`ghcr.io/q807738511/vaulthub:latest`（跟随最新正式版；固定版如 `ghcr.io/q807738511/vaulthub:v0.9.42`；Docker Hub 同步 `q807738511/vaulthub` 固定版本号标签）。
+
+## v0.9.42 更新
+
+### 部署模型：latest 跟新 + 固定版本测试
+
+- compose 默认 `image: ghcr.io/q807738511/vaulthub:latest` + `pull_policy: always`。
+- 发布流程不变：测试按具体版本号（`v0.9.42`）验证 → 推送 main 与 tag → CI 构建并把 **`v0.9.42` 与 `latest` 指向同一 digest**。
+- 日常升级（NAS 上一条命令，之后无需再改 compose）：
+  ```bash
+  cd /vol1/1000/Docker/vaulthub
+  docker compose pull && docker compose up -d --force-recreate
+  ```
+- 回滚/锁定：临时把 compose 镜像行改回 `ghcr.io/q807738511/vaulthub:v0.9.41` 再 `docker compose up -d --force-recreate`。
+- 注意：Docker Hub 仓库开了 immutable tags，其 `latest` 标签不会跟随；同步以固定版本号标签为准（生产走 GHCR 不受影响）。
+
+### env 文件可选（默认值内置镜像）
+
+- `docker-compose.yml` 的 `env_file` 改为 `path: ./vaulthub.env` + `required: false`（需 compose ≥ v2.24）；文件缺失不再报 `env file ... not found`。
+- Dockerfile `ENV` 已与 `vaulthub.env` 模板 25 个键逐键对齐（含 `TZ=Asia/Shanghai`、`MEDIA_SCAN_MAX_DEPTH=32`、`VAAPI_DEVICE=/dev/dri/renderD128`、`NVIDIA_DRIVER_CAPABILITIES=compute,video,utility`、缓存与刮削默认值等），Go 侧另有 `env(key, default)` 兜底。
+- 首次部署可以只放 compose；需要个性化时再放 `vaulthub.env`（或同目录 `.env` 覆盖，compose ≥ v2.24 支持对 env_file 内容插值）。
+- `scripts/merge-env.sh`（键级合并，不依赖 git）：拿新版模板合并，只追加本地缺失的键、保留已有值、写前备份：
+  ```bash
+  sh scripts/merge-env.sh /下载目录/vaulthub.env     # 本地模板
+  VAULTHUB_GH_TOKEN=ghp_xxx sh scripts/merge-env.sh \
+    https://raw.githubusercontent.com/q807738511/vaulthub/main/vaulthub.env   # 私有仓库直拉
+  ```
+
+<details>
+<summary>v0.9.41：播放器启动/引擎/列表/最小化修正（上一版）</summary>
 
 ## v0.9.41 更新
 
@@ -46,6 +79,8 @@ VAAPI 走 `scale_vaapi`，滤镜是替换而非叠加（ffmpeg 只认最后一�
 剧集详情会把当前剧的分集写入播放队列，「上一个 / 下一个 / 播放列表」在同一队列内跳转。
 顺序模式到队列末尾会提示而不越界，列表循环环回第一项，随机播放随机取下一项；播放结束按当前模式
 自动续播（单集循环重播本集）。
+
+</details>
 
 <details>
 <summary>v0.9.30：系统设置独立配置页、卡片式媒体库添加与阅读器修复</summary>
@@ -470,22 +505,24 @@ docker compose up -d
 
 ## 首次配置
 
-v0.8.7 起部署配置分两个文件，都放在 compose 同一目录：
+v0.9.42 起部署只需 **`docker-compose.yml` 一个文件**（镜像默认 `:latest` 跟随最新正式版，全部环境默认值已内置镜像）：
 
 | 文件 | 放什么 | 什么时候改 |
 |------|--------|-----------|
-| `docker-compose.yml` | 镜像标签、端口、卷、以及常用环境变量 | 换版本、改路径、改账号时 |
-| `vaulthub.env` | 容器内固定路径、官方 API 地址、监控挂载点、缓存清理策略、硬件能力声明 | 基本不用改 |
+| `docker-compose.yml` | 镜像引用、端口、卷、常用环境变量 | 首次部署/改路径/改账号时 |
+| `vaulthub.env`（可选） | 想覆盖镜像内置默认值时（缓存大小、监控挂载、硬件转码声明等） | 需要个性化时 |
 
-compose 通过 `env_file` 加载 `vaulthub.env`，因此 compose 里只剩下你会经常调的那几项：`ADMIN_USERNAME`、`ADMIN_PASSWORD`、`TMDB_API_KEY`、`MEDIA_SCRAPER_MODE`、`MEDIA_CACHE_DIR`、`SYSTEM_MONITOR_FILESYSTEMS`。硬件转码选择 `FFMPEG_HWACCEL` 放在 `vaulthub.env` 中统一管理，默认值为 `auto`。
+环境变量分三层：镜像内 Dockerfile `ENV` 默认值（与 `vaulthub.env` 模板逐键对齐）→ 可选 `vaulthub.env`（compose ≥ v2.24 用 `required: false` 加载，缺失不报错）→ 可选同目录 `.env` 覆盖（compose 会对其内容插值）。compose 的 `environment:` 只放经常调的那几项：`ADMIN_USERNAME`、`ADMIN_PASSWORD`、`TMDB_API_KEY`、`MEDIA_SCRAPER_MODE`、`SYSTEM_MONITOR_FILESYSTEMS`。硬件转码选择 `FFMPEG_HWACCEL` 默认 `auto`，无需配置。
 
 > 关于代理：TMDB 客户端使用自带 SSRF 防护的自定义 `http.Transport`，没有设置 `Proxy`，所以 `PROXY_HOST` 和标准的 `HTTPS_PROXY` 都不会生效。若你的网络必须走代理才能访问 `api.themoviedb.org`，请在网关或 Clash 侧做透明代理/分流。
 
 两个文件的环境变量都必须写成 `KEY=value`：
 
 ```yaml
+    image: ghcr.io/q807738511/vaulthub:latest
     env_file:
-      - ./vaulthub.env
+      - path: ./vaulthub.env   # v0.9.42：可选覆盖层，缺失时直接用镜像内置默认值
+        required: false
     environment:
       - ADMIN_USERNAME=${ADMIN_USERNAME:-ADMIN}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-ADMIN123}
@@ -500,11 +537,11 @@ compose 通过 `env_file` 加载 `vaulthub.env`，因此 compose 里只剩下你
 docker compose up -d --force-recreate
 ```
 
-**`vaulthub.env` 必须和 compose 放在同一目录**：文件缺失时 `docker compose` 会直接报 `env file ... not found` 并拒绝启动。`scripts/install.sh` 和 `scripts/upgrade.sh` 会自动投递它，已存在时保留你的改动。
+v0.9.42 起 `vaulthub.env` **不再是必需文件**：compose 用 `path + required: false` 加载，文件缺失时直接使用镜像内置默认值；文件存在时其内容优先于镜像默认。要求 compose ≥ v2.24（2024-02 发布）；更老的 compose 请先升级，或继续保留该文件避免 `env file ... not found`。历史部署脚本 `scripts/install.sh` / `upgrade.sh` 仍会投递该文件，已存在时保留你的改动。
 
 #### 版本升级后自动补齐 vaulthub.env 的新键（不依赖 git）
 
-新版本可能在 `vaulthub.env` 模板里增加新的环境变量（例如 v0.9.30 增加的 `MEDIA_SCAN_MAX_DEPTH`）。旧文件不会自动获得它们，而 `install.sh`/`upgrade.sh` 采取「已存在则保留」策略，导致新键一直缺失。`scripts/merge-env.sh` 做**键级合并**：只把本地缺失的键（连同默认值和紧邻的说明注释）追加进你的文件，已改过的值一律不动，写入前自动备份为 `vaulthub.env.bak-<时间戳>`，重复执行幂等：
+新版本可能在 `vaulthub.env` 模板里增加新的环境变量（例如 v0.9.30 增加的 `MEDIA_SCAN_MAX_DEPTH`）。v0.9.42 起**不做合并也完全可用**（镜像已内置全部默认值）；只有当你维护了本地 `vaulthub.env` 覆盖文件、又想让新键的说明与默认值进到文件里时，才需要合并。`scripts/merge-env.sh` 做**键级合并**：只把本地缺失的键（连同默认值和紧邻的说明注释）追加进你的文件，已改过的值一律不动，写入前自动备份为 `vaulthub.env.bak-<时间戳>`，重复执行幂等：
 
 ```bash
 # 方式一：本地已有新版模板文件

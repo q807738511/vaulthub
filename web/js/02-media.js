@@ -342,7 +342,7 @@ function renderSeriesLibraryContent(host, lib, files) {
   host.innerHTML = `<section class="content-collection">${mediaLibraryHeading(lib, `${shows.length} 部剧 · ${files.length} 集`)}${body}</section>`;
 }
 function renderSeriesShowCard(lib, show) { const art=show.poster?`<img src="${esc(show.poster)}" alt="${esc(show.title)}" loading="lazy">`:`<span>${esc(show.title)}</span>`; const seasons=show.seasonList?.length||0, episodes=show.files?.length||0; return `<article class="media-poster-card series-show-card" data-series-show="${esc(show.key)}" onclick="openSeriesDetails(${jsAttrArg(lib.id)},${jsAttrArg(show.key)})"><div class="media-poster-art" style="${show.poster?"":`background:${coverGradient(show.title)}`}">${art}</div><div class="media-poster-info"><strong>${esc(show.title)}</strong><small>${esc([show.year, `${seasons} 季`, `${episodes} 集`, show.provider].filter(Boolean).join(" · "))}</small></div></article>`; }
-function openSeriesDetails(libId, showKey) { enterMovieDetailSidebarMode(); const lib=findMediaLibrary(libId), viewer=document.getElementById("local-media-viewer-movie"); if(!lib||!viewer)return; const show=readSeriesShow(libId,showKey); if(!show)return; const hero={title:show.title,overview:show.overview||"已按 Plex / Emby 风格根据根目录、Season 01 和 S01E01 规则聚合到同一剧集。",poster:show.poster,logo:show.logo,fanart:show.fanart,backdrop:show.backdrop,year:show.year,provider:show.provider,watched:show.watched,media_type:"series"}; /* v0.9.41：进入剧集详情即把该剧的分集按季/集顺序设为播放队列，
+function openSeriesDetails(libId, showKey) { enterMovieDetailSidebarMode(); const lib=findMediaLibrary(libId), viewer=document.getElementById("local-media-viewer-movie"); if(!lib||!viewer)return; const show=readSeriesShow(libId,showKey); if(!show)return; const hero={title:show.title,overview:show.overview||"已按 Plex / Emby 风格根据根目录、Season 01 和 S01E01 规则聚合到同一剧集。",poster:show.poster,logo:show.logo,fanart:show.fanart,backdrop:show.backdrop,year:show.year,provider:show.provider,watched:show.watched,media_type:"series"}; /* v0.9.42：进入剧集详情即把该剧的分集按季/集顺序设为播放队列，
      这样播放器的「上一个 / 下一个 / 播放列表」走的是同一部剧而不是整库。 */
   setVideoPlaylist(libId, (show.seasonList||[]).flatMap(season=>(season.episodes||[]).map(ep=>({path:ep.path}))));
   const seasons=(show.seasonList||[]).map(season=>`<section class="series-season-block"><h3>Season ${String(season.season).padStart(2,"0")}</h3><div class="media-file-list">${season.episodes.map(ep=>renderSeriesEpisodeRow(lib,ep)).join("")}</div></section>`).join(""); viewer.innerHTML=`<div class="media-reader-overlay movie-detail-page series-detail-page"><div class="movie-detail-scroll"><button class="media-reader-close" onclick="closeMovieDetails()">✕</button>${renderMovieHero(lib,show.files?.[0]?.path||"",hero)}<section><h3>剧集列表</h3><div class="hint">按标准命名规则聚合：根目录剧名 / Season 01 / 剧名 S01E01 标题；刮削先锁定主剧集，再将本地多季多集挂载到同一条目。</div></section>${seasons}</div></div>`; scrollViewerIntoView(viewer); }
@@ -505,7 +505,7 @@ function browserPlaybackCapabilities() {
   };
 }
 async function requestPlaybackPlan(lib, path, quality = "auto") {
-  /* v0.9.41：播放计划请求必须带超时 —— 之前没有 AbortController，
+  /* v0.9.42：播放计划请求必须带超时 —— 之前没有 AbortController，
      后端探测/转码服务异常时「正在准备播放…」会永远卡住，视频点不开。 */
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20000);
@@ -761,7 +761,7 @@ async function loadLocalFiles(group, lib, offset = 0) {
       scrapeAudioMetadata(target, lib, files);
     } else if (group === "movie") {
       target.innerHTML = renderMovieLibrary(lib, files, data) + pager;
-      /* v0.9.41：播放器的「上一个 / 下一个 / 播放列表」用这批已排序的文件作为队列。 */
+      /* v0.9.42：播放器的「上一个 / 下一个 / 播放列表」用这批已排序的文件作为队列。 */
       setVideoPlaylist(lib.id, files);
       if (lib?.type === "series") scrapeSeriesMetadata(target, lib, files);
       else scrapeMovieMetadata(target, lib, files);
@@ -1146,7 +1146,7 @@ function viewerShell(group, lib, path, body, url, opts = {}) {
   const chapterHtml = chapters.length ? `<aside class="ebook-chapters"><h4>目录 · ${chapters.length} 章</h4>${chapters.map((ch, i) => `<button data-chapter="${i}" onclick="jumpEbookChapter(${i})">${esc(ch.title)}</button>`).join("")}</aside>` : "";
   const toolbar = opts.ebook ? `<span class="ebook-toolbar"><button title="减小字号" onclick="changeEbookFontSize(-1)">A-</button><button title="增大字号" onclick="changeEbookFontSize(1)">A+</button><button id="ebookFontStyleButton" title="正体/斜体" onclick="toggleEbookFontStyle()">正体</button></span>` : "";
   const video = group === "movie";
-  /* v0.9.41：真正的视频播放器（opts.player）不再渲染外层标题条与 ✕ —— 标题已移入
+  /* v0.9.42：真正的视频播放器（opts.player）不再渲染外层标题条与 ✕ —— 标题已移入
      播放器左上角 ⌄ 右侧（vc-heading），关闭统一走底部控制栏的 ✕。movie 组里的
      PDF/图片等非视频浏览仍保留外层头（标题 + ✕ 关闭）。文档/音频类阅读器同理。 */
   const head = opts.player ? "" : `<div class="media-reader-head"><strong class="media-reader-title" title="${esc(path)}">${esc(displayBookTitle(path))}</strong><div class="media-actions">${toolbar}<button class="btn" onclick="markReaderCompleted()">✓ 标记已读</button><button class="media-reader-close" title="关闭并返回书架" onclick="closeLocalViewer('${esc(group)}')">✕</button></div></div>`;
@@ -1239,7 +1239,7 @@ function setVideoEngine(root, engine, detail) {
   if (!root) return;
   root.dataset.videoEngine = engine;
   root.querySelectorAll("[data-engine-choice]").forEach(button => button.classList.toggle("active", button.dataset.engineChoice === engine));
-  /* v0.9.41：状态行不再向用户暴露「浏览器原生 / FFmpeg 兼容流 / WebAssembly」引擎标签，
+  /* v0.9.42：状态行不再向用户暴露「浏览器原生 / FFmpeg 兼容流 / WebAssembly」引擎标签，
      只显示对用户有意义的原因文案（播放计划 / 转码模式 / 降级原因）。 */
   if (detail) setMovieCompatStatus(root, detail);
 }
@@ -1290,7 +1290,7 @@ async function startWasmVideoFallback(root, video, direct) {
   setVideoEngine(root, VIDEO_ENGINE_WASM, "软件解码完成 · 当前为前 60 秒兼容片段");
 }
 async function probeVideoFileSize(direct, timeoutMs = 10000) {
-  /* v0.9.41：降级前先轻量探测原片大小（Range 请求，不下载正文），
+  /* v0.9.42：降级前先轻量探测原片大小（Range 请求，不下载正文），
      超过浏览器软件解码上限就不再启动注定失败的 WASM 全量下载。 */
   try {
     const controller = new AbortController();
@@ -1307,7 +1307,7 @@ async function advanceVideoEngine(root, video, context) {
   const engine = root.dataset.videoEngine || VIDEO_ENGINE_NATIVE;
   if (engine === VIDEO_ENGINE_NATIVE) { context.useCompat("原片直连不可用，已自动切换转码兼容流"); return; }
   if (engine === VIDEO_ENGINE_COMPAT) {
-    /* v0.9.41：计划流（带 task 会话）失败时，先用不带会话的基础兼容流重试一次 ——
+    /* v0.9.42：计划流（带 task 会话）失败时，先用不带会话的基础兼容流重试一次 ——
        很多「第一次打不开、点第二次能播」的异常来自转码会话尚未就绪。 */
     const current = video.dataset.currentSrc || "";
     const usingPlanURL = current.includes("task=") || /\/api\/media\/playback\/stream\?/.test(current);
@@ -1318,7 +1318,7 @@ async function advanceVideoEngine(root, video, context) {
     }
     const size = await probeVideoFileSize(context.direct);
     if (size > WASM_INPUT_LIMIT) {
-      /* v0.9.41：超过 256 MB 的原片不值得浏览器全量下载软解 —— 给出可操作提示，
+      /* v0.9.42：超过 256 MB 的原片不值得浏览器全量下载软解 —— 给出可操作提示，
          不再展示「降级失败：文件超过 256 MB」这类只会卡死播放的报错。 */
       setMovieCompatStatus(root, "转码流暂不可用，原片过大无法在浏览器软解");
       updateVideoStatus(root, video, "播放异常，请重试或更换片源");
@@ -1363,7 +1363,7 @@ function updateVideoStatus(root, video, state) {
   const main=root?.querySelector("[data-video-status]"); const detail=root?.querySelector("[data-video-detail]");
   if (!main || !detail || !video) return;
   main.textContent=state;
-  /* v0.9.41：信息面板也不再显示「引擎」字段，只保留分辨率与媒体元数据。 */
+  /* v0.9.42：信息面板也不再显示「引擎」字段，只保留分辨率与媒体元数据。 */
   const size=video.videoWidth ? `${video.videoWidth}×${video.videoHeight}` : "分辨率待获取";
   detail.textContent=`${formatMediaTime(video.currentTime)} / ${formatMediaTime(video.duration)} · ${size} · ${root.dataset.videoMetadata || "媒体元数据待识别"}`;
 }
@@ -1374,7 +1374,7 @@ function toggleVideoStatusPanel(button) {
   const open = panel.classList.toggle("show");
   button.setAttribute("aria-expanded", String(open));
 }
-/* ================= v0.9.41 视频播放器悬浮控制栏 =================
+/* ================= v0.9.42 视频播放器悬浮控制栏 =================
    触发规则：播放中滑动鼠标（pointermove）唤出控制栏，3 秒内没有任何操作重新隐藏。
    暂停、控制栏内悬停、任一浮层（更多/设置/播放列表/声音）打开时都不隐藏，
    否则用户刚点开设置就被收走。手动折叠（左上 ⌄）是显式意图，鼠标移动不再唤出，
@@ -1411,7 +1411,7 @@ function scheduleVideoChromeHide(root) {
 }
 function videoRootOf(el) { return el?.closest(".media-video-body") || null; }
 function videoElementOf(el) { return videoRootOf(el)?.querySelector("video[data-movie-player]") || null; }
-/* 左上角 ⌄：将整个播放器最小化为小窗（v0.9.41）。v0.9.41 只折叠控制栏，
+/* 左上角 ⌄：将整个播放器最小化为小窗（v0.9.42）。v0.9.42 只折叠控制栏，
    用户期望的是最小化整个播放器 —— 现在折叠态把播放器缩成右下角小窗，
    左下角 ⌃ 用于还原整屏播放器。 */
 function minimizeVideoPlayer(el) {
@@ -1539,7 +1539,7 @@ function setVideoVolume(el, value) {
   syncVideoVolumeUI(root, video);
   scheduleVideoChromeHide(root);
 }
-/* v0.9.41：右下角静音按钮已删除 —— 音量滑条移入设置浮层，滑到 0 即静音，
+/* v0.9.42：右下角静音按钮已删除 —— 音量滑条移入设置浮层，滑到 0 即静音，
    不再提供单独的一键静音按钮。 */
 function syncVideoVolumeUI(root, video) {
   if (!root || !video) return;
@@ -1624,7 +1624,7 @@ function videoPlaybackEnded(root, video) {
   const mode = videoRepeatMode(root);
   if (mode === "one") { video.currentTime = 0; video.play().catch(() => {}); return; }
   if (mode === "all" || videoShuffleOn(root)) { videoPlayNeighbour(root, 1); return; }
-  /* v0.9.41：只有电视剧集类型播放才自动连播下一集 —— 单部电影播完停在结尾，
+  /* v0.9.42：只有电视剧集类型播放才自动连播下一集 —— 单部电影播完停在结尾，
      不再自动跳到库里下一部（电影模式也不展示播放列表按钮）。 */
   if (root.dataset.videoPlaylistEligible !== "true") return;
   const current = videoPlaylistIndex(root.dataset.library, root.dataset.path);
@@ -1701,7 +1701,7 @@ function bindVideoStatus(root, video) {
   ["progress","loadedmetadata","durationchange","canplay"].forEach(ev=>video.addEventListener(ev,()=>{ updateVideoTimeline(video); if(ev==='loadedmetadata')restoreVideoPlaybackState(video); }));
   video.addEventListener('keydown',e=>handleVideoKeyboard(e,video));
   video.tabIndex=0;
-  /* v0.9.41：滑动鼠标触发识别。pointermove 是唯一的「滑动」信号，click/mouseenter
+  /* v0.9.42：滑动鼠标触发识别。pointermove 是唯一的「滑动」信号，click/mouseenter
      一并唤出；控制栏自身 hover 时打标记，避免 3 秒到点把鼠标下的按钮收走。 */
   ["pointermove","mouseenter","click","touchstart"].forEach(ev => root.addEventListener(ev, () => scheduleVideoChromeHide(root), { passive:true }));
   /* hover 锁只绑在真正的顶部/底部条上：控制层是全屏铺满的，绑在它上面会让
@@ -1746,15 +1746,15 @@ function updateVideoTimeline(video) {
   const buffered=duration&&video.buffered?.length?video.buffered.end(video.buffered.length-1)/duration*100:0;
   const p=root.querySelector('.video-played-range'), b=root.querySelector('.video-buffered-range'), label=root.querySelector('.video-time-label');
   if(p)p.style.width=`${Math.min(100,played)}%`; if(b)b.style.width=`${Math.min(100,buffered)}%`;
-  /* v0.9.41：进度点跟着已播比例走，让用户看得出可以拖动。 */
+  /* v0.9.42：进度点跟着已播比例走，让用户看得出可以拖动。 */
   const knob=root.querySelector('.video-progress-knob');
   if(knob)knob.style.left=`${Math.min(100,Math.max(0,played))}%`;
   const shell=root.querySelector('.video-progress-shell');
   if(shell)shell.setAttribute('aria-valuenow',String(Math.round(Math.min(100,Math.max(0,played)))));
-  /* v0.9.41：左下角只显示「当前时间 / 视频时长」，缓冲量移到「获取信息」面板。 */
+  /* v0.9.42：左下角只显示「当前时间 / 视频时长」，缓冲量移到「获取信息」面板。 */
   if(label)label.textContent=`${formatVideoTime(video.currentTime)} / ${formatVideoTime(video.duration)}`;
 }
-/* v0.9.41：进度条支持点击定位与按住拖动；键盘左右键也能移动，便于无鼠标操作。 */
+/* v0.9.42：进度条支持点击定位与按住拖动；键盘左右键也能移动，便于无鼠标操作。 */
 function videoSeekRatio(event, shell) { const r=shell.getBoundingClientRect(); if(!(r.width>0))return 0; return Math.max(0,Math.min(1,(event.clientX-r.left)/r.width)); }
 function seekVideoTimeline(event, shell) {
   const root=shell.closest('.media-video-body');
@@ -1818,7 +1818,7 @@ function switchMovieSource(video, url, { autoplay = true } = {}) {
   video.addEventListener('loadedmetadata',()=>{ if(time>2 && time<video.duration-2) video.currentTime=time; if(!wasPaused||first&&autoplay) video.play().catch(()=>{}); },{once:true});
   video.muted = false;
   video.volume = 1;
-  /* v0.9.41：初次点击打开播放器后立即尝试自动播放。若被浏览器自动播放
+  /* v0.9.42：初次点击打开播放器后立即尝试自动播放。若被浏览器自动播放
      策略拦截（需要用户手势），状态提示用户点击画面开始播放。 */
   if (first && autoplay) {
     const root = video.closest('.media-video-body');
@@ -1830,9 +1830,9 @@ async function initMovieCompatPlayer(root, lib, path) {
   if (!video) return;
   const videoRoot = video.closest('.media-video-body');
   videoRoot.dataset.library=String(lib.id); videoRoot.dataset.path=String(path);
-  /* v0.9.41：关闭播放要知道自己属于哪个媒体分组；标题/剧集信息与播放列表在这里绑定。 */
+  /* v0.9.42：关闭播放要知道自己属于哪个媒体分组；标题/剧集信息与播放列表在这里绑定。 */
   videoRoot.dataset.mediaGroup="movie";
-  /* v0.9.41：播放列表面板只在电视剧集类型播放时展示 —— 电影单文件播放隐藏按钮，
+  /* v0.9.42：播放列表面板只在电视剧集类型播放时展示 —— 电影单文件播放隐藏按钮，
      避免把「电影库整批文件」当成一部电影的播放列表。判定与左下角标题一致：
      series 库，或任意库中按 SxxExx/第N集 命名的分集文件。 */
   const parsedEpisode = parseSeriesEpisode(path);
@@ -1848,14 +1848,14 @@ async function initMovieCompatPlayer(root, lib, path) {
   fetch(`/api/media/metadata?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}`,{cache:'no-store'}).then(r=>r.ok?r.json():null).then(meta=>{if(meta&&(meta.title||meta.year||meta.show_title)){const all=readMovieMetadata();all[path]={...movieMetadataFor(path),...meta};writeMovieMetadata(all);applyVideoChromeTitle(videoRoot,lib,path);}if(meta?.subtitles?.length){const box=videoRoot.querySelector('[data-video-subtitle-options]');if(box)box.innerHTML=meta.subtitles.map((s,i)=>`<button type="button" onclick="attachVideoSubtitle(this.closest('.media-video-body').querySelector('video'),${jsAttrArg(s.url)},${jsAttrArg(s.label||`本地字幕 ${i+1}`)})">${esc(s.label||`本地字幕 ${i+1}`)}</button>`).join('');}}).catch(()=>{});
   const direct = mediaFileUrl(lib, path);
   const compat = mediaCompatUrl(lib, path);
-  /* v0.9.41 修复：以前这里传的是外层 viewer，于是 .video-controls-visible
+  /* v0.9.42 修复：以前这里传的是外层 viewer，于是 .video-controls-visible
      被加到 viewer 上，而 CSS 选择器是 .media-video-body.video-controls-visible，
      永远不匹配 —— 这就是悬浮控制栏/进度条一直不出现的根因。 */
   bindVideoStatus(videoRoot, video);
   scheduleVideoChromeHide(videoRoot);
   const useDirect = (reason="原片直连") => { terminateWasmVideo(videoRoot); setVideoEngine(videoRoot, VIDEO_ENGINE_NATIVE, reason); switchMovieSource(video, direct); };
   const useCompat = (reason, url=compat) => { terminateWasmVideo(videoRoot); setVideoEngine(videoRoot, VIDEO_ENGINE_COMPAT, reason || `Smart Stream · ${settings.hardwareAcceleration}`); switchMovieSource(video, url); };
-  /* v0.9.41：设置浮层不再暴露「三层播放」手动引擎选择 —— 引擎自动判定与自动降级保留。 */
+  /* v0.9.42：设置浮层不再暴露「三层播放」手动引擎选择 —— 引擎自动判定与自动降级保留。 */
   video.addEventListener("loadedmetadata", () => { video.muted = false; video.volume = 1; restoreVideoPlaybackState(video); fetch(`/api/media/streams?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}`,{cache:'no-store'}).then(r=>r.ok?r.json():null).then(info=>{populateVideoTracks(videoRoot,video,info);updateVideoStatus(videoRoot,video,video.paused?"已暂停":"正在播放");}).catch(()=>{}); });
   let engineFailurePending = false;
   video.addEventListener("error", async () => {
@@ -1864,7 +1864,7 @@ async function initMovieCompatPlayer(root, lib, path) {
     try { await advanceVideoEngine(videoRoot, video, { direct, useCompat }); } finally { setTimeout(() => { engineFailurePending = false; }, 1000); }
   });
   try {
-    /* v0.9.41：画质选择（设置 → 转码质量）决定播放计划，默认仍是 auto。 */
+    /* v0.9.42：画质选择（设置 → 转码质量）决定播放计划，默认仍是 auto。 */
     const plan = await requestPlaybackPlan(lib, path, videoRoot.dataset.videoQuality || "auto");
     videoRoot.dataset.videoMetadata = formatVideoMetadata(plan.media);
     videoRoot.dataset.playbackMode = plan.mode || "auto";

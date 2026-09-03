@@ -57,7 +57,7 @@ var probePlaybackMedia = func(ctx context.Context, path string) (playbackMedia, 
 
 // qualityMaxHeight maps a UI quality choice to a vertical pixel cap.
 // "auto" and "original" impose no cap; an explicit 1080p/720p/480p choice does.
-// v0.9.41: the floating player's 设置 → 转码质量 selector sends these values.
+// v0.9.42: the floating player's 设置 → 转码质量 selector sends these values.
 func qualityMaxHeight(quality string) int {
 	switch strings.ToLower(strings.TrimSpace(quality)) {
 	case "1080p":
