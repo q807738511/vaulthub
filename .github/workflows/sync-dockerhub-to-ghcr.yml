@@ -105,6 +105,7 @@ jobs:
           echo "GHCR 标签总数：${#TAGS[@]}"
 
           UPDATED=0
+          REPUSHED=0
           MATCHED=0
           IMMUTABLE=()
           FAILED_TAGS=()
@@ -131,22 +132,25 @@ jobs:
               continue
             fi
 
+            # 默认按新增推送；已存在且摘要不同时由下方分支置 1 走覆盖重推。
+            REPUSH_MODE=0
+
             if [ -n "$TARGET_DIGEST" ]; then
-              # Docker Hub 仓库启用了不可变标签（immutable tags）：已存在的标签无法被重新指向，
-              # 重推只会拿到 403 DENIED "cannot be updated due to immutability settings"。
-              # 浮动标签（latest）因此会永久停在首次推送的镜像上，这是仓库设置而不是同步缺陷；
-              # 固定语义版本标签本身就应当不可变，所以这里只记录不判失败。
-              # 需要 latest 跟随最新版本，请在 Docker Hub 仓库设置里关闭 immutable tags。
-              echo "标签 $TAG 已存在且不可变，跳过重推（Docker Hub immutable tags）"
-              IMMUTABLE+=("$TAG")
-              echo "::warning title=标签不可变 $TAG::Docker Hub 已存在该标签且启用不可变设置，无法重新指向 $SOURCE_DIGEST"
-              echo "::endgroup::"
-              continue
+              # 标签已存在但摘要不同 → 尝试覆盖重推。Docker Hub 默认允许可变标签
+              # （仓库设置 Tag mutability settings = All tags are mutable）。
+              # 若仓库仍开启 immutable tags，重推会收到 403 DENIED
+              # "cannot be updated due to immutability settings"，届时归入不可变警告而非失败。
+              REPUSH_MODE=1
+              echo "标签 $TAG 已存在但摘要不同，尝试覆盖重推（$TARGET_DIGEST → $SOURCE_DIGEST）"
             fi
 
             SYNCED=0
             for ATTEMPT in 1 2 3; do
-              echo "第 $ATTEMPT 次推送新标签 $TAG"
+              if [ "$REPUSH_MODE" -eq 1 ]; then
+                echo "第 $ATTEMPT 次覆盖重推标签 $TAG"
+              else
+                echo "第 $ATTEMPT 次推送新标签 $TAG"
+              fi
               if skopeo copy --all --preserve-digests "$SOURCE_REPO:$TAG" "$TARGET_REPO:$TAG" 2>"/tmp/skopeo-$ATTEMPT.err"; then
                 # 写入后必须从目标仓库读回并核对摘要，不能只依赖退出码。
                 HUB_TOKEN=$(hub_pull_token)
@@ -154,7 +158,11 @@ jobs:
                 if [ "$READBACK" = "$SOURCE_DIGEST" ]; then
                   echo "标签 $TAG 推送并读回校验成功：$READBACK"
                   SYNCED=1
-                  UPDATED=$((UPDATED + 1))
+                  if [ "$REPUSH_MODE" -eq 1 ]; then
+                    REPUSHED=$((REPUSHED + 1))
+                  else
+                    UPDATED=$((UPDATED + 1))
+                  fi
                   break
                 fi
                 LAST_ERROR="读回摘要 ${READBACK:-不存在} != 源摘要 $SOURCE_DIGEST"
@@ -167,10 +175,18 @@ jobs:
             done
 
             if [ "$SYNCED" -ne 1 ]; then
-              FAILED_TAGS+=("$TAG")
-              # 用 ::error:: 输出，失败原因才会写进 check-run annotations，
-              # 不必下载完整日志就能定位是哪个标签、什么原因失败。
-              echo "::error title=同步失败 $TAG::${LAST_ERROR:-未知错误}"
+              if printf '%s' "$LAST_ERROR" | grep -qiE 'immutab|cannot be updated|denied'; then
+                # Docker Hub immutable tags 拒绝覆盖（403 DENIED "cannot be updated due to
+                # immutability settings"）。语义版本标签本就应不可变；latest 若被冻结属于
+                # 仓库设置问题 → 归入警告不判失败（与结尾 latest 一致性护栏互不干扰）。
+                IMMUTABLE+=("$TAG")
+                echo "::warning title=标签不可变 $TAG::Docker Hub immutable tags 拒绝覆盖重推 $TAG → $SOURCE_DIGEST；请在仓库设置 Tag mutability settings 选择 All tags are mutable 后重跑"
+              else
+                FAILED_TAGS+=("$TAG")
+                # 用 ::error:: 输出，失败原因才会写进 check-run annotations，
+                # 不必下载完整日志就能定位是哪个标签、什么原因失败。
+                echo "::error title=同步失败 $TAG::${LAST_ERROR:-未知错误}"
+              fi
             fi
             echo "::endgroup::"
           done
@@ -179,12 +195,13 @@ jobs:
             echo "## GHCR → Docker Hub 增量同步"
             echo "- 最新版本：\`$LATEST_TAG\`"
             echo "- 新推送：$UPDATED"
+            echo "- 已存在标签覆盖重推成功：$REPUSHED"
             echo "- 摘要一致并跳过：$MATCHED"
-            echo "- 已存在且不可变（Docker Hub immutable tags）：${#IMMUTABLE[@]}"
+            echo "- 重推被拒（Docker Hub immutable tags）：${#IMMUTABLE[@]}"
             if [ "${#IMMUTABLE[@]}" -gt 0 ]; then
               echo "- 不可变标签：\`${IMMUTABLE[*]}\`"
-              echo "  > 这些标签在 Docker Hub 已存在且启用了不可变设置，无法重新指向新镜像。"
-              echo "  > 固定语义版本本应不可变；若希望 \`latest\` 跟随最新版本，请在 Docker Hub 仓库设置中关闭 immutable tags。"
+              echo "  > 这些标签覆盖重推时被 Docker Hub immutable tags 拒绝（403 DENIED）。"
+              echo "  > 若希望 \`latest\` 跟随最新版本，请在仓库设置 Tag mutability settings 选择 All tags are mutable 后重跑本工作流。"
             fi
             echo "- 失败：${#FAILED_TAGS[@]}"
             if [ "${#FAILED_TAGS[@]}" -gt 0 ]; then
