@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.9.40"
+VERSION = "0.9.41"
 
 failures = []
 
@@ -176,15 +176,17 @@ check("↓ 下载" not in media, "播放器/阅读器不能保留下载按钮")
 check("openMovieDetails" in media, "影视海报必须进入详情页")
 check("movie-poster-settings" in media, "影视海报右下角必须有状态按钮")
 
-# 视频播放器顶栏只允许关闭按钮：设置按钮关联异常、标记已读已内置到海报、下载已删除。
-# 图书阅读器仍然需要「标记已读」，因此只约束 video 分支。
-video_branch = re.search(r"const actions = video \?(.+?):\s*`\$\{toolbar\}", media, re.S)
-check(video_branch is not None, "未找到 viewerShell() 的 video 分支")
-if video_branch:
-    branch = video_branch.group(1)
-    check("media-reader-close" in branch, "视频播放器顶栏必须保留关闭按钮")
-    for banned in ("settingsModal", "markReaderCompleted", "download"):
-        check(banned not in branch, f"视频播放器顶栏不能再出现 {banned}")
+# v0.9.41：视频播放器不再渲染外层顶栏 —— 标题移入播放器左上角（vc-heading），
+# 关闭统一走底部控制栏 ✕；movie 组 PDF/图片等非视频浏览仍保留外层头（含标记已读/关闭）。
+player_branch = re.search(r"const head = opts\.player \? \"\" : `(.+?)`;", media, re.S)
+check(player_branch is not None, "未找到 viewerShell() 的 opts.player 分支")
+if player_branch:
+    branch = player_branch.group(1)
+    check("media-reader-close" in branch, "非视频外层头必须保留关闭按钮")
+    check("markReaderCompleted" in branch, "阅读器外层头必须保留标记已读")
+    check('const head = opts.player ? "" :' in media, "视频播放器必须跳过外层标题头渲染")
+for banned in ("const actions = video ?", "movie-player-head"):
+    check(banned not in media, f"v0.9.40 旧的外层播放器头结构不能再出现：{banned}")
 
 # ---- 5. 版本文本 ----
 check(

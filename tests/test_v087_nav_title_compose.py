@@ -156,10 +156,11 @@ body_rule = re.search(r"\.media-reader-body \{([^}]*)\}", css)
 check("阅读器正文高度扣掉顶栏",
       body_rule is not None and "var(--topbar-h)" in body_rule.group(1),
       body_rule.group(1).strip() if body_rule else "(缺失)")
-video_rule = re.search(r"\.media-video-body \{([^}]*)\}", css)
+video_rules = re.findall(r"\.media-video-body \{([^}]*)\}", css)
+video_rule = next((r for r in video_rules if "min-height" in r and "var(--topbar-h)" in r), None)
 check("视频区最小高度扣掉顶栏",
-      video_rule is not None and "var(--topbar-h)" in video_rule.group(1),
-      video_rule.group(1).strip() if video_rule else "(缺失)")
+      video_rule is not None,
+      (video_rules[0].strip() if video_rules else "(缺失)"))
 # 电子书阅读器顶栏还带字号工具条，按钮组固定约 351px 且 nowrap，
 # 窄于约 375px 时关闭按钮会被挤出屏幕（320px 下完全不可点）。
 check("窄屏隐藏电子书字号工具条以保住关闭按钮",
@@ -254,8 +255,8 @@ check("rollback.sh 还原 vaulthub.env",
 
 # 版本号
 check("index.html 版本号为 v0.8.7",
-      read("index.html").count("v0.9.40") >= 2,
-      f"出现 {read('index.html').count('v0.9.40')} 次")
+      read("index.html").count("v0.9.41") >= 2,
+      f"出现 {read('index.html').count('v0.9.41')} 次")
 
 # ---------------------------------------------------------------- 输出
 if FAILS:

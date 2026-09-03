@@ -123,7 +123,7 @@ type playbackPlan struct {
 	AudioAction string        `json:"audio_action"`
 	Hardware    string        `json:"hardware"`
 	// MaxHeight caps the output height when the caller asked for an explicit
-	// transcode quality (v0.9.40 播放器设置 → 转码质量). 0 means "no cap".
+	// transcode quality (v0.9.41 播放器设置 → 转码质量). 0 means "no cap".
 	MaxHeight   int           `json:"max_height,omitempty"`
 	Media       playbackMedia `json:"media"`
 }
@@ -2265,7 +2265,7 @@ func compatArgs(ctx context.Context, p, audioTrack, hw, mode string) (pre []stri
 }
 
 // compatArgsScaled builds the ffmpeg arguments for the compatibility stream.
-// maxHeight > 0 caps the output height (v0.9.40 播放器 设置 → 转码质量); a cap
+// maxHeight > 0 caps the output height (v0.9.41 播放器 设置 → 转码质量); a cap
 // forces a real re-encode because you cannot scale a copied stream.
 func compatArgsScaled(ctx context.Context, p, audioTrack, hw, mode string, maxHeight int) (pre []string, mid []string) {
 	vcodec := ""
@@ -2386,7 +2386,7 @@ func (a *App) compat(w http.ResponseWriter, r *http.Request) {
 	if mode != "remux" && mode != "audio_transcode" && mode != "full_transcode" {
 		mode = "audio_transcode"
 	}
-	// v0.9.40: height caps the output resolution (播放器 设置 → 转码质量). It is part
+	// v0.9.41: height caps the output resolution (播放器 设置 → 转码质量). It is part
 	// of the cache key so 1080p and 720p renditions never collide on disk.
 	maxHeight := 0
 	if n, err := strconv.Atoi(r.URL.Query().Get("height")); err == nil && n >= 144 && n <= 4320 {
