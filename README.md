@@ -502,6 +502,27 @@ docker compose up -d --force-recreate
 
 **`vaulthub.env` 必须和 compose 放在同一目录**：文件缺失时 `docker compose` 会直接报 `env file ... not found` 并拒绝启动。`scripts/install.sh` 和 `scripts/upgrade.sh` 会自动投递它，已存在时保留你的改动。
 
+#### 版本升级后自动补齐 vaulthub.env 的新键（不依赖 git）
+
+新版本可能在 `vaulthub.env` 模板里增加新的环境变量（例如 v0.9.30 增加的 `MEDIA_SCAN_MAX_DEPTH`）。旧文件不会自动获得它们，而 `install.sh`/`upgrade.sh` 采取「已存在则保留」策略，导致新键一直缺失。`scripts/merge-env.sh` 做**键级合并**：只把本地缺失的键（连同默认值和紧邻的说明注释）追加进你的文件，已改过的值一律不动，写入前自动备份为 `vaulthub.env.bak-<时间戳>`，重复执行幂等：
+
+```bash
+# 方式一：本地已有新版模板文件
+sh scripts/merge-env.sh /下载目录/vaulthub.env
+
+# 方式二：直接拉私有仓库的模板（token 需仓库读取权限）
+VAULTHUB_GH_TOKEN=ghp_xxx sh scripts/merge-env.sh \
+  https://raw.githubusercontent.com/q807738511/vaulthub/main/vaulthub.env
+
+# 先预览将追加的内容，不落盘
+sh scripts/merge-env.sh -n /下载目录/vaulthub.env
+
+# 合并后重建容器生效（restart 不够）
+docker compose up -d --force-recreate
+```
+
+不想用 git、也不想整目录替换时的升级流程：拉新版 compose 与 `vaulthub.env` 模板 → `merge-env.sh` 合并 → `docker compose up -d --force-recreate`。本地文件缺失时脚本会用模板整体创建（等价于首次安装）。
+
 旧的变量化 `.env` 写法仍兼容，但当前家庭 NAS 固定部署不再要求使用：
 
 - ~~`WEBUI_PORT=8088`~~
