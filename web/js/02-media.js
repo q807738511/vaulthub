@@ -342,7 +342,7 @@ function renderSeriesLibraryContent(host, lib, files) {
   host.innerHTML = `<section class="content-collection">${mediaLibraryHeading(lib, `${shows.length} 部剧 · ${files.length} 集`)}${body}</section>`;
 }
 function renderSeriesShowCard(lib, show) { const art=show.poster?`<img src="${esc(show.poster)}" alt="${esc(show.title)}" loading="lazy">`:`<span>${esc(show.title)}</span>`; const seasons=show.seasonList?.length||0, episodes=show.files?.length||0; return `<article class="media-poster-card series-show-card" data-series-show="${esc(show.key)}" onclick="openSeriesDetails(${jsAttrArg(lib.id)},${jsAttrArg(show.key)})"><div class="media-poster-art" style="${show.poster?"":`background:${coverGradient(show.title)}`}">${art}</div><div class="media-poster-info"><strong>${esc(show.title)}</strong><small>${esc([show.year, `${seasons} 季`, `${episodes} 集`, show.provider].filter(Boolean).join(" · "))}</small></div></article>`; }
-function openSeriesDetails(libId, showKey) { enterMovieDetailSidebarMode(); const lib=findMediaLibrary(libId), viewer=document.getElementById("local-media-viewer-movie"); if(!lib||!viewer)return; const show=readSeriesShow(libId,showKey); if(!show)return; const hero={title:show.title,overview:show.overview||"已按 Plex / Emby 风格根据根目录、Season 01 和 S01E01 规则聚合到同一剧集。",poster:show.poster,logo:show.logo,fanart:show.fanart,backdrop:show.backdrop,year:show.year,provider:show.provider,watched:show.watched,media_type:"series"}; /* v0.9.40：进入剧集详情即把该剧的分集按季/集顺序设为播放队列，
+function openSeriesDetails(libId, showKey) { enterMovieDetailSidebarMode(); const lib=findMediaLibrary(libId), viewer=document.getElementById("local-media-viewer-movie"); if(!lib||!viewer)return; const show=readSeriesShow(libId,showKey); if(!show)return; const hero={title:show.title,overview:show.overview||"已按 Plex / Emby 风格根据根目录、Season 01 和 S01E01 规则聚合到同一剧集。",poster:show.poster,logo:show.logo,fanart:show.fanart,backdrop:show.backdrop,year:show.year,provider:show.provider,watched:show.watched,media_type:"series"}; /* v0.9.41：进入剧集详情即把该剧的分集按季/集顺序设为播放队列，
      这样播放器的「上一个 / 下一个 / 播放列表」走的是同一部剧而不是整库。 */
   setVideoPlaylist(libId, (show.seasonList||[]).flatMap(season=>(season.episodes||[]).map(ep=>({path:ep.path}))));
   const seasons=(show.seasonList||[]).map(season=>`<section class="series-season-block"><h3>Season ${String(season.season).padStart(2,"0")}</h3><div class="media-file-list">${season.episodes.map(ep=>renderSeriesEpisodeRow(lib,ep)).join("")}</div></section>`).join(""); viewer.innerHTML=`<div class="media-reader-overlay movie-detail-page series-detail-page"><div class="movie-detail-scroll"><button class="media-reader-close" onclick="closeMovieDetails()">✕</button>${renderMovieHero(lib,show.files?.[0]?.path||"",hero)}<section><h3>剧集列表</h3><div class="hint">按标准命名规则聚合：根目录剧名 / Season 01 / 剧名 S01E01 标题；刮削先锁定主剧集，再将本地多季多集挂载到同一条目。</div></section>${seasons}</div></div>`; scrollViewerIntoView(viewer); }
@@ -505,14 +505,26 @@ function browserPlaybackCapabilities() {
   };
 }
 async function requestPlaybackPlan(lib, path, quality = "auto") {
-  const response = await fetch("/api/media/playback/plan", {
-    method: "POST",
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ library_id: String(lib.id), path: String(path), quality, hardware: settings.hardwareAcceleration || "auto", client: browserPlaybackCapabilities() })
-  });
-  if (!response.ok) throw new Error(`播放计划 HTTP ${response.status}`);
-  return response.json();
+  /* v0.9.41：播放计划请求必须带超时 —— 之前没有 AbortController，
+     后端探测/转码服务异常时「正在准备播放…」会永远卡住，视频点不开。 */
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
+  try {
+    const response = await fetch("/api/media/playback/plan", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ library_id: String(lib.id), path: String(path), quality, hardware: settings.hardwareAcceleration || "auto", client: browserPlaybackCapabilities() }),
+      signal: controller.signal
+    });
+    if (!response.ok) throw new Error(`播放计划 HTTP ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    if (error?.name === "AbortError") throw new Error("播放计划请求超时（20s），已转用本地降级策略");
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 function playbackModeLabel(plan) {
   const labels = { direct: "Direct Play 原画直放", remux: "Smart Stream · Remux", audio_transcode: "Smart Stream · 仅音频转码", full_transcode: "Smart Stream · 完整转码" };
@@ -749,7 +761,7 @@ async function loadLocalFiles(group, lib, offset = 0) {
       scrapeAudioMetadata(target, lib, files);
     } else if (group === "movie") {
       target.innerHTML = renderMovieLibrary(lib, files, data) + pager;
-      /* v0.9.40：播放器的「上一个 / 下一个 / 播放列表」用这批已排序的文件作为队列。 */
+      /* v0.9.41：播放器的「上一个 / 下一个 / 播放列表」用这批已排序的文件作为队列。 */
       setVideoPlaylist(lib.id, files);
       if (lib?.type === "series") scrapeSeriesMetadata(target, lib, files);
       else scrapeMovieMetadata(target, lib, files);
@@ -1134,13 +1146,16 @@ function viewerShell(group, lib, path, body, url, opts = {}) {
   const chapterHtml = chapters.length ? `<aside class="ebook-chapters"><h4>目录 · ${chapters.length} 章</h4>${chapters.map((ch, i) => `<button data-chapter="${i}" onclick="jumpEbookChapter(${i})">${esc(ch.title)}</button>`).join("")}</aside>` : "";
   const toolbar = opts.ebook ? `<span class="ebook-toolbar"><button title="减小字号" onclick="changeEbookFontSize(-1)">A-</button><button title="增大字号" onclick="changeEbookFontSize(1)">A+</button><button id="ebookFontStyleButton" title="正体/斜体" onclick="toggleEbookFontStyle()">正体</button></span>` : "";
   const video = group === "movie";
-  const actions = video ? `<button class="media-reader-close" title="关闭播放器" onclick="closeLocalViewer('${esc(group)}')">✕</button>` : `${toolbar}<button class="btn" onclick="markReaderCompleted()">✓ 标记已读</button><button class="media-reader-close" title="关闭并返回书架" onclick="closeLocalViewer('${esc(group)}')">✕</button>`;
+  /* v0.9.41：真正的视频播放器（opts.player）不再渲染外层标题条与 ✕ —— 标题已移入
+     播放器左上角 ⌄ 右侧（vc-heading），关闭统一走底部控制栏的 ✕。movie 组里的
+     PDF/图片等非视频浏览仍保留外层头（标题 + ✕ 关闭）。文档/音频类阅读器同理。 */
+  const head = opts.player ? "" : `<div class="media-reader-head"><strong class="media-reader-title" title="${esc(path)}">${esc(displayBookTitle(path))}</strong><div class="media-actions">${toolbar}<button class="btn" onclick="markReaderCompleted()">✓ 标记已读</button><button class="media-reader-close" title="关闭并返回书架" onclick="closeLocalViewer('${esc(group)}')">✕</button></div></div>`;
   /* v0.9.30：文档类阅读器（TXT 正文、ZIP 漫画整页）标记 reader-doc，
      让正文区改成内容驱动高度并跟随主题上色，避免纸张只有一屏、
      其余正文落在深色底上，以及漫画页左右露出下层底色。
      PDF/图片/音频仍用固定一屏高度（iframe 需要 height:100%）。 */
-  const doc = !video && opts.doc === true;
-  return `<div class="media-reader-overlay ${readerThemeClass()}${doc ? " reader-doc" : ""}"><div class="media-reader-head ${video ? "movie-player-head" : ""}"><strong class="media-reader-title" title="${esc(path)}">${esc(displayBookTitle(path))}</strong><div class="media-actions">${actions}</div></div><div class="media-reader-body" data-reader-scroll onscroll="trackReaderProgress(this)">${chapterHtml}<div class="media-reader-wrap">${body}</div></div></div>`;
+  const doc = !opts.player && opts.doc === true;
+  return `<div class="media-reader-overlay ${readerThemeClass()}${doc ? " reader-doc" : ""}${opts.player ? " movie-player" : ""}">${head}<div class="media-reader-body" data-reader-scroll onscroll="trackReaderProgress(this)">${chapterHtml}<div class="media-reader-wrap">${body}</div></div></div>`;
 }
 /* v0.9.30：重新打开文档时必须回到上次的阅读位置。
    之前只写进度、从不回填 scrollTop，所以关闭再打开永远从第一页开始，
@@ -1224,7 +1239,9 @@ function setVideoEngine(root, engine, detail) {
   if (!root) return;
   root.dataset.videoEngine = engine;
   root.querySelectorAll("[data-engine-choice]").forEach(button => button.classList.toggle("active", button.dataset.engineChoice === engine));
-  setMovieCompatStatus(root, `${VIDEO_ENGINE_LABELS[engine] || engine}${detail ? " · " + detail : ""}`);
+  /* v0.9.41：状态行不再向用户暴露「浏览器原生 / FFmpeg 兼容流 / WebAssembly」引擎标签，
+     只显示对用户有意义的原因文案（播放计划 / 转码模式 / 降级原因）。 */
+  if (detail) setMovieCompatStatus(root, detail);
 }
 function terminateWasmVideo(root) {
   if (root?.__wasmWorker) { root.__wasmWorker.terminate(); root.__wasmWorker = null; }
@@ -1236,7 +1253,10 @@ async function startWasmVideoFallback(root, video, direct) {
   const response = await fetch(direct, { cache: "no-store" });
   if (!response.ok) throw new Error(`原片读取失败 HTTP ${response.status}`);
   const size = Number(response.headers.get("Content-Length") || 0);
-  if (size > WASM_INPUT_LIMIT) throw new Error("文件超过 256 MB，浏览器软件解码为保护内存已停止");
+  if (size > WASM_INPUT_LIMIT) {
+    response.body?.cancel?.();
+    throw new Error("文件超过 256 MB，浏览器软件解码为保护内存已停止");
+  }
   const bytes = await response.arrayBuffer();
   if (bytes.byteLength > WASM_INPUT_LIMIT) throw new Error("文件超过 256 MB，浏览器软件解码为保护内存已停止");
   terminateWasmVideo(root);
@@ -1269,12 +1289,43 @@ async function startWasmVideoFallback(root, video, direct) {
   switchMovieSource(video, objectUrl);
   setVideoEngine(root, VIDEO_ENGINE_WASM, "软件解码完成 · 当前为前 60 秒兼容片段");
 }
+async function probeVideoFileSize(direct, timeoutMs = 10000) {
+  /* v0.9.41：降级前先轻量探测原片大小（Range 请求，不下载正文），
+     超过浏览器软件解码上限就不再启动注定失败的 WASM 全量下载。 */
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const response = await fetch(direct, { method: "GET", headers: { Range: "bytes=0-0" }, cache: "no-store", signal: controller.signal });
+    clearTimeout(timer);
+    if (!response.ok) return 0;
+    const match = /\/\s*(\d+)\s*$/.exec(response.headers.get("Content-Range") || "");
+    if (match) return Number(match[1]);
+    return Number(response.headers.get("Content-Length") || 0);
+  } catch (e) { return 0; }
+}
 async function advanceVideoEngine(root, video, context) {
   const engine = root.dataset.videoEngine || VIDEO_ENGINE_NATIVE;
-  if (engine === VIDEO_ENGINE_NATIVE) { context.useCompat("原生失败，自动降级到 FFmpeg 兼容流"); return; }
+  if (engine === VIDEO_ENGINE_NATIVE) { context.useCompat("原片直连不可用，已自动切换转码兼容流"); return; }
   if (engine === VIDEO_ENGINE_COMPAT) {
+    /* v0.9.41：计划流（带 task 会话）失败时，先用不带会话的基础兼容流重试一次 ——
+       很多「第一次打不开、点第二次能播」的异常来自转码会话尚未就绪。 */
+    const current = video.dataset.currentSrc || "";
+    const usingPlanURL = current.includes("task=") || /\/api\/media\/playback\/stream\?/.test(current);
+    if (usingPlanURL) {
+      setMovieCompatStatus(root, "智能转码流暂不可用，切换基础兼容流重试");
+      context.useCompat("智能转码流暂不可用，已切换基础兼容流");
+      return;
+    }
+    const size = await probeVideoFileSize(context.direct);
+    if (size > WASM_INPUT_LIMIT) {
+      /* v0.9.41：超过 256 MB 的原片不值得浏览器全量下载软解 —— 给出可操作提示，
+         不再展示「降级失败：文件超过 256 MB」这类只会卡死播放的报错。 */
+      setMovieCompatStatus(root, "转码流暂不可用，原片过大无法在浏览器软解");
+      updateVideoStatus(root, video, "播放异常，请重试或更换片源");
+      return;
+    }
     try { await startWasmVideoFallback(root, video, context.direct); }
-    catch (error) { setVideoEngine(root, VIDEO_ENGINE_WASM, `降级失败：${error.message}`); updateVideoStatus(root, video, "播放失败"); }
+    catch (error) { updateVideoStatus(root, video, "播放异常，请重试或更换片源"); setMovieCompatStatus(root, `${error.message}；可重新打开或更换片源重试`); }
   }
 }
 function movieMimeForExt(ext) {
@@ -1312,9 +1363,9 @@ function updateVideoStatus(root, video, state) {
   const main=root?.querySelector("[data-video-status]"); const detail=root?.querySelector("[data-video-detail]");
   if (!main || !detail || !video) return;
   main.textContent=state;
-  const engine = VIDEO_ENGINE_LABELS[root?.dataset.videoEngine] || "待选择";
+  /* v0.9.41：信息面板也不再显示「引擎」字段，只保留分辨率与媒体元数据。 */
   const size=video.videoWidth ? `${video.videoWidth}×${video.videoHeight}` : "分辨率待获取";
-  detail.textContent=`${formatMediaTime(video.currentTime)} / ${formatMediaTime(video.duration)} · ${size} · ${engine} · ${root.dataset.videoMetadata || "媒体元数据待识别"}`;
+  detail.textContent=`${formatMediaTime(video.currentTime)} / ${formatMediaTime(video.duration)} · ${size} · ${root.dataset.videoMetadata || "媒体元数据待识别"}`;
 }
 function toggleVideoStatusPanel(button) {
   const root = button?.closest(".media-video-body");
@@ -1323,7 +1374,7 @@ function toggleVideoStatusPanel(button) {
   const open = panel.classList.toggle("show");
   button.setAttribute("aria-expanded", String(open));
 }
-/* ================= v0.9.40 视频播放器悬浮控制栏 =================
+/* ================= v0.9.41 视频播放器悬浮控制栏 =================
    触发规则：播放中滑动鼠标（pointermove）唤出控制栏，3 秒内没有任何操作重新隐藏。
    暂停、控制栏内悬停、任一浮层（更多/设置/播放列表/声音）打开时都不隐藏，
    否则用户刚点开设置就被收走。手动折叠（左上 ⌄）是显式意图，鼠标移动不再唤出，
@@ -1360,17 +1411,25 @@ function scheduleVideoChromeHide(root) {
 }
 function videoRootOf(el) { return el?.closest(".media-video-body") || null; }
 function videoElementOf(el) { return videoRootOf(el)?.querySelector("video[data-movie-player]") || null; }
-/* 左上角 ⌄：向下收起整条控制栏，左下角出现 ⌃ 用于展开。 */
-function collapseVideoChrome(el) {
+/* 左上角 ⌄：将整个播放器最小化为小窗（v0.9.41）。v0.9.41 只折叠控制栏，
+   用户期望的是最小化整个播放器 —— 现在折叠态把播放器缩成右下角小窗，
+   左下角 ⌃ 用于还原整屏播放器。 */
+function minimizeVideoPlayer(el) {
   const root = videoRootOf(el);
   if (!root) return;
+  const overlay = root.closest(".media-reader-overlay.movie-player");
+  if (overlay) overlay.classList.add("video-minimized");
   clearTimeout(root.__videoChromeTimer);
   root.dataset.videoChromeCollapsed = "true";
   hideVideoChrome(root);
+  root.querySelector(".video-chrome")?.classList.add("video-chrome-minimized");
 }
-function expandVideoChrome(el) {
+function expandVideoPlayer(el) {
   const root = videoRootOf(el);
   if (!root) return;
+  const overlay = root.closest(".media-reader-overlay.movie-player");
+  if (overlay) overlay.classList.remove("video-minimized");
+  root.querySelector(".video-chrome")?.classList.remove("video-chrome-minimized");
   root.dataset.videoChromeCollapsed = "false";
   scheduleVideoChromeHide(root);
 }
@@ -1480,26 +1539,15 @@ function setVideoVolume(el, value) {
   syncVideoVolumeUI(root, video);
   scheduleVideoChromeHide(root);
 }
-function toggleVideoMute(el) {
-  const root = videoRootOf(el);
-  const video = root?.querySelector("video");
-  if (!video) return;
-  video.muted = !video.muted;
-  if (!video.muted && video.volume === 0) video.volume = 1;
-  syncVideoVolumeUI(root, video);
-  scheduleVideoChromeHide(root);
-}
+/* v0.9.41：右下角静音按钮已删除 —— 音量滑条移入设置浮层，滑到 0 即静音，
+   不再提供单独的一键静音按钮。 */
 function syncVideoVolumeUI(root, video) {
   if (!root || !video) return;
   const level = video.muted ? 0 : Math.round((video.volume || 0) * 100);
   const range = root.querySelector("[data-video-volume]");
   const label = root.querySelector("[data-video-volume-label]");
-  const icon = video.muted || level === 0 ? "🔇" : level < 45 ? "🔉" : "🔊";
   if (range && document.activeElement !== range) range.value = String(level);
   if (label) label.textContent = `${level}%`;
-  root.querySelector("[data-video-mute]")?.replaceChildren(document.createTextNode(icon));
-  const trigger = root.querySelector('[data-video-panel-button="volume"]');
-  if (trigger) trigger.textContent = icon;
 }
 /* ---------- 转码质量 ---------- */
 function setVideoQuality(el, quality) {
@@ -1576,6 +1624,9 @@ function videoPlaybackEnded(root, video) {
   const mode = videoRepeatMode(root);
   if (mode === "one") { video.currentTime = 0; video.play().catch(() => {}); return; }
   if (mode === "all" || videoShuffleOn(root)) { videoPlayNeighbour(root, 1); return; }
+  /* v0.9.41：只有电视剧集类型播放才自动连播下一集 —— 单部电影播完停在结尾，
+     不再自动跳到库里下一部（电影模式也不展示播放列表按钮）。 */
+  if (root.dataset.videoPlaylistEligible !== "true") return;
   const current = videoPlaylistIndex(root.dataset.library, root.dataset.path);
   if (current >= 0 && current + 1 < videoPlaylist.length) videoPlayNeighbour(root, 1);
 }
@@ -1620,7 +1671,7 @@ async function copyVideoPlaybackInfo(el) {
   const text = [
     `文件：${root.dataset.path || ""}`,
     `媒体库：${findMediaLibrary(root.dataset.library)?.name || root.dataset.library || ""}`,
-    `播放模式：${root.dataset.playbackMode || "auto"} · 引擎 ${VIDEO_ENGINE_LABELS[root.dataset.videoEngine] || root.dataset.videoEngine || ""}`,
+    `播放模式：${root.dataset.playbackMode || "auto"}`,
     `画质选择：${root.dataset.videoQuality || "auto"}`,
     `解码信息：${root.dataset.videoMetadata || "媒体元数据待识别"}`,
     `分辨率：${video.videoWidth ? `${video.videoWidth}×${video.videoHeight}` : "待获取"}`,
@@ -1650,7 +1701,7 @@ function bindVideoStatus(root, video) {
   ["progress","loadedmetadata","durationchange","canplay"].forEach(ev=>video.addEventListener(ev,()=>{ updateVideoTimeline(video); if(ev==='loadedmetadata')restoreVideoPlaybackState(video); }));
   video.addEventListener('keydown',e=>handleVideoKeyboard(e,video));
   video.tabIndex=0;
-  /* v0.9.40：滑动鼠标触发识别。pointermove 是唯一的「滑动」信号，click/mouseenter
+  /* v0.9.41：滑动鼠标触发识别。pointermove 是唯一的「滑动」信号，click/mouseenter
      一并唤出；控制栏自身 hover 时打标记，避免 3 秒到点把鼠标下的按钮收走。 */
   ["pointermove","mouseenter","click","touchstart"].forEach(ev => root.addEventListener(ev, () => scheduleVideoChromeHide(root), { passive:true }));
   /* hover 锁只绑在真正的顶部/底部条上：控制层是全屏铺满的，绑在它上面会让
@@ -1695,15 +1746,15 @@ function updateVideoTimeline(video) {
   const buffered=duration&&video.buffered?.length?video.buffered.end(video.buffered.length-1)/duration*100:0;
   const p=root.querySelector('.video-played-range'), b=root.querySelector('.video-buffered-range'), label=root.querySelector('.video-time-label');
   if(p)p.style.width=`${Math.min(100,played)}%`; if(b)b.style.width=`${Math.min(100,buffered)}%`;
-  /* v0.9.40：进度点跟着已播比例走，让用户看得出可以拖动。 */
+  /* v0.9.41：进度点跟着已播比例走，让用户看得出可以拖动。 */
   const knob=root.querySelector('.video-progress-knob');
   if(knob)knob.style.left=`${Math.min(100,Math.max(0,played))}%`;
   const shell=root.querySelector('.video-progress-shell');
   if(shell)shell.setAttribute('aria-valuenow',String(Math.round(Math.min(100,Math.max(0,played)))));
-  /* v0.9.40：左下角只显示「当前时间 / 视频时长」，缓冲量移到「获取信息」面板。 */
+  /* v0.9.41：左下角只显示「当前时间 / 视频时长」，缓冲量移到「获取信息」面板。 */
   if(label)label.textContent=`${formatVideoTime(video.currentTime)} / ${formatVideoTime(video.duration)}`;
 }
-/* v0.9.40：进度条支持点击定位与按住拖动；键盘左右键也能移动，便于无鼠标操作。 */
+/* v0.9.41：进度条支持点击定位与按住拖动；键盘左右键也能移动，便于无鼠标操作。 */
 function videoSeekRatio(event, shell) { const r=shell.getBoundingClientRect(); if(!(r.width>0))return 0; return Math.max(0,Math.min(1,(event.clientX-r.left)/r.width)); }
 function seekVideoTimeline(event, shell) {
   const root=shell.closest('.media-video-body');
@@ -1756,41 +1807,55 @@ function populateVideoTracks(root, video, info) {
     subBox.innerHTML = subs.map((s, i) => `<button type="button" onclick="attachVideoSubtitle(this.closest('.media-video-body').querySelector('video'), '${esc(s.url)}', '${esc(s.label || `内嵌字幕 ${i + 1}`)}')">${esc(s.label || `内嵌字幕 ${i + 1}`)}</button>`).join('');
   }
 }
-function switchMovieSource(video, url) {
+function switchMovieSource(video, url, { autoplay = true } = {}) {
   if (!video || video.dataset.currentSrc === url) return;
+  const first = !video.dataset.currentSrc;
   const wasPaused = video.paused;
   const time = Number.isFinite(video.currentTime) ? video.currentTime : 0;
   video.dataset.currentSrc = url;
   video.src = url;
   video.load();
-  video.addEventListener('loadedmetadata',()=>{ if(time>2 && time<video.duration-2) video.currentTime=time; if(!wasPaused) video.play().catch(()=>{}); },{once:true});
+  video.addEventListener('loadedmetadata',()=>{ if(time>2 && time<video.duration-2) video.currentTime=time; if(!wasPaused||first&&autoplay) video.play().catch(()=>{}); },{once:true});
   video.muted = false;
   video.volume = 1;
+  /* v0.9.41：初次点击打开播放器后立即尝试自动播放。若被浏览器自动播放
+     策略拦截（需要用户手势），状态提示用户点击画面开始播放。 */
+  if (first && autoplay) {
+    const root = video.closest('.media-video-body');
+    video.play().then(() => { if (root) updateVideoStatus(root, video, "正在播放"); }).catch(() => { if (root) updateVideoStatus(root, video, "点击画面开始播放"); });
+  }
 }
 async function initMovieCompatPlayer(root, lib, path) {
   const video = root?.querySelector("video[data-movie-player]");
   if (!video) return;
   const videoRoot = video.closest('.media-video-body');
   videoRoot.dataset.library=String(lib.id); videoRoot.dataset.path=String(path);
-  /* v0.9.40：关闭播放要知道自己属于哪个媒体分组；标题/剧集信息与播放列表在这里绑定。 */
+  /* v0.9.41：关闭播放要知道自己属于哪个媒体分组；标题/剧集信息与播放列表在这里绑定。 */
   videoRoot.dataset.mediaGroup="movie";
+  /* v0.9.41：播放列表面板只在电视剧集类型播放时展示 —— 电影单文件播放隐藏按钮，
+     避免把「电影库整批文件」当成一部电影的播放列表。判定与左下角标题一致：
+     series 库，或任意库中按 SxxExx/第N集 命名的分集文件。 */
+  const parsedEpisode = parseSeriesEpisode(path);
+  const episodeContext = lib?.type === "series" || (!!parsedEpisode?.episode && /[sS]\d{1,2}[eE]\d{1,3}|\d{1,2}x\d{1,3}|第\s*\d+\s*集/.test(String(path)));
+  videoRoot.dataset.videoPlaylistEligible = episodeContext ? "true" : "false";
+  if (!episodeContext) {
+    const libIndex = videoPlaylist.findIndex(item => item.libId === String(lib.id) && item.path === String(path));
+    if (libIndex < 0) videoPlaylist = [];
+  }
   applyVideoChromeTitle(videoRoot, lib, path);
   renderVideoPlaylist(videoRoot);
   bindVideoTimelineDrag(videoRoot);
   fetch(`/api/media/metadata?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}`,{cache:'no-store'}).then(r=>r.ok?r.json():null).then(meta=>{if(meta&&(meta.title||meta.year||meta.show_title)){const all=readMovieMetadata();all[path]={...movieMetadataFor(path),...meta};writeMovieMetadata(all);applyVideoChromeTitle(videoRoot,lib,path);}if(meta?.subtitles?.length){const box=videoRoot.querySelector('[data-video-subtitle-options]');if(box)box.innerHTML=meta.subtitles.map((s,i)=>`<button type="button" onclick="attachVideoSubtitle(this.closest('.media-video-body').querySelector('video'),${jsAttrArg(s.url)},${jsAttrArg(s.label||`本地字幕 ${i+1}`)})">${esc(s.label||`本地字幕 ${i+1}`)}</button>`).join('');}}).catch(()=>{});
   const direct = mediaFileUrl(lib, path);
   const compat = mediaCompatUrl(lib, path);
-  /* v0.9.40 修复：以前这里传的是外层 viewer，于是 .video-controls-visible
+  /* v0.9.41 修复：以前这里传的是外层 viewer，于是 .video-controls-visible
      被加到 viewer 上，而 CSS 选择器是 .media-video-body.video-controls-visible，
      永远不匹配 —— 这就是悬浮控制栏/进度条一直不出现的根因。 */
   bindVideoStatus(videoRoot, video);
   scheduleVideoChromeHide(videoRoot);
   const useDirect = (reason="原片直连") => { terminateWasmVideo(videoRoot); setVideoEngine(videoRoot, VIDEO_ENGINE_NATIVE, reason); switchMovieSource(video, direct); };
   const useCompat = (reason, url=compat) => { terminateWasmVideo(videoRoot); setVideoEngine(videoRoot, VIDEO_ENGINE_COMPAT, reason || `Smart Stream · ${settings.hardwareAcceleration}`); switchMovieSource(video, url); };
-  const useWasm = async () => { try { await startWasmVideoFallback(videoRoot, video, direct); } catch (error) { setVideoEngine(videoRoot, VIDEO_ENGINE_WASM, `启动失败：${error.message}`); } };
-  root.querySelector("[data-movie-direct]")?.addEventListener("click", () => useDirect("手动选择 Direct Play"));
-  root.querySelector("[data-movie-compat]")?.addEventListener("click", () => useCompat("手动选择 Smart Stream"));
-  root.querySelector("[data-movie-wasm]")?.addEventListener("click", useWasm);
+  /* v0.9.41：设置浮层不再暴露「三层播放」手动引擎选择 —— 引擎自动判定与自动降级保留。 */
   video.addEventListener("loadedmetadata", () => { video.muted = false; video.volume = 1; restoreVideoPlaybackState(video); fetch(`/api/media/streams?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}`,{cache:'no-store'}).then(r=>r.ok?r.json():null).then(info=>{populateVideoTracks(videoRoot,video,info);updateVideoStatus(videoRoot,video,video.paused?"已暂停":"正在播放");}).catch(()=>{}); });
   let engineFailurePending = false;
   video.addEventListener("error", async () => {
@@ -1799,7 +1864,7 @@ async function initMovieCompatPlayer(root, lib, path) {
     try { await advanceVideoEngine(videoRoot, video, { direct, useCompat }); } finally { setTimeout(() => { engineFailurePending = false; }, 1000); }
   });
   try {
-    /* v0.9.40：画质选择（设置 → 转码质量）决定播放计划，默认仍是 auto。 */
+    /* v0.9.41：画质选择（设置 → 转码质量）决定播放计划，默认仍是 auto。 */
     const plan = await requestPlaybackPlan(lib, path, videoRoot.dataset.videoQuality || "auto");
     videoRoot.dataset.videoMetadata = formatVideoMetadata(plan.media);
     videoRoot.dataset.playbackMode = plan.mode || "auto";
@@ -1874,8 +1939,9 @@ async function openLocalMedia(group, libId, path) {
 <video data-movie-player playsinline preload="metadata" onloadedmetadata="this.muted=false;this.volume=1" onvolumechange="this.dataset.volume=String(this.volume)"></video>
 <div class="video-chrome" data-video-chrome>
 <div class="vc-top">
-<button class="vc-icon vc-collapse" type="button" title="${esc(t("vpCollapse"))}" aria-label="${esc(t("vpCollapse"))}" onclick="collapseVideoChrome(this)">⌄</button>
-<span class="movie-compat-status">正在上报浏览器能力并生成播放计划...</span>
+<button class="vc-icon vc-collapse" type="button" title="${esc(t("vpMinimize"))}" aria-label="${esc(t("vpMinimize"))}" onclick="minimizeVideoPlayer(this)">⌄</button>
+<div class="vc-heading"><strong class="vc-title" data-video-title>${esc(t("vpTitleLoading"))}</strong><span class="vc-sub" data-video-meta-line></span></div>
+<span class="movie-compat-status">${esc(t("vpPreparing"))}</span>
 <button class="vc-icon vc-fullscreen" type="button" title="${esc(t("vpFullscreen"))}" aria-label="${esc(t("vpFullscreen"))}" aria-pressed="false" onclick="toggleVideoFullscreen(this)">⛶</button>
 </div>
 <div class="vc-bottom">
@@ -1884,8 +1950,6 @@ async function openLocalMedia(group, libId, path) {
 </div>
 <div class="vc-bar">
 <div class="vc-left">
-<strong class="vc-title" data-video-title>${esc(t("vpTitleLoading"))}</strong>
-<span class="vc-sub" data-video-meta-line></span>
 <span class="video-time-label">00:00 / 00:00</span>
 </div>
 <div class="vc-center">
@@ -1901,13 +1965,12 @@ async function openLocalMedia(group, libId, path) {
 <button class="vc-icon" type="button" title="${esc(t("vpRepeat") + "：" + t("vpRepeatOff"))}" aria-label="${esc(t("vpRepeat"))}" data-video-repeat-button onclick="cycleVideoRepeat(this)">🔁</button>
 <button class="vc-icon" type="button" title="${esc(t("vpShuffle") + "：" + t("vpShuffleOff"))}" aria-label="${esc(t("vpShuffle"))}" data-video-shuffle-button onclick="toggleVideoShuffle(this)">🔀</button>
 <button class="vc-icon" type="button" title="${esc(t("vpSettings"))}" aria-label="${esc(t("vpSettings"))}" aria-expanded="false" data-video-panel-button="settings" onclick="toggleVideoPanel(this,'settings')">⚙</button>
-<button class="vc-icon" type="button" title="${esc(t("vpPlaylist"))}" aria-label="${esc(t("vpPlaylist"))}" aria-expanded="false" data-video-panel-button="playlist" onclick="toggleVideoPanel(this,'playlist')">☰</button>
-<button class="vc-icon" type="button" title="${esc(t("vpVolume"))}" aria-label="${esc(t("vpVolume"))}" aria-expanded="false" data-video-panel-button="volume" onclick="toggleVideoPanel(this,'volume')">🔊</button>
+<button class="vc-icon vc-playlist-toggle" type="button" title="${esc(t("vpPlaylist"))}" aria-label="${esc(t("vpPlaylist"))}" aria-expanded="false" data-video-panel-button="playlist" onclick="toggleVideoPanel(this,'playlist')">☰</button>
 </div>
 </div>
 </div>
 </div>
-<button class="vc-restore" type="button" title="${esc(t("vpExpand"))}" aria-label="${esc(t("vpExpand"))}" onclick="expandVideoChrome(this)">⌃</button>
+<button class="vc-restore" type="button" title="${esc(t("vpExpand"))}" aria-label="${esc(t("vpExpand"))}" onclick="expandVideoPlayer(this)">⌃</button>
 <div class="vc-panel vc-panel-more" data-video-panel="more">
 <h4>${esc(t("vpMore"))}</h4>
 <button class="video-info-button" type="button" title="播放及媒体元数据" aria-label="播放及媒体元数据" aria-expanded="false" onclick="toggleVideoStatusPanel(this)">ⓘ ${esc(t("vpInfo"))}</button>
@@ -1917,22 +1980,17 @@ async function openLocalMedia(group, libId, path) {
 <div class="vc-panel vc-panel-settings video-track-menu video-audio-menu" data-video-panel="settings" data-video-track-menu>
 <h4>${esc(t("vpQuality"))}</h4>
 <div class="video-quality-options" data-video-quality-options><button type="button" class="active" data-quality="auto" onclick="setVideoQuality(this,'auto')">${esc(t("vpQualityAuto"))}</button><button type="button" data-quality="original" onclick="setVideoQuality(this,'original')">${esc(t("vpQualityOriginal"))}</button><button type="button" data-quality="1080p" onclick="setVideoQuality(this,'1080p')">1080p</button><button type="button" data-quality="720p" onclick="setVideoQuality(this,'720p')">720p</button><button type="button" data-quality="480p" onclick="setVideoQuality(this,'480p')">480p</button></div>
-<h4>${esc(t("vpEngine"))}</h4>
-<div class="movie-compat-bar"><strong>三层播放</strong><button class="btn" type="button" data-engine-choice="native" data-movie-direct>Direct Play</button><button class="btn" type="button" data-engine-choice="compat" data-movie-compat>Smart Stream</button><button class="btn" type="button" data-engine-choice="wasm" data-movie-wasm>WASM Fallback</button></div>
 <h4>${esc(t("vpAudioStream"))}</h4>
 <div class="video-audio-options" data-video-audio-options>${esc(t("vpAudioLoading"))}</div>
 <h4>${esc(t("vpSubtitle"))}</h4>
 <div class="video-subtitle-menu" data-video-subtitle-options>${esc(t("vpSubtitleNone"))}</div>
 <button type="button" onclick="searchVideoSubtitles(this)">${esc(t("vpSubtitleSearch"))}</button>
+<h4>${esc(t("vpVolume"))}</h4>
+<div class="vc-volume-row"><input class="vc-volume-range" type="range" min="0" max="100" step="1" value="100" aria-label="${esc(t("vpVolume"))}" data-video-volume oninput="setVideoVolume(this,this.value)"><span class="vc-volume-label" data-video-volume-label>100%</span></div>
 </div>
 <div class="vc-panel vc-panel-playlist" data-video-panel="playlist">
 <h4>${esc(t("vpPlaylist"))}</h4>
 <div class="video-playlist-items" data-video-playlist>${esc(t("vpPlaylistLoading"))}</div>
-</div>
-<div class="vc-panel vc-panel-volume" data-video-panel="volume">
-<button class="vc-icon" type="button" title="${esc(t("vpMute"))}" aria-label="${esc(t("vpMute"))}" data-video-mute onclick="toggleVideoMute(this)">🔊</button>
-<input class="vc-volume-range" type="range" min="0" max="100" step="1" value="100" aria-label="${esc(t("vpVolume"))}" data-video-volume oninput="setVideoVolume(this,this.value)">
-<span class="vc-volume-label" data-video-volume-label>100%</span>
 </div>
 <div class="video-status-panel"><span class="status-main" data-video-status>准备播放</span><span class="status-detail" data-video-detail>--:-- / --:-- · 媒体元数据待识别</span></div>
 </div>`;
@@ -1963,7 +2021,8 @@ async function openLocalMedia(group, libId, path) {
     const note = MEDIA_FORMATS.comic.includes(ext) ? "该漫画/压缩格式已加入书架。当前浏览器不能直接解析时，可下载后用专业阅读器打开。" : MEDIA_FORMATS.book.includes(ext) ? "该电子书格式已加入书架。浏览器不支持直接解析时，可在新窗口打开或下载阅读。" : "该格式可下载或交给浏览器打开。";
     body = `<div class="reader-book-fallback"><div class="book-cover" style="max-width:220px;margin:0 auto 24px;background:${coverGradient(displayBookTitle(path))}"><span class="book-cover-title">${esc(displayBookTitle(path))}</span></div><p>${note}</p><p><a class="btn btn-primary" href="${esc(url)}" target="_blank" rel="noopener">↗ 尝试在浏览器打开</a></p></div>`;
   }
-  viewer.innerHTML = viewerShell(group, lib, path, body, url);
-  if (group === "movie" && MEDIA_FORMATS.movie.includes(ext)) initMovieCompatPlayer(viewer, lib, path);
+  const isVideoPlayer = group === "movie" && MEDIA_FORMATS.movie.includes(ext);
+  viewer.innerHTML = viewerShell(group, lib, path, body, url, { player: isVideoPlayer });
+  if (isVideoPlayer) initMovieCompatPlayer(viewer, lib, path);
   scrollViewerIntoView(viewer);
 }
