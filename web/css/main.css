@@ -600,7 +600,7 @@
   .media-reader-close { flex:0 0 auto; width:36px; height:36px; border-radius:50%; border:1px solid var(--border); color:var(--text); background:var(--card2); cursor:pointer; font-size:18px; }
   /* overlay 现在从顶栏下方开始，正文高度要同时扣掉顶栏和阅读器顶栏。 */
   .media-reader-body { flex:1; min-height:0; height:calc(100vh - var(--topbar-h) - 51px); overflow:auto; display:flex; align-items:stretch; justify-content:center; background:#17191d; }
-  /* v0.9.41：播放器不再渲染外层 .media-reader-head —— video 模式正文要从
+  /* v0.9.42：播放器不再渲染外层 .media-reader-head —— video 模式正文要从
      顶栏下直接撑满，而不是再让出 head 的 51px。 */
   .media-reader-overlay.movie-player > .media-reader-body { height:calc(100vh - var(--topbar-h)); }
   .media-reader-overlay.movie-player .media-video-body { min-height:0; }
@@ -657,7 +657,7 @@
   .media-video-body.video-controls-visible .vc-top,
   .media-video-body.video-controls-visible .vc-bottom { pointer-events:auto; }
   .vc-top { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
-  /* v0.9.41：标题移入左上角（⌄ 右侧），与 ⌄ 同行的 .vc-heading 可收缩。 */
+  /* v0.9.42：标题移入左上角（⌄ 右侧），与 ⌄ 同行的 .vc-heading 可收缩。 */
   .vc-heading { flex:0 1 auto; min-width:0; display:flex; flex-direction:column; gap:1px; align-self:center; text-align:left; }
   .vc-heading .vc-title { font-size:14px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .vc-heading .vc-sub { font-size:12px; color:rgba(255,255,255,.82); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -686,15 +686,15 @@
   .vc-icon.vc-play { width:46px; height:46px; font-size:20px; border-color:rgba(255,255,255,.6); background:rgba(0,0,0,.6); }
   .vc-icon.vc-stop:hover { border-color:var(--red); color:var(--red); }
   .vc-collapse,.vc-fullscreen { flex:0 0 auto; }
-  /* v0.9.41：播放列表按钮只在电视剧集类型播放时展示（电影单文件播放隐藏，
+  /* v0.9.42：播放列表按钮只在电视剧集类型播放时展示（电影单文件播放隐藏，
      不把整批电影库文件当成一部电影的播放列表）。 */
   .media-video-body .vc-playlist-toggle { display:none; }
   .media-video-body[data-video-playlist-eligible="true"] .vc-playlist-toggle { display:inline-flex; }
-  /* v0.9.41：音量滑条移入设置浮层（右下角静音按钮已删除）。 */
+  /* v0.9.42：音量滑条移入设置浮层（右下角静音按钮已删除）。 */
   .vc-volume-row { display:flex; align-items:center; gap:10px; }
   .vc-volume-row .vc-volume-range { flex:1 1 auto; width:auto; min-width:0; accent-color:var(--accent); cursor:pointer; }
   .vc-volume-row .vc-volume-label { flex:0 0 auto; min-width:44px; font:12px/1 ui-monospace,Consolas,monospace; text-align:right; }
-  /* v0.9.41：左上角 ⌄ 最小化整个播放器 —— 外层 .media-reader-overlay 缩小成
+  /* v0.9.42：左上角 ⌄ 最小化整个播放器 —— 外层 .media-reader-overlay 缩小成
      右下角小窗继续播放，只剩左下角 ⌃ 用于还原整屏播放器。 */
   .media-reader-overlay.movie-player.video-minimized { position:fixed; left:auto; right:clamp(8px,2vw,20px); top:auto; bottom:clamp(8px,2vh,16px); width:min(380px,calc(100vw - 24px)); height:auto; z-index:400; border:1px solid rgba(255,255,255,.22); border-radius:14px; overflow:hidden; box-shadow:0 18px 44px rgba(0,0,0,.55); }
   .media-reader-overlay.movie-player.video-minimized .media-reader-body,
