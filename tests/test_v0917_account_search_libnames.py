@@ -90,11 +90,11 @@ for preset in ["<h3>电影</h3>", "<h3>电视剧集</h3>", "<h3>音乐与 MV</h3
 assert '"电子书" : "漫画"' not in JS, "书刊标题不能按预设大类渲染"
 
 # ---------------------------------------------------------------- 版本与发布引用
-assert "v0.9.52" in HTML and HTML.count("v0.9.52") >= 2, "关于与侧栏版本必须是 v0.9.52"
-assert 'VAULTHUB_ASSET_VERSION = "0.9.52"' in HTML, "资源版本必须是 0.9.52"
-assert 'VAULTHUB_SCRIPT_VERSION = "0.9.52"' in STATE, "脚本版本必须是 0.9.52"
-assert "ghcr.io/q807738511/vaulthub:latest" in COMPOSE, "v0.9.52 起 Compose 跟随 latest"
-assert (ROOT / ".github/RELEASE_NOTES_0.9.52.md").exists(), "缺少 v0.9.52 release notes"
+assert "v0.9.53" in HTML and HTML.count("v0.9.53") >= 2, "关于与侧栏版本必须是 v0.9.53"
+assert 'VAULTHUB_ASSET_VERSION = "0.9.53"' in HTML, "资源版本必须是 0.9.53"
+assert 'VAULTHUB_SCRIPT_VERSION = "0.9.53"' in STATE, "脚本版本必须是 0.9.53"
+assert "ghcr.io/q807738511/vaulthub:latest" in COMPOSE, "v0.9.53 起 Compose 跟随 latest"
+assert (ROOT / ".github/RELEASE_NOTES_0.9.53.md").exists(), "缺少 v0.9.53 release notes"
 
 # 历史契约不能回退
 assert 'if (group === "movie" && data.has_more)' in JS, "影视库全量加载不能回退"

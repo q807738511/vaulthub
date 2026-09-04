@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.9.52"
+VERSION = "0.9.53"
 
 failures = []
 
@@ -176,7 +176,7 @@ check("↓ 下载" not in media, "播放器/阅读器不能保留下载按钮")
 check("openMovieDetails" in media, "影视海报必须进入详情页")
 check("movie-poster-settings" in media, "影视海报右下角必须有状态按钮")
 
-# v0.9.52：视频播放器不再渲染外层顶栏 —— 标题移入播放器左上角（vc-heading），
+# v0.9.53：视频播放器不再渲染外层顶栏 —— 标题移入播放器左上角（vc-heading），
 # 关闭统一走底部控制栏 ✕；movie 组 PDF/图片等非视频浏览仍保留外层头（含标记已读/关闭）。
 player_branch = re.search(r"const head = opts\.player \? \"\" : `(.+?)`;", media, re.S)
 check(player_branch is not None, "未找到 viewerShell() 的 opts.player 分支")

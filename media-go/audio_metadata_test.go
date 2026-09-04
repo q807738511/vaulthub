@@ -26,6 +26,9 @@ func TestV0913AudioScrapeAcceptsReliableMusicBrainzMatch(t *testing.T) {
 	oldBase := audioScrapeBase
 	audioScrapeBase = s.URL
 	defer func() { audioScrapeBase = oldBase }()
+	oldItunes := itunesSearchBase
+	itunesSearchBase = s.URL // 同一测试服务器返回非 iTunes JSON → 0 结果,确保回落 MusicBrainz
+	defer func() { itunesSearchBase = oldItunes }()
 	oldClient := outboundHTTPClient
 	outboundHTTPClient = func(string) (*http.Client, error) { return s.Client(), nil }
 	defer func() { outboundHTTPClient = oldClient }()
@@ -49,6 +52,9 @@ func TestV0913AudioScrapeRejectsLowScore(t *testing.T) {
 	oldBase := audioScrapeBase
 	audioScrapeBase = s.URL
 	defer func() { audioScrapeBase = oldBase }()
+	oldItunes := itunesSearchBase
+	itunesSearchBase = s.URL
+	defer func() { itunesSearchBase = oldItunes }()
 	oldClient := outboundHTTPClient
 	outboundHTTPClient = func(string) (*http.Client, error) { return s.Client(), nil }
 	defer func() { outboundHTTPClient = oldClient }()

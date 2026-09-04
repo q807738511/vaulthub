@@ -7,6 +7,8 @@ JS = (ROOT / "web/js/02-media.js").read_text(encoding="utf-8")
 HTML = (ROOT / "index.html").read_text(encoding="utf-8")
 CSS = (ROOT / "web/css/main.css").read_text(encoding="utf-8")
 GO = (ROOT / "media-go/main.go").read_text(encoding="utf-8")
+ZIPCACHE = (ROOT / "media-go/zip_cache.go").read_text(encoding="utf-8")
+AUDIOGO = (ROOT / "media-go/audio_metadata.go").read_text(encoding="utf-8")
 
 class V0913Contracts(unittest.TestCase):
     def test_music_scrape_uses_authenticated_backend_not_browser_musicbrainz(self):
@@ -44,8 +46,28 @@ class V0913Contracts(unittest.TestCase):
         self.assertIn('/api/media/metadata/override?', JS)
 
     def test_version_is_0913(self):
-        self.assertIn('v0.9.52', HTML)
+        self.assertIn('v0.9.53', HTML)
         self.assertNotIn('?v=0.9.13', HTML)
+
+    # v0.9.53: ZIP/CBZ archive directory cache + iTunes-first music scraper
+    def test_v0953_zip_directory_cache_exists(self):
+        self.assertIn('newZipArchiveCache', ZIPCACHE)
+        self.assertIn('rawIdx', ZIPCACHE)
+        self.assertIn('orphans', ZIPCACHE)
+        self.assertIn('a.zipCacheMu', GO)
+
+    def test_v0953_audio_scraper_prefers_itunes(self):
+        self.assertIn('itunesSearchBase', AUDIOGO)
+        self.assertIn('Provider: "iTunes"', AUDIOGO)
+        self.assertIn('itunesPick(title, artist, data.Results)', AUDIOGO)
+        self.assertIn('scrapeAudioMusicBrainz', AUDIOGO)
+        self.assertIn('audioHiResArtwork', AUDIOGO)
+
+    def test_v0953_playlist_and_cover_contracts(self):
+        self.assertIn('audioPlaylistModal', HTML)
+        self.assertIn('playlist-pick-row', CSS)
+        self.assertIn('graphql.anilist.co', JS)
+        self.assertIn('firstCover', JS)
 
 if __name__ == '__main__':
     unittest.main()
