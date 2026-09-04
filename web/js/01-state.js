@@ -8,7 +8,7 @@ const VAULTHUB_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
    历史故障：v0.8.3→v0.8.5 的前端修改在服务端已生效，但浏览器仍执行缓存里的
    旧 02-media.js，用户看到「没有更新」。现在入口页 no-store、静态资源带 ?v=，
    并在启动时做一次一致性自查，不一致就绕过缓存强制重载一次。 */
-const VAULTHUB_SCRIPT_VERSION = "0.9.52";
+const VAULTHUB_SCRIPT_VERSION = "0.9.53";
 function ensureFreshAssets() {
   /* expected 为空 = 浏览器执行的 index.html 早于 v0.8.6（旧版本入口页没有声明
      版本号），同样属于"页面是旧的"，也需要换 URL 重新取一次。 */

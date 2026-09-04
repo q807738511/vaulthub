@@ -175,6 +175,124 @@ function renderAudioFavorites(lib) {
   return rows.length ? `<div class="media-file-list">${rows.map(({lib: rowLib, path}) => renderAudioRow(rowLib, { path })).join("")}</div>` : '<div class="empty-tip">还没有喜欢的歌曲，请在歌曲列表中点击 ♡ 收藏。</div>';
 }
 
+/* ================= 手动歌单（v0.9.53） =================
+   歌曲行的 ♫ 按钮弹出歌单勾选器：可把当前歌曲加入多个本地歌单或新建歌单；
+   「歌单」页签展示全部歌单，支持播放整单/查看/删除。循环模式只保留在
+   底部播放器（cycleAudioLoop），列表页不再放播放模式按钮。 */
+const audioPlaylistsCache = "vaulthub_audio_playlists_v1";
+let audioPlaylistFilter = ""; // 非空 = 当前曲目列表是某歌单（按 audioPlaylistSongSet 过滤）
+function readAudioPlaylists() {
+  try {
+    const list = JSON.parse(localStorage.getItem(audioPlaylistsCache) || "[]");
+    return Array.isArray(list) ? list.filter(p => p && String(p.name || "").trim() && Array.isArray(p.songs)) : [];
+  } catch (e) { return []; }
+}
+function writeAudioPlaylists(list) { try { localStorage.setItem(audioPlaylistsCache, JSON.stringify(list)); } catch (e) {} }
+function audioPlaylistSongSet(name) {
+  const p = readAudioPlaylists().find(x => x.name === String(name));
+  return new Set(Array.isArray(p?.songs) ? p.songs : []);
+}
+function audioPlaylistHasSong(name, key) { return audioPlaylistSongSet(name).has(String(key)); }
+function audioPlaylistsOfSong(key) {
+  const k = String(key);
+  return readAudioPlaylists().filter(p => p.songs.includes(k)).map(p => p.name);
+}
+function saveAudioPlaylistSongs(name, set) {
+  const list = readAudioPlaylists();
+  const p = list.find(x => x.name === String(name));
+  if (!p) return;
+  p.songs = [...set];
+  writeAudioPlaylists(list);
+}
+function deleteAudioPlaylist(name) {
+  const target = String(name);
+  if (!readAudioPlaylists().some(x => x.name === target)) return;
+  if (!window.confirm(`删除歌单「${target}」？歌曲本身不会被删除。`)) return;
+  writeAudioPlaylists(readAudioPlaylists().filter(x => x.name !== target));
+  if (audioPlaylistFilter === target) { audioPlaylistFilter = ""; audioArtistFilter = ""; }
+  toast(`🗑 歌单「${target}」已删除`);
+  const lib = findMediaLibrary(localMediaSelection.audio);
+  if (lib) loadLocalFiles("audio", lib, audioCursor);
+}
+let audioPlaylistPicker = null; // {libId, path} 当前正在勾选歌曲的上下文
+function openAudioPlaylistPicker(libId, path) {
+  audioPlaylistPicker = { libId: String(libId), path: String(path) };
+  const meta = audioMetadataFor(String(path));
+  const label = document.getElementById("audioPlaylistSongLabel");
+  if (label) label.textContent = `${meta.title} · ${meta.artist}`;
+  document.getElementById("audioPlaylistNewName").value = "";
+  renderAudioPlaylistPickerBody();
+  openModal("audioPlaylistModal");
+}
+function renderAudioPlaylistPickerBody() {
+  const host = document.getElementById("audioPlaylistContent");
+  if (!host || !audioPlaylistPicker) return;
+  const key = audioFavoriteKey(audioPlaylistPicker.libId, audioPlaylistPicker.path);
+  const inPl = new Set(audioPlaylistsOfSong(key));
+  const list = readAudioPlaylists();
+  host.innerHTML = list.length
+    ? list.map(p => `<label class="playlist-pick-row"><input type="checkbox" data-key="${esc(key)}" data-playlist-name="${esc(p.name)}" onchange="togglePickerPlaylist(this)" ${inPl.has(p.name) ? "checked" : ""}><span>${esc(p.name)}</span><small>${p.songs.length} 首</small></label>`).join("")
+    : '<div class="empty-tip">还没有歌单：在下方输入名称，点「新建并加入」创建。</div>';
+}
+function togglePickerPlaylist(box) {
+  const name = String(box.dataset.playlistName || ""), key = String(box.dataset.key || "");
+  const set = audioPlaylistSongSet(name);
+  if (box.checked) set.add(key); else set.delete(key);
+  saveAudioPlaylistSongs(name, set);
+  renderAudioPlaylistPickerBody();
+  toast(box.checked ? `♫ 已加入歌单「${name}」` : `已从歌单「${name}」移除`);
+}
+function createAudioPlaylistFromPicker() {
+  const name = (document.getElementById("audioPlaylistNewName").value || "").trim();
+  if (!name) { toast("⚠️ 请输入歌单名称"); return; }
+  const list = readAudioPlaylists();
+  if (list.some(p => p.name === name)) { toast("⚠️ 歌单已存在，请直接勾选"); return; }
+  list.push({ name, songs: [] });
+  writeAudioPlaylists(list);
+  if (audioPlaylistPicker) {
+    const set = audioPlaylistSongSet(name);
+    set.add(audioFavoriteKey(audioPlaylistPicker.libId, audioPlaylistPicker.path));
+    saveAudioPlaylistSongs(name, set);
+  }
+  document.getElementById("audioPlaylistNewName").value = "";
+  renderAudioPlaylistPickerBody();
+  toast(`♫ 歌单「${name}」已创建并加入`);
+}
+function renderAudioPlaylists(lib) {
+  const list = readAudioPlaylists();
+  if (!list.length) return '<div class="empty-tip">还没有歌单：在歌曲列表中点 ♫ 即可新建歌单并把歌曲加入。</div>';
+  return `<div class="media-file-list">${list.map(p => `<div class="media-file-row"><div class="media-file-name"><b>${esc(p.name)}</b><small>${p.songs.length} 首歌曲</small></div><div class="media-actions"><button class="btn" title="播放整个歌单" onclick="playAudioPlaylist(${jsAttrArg(lib.id)},${jsAttrArg(p.name)})">▶ 播放</button><button class="btn" title="查看歌单歌曲" onclick="openAudioPlaylistTracks(${jsAttrArg(lib.id)},${jsAttrArg(p.name)})">列表</button><button class="btn btn-danger" title="删除歌单" onclick="deleteAudioPlaylist(${jsAttrArg(p.name)})">✕</button></div></div>`).join("")}</div>`;
+}
+async function loadPlaylistTracks(lib, name, autoPlay) {
+  const setName = String(name);
+  const set = audioPlaylistSongSet(setName);
+  if (!set.size) { toast("⚠️ 该歌单还没有歌曲"); return; }
+  const host = document.getElementById("local-media-content-audio");
+  if (!host) return;
+  const all = await fetchAllLibraryFiles(lib.id, { has_more: true }, 0);
+  const files = all
+    .filter(file => supportedLocalMediaFile("audio", lib, String(file.path)) && set.has(audioFavoriteKey(lib.id, String(file.path))))
+    .sort((a, b) => String(a.path).localeCompare(String(b.path), "zh-CN"));
+  if (!files.length) { toast("⚠️ 歌单歌曲不在当前媒体库中"); return; }
+  audioPlaylistFilter = setName;
+  audioArtistFilter = "";
+  audioTrackTitle = setName;
+  audioTracksBack = "playlists";
+  audioView = "tracks";
+  audioFiles = files;
+  audioCursor = 0;
+  renderAudioLibraryContent(host, lib, files);
+  if (autoPlay && files.length) playAudioFile(lib.id, files[0].path);
+}
+function playAudioPlaylist(libId, name) {
+  const lib = findMediaLibrary(String(libId));
+  if (lib) loadPlaylistTracks(lib, String(name), true);
+}
+function openAudioPlaylistTracks(libId, name) {
+  const lib = findMediaLibrary(String(libId));
+  if (lib) loadPlaylistTracks(lib, String(name), false);
+}
+
 const movieMetadataCache = "vaulthub_movie_metadata_v1";
 let scraperStatus = { default: "douban", tmdb_enabled: false };
 function readMovieMetadata() { try { return JSON.parse(localStorage.getItem(movieMetadataCache) || "{}") || {}; } catch (e) { return {}; } }
@@ -458,8 +576,8 @@ function setAudioPageSize(size) {
   if (lib) loadLocalFiles("audio", lib, 0);
 }
 function setAudioView(view) {
-  audioView = ["albums", "artists", "files", "favorites", "tracks"].includes(view) ? view : "albums";
-  if (view !== "tracks") audioTrackTitle = "";
+  audioView = ["albums", "artists", "files", "favorites", "playlists", "tracks"].includes(view) ? view : "albums";
+  if (view !== "tracks") { audioTrackTitle = ""; audioArtistFilter = ""; audioPlaylistFilter = ""; }
   const lib = findMediaLibrary(localMediaSelection.audio);
   if (lib) loadLocalFiles("audio", lib, 0);
 }
@@ -909,12 +1027,22 @@ function audioMatchAcceptable(fallback, item) {
   /* 标题必须对上；歌手在文件名没给出时不作要求。 */
   return titleOk && artistOk;
 }
+/* v0.9.53：每页面会话内每首歌最多自动刮一次（成功/失败都记），刷新页面即重新尝试 ——
+   既避免同一会话内反复请求（旧逻辑会把失败的文件名兜底永久留在 localStorage，
+   刷新后永不重刮；5 分钟时间窗又让「刚失败想立即刷新重试」的用户干等）。 */
+const audioScrapeAttemptedSession = new Set();
 async function scrapeAudioMetadata(host, lib, files) {
   const all = readAudioMetadata();
-  const pending = files.filter(file => !all[file.path]);
+  const pending = files.filter(file => {
+    const path = String(file.path);
+    if (audioScrapeAttemptedSession.has(path)) return false;
+    const meta = all[path];
+    if (!meta) return true;
+    if (meta.provider) return false; // 已成功（iTunes/MusicBrainz）或手动编辑（manual）都不再自动覆盖
+    return true;
+  });
   for (const file of pending) {
     const meta = audioBaseMetadata(String(file.path));
-    meta.checkedAt = Date.now();
     all[file.path] = meta;
   }
   writeAudioMetadata(all);
@@ -938,6 +1066,7 @@ async function scrapeAudioMetadata(host, lib, files) {
         writeAudioMetadata(all); renderAudioLibraryContent(host, lib, files);
       }
     } catch (e) { /* Keep filename-derived metadata when scraping is unavailable. */ }
+    audioScrapeAttemptedSession.add(path); // 无论成败，本会话内不再重复请求该曲
   }
 }
 function audioCoverData(meta, title) {
@@ -956,31 +1085,36 @@ function renderAudioArtists(lib, files) {
 let audioArtistFilter = "";
 function openAudioTracks(libId, kind, key) {
   audioArtistFilter = String(key);
+  audioPlaylistFilter = "";
   audioTrackTitle = String(key);
   audioView = "tracks";
+  audioTracksBack = kind === "artist" ? "artists" : "albums";
   const lib = findMediaLibrary(libId);
   if (lib) loadLocalFiles("audio", lib, 0);
 }
+let audioTracksBack = "albums"; // 曲目列表「← 返回」目标：albums | artists | playlists
 function renderAudioTrackList(lib, files) {
-  const loopLabel = { sequence: "顺序", list: "循环", single: "单曲", random: "随机" }[audioLoopMode] || "顺序";
-  return `<div class="audio-track-head"><button class="btn" onclick="audioTrackTitle='';setAudioView('albums')">← 返回</button><strong>${esc(audioTrackTitle)}</strong><span class="media-file-meta">${files.length} 首</span><div class="audio-view-tabs"><button class="${audioLoopMode === "random" ? "active" : ""}" onclick="setAudioLoop('random')">随机循环</button><button class="${audioLoopMode === "list" ? "active" : ""}" onclick="setAudioLoop('list')">列表循环</button><button class="${audioLoopMode === "sequence" ? "active" : ""}" onclick="setAudioLoop('sequence')">顺序播放</button></div></div><div class="media-file-list">${files.map(file => renderAudioRow(lib, file)).join("")}</div>`;
+  /* v0.9.53：曲目列表头部不再放播放模式按钮（随机/列表循环/顺序），
+     循环模式只在播放器底部按钮中体现（cycleAudioLoop）。 */
+  const back = audioTracksBack === "artists" ? "artists" : audioTracksBack === "playlists" ? "playlists" : "albums";
+  return `<div class="audio-track-head"><button class="btn" onclick="audioTrackTitle='';audioArtistFilter='';audioPlaylistFilter='';setAudioView('${back}')">← 返回</button><strong>${esc(audioTrackTitle)}</strong><span class="media-file-meta">${files.length} 首</span></div>${files.length ? `<div class="media-file-list">${files.map(file => renderAudioRow(lib, file)).join("")}</div>` : '<div class="empty-tip">该列表下暂无歌曲</div>'}`;
 }
 function renderAudioLibraryContent(host, lib, files) {
   const latest = [...files].sort((a, b) => Number(b.mtime || 0) - Number(a.mtime || 0)).slice(0, 8);
   const pager = `<div class="media-actions"><button class="btn" ${audioCursor <= 0 ? "disabled" : ""} onclick="loadLocalFiles('audio',findMediaLibrary('${esc(lib.id)}'),${Math.max(0,audioCursor-audioPageSize)})">← 上一页</button><span class="media-file-meta">${audioCursor + 1}-${audioCursor + files.length}</span><button class="btn" onclick="loadLocalFiles('audio',findMediaLibrary('${esc(lib.id)}'),${audioCursor + audioPageSize})">下一页 →</button></div>`;
-  const visibleFiles = audioArtistFilter ? files.filter(file => { const meta = audioMetadataFor(String(file.path)); return meta.artist === audioArtistFilter || meta.album === audioArtistFilter; }) : files;
-  let body = audioView === "tracks" ? renderAudioTrackList(lib, visibleFiles) : audioView === "artists" ? renderAudioArtists(lib, files) : audioView === "favorites" ? renderAudioFavorites(lib) : renderAudioAlbums(lib, files);
+  const visibleFiles = audioPlaylistFilter ? files : audioArtistFilter ? files.filter(file => { const meta = audioMetadataFor(String(file.path)); return meta.artist === audioArtistFilter || meta.album === audioArtistFilter; }) : files;
+  let body = audioView === "tracks" ? renderAudioTrackList(lib, visibleFiles) : audioView === "artists" ? renderAudioArtists(lib, files) : audioView === "playlists" ? renderAudioPlaylists(lib) : audioView === "favorites" ? renderAudioFavorites(lib) : renderAudioAlbums(lib, files);
   const latestGrid = audioView === "albums" && latest.length ? `<section class="content-collection latest-music"><div class="content-section-heading"><div><span class="eyebrow">最新音乐</span><h3>最近识别与入库</h3></div></div><div class="audio-latest-grid">${latest.map(file => renderAudioLatestCard(lib, file)).join("")}</div></section>` : "";
-  const audioTabs = `<div class="audio-view-tabs"><button class="${audioView === "albums" ? "active" : ""}" onclick="setAudioView('albums')">专辑</button><button class="${audioView === "artists" ? "active" : ""}" onclick="setAudioView('artists')">歌手</button><button class="${audioView === "favorites" ? "active" : ""}" onclick="setAudioView('favorites')">♥ 喜欢</button><label class="page-size-picker">每页 <select id="audioPageSize" onchange="setAudioPageSize(this.value)"><option value="20"${audioPageSize===20?' selected':''}>20</option><option value="50"${audioPageSize===50?' selected':''}>50</option><option value="100"${audioPageSize===100?' selected':''}>100</option></select></label></div>`;
-  host.innerHTML = `<section class="content-collection">${mediaLibraryHeading(lib, "", audioTabs)}${body}${audioView === "favorites" || audioView === "tracks" ? "" : pager}</section>${latestGrid}`;
+  const audioTabs = `<div class="audio-view-tabs"><button class="${audioView === "albums" ? "active" : ""}" onclick="setAudioView('albums')">专辑</button><button class="${audioView === "artists" ? "active" : ""}" onclick="setAudioView('artists')">歌手</button><button class="${audioView === "playlists" || (audioView === "tracks" && audioPlaylistFilter) ? "active" : ""}" onclick="setAudioView('playlists')">♫ 歌单</button><button class="${audioView === "favorites" ? "active" : ""}" onclick="setAudioView('favorites')">♥ 喜欢</button><label class="page-size-picker">每页 <select id="audioPageSize" onchange="setAudioPageSize(this.value)"><option value="20"${audioPageSize===20?' selected':''}>20</option><option value="50"${audioPageSize===50?' selected':''}>50</option><option value="100"${audioPageSize===100?' selected':''}>100</option></select></label></div>`;
+  host.innerHTML = `<section class="content-collection">${mediaLibraryHeading(lib, "", audioTabs)}${body}${audioView === "favorites" || audioView === "tracks" || audioView === "playlists" ? "" : pager}</section>${latestGrid}`;
 }
 function renderAudioLatestCard(lib, file) { const path=String(file.path), meta=audioMetadataFor(path); return `<article class="audio-latest-card" onclick="playAudioFile(${jsAttrArg(lib.id)},${jsAttrArg(path)})"><div class="audio-latest-cover" style="background:${coverGradient(meta.title)}">${audioCoverData(meta, meta.title)}</div><div><strong>${esc(meta.title)}</strong><small>${esc(meta.artist)}</small></div><button class="btn" title="喜欢" onclick="event.stopPropagation();toggleAudioFavorite(${jsAttrArg(lib.id)},${jsAttrArg(path)})">${isAudioFavorite(lib.id,path)?"♥":"♡"}</button></article>`; }
 function renderAudioLibrary(lib, files) { const host = document.createElement("div"); renderAudioLibraryContent(host, lib, files); return host.innerHTML; }
-function renderAudioRow(lib, file) { const meta = audioMetadataFor(String(file.path)); return `<div class="media-file-row"><div class="media-file-name" title="${esc(file.path)}"><b>${esc(meta.title)}</b><small>${esc(meta.artist)} · ${esc(meta.album)}</small></div><span class="media-file-meta">${esc(fileExt(file.path).toUpperCase())}</span><div class="media-actions"><button class="btn" onclick="playAudioFile(${jsAttrArg(lib.id)},${jsAttrArg(file.path)})">▶</button><button class="btn" title="喜欢" onclick="toggleAudioFavorite(${jsAttrArg(lib.id)},${jsAttrArg(file.path)})">${isAudioFavorite(lib.id, file.path) ? "♥" : "♡"}</button><button class="btn" onclick="openAudioMetadata(${jsAttrArg(file.path)})">✎</button></div></div>`; }
-function refreshAudioMetadata() { try { localStorage.removeItem(audioMetadataCache); } catch (e) {} const lib = findMediaLibrary(localMediaSelection.audio); if (lib) loadLocalFiles("audio", lib, 0); toast("🔄 正在重新刮削音乐信息"); }
+function renderAudioRow(lib, file) { const path = String(file.path), meta = audioMetadataFor(path); return `<div class="media-file-row"><div class="media-file-name" title="${esc(path)}"><b>${esc(meta.title)}</b><small>${esc(meta.artist)} · ${esc(meta.album)}</small></div><span class="media-file-meta">${esc(fileExt(path).toUpperCase())}</span><div class="media-actions"><button class="btn" title="播放" onclick="playAudioFile(${jsAttrArg(lib.id)},${jsAttrArg(path)})">▶</button><button class="btn" title="喜欢" onclick="toggleAudioFavorite(${jsAttrArg(lib.id)},${jsAttrArg(path)})">${isAudioFavorite(lib.id, path) ? "♥" : "♡"}</button><button class="btn" title="加入歌单" onclick="openAudioPlaylistPicker(${jsAttrArg(lib.id)},${jsAttrArg(path)})">♫</button><button class="btn" title="编辑歌曲信息" onclick="openAudioMetadata(${jsAttrArg(path)})">✎</button></div></div>`; }
+function refreshAudioMetadata() { try { localStorage.removeItem(audioMetadataCache); } catch (e) {} audioScrapeAttemptedSession.clear(); const lib = findMediaLibrary(localMediaSelection.audio); if (lib) loadLocalFiles("audio", lib, 0); toast("🔄 正在重新刮削音乐信息"); }
 function openAudioMetadata(path) { const meta = audioMetadataFor(path); document.getElementById("audioMetadataPath").value=path; document.getElementById("audioMetadataTitle").value=meta.title; document.getElementById("audioMetadataArtist").value=meta.artist; document.getElementById("audioMetadataAlbum").value=meta.album; document.getElementById("audioMetadataCover").value=meta.cover; document.getElementById("audioMetadataLyrics").value=meta.lyrics; openModal("audioMetadataModal"); }
 function manualAudioMetadata(path) { openAudioMetadata(path); }
-function saveManualAudioMetadata() { const path=document.getElementById("audioMetadataPath").value, all=readAudioMetadata(); all[path]={title:document.getElementById("audioMetadataTitle").value.trim()||audioBaseMetadata(path).title,artist:document.getElementById("audioMetadataArtist").value.trim()||"未知歌手",album:document.getElementById("audioMetadataAlbum").value.trim()||"未知专辑",cover:document.getElementById("audioMetadataCover").value.trim(),lyrics:document.getElementById("audioMetadataLyrics").value}; writeAudioMetadata(all); closeModal("audioMetadataModal"); const lib=findMediaLibrary(localMediaSelection.audio); if(lib) loadLocalFiles("audio",lib,audioCursor); }
+function saveManualAudioMetadata() { const path=document.getElementById("audioMetadataPath").value, all=readAudioMetadata(); all[path]={title:document.getElementById("audioMetadataTitle").value.trim()||audioBaseMetadata(path).title,artist:document.getElementById("audioMetadataArtist").value.trim()||"未知歌手",album:document.getElementById("audioMetadataAlbum").value.trim()||"未知专辑",cover:document.getElementById("audioMetadataCover").value.trim(),lyrics:document.getElementById("audioMetadataLyrics").value,provider:"manual",checkedAt:Date.now()}; writeAudioMetadata(all); closeModal("audioMetadataModal"); const lib=findMediaLibrary(localMediaSelection.audio); if(lib) loadLocalFiles("audio",lib,audioCursor); }
 let audioLoopMode = "sequence";
 let audioMaximized = false;
 const AUDIO_LOOP_ORDER = ["sequence", "list", "single", "random"];
@@ -1102,41 +1236,87 @@ function writeCoverCache(cache) {
   try { localStorage.setItem(coverScrapeCache, JSON.stringify(cache)); } catch (e) {}
 }
 function coverSearchTitle(title) {
-  return String(title).replace(/[（(][^）)]*(?:全本|未删节|完结|全集)[^）)]*[）)]/g, " ").replace(/第?\s*\d+\s*[卷册部]/g, " ").replace(/\s+/g, " ").trim();
+  /* v0.9.53：封面搜索词清洗增强 —— 除「全本/卷册部」外再清尾部 v01/Vol.3/第1话 等编号，
+     提升 Bangumi/AniList 命中率（One Piece v01 → One Piece）。 */
+  return String(title).replace(/[（(][^）)]*(?:全本|未删节|完结|全集|简体|繁体|中文|日文|双页)[^）)]*[）)]/g, " ")
+    .replace(/第?\s*\d+\s*[卷册部话集]/g, " ")
+    .replace(/(?:[vV](?:ol\.?)?|volume|chapter|ch\.?|ep\.?|part|pt\.?|book|no\.?)[-_. ]?\s*\d+\b/gi, " ")
+    .replace(/\b\d{1,3}\s*(?:of\s*\d+)?\s*$/i, " ")
+    .replace(/[-_.]+\s*$/, " ")
+    .replace(/\s+/g, " ").trim();
 }
 function bookCoverFallback(img) { img.removeAttribute("src"); img.classList.remove("loaded"); img.hidden = true; }
+/* v0.9.53：漫画/书籍封面刮削多源化。
+   刮削只看文件名解析出的标题，与封装格式无关（cbz/cbr/zip/pdf/epub… 全部生效）；
+   Bangumi 负责中文漫画，AniList（GraphQL，无需密钥）负责日漫/全球漫画高清封面，
+   Google Books / OpenLibrary 兜底实体书。每源独立 6s 超时（AbortController），
+   避免某个源不可达时整张封面永久转圈；两档竞速：漫画档优先，失败才走书目档。 */
+const COMIC_COVER_TIMEOUT = 6000;
+const COMIC_COVER_FAIL_RETRY = 3600000; // 全源失败后 1 小时重试（此前失败缓存 1 天太久）
+async function coverFetchJson(url, options, timeoutMs = COMIC_COVER_TIMEOUT) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (e) { return null; } finally { clearTimeout(timer); }
+}
+async function bangumiCover(title) {
+  const data = await coverFetchJson("https://api.bgm.tv/v0/search/subjects", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "User-Agent": "VaultHub/0.9.53 (https://github.com/q807738511/vaulthub)" },
+    body: JSON.stringify({ keyword: title, sort: "match", filter: { type: [1], nsfw: false } })
+  });
+  const item = data?.data?.find(entry => entry?.images?.large || entry?.images?.common || entry?.images?.medium);
+  return item?.images?.large || item?.images?.common || item?.images?.medium || "";
+}
+async function anilistCover(title) {
+  const data = await coverFetchJson("https://graphql.anilist.co", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Accept": "application/json" },
+    body: JSON.stringify({
+      query: "query($s:String){Page(perPage:5){media(search:$s,type:MANGA){title{romaji english native} coverImage{extraLarge large}}}}",
+      variables: { s: title }
+    })
+  });
+  const media = data?.data?.Page?.media || [];
+  const m = media.find(entry => entry?.coverImage?.extraLarge || entry?.coverImage?.large);
+  return m?.coverImage?.extraLarge || m?.coverImage?.large || "";
+}
+async function googleBookCover(title) {
+  const data = await coverFetchJson(`https://www.googleapis.com/books/v1/volumes?q=intitle:${encodeURIComponent(title)}&maxResults=3&printType=books`);
+  const links = data?.items?.map(item => item?.volumeInfo?.imageLinks).find(Boolean);
+  if (!links) return "";
+  const url = links?.thumbnail || links?.smallThumbnail || "";
+  return url ? url.replace(/^http:/, "https:").replace(/&zoom=\d/, "&zoom=2") : "";
+}
+async function openLibraryCover(title) {
+  const data = await coverFetchJson(`https://openlibrary.org/search.json?title=${encodeURIComponent(title)}&fields=cover_i,title&limit=3`);
+  const coverId = data?.docs?.find(doc => doc.cover_i)?.cover_i;
+  return coverId ? `https://covers.openlibrary.org/b/id/${coverId}-L.jpg` : "";
+}
+function firstCover(factories) {
+  return new Promise(resolve => {
+    let pending = factories.length, done = false;
+    const finish = (url) => { if (!done) { done = true; resolve(url); } };
+    factories.forEach(fn => {
+      Promise.resolve().then(fn).then(url => { if (url) finish(url); else if (--pending === 0) finish(""); })
+        .catch(() => { if (--pending === 0) finish(""); });
+    });
+    setTimeout(() => finish(""), COMIC_COVER_TIMEOUT * 2 + 1500); // 兜底：绝不让调用方无限等待
+  });
+}
 async function scrapeBookCover(img) {
   const title = coverSearchTitle(img.dataset.coverTitle || ""); if (!title) return;
   const cache = readCoverCache(), key = title.toLowerCase(), cached = cache[key];
-  if (cached?.url) { img.hidden=false; img.src=cached.url; return; }
-  if (cached?.checkedAt && Date.now()-cached.checkedAt < 86400000) return;
-  let coverUrl = "";
-  /* 漫画首选国内 Bangumi 元数据源，失败后继续使用国际书目源。 */
-  try {
-    const bgm = await fetch("https://api.bgm.tv/v0/search/subjects", { method:"POST", headers:{"Content-Type":"application/json","User-Agent":"VaultHub/0.6.9"}, body:JSON.stringify({ keyword:title, sort:"match", filter:{ type:[1], nsfw:false } }), cache:"force-cache" });
-    if (bgm.ok) {
-      const data = await bgm.json();
-      const item = data?.data?.find(entry => entry?.images?.large || entry?.images?.common || entry?.images?.medium);
-      coverUrl = item?.images?.large || item?.images?.common || item?.images?.medium || "";
-    }
-  } catch (e) {}
-  try {
-    const google = await fetch(`https://www.googleapis.com/books/v1/volumes?q=intitle:${encodeURIComponent(title)}&maxResults=3&printType=books`, { cache:"force-cache" });
-    if (google.ok) {
-      const data = await google.json();
-      const links = data?.items?.map(item => item?.volumeInfo?.imageLinks).find(Boolean);
-      coverUrl = links?.thumbnail || links?.smallThumbnail || "";
-      if (coverUrl) coverUrl = coverUrl.replace(/^http:/,"https:").replace(/&zoom=\d/,"&zoom=2");
-    }
-  } catch (e) {}
-  if (!coverUrl) try {
-    const res = await fetch(`https://openlibrary.org/search.json?title=${encodeURIComponent(title)}&fields=cover_i,title&limit=3`, { cache:"force-cache" });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json(), coverId = data?.docs?.find(doc => doc.cover_i)?.cover_i;
-    coverUrl = coverId ? `https://covers.openlibrary.org/b/id/${coverId}-L.jpg` : "";
-  } catch (e) {}
-  cache[key] = { url:coverUrl, checkedAt:Date.now() }; writeCoverCache(cache);
-  if (coverUrl) { img.hidden=false; img.src=coverUrl; }
+  if (cached?.url) { img.hidden = false; img.src = cached.url; return; }
+  if (cached?.checkedAt && Date.now() - cached.checkedAt < COMIC_COVER_FAIL_RETRY) return;
+  /* 漫画档（Bangumi 中文 + AniList 日漫/全球）优先，书目档（Google/OpenLibrary）兜底。 */
+  const tier1 = await firstCover([() => bangumiCover(title), () => anilistCover(title)]);
+  const coverUrl = tier1 || await firstCover([() => googleBookCover(title), () => openLibraryCover(title)]);
+  cache[key] = { url: coverUrl, checkedAt: Date.now() }; writeCoverCache(cache);
+  if (coverUrl) { img.hidden = false; img.src = coverUrl; }
 }
 function refreshBookCovers() {
   try { localStorage.removeItem(coverScrapeCache); } catch (e) {}
