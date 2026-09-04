@@ -423,11 +423,12 @@
   .cfg-wrap { max-width: 640px; }
   .cfg-field { margin-bottom: 16px; }
   .cfg-field label { display: block; font-size: 12px; color: var(--text2); margin-bottom: 6px; }
-  .cfg-field input, .cfg-field select {
+  .cfg-field input, .cfg-field select, .cfg-field textarea {
     width: 100%; background: var(--bg2); border: 1px solid var(--border); color: var(--text);
     border-radius: 8px; padding: 10px 12px; font-size: 13px; outline: none;
   }
-  .cfg-field input:focus, .cfg-field select:focus { border-color: var(--accent); }
+  .cfg-field input:focus, .cfg-field select:focus, .cfg-field textarea:focus { border-color: var(--accent); }
+  .cfg-field textarea { resize: vertical; font-family: inherit; line-height: 1.6; }
   .cfg-field select option { background: var(--bg2); color: var(--text); }
   .switch-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 16px; }
   .switch-row .lbl { font-size: 13px; }
@@ -764,8 +765,24 @@
   .audio-player-title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
   .audio-player-meta { color:var(--text2); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:4px; }
   .audio-player-controls { display:flex; align-items:center; gap:6px; }
-  .audio-player-controls button { min-width:34px; height:32px; padding:0 9px; border:1px solid var(--border); border-radius:6px; color:var(--text); background:var(--card2); cursor:pointer; }
-  .audio-player-controls button:hover { border-color:var(--accent); color:var(--accent); }
+  .audio-player-controls button { min-width:34px; height:34px; padding:0; border:1px solid rgba(255,255,255,.28); border-radius:50%; color:rgba(255,255,255,.94); background:rgba(255,255,255,.14); backdrop-filter:blur(14px) saturate(160%); cursor:pointer; display:inline-flex; align-items:center; justify-content:center; transition:background .14s,transform .1s,box-shadow .14s; box-shadow:0 1px 6px rgba(0,0,0,.45); }
+  .audio-player-controls button .vc-svg { width:18px; height:18px; }
+  /* v0.9.52：底部音频栏与视频悬浮栏同级需要 SVG 描边兜底 —— 无显式
+     fill/stroke 的描边型图标（循环/展开/心形/详情环）默认 stroke=none
+     会完全不显示；实心图标自带 fill="currentColor" 不受影响。 */
+  .audio-player-controls button .vc-svg.audio-svg,
+  .audio-player-controls button svg { fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+  .audio-player-controls button:hover { border-color:rgba(255,255,255,.65); background:rgba(255,255,255,.28); transform:scale(1.08); box-shadow:0 3px 14px rgba(0,0,0,.55); }
+  .audio-player-controls button:active { transform:scale(.9); }
+  .audio-player-controls button.audio-play-btn { width:42px; height:42px; border-color:var(--accent); color:#fff; background:var(--accent); box-shadow:0 5px 20px rgba(88,166,255,.55); }
+  .audio-player-controls button.audio-play-btn .vc-svg { width:22px; height:22px; }
+  .audio-player-controls button.audio-play-btn:hover { background:color-mix(in srgb,var(--accent) 80%,#fff); }
+  .audio-player-controls button.audio-fav-on { border-color:#ff3b69; color:#ff3b69; background:rgba(255,59,105,.18); }
+  .reader-theme-light .audio-player-controls button { border-color:rgba(0,0,0,.14); color:#1d1d1f; background:rgba(255,255,255,.92); box-shadow:0 2px 12px rgba(0,0,0,.28); }
+  .reader-theme-light .audio-player-controls button:hover { background:#fff; transform:scale(1.08); }
+  .reader-theme-light .audio-player-controls button.audio-play-btn { border-color:#0a84ff; color:#fff; background:#0a84ff; box-shadow:0 6px 20px rgba(10,132,255,.55); }
+  .reader-theme-light .audio-player-controls button.audio-play-btn:hover { background:#3395ff; }
+  .reader-theme-light .audio-player-controls button.audio-fav-on { border-color:#ff3b69; color:#ff3b69; background:rgba(255,59,105,.18); }
   .audio-player audio { display:none; }
   .audio-lyrics { max-width:720px; max-height:45vh; overflow:auto; margin:12px auto 0; padding:14px; white-space:pre-wrap; line-height:1.8; color:var(--text2); background:var(--card2); border-radius:8px; }
   .lyric-line { display:block; padding:2px 4px; cursor:pointer; border-radius:4px; }
@@ -1055,6 +1072,13 @@
    v0.9.51 起统一为 Apple 风格：所有主题（暗色/亮色/自定义）均使用
    圆形按钮、毛玻璃背景、弹性 hover 动效；仅通过主题调整色彩明度。 */
 .media-reader-overlay.movie-player .vc-svg { width:21px; height:21px; display:block; pointer-events:none; }
+/* v0.9.52：SVG 描边图标修复 —— viewBox 内联 SVG 没有显式 stroke 属性时
+   各浏览器默认 stroke=none，描边型 path 会完全不显示。
+   统一给视频/音频播放器图标设置 stroke-width=2 + 圆头/圆角描边。 */
+.media-reader-overlay.movie-player .vc-svg.video-icon,
+.media-reader-overlay.movie-player .vc-svg.audio-svg {
+  fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round;
+}
 .media-reader-overlay.movie-player .vc-panel-ic { display:inline-flex; vertical-align:-3px; width:15px; height:15px; margin-right:6px; }
 .media-reader-overlay.movie-player .vc-panel-ic .vc-svg { width:15px; height:15px; }
 

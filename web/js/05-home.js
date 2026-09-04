@@ -373,14 +373,20 @@ async function addHomeMediaLibrary(group) {
   const type = document.getElementById("homeLibType-" + g)?.value || mediaTypeForGroup(g);
   const pathInput = document.getElementById("homeLibPath-" + g);
   const nameInput = document.getElementById("homeLibName-" + g);
+  const extraInput = document.getElementById("homeLibExtra-" + g);
   const path = (pathInput?.value || "").trim().replace(/\/$/, "");
   const name = (nameInput?.value || "").trim();
   if (!name || !path) { toast("⚠️ 请填写媒体路径与库名称"); return; }
   if (!path.startsWith("/")) { toast("⚠️ 路径必须是容器内已挂载的绝对路径"); return; }
+  /* v0.9.52：附加存储路径（每行一个）。主路径之外的所有绝对目录都会随媒体库
+     一起扫描，条目以根目录名为前缀避免重名冲突；空行/尾斜杠自动清理。 */
+  const extras = (extraInput?.value || "").split(/\r?\n/).map(x => x.trim().replace(/\/+$/, "")).filter(x => x.startsWith("/") && x !== path);
+  if ((extraInput?.value || "").trim() && !extras.length) { toast("⚠️ 附加路径必须是以 / 开头的容器内绝对路径"); return; }
   /* v0.7.0：新增媒体库是唯一的添加入口（旧弹窗已删除），
      所以写操作前的会话守卫必须在这里，而不是在已经移除的 saveMediaLibraries 里。 */
   if (!await ensureSessionForWrite(t("writeAddLibrary"))) return;
   const body = { id: libraryId(name, type, path, 0), name, type, path };
+  if (extras.length) body.paths = extras;
   try {
     const res = await fetch("/api/media/libraries", {
       method: "POST",
@@ -396,6 +402,7 @@ async function addHomeMediaLibrary(group) {
       throw new Error(detail || `HTTP ${res.status}`);
     }
     document.getElementById("homeLibPath-" + g).value = "";
+    document.getElementById("homeLibExtra-" + g).value = "";
     document.getElementById("homeLibName-" + g).value = "";
     await refreshMediaLibraries(false);
     await refreshHomeData();
@@ -452,7 +459,7 @@ function renderHomeLibTable() {
   body.innerHTML = libs.map(lib => {
     const group = homeGroupOfType(lib.type);
     const st = homeIndexStatus[lib.id];
-    const paths = (lib.paths && lib.paths.length ? lib.paths : [lib.path]).filter(Boolean);
+    const paths = [...(lib.path ? [lib.path] : []), ...((lib.paths || []).filter(Boolean))].filter(Boolean);
     return `<tr>
       <td><div class="lib-name-cell"><span>${HOME_TYPE_ICON[lib.type] || "📄"}</span>${esc(lib.name)}</div></td>
       <td>${esc(homeGroupLabel(group))} · ${esc(mediaTypeName(lib.type))}</td>

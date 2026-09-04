@@ -4,10 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VaultHub 蜀鼠之家</title>
-<link rel="stylesheet" href="/web/css/main.css?v=0.9.51">
+<link rel="stylesheet" href="/web/css/main.css?v=0.9.52">
 <script>
 /* 资源版本号：index.html 用它给所有静态资源打查询串。 */
-window.VAULTHUB_ASSET_VERSION = "0.9.51";
+window.VAULTHUB_ASSET_VERSION = "0.9.52";
 </script>
 </head>
 <body data-theme="dark">
@@ -72,7 +72,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.51";
   <div class="sidebar-foot">
     <button class="rail-btn rail-settings" id="sidebarSettingsButton" type="button" onclick="openSettingsModalFromSidebar()" title="系统设置" aria-label="系统设置"><span class="ic">⚙</span><span class="txt" data-i18n="settingsTitle">系统设置</span></button>
     <div class="sidebar-foot-row">
-      <span class="ver">v0.9.51 · Floating Player</span>
+      <span class="ver">v0.9.52 · Floating Player</span>
       <button class="rail-btn rail-collapse" id="sidebarCollapseButton" type="button" onclick="toggleBars()" title="折叠 / 展开侧栏" aria-label="折叠或展开侧栏">⇤</button>
     </div>
   </div>
@@ -377,6 +377,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.51";
                 <div class="lib-kind-form">
                   <div class="cfg-field"><label for="homeLibType-comic" data-i18n="libSubType">子类型</label><select id="homeLibType-comic"></select></div>
                   <div class="cfg-field"><label for="homeLibPath-comic" data-i18n="libPath">媒体路径（容器内绝对路径）</label><input id="homeLibPath-comic" type="text" placeholder="/srv/Books/技术书籍"></div>
+                  <div class="cfg-field"><label for="homeLibExtra-comic" data-i18n="libExtraPath">附加存储路径（可选，每行一个）</label><textarea id="homeLibExtra-comic" rows="2" placeholder="/srv/Books/杂志&#10;/srv/Books/漫画"></textarea></div>
                   <div class="cfg-field"><label for="homeLibName-comic" data-i18n="libName">库名称（手动命名，用于刮削）</label><input id="homeLibName-comic" type="text" placeholder="例：技术藏书"></div>
                   <button class="btn btn-primary" type="button" onclick="addHomeMediaLibrary('comic')">＋ <span data-i18n="libAdd">添加媒体库</span></button>
                 </div>
@@ -387,6 +388,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.51";
                 <div class="lib-kind-form">
                   <div class="cfg-field"><label for="homeLibType-movie" data-i18n="libSubType">子类型</label><select id="homeLibType-movie"></select></div>
                   <div class="cfg-field"><label for="homeLibPath-movie" data-i18n="libPath">媒体路径（容器内绝对路径）</label><input id="homeLibPath-movie" type="text" placeholder="/srv/Movies/电影"></div>
+                  <div class="cfg-field"><label for="homeLibExtra-movie" data-i18n="libExtraPath">附加存储路径（可选，每行一个）</label><textarea id="homeLibExtra-movie" rows="2" placeholder="/srv/Movies/剧集&#10;/srv/Movies/动画电影"></textarea></div>
                   <div class="cfg-field"><label for="homeLibName-movie" data-i18n="libName">库名称（手动命名，用于刮削）</label><input id="homeLibName-movie" type="text" placeholder="例：家庭影院"></div>
                   <button class="btn btn-primary" type="button" onclick="addHomeMediaLibrary('movie')">＋ <span data-i18n="libAdd">添加媒体库</span></button>
                 </div>
@@ -397,6 +399,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.51";
                 <div class="lib-kind-form">
                   <div class="cfg-field"><label for="homeLibType-audio" data-i18n="libSubType">子类型</label><select id="homeLibType-audio"></select></div>
                   <div class="cfg-field"><label for="homeLibPath-audio" data-i18n="libPath">媒体路径（容器内绝对路径）</label><input id="homeLibPath-audio" type="text" placeholder="/srv/Music/无损"></div>
+                  <div class="cfg-field"><label for="homeLibExtra-audio" data-i18n="libExtraPath">附加存储路径（可选，每行一个）</label><textarea id="homeLibExtra-audio" rows="2" placeholder="/srv/Music/流行&#10;/srv/Music/古典"></textarea></div>
                   <div class="cfg-field"><label for="homeLibName-audio" data-i18n="libName">库名称（手动命名，用于刮削）</label><input id="homeLibName-audio" type="text" placeholder="例：我的音乐库"></div>
                   <button class="btn btn-primary" type="button" onclick="addHomeMediaLibrary('audio')">＋ <span data-i18n="libAdd">添加媒体库</span></button>
                 </div>
@@ -666,7 +669,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.51";
   <div class="modal">
     <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
     <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
-    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.9.51 · Floating Player</b></div>
+    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.9.52 · Floating Player</b></div>
     <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>Go (media/manager/subtitle) · Caddy · FFmpeg · SQLite · HTML/CSS/JS</b></div>
     <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>VaultHub 内置系统监控</b></div>
     <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>
@@ -684,14 +687,14 @@ window.VAULTHUB_ASSET_VERSION = "0.9.51";
     <div class="audio-player-meta" id="audioPlayerMeta">选择歌曲开始播放</div>
   </div>
   <div class="audio-player-controls">
-    <button title="上一曲" onclick="audioPrevious()">◀</button>
-    <button id="audioPauseButton" title="暂停或继续" onclick="audioTogglePause()">Ⅱ</button>
-    <button title="停止" onclick="audioStop()">■</button>
-    <button title="下一曲" onclick="audioNext()">▶</button>
-    <button id="audioLoopButton" title="播放模式：顺序播放" onclick="cycleAudioLoop()">🔁</button>
-    <button id="audioFavoriteButton" title="喜欢" onclick="toggleActiveAudioFavorite()">♡</button>
-    <button id="audioMaximizeButton" title="最大化" onclick="toggleAudioMaximize()">⛶</button>
-    <button title="歌曲详情与歌词" onclick="showAudioDetails()">ⓘ</button>
+    <button title="上一曲" onclick="audioPrevious()" aria-label="上一曲"><svg class="vc-svg audio-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.8 5.4v13.2" stroke="currentColor"/><path d="M18.6 6.3 10.4 12l8.2 5.7Z" fill="currentColor"/></svg></button>
+    <button id="audioPauseButton" class="audio-play-btn" title="暂停或继续" onclick="audioTogglePause()" aria-label="播放/暂停"><svg class="vc-svg audio-svg" viewBox="0 0 24 24" aria-hidden="true"><rect x="6.6" y="5" width="4.1" height="14" rx="1.5" fill="currentColor"/><rect x="13.3" y="5" width="4.1" height="14" rx="1.5" fill="currentColor"/></svg></button>
+    <button title="停止" onclick="audioStop()" aria-label="停止"><svg class="vc-svg audio-svg" viewBox="0 0 24 24" aria-hidden="true"><rect x="6.6" y="6.6" width="10.8" height="10.8" rx="2" fill="currentColor"/></svg></button>
+    <button title="下一曲" onclick="audioNext()" aria-label="下一曲"><svg class="vc-svg audio-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M18.2 5.4v13.2" stroke="currentColor"/><path d="M5.4 6.3l8.2 5.7-8.2 5.7Z" fill="currentColor"/></svg></button>
+    <button id="audioLoopButton" title="播放模式：顺序播放" onclick="cycleAudioLoop()" aria-label="播放模式"><svg class="vc-svg audio-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="m17 2.4 4 4-4 4"/><path d="M21 6.4H8.5a4.5 4.5 0 0 0-4.5 4.5v.6"/><path d="m7 21.6-4-4 4-4"/><path d="M3 17.6h12.5a4.5 4.5 0 0 0 4.5-4.5v-.6"/></svg></button>
+    <button id="audioFavoriteButton" title="喜欢" onclick="toggleActiveAudioFavorite()" aria-label="喜欢"><svg class="vc-svg audio-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></button>
+    <button id="audioMaximizeButton" title="最大化" onclick="toggleAudioMaximize()" aria-label="最大化"><svg class="vc-svg audio-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.6V4h5.6"/><path d="M20 9.6V4h-5.6"/><path d="M4 14.4V20h5.6"/><path d="M20 14.4V20h-5.6"/></svg></button>
+    <button title="歌曲详情与歌词" onclick="showAudioDetails()" aria-label="详情"><svg class="vc-svg audio-svg" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.4"/><path d="M12 11.2v4.6"/><circle cx="12" cy="7.7" r="1.05" fill="currentColor"/></svg></button>
   </div>
   <pre class="audio-lyrics" id="audioPlayerLyrics" onclick="seekLyric(event)"></pre>
   <audio id="audioPlayerElement" preload="metadata"></audio>
@@ -736,10 +739,10 @@ window.VAULTHUB_ASSET_VERSION = "0.9.51";
 
 <div class="toast" id="toast"></div>
 
-<script src="/web/js/01-state.js?v=0.9.51"></script>
-<script src="/web/js/02-media.js?v=0.9.51"></script>
-<script src="/web/js/03-features.js?v=0.9.51"></script>
-<script src="/web/js/05-home.js?v=0.9.51"></script>
-<script src="/web/js/04-boot.js?v=0.9.51"></script>
+<script src="/web/js/01-state.js?v=0.9.52"></script>
+<script src="/web/js/02-media.js?v=0.9.52"></script>
+<script src="/web/js/03-features.js?v=0.9.52"></script>
+<script src="/web/js/05-home.js?v=0.9.52"></script>
+<script src="/web/js/04-boot.js?v=0.9.52"></script>
 </body>
 </html>
