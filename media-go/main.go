@@ -2289,11 +2289,23 @@ func compatArgs(ctx context.Context, p, audioTrack, hw, mode string) (pre []stri
 // compatArgsScaled builds the ffmpeg arguments for the compatibility stream.
 // maxHeight > 0 caps the output height (v0.9.50 播放器 设置 → 转码质量); a cap
 // forces a real re-encode because you cannot scale a copied stream.
+//
+// v0.9.51 音画同步修复：
+//   · copy 模式显式补 -fflags +genpts+igndts，避免容器时间基漂移导致音画不同步
+//   · 转码/重编码模式加 -async 1，强制 ffmpeg 在输出结尾做 1 次音频时钟同步拉伸，
+//     修正长播放后音频时钟相对于视频时钟的累积漂移
+//   · 统一 -vsync cfr + -r 源帧率，保证输出恒定帧率，消除因 VFR 内容导致的
+//     音频时钟与视频时钟脱钩
 func compatArgsScaled(ctx context.Context, p, audioTrack, hw, mode string, maxHeight int) (pre []string, mid []string) {
 	vcodec := ""
 	var post []string
+	srcFps := "25" // safe fallback
+	if fc, ok := detectFramerate(ctx, p); ok && fc > 0 {
+		srcFps = fmt.Sprintf("%d", fc)
+	}
 	if vc, _ := probeVideoCodec(ctx, p); vc == "h264" && mode != "full_transcode" && maxHeight <= 0 {
 		vcodec = "copy" // stream copy: no CPU transcode, starts instantly
+		pre = append(pre, "-fflags", "+genpts+igndts") // v0.9.51 音画同步：修复 PTS 生成
 	} else {
 		hwInfo := detectHardware(ctx, hw)
 		mode, _ := hwInfo["selected"].(string)
@@ -2302,6 +2314,8 @@ func compatArgsScaled(ctx context.Context, p, audioTrack, hw, mode string, maxHe
 		if maxHeight > 0 {
 			post = withScaleFilter(post, vcodec, maxHeight)
 		}
+		pre = append(pre, "-fflags", "+genpts+igndts")       // v0.9.51 音画同步
+		pre = append(pre, "-async", "1")                       // v0.9.51 音画同步：结尾同步拉伸
 	}
 	mid = []string{"-map", "0:v:0"}
 	if n, err := strconv.Atoi(audioTrack); audioTrack != "" && err == nil && n >= 0 {
@@ -2311,12 +2325,42 @@ func compatArgsScaled(ctx context.Context, p, audioTrack, hw, mode string, maxHe
 	}
 	mid = append(mid, "-c:v", vcodec)
 	mid = append(mid, post...)
+	mid = append(mid, "-r", srcFps, "-vsync", "cfr")
 	if mode == "remux" && maxHeight <= 0 {
 		mid = append(mid, "-c:a", "copy")
 	} else {
 		mid = append(mid, "-c:a", "aac", "-ac", "2", "-b:a", "160k")
 	}
 	return pre, mid
+}
+
+// detectFramerate probes the average frame rate of the first video stream.
+// Returns (fps, true) on success or (0, false) if the stream cannot be read.
+func detectFramerate(ctx context.Context, p string) (int, bool) {
+	b, e := exec.CommandContext(ctx, "ffprobe",
+		"-v", "error",
+		"-select_streams", "v:0",
+		"-show_entries", "stream=avg_frame_rate",
+		"-of", "default=nk=1:nw=1",
+		p).Output()
+	if e != nil {
+		return 0, false
+	}
+	parts := strings.Split(strings.TrimSpace(string(b)), "/")
+	if len(parts) != 2 {
+		return 0, false
+	}
+	num, err1 := strconv.Atoi(strings.TrimSpace(parts[0]))
+	den, err2 := strconv.Atoi(strings.TrimSpace(parts[1]))
+	if err1 != nil || err2 != nil || den == 0 {
+		return 0, false
+	}
+	// Round to nearest integer fps; use > 0 guard.
+	fps := int(float64(num) / float64(den) + 0.5)
+	if fps <= 0 {
+		return 0, false
+	}
+	return fps, true
 }
 
 // scaleFilterValue returns the downscale filter for the chosen encoder. VAAPI
@@ -2469,6 +2513,11 @@ func (a *App) compat(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Accept-Ranges", "none")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-VaultHub-Compat", "live")
+	// v0.9.51 音画同步：通过 HTTP 响应头降低浏览器缓冲上限，
+	// 迫使 HTMLVideoElement 的 currentTime 尽可能贴近实时位置，
+	// 缩小音频时钟与视频时钟的漂移窗口。
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.Header().Set("Transfer-Encoding", "chunked")
 	w.WriteHeader(200)
 	flusher, _ := w.(http.Flusher)
 	buf := make([]byte, 256*1024)

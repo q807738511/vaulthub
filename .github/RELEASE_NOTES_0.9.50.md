@@ -1,4 +1,4 @@
-# VaultHub v0.9.50 发布说明
+# VaultHub v0.9.51 发布说明
 
 正式版发布前的准备版本：播放器双皮肤与 SVG 图标、标题/角标修正、播放中断自动恢复、ZIP 漫画图片修复、全仓库敏感信息洗版与「预览版」标识撤销。
 
@@ -40,6 +40,6 @@
 docker compose pull && docker compose up -d --force-recreate
 ```
 
-镜像：`ghcr.io/q807738511/vaulthub:latest`（同 digest 固定版 `ghcr.io/q807738511/vaulthub:v0.9.50`）；Docker Hub 同步 `q807738511/vaulthub:v0.9.50` 与 `latest`。
+镜像：`ghcr.io/q807738511/vaulthub:latest`（同 digest 固定版 `ghcr.io/q807738511/vaulthub:v0.9.51`）；Docker Hub 同步 `q807738511/vaulthub:v0.9.51` 与 `latest`。
 
-历史版本标签不可变；回滚：compose 镜像行临时改回 `ghcr.io/q807738511/vaulthub:v0.9.42`。
+历史版本标签不可变；回滚：compose 镜像行临时改回 `ghcr.io/q807738511/vaulthub:v0.9.41`。
