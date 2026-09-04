@@ -44,7 +44,7 @@ class V0913Contracts(unittest.TestCase):
         self.assertIn('/api/media/metadata/override?', JS)
 
     def test_version_is_0913(self):
-        self.assertIn('v0.9.50', HTML)
+        self.assertIn('v0.9.52', HTML)
         self.assertNotIn('?v=0.9.13', HTML)
 
 if __name__ == '__main__':

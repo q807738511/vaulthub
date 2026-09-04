@@ -29,10 +29,14 @@ import (
 // VaultHub media API replacement. Beyond the standard library it uses only the
 // pure-Go SQLite driver modernc.org/sqlite (no cgo), keeping static builds.
 type Library struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Type string `json:"type"`
-	Path string `json:"path"`
+	ID    string   `json:"id"`
+	Name  string   `json:"name"`
+	Type  string   `json:"type"`
+	Path  string   `json:"path"`
+	// v0.9.52：多存储路径支持 —— 单个媒体库可以挂载多个存储路径。
+	// Paths 与 Path 互为补充：Path 是主路径（兼容旧版配置），Paths 是扩展路径列表。
+	// 扫描时会遍历所有路径，文件路径以相对路径形式存储。
+	Paths []string `json:"paths,omitempty"`
 }
 type App struct {
 	mu                sync.RWMutex
@@ -716,29 +720,74 @@ func safeFile(lib Library, rel string) (string, os.FileInfo, error) {
 	if clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(os.PathSeparator)) {
 		return "", nil, fmt.Errorf("invalid path")
 	}
-	root, e := filepath.EvalSymlinks(lib.Path)
-	if e != nil {
-		return "", nil, e
+	// v0.9.52：多存储路径。多路径库的索引 path 形如 <root-base>/<rest>
+	// （见 walkMultiLibraryFiles），请求端原样带回；单路径库（存量）path
+	// 无前缀。对每个 root：
+	//   1) 多路径库：若 clean 以该 root 目录名开头 → 剥离前缀后解析；
+	//   2) 否则（单路径库 / 不带前缀的旧请求）→ 原样 join。
+	// 每个 root 都是独立边界：EvalSymlinks 后必须留在该 root 或 MEDIA_ROOT
+	// 内，与 v0.9.30 单根规则一致 —— 库内链接指向系统路径仍然不可服务。
+	roots := lib.AllPaths()
+	if len(roots) == 0 {
+		return "", nil, fmt.Errorf("library has no path")
 	}
-	p, e := filepath.EvalSymlinks(filepath.Join(root, clean))
-	if e != nil {
-		return "", nil, e
+	for _, root := range roots {
+		rootReal, er := filepath.EvalSymlinks(root)
+		if er != nil {
+			continue
+		}
+		try := clean
+		if len(roots) > 1 {
+			if rest, ok := strings.CutPrefix(clean, filepath.Base(rootReal)+"/"); ok {
+				try = rest
+			} else if clean == filepath.Base(rootReal) {
+				continue // 只请求到根目录本身，不可服务
+			}
+		}
+		full := filepath.Join(rootReal, try)
+		resolved, er := filepath.EvalSymlinks(full)
+		if er != nil || !allowedRealPath(rootReal, resolved) {
+			continue
+		}
+		st, er := os.Stat(resolved)
+		if er != nil || st.IsDir() {
+			continue
+		}
+		return full, st, nil
 	}
-	// v0.9.30: the resolved path may stay inside the library root or inside the
-	// media mount point (MEDIA_ROOT). Libraries routinely link folders from a
-	// second media volume, and the old library-only rule made those items both
-	// unscannable and unservable. System paths outside MEDIA_ROOT remain denied,
-	// and the request itself still cannot contain "..", an absolute path or a
-	// backslash, so only links placed inside the library can reach the boundary.
-	if !allowedRealPath(root, p) {
-		return "", nil, fmt.Errorf("path outside media root")
-	}
-	st, e := os.Stat(p)
-	if e != nil || st.IsDir() {
-		return "", nil, fmt.Errorf("file not found")
-	}
-	return p, st, nil
+	return "", nil, fmt.Errorf("file not found in any library path")
 }
+func (l *Library) AllPaths() []string {
+	seen := map[string]bool{}
+	var out []string
+	if l.Path != "" && !seen[l.Path] {
+		out = append(out, l.Path)
+		seen[l.Path] = true
+	}
+	for _, p := range l.Paths {
+		p = strings.TrimSpace(p)
+		if p != "" && !seen[p] {
+			out = append(out, p)
+			seen[p] = true
+		}
+	}
+	return out
+}
+
+// equalStringSlice reports whether two string slices are element-wise equal.
+// v0.9.52：用于判断媒体库扩展路径集合是否发生变化。
+func equalStringSlice(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func (a *App) libraries(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "GET" {
 		a.mu.RLock()
@@ -768,6 +817,40 @@ func (a *App) libraries(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		l.Path, _ = filepath.EvalSymlinks(p)
+		// v0.9.52：多存储路径 —— 逐条校验扩展路径并归一化（绝对、存在、目录），
+		// 与主路径重复的条目剔除，防止 (lib,path) 主键意外冲突。
+		extras := make([]string, 0, len(l.Paths))
+		for _, raw := range l.Paths {
+			x := strings.TrimSpace(raw)
+			if x == "" {
+				continue
+			}
+			xa, err := filepath.Abs(x)
+			if err != nil || !strings.HasPrefix(xa, string(filepath.Separator)) {
+				errJSON(w, 400, "extra path must be an existing absolute directory")
+				return
+			}
+			sx, err := os.Stat(xa)
+			if err != nil || !sx.IsDir() {
+				errJSON(w, 400, "extra path must be an existing absolute directory")
+				return
+			}
+			xr, _ := filepath.EvalSymlinks(xa)
+			if xr == l.Path {
+				continue
+			}
+			dupe := false
+			for _, have := range extras {
+				if have == xr {
+					dupe = true
+					break
+				}
+			}
+			if !dupe {
+				extras = append(extras, xr)
+			}
+		}
+		l.Paths = extras
 		a.mu.Lock()
 		if a.deleting[l.ID] {
 			a.mu.Unlock()
@@ -776,13 +859,31 @@ func (a *App) libraries(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, x := range a.libs {
 			if x.ID == l.ID {
-				a.mu.Unlock()
-				if x.Name == l.Name && x.Type == l.Type && x.Path == l.Path {
-					a.start(l)
-					writeJSON(w, 200, map[string]any{"ok": true, "existing": true, "status": "indexing"})
-				} else {
+				if x.Name != l.Name || x.Type != l.Type || x.Path != l.Path {
+					a.mu.Unlock()
 					errJSON(w, 409, "id already exists with different library data")
+					return
 				}
+				// v0.9.52：同一媒体库再次提交（追加存储路径 / 幂等重扫）——
+				// 若扩展路径集合有变化则先持久化新配置再触发扫描。
+				if !equalStringSlice(x.Paths, l.Paths) {
+					next := make([]Library, 0, len(a.libs))
+					for _, y := range a.libs {
+						if y.ID == l.ID {
+							y.Paths = l.Paths
+						}
+						next = append(next, y)
+					}
+					if e := a.saveLibrariesLocked(next); e != nil {
+						a.mu.Unlock()
+						errJSON(w, 500, "configuration write failed")
+						return
+					}
+					a.libs = next
+				}
+				a.mu.Unlock()
+				a.start(l)
+				writeJSON(w, 200, map[string]any{"ok": true, "existing": true, "status": "indexing"})
 				return
 			}
 		}
@@ -945,7 +1046,10 @@ func (a *App) start(l Library) {
 		// 被递归、符号链接文件被当成非普通文件跳过，NAS 上常见的「季目录/合集
 		// 指向别处」于是整块缺失。walkLibraryFiles 改用 stat 穿透链接，并保留
 		// 「解析后必须仍在媒体根内」和「访问过的真实目录去重防环」两条约束。
-		walkErr := walkLibraryFiles(ctx, l.Path, scanMaxDepth(), func(f scannedFile) {
+		// v0.9.52：多存储路径支持 —— 遍历 l.AllPaths() 全部路径，
+		// 相对路径前添加路径前缀（paths/<root-name>/...）以避免不同路径下同名文件冲突。
+		scanPaths := l.AllPaths()
+		walkErr := walkMultiLibraryFiles(ctx, scanPaths, scanMaxDepth(), func(f scannedFile) {
 			rows = append(rows, row{f.Rel, f.Size, f.MTime})
 			if len(rows)%5000 == 0 {
 				a.setStatusIfCurrent(l.ID, generation, "scanning", len(rows), 0, start, 0, "")

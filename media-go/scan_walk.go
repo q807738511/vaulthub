@@ -156,3 +156,96 @@ func walkLibraryFiles(ctx context.Context, root string, maxDepth int, emit func(
 	}
 	return walk(realRoot, 1)
 }
+
+// walkMultiLibraryFiles extends walkLibraryFiles to enumerate every regular file
+// under one or more roots (paths slice). v0.9.52：多存储路径支持。
+//
+// 关键语义（向后兼容）：
+//   - roots 只有一个（单路径库，Paths 为空 —— 存量库与全部旧契约测试）时，
+//     行为与 walkLibraryFiles 完全一致：rel 不带任何前缀。
+//   - roots 多个（用户为同一媒体库挂载了多个存储路径）时，每个 root 的条目
+//     以 root 目录名为前缀（<root-base>/<rel>），避免不同存储路径下同名文件
+//     在 files 表 (lib,path) 主键上互相覆盖。请求端拿到的正是这个带前缀的
+//     path，safeFile 用同一规则解析回真实文件。
+func walkMultiLibraryFiles(ctx context.Context, roots []string, maxDepth int, emit func(scannedFile)) error {
+	if len(roots) <= 1 {
+		if len(roots) == 0 {
+			return nil
+		}
+		return walkLibraryFiles(ctx, roots[0], maxDepth, emit)
+	}
+	for _, root := range roots {
+		if root == "" {
+			continue
+		}
+		rootBase := filepath.Base(root)
+		if rootBase == "" || rootBase == "." || rootBase == string(os.PathSeparator) {
+			rootBase = "root"
+		}
+		realRoot, err := filepath.EvalSymlinks(root)
+		if err != nil {
+			continue
+		}
+		ancestors := map[string]bool{realRoot: true}
+		var walk func(dir string, depth int) error
+		walk = func(dir string, depth int) error {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			if maxDepth > 0 && depth > maxDepth {
+				return nil
+			}
+			entries, e := os.ReadDir(dir)
+			if e != nil {
+				return nil
+			}
+			for _, entry := range entries {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				full := filepath.Join(dir, entry.Name())
+				st, e := os.Stat(full)
+				if e != nil {
+					continue
+				}
+				real, e := filepath.EvalSymlinks(full)
+				if e != nil || !allowedRealPath(realRoot, real) {
+					// 多路径下每个 root 自身就是边界（主路径规则已放宽到
+					// MEDIA_ROOT，见 walkLibraryFiles 注释）；root 内符号链接
+					// 仍必须留在 mediaRootBoundary() 内。
+					if !allowedRealPath(mediaRootBoundary(), real) {
+						continue
+					}
+				}
+				if st.IsDir() {
+					if ancestors[real] {
+						continue
+					}
+					ancestors[real] = true
+					err := walk(full, depth+1)
+					delete(ancestors, real)
+					if err != nil {
+						return err
+					}
+					continue
+				}
+				if !st.Mode().IsRegular() {
+					continue
+				}
+				rel, e := filepath.Rel(realRoot, full)
+				if e != nil || rel == "." || strings.HasPrefix(rel, "..") {
+					continue
+				}
+				// 多路径：以 root 目录名为前缀，保证 (lib,path) 全局唯一。
+				prefixedRel := filepath.Join(rootBase, rel)
+				emit(scannedFile{Rel: prefixedRel, Size: st.Size(), MTime: st.ModTime().Unix()})
+			}
+			return nil
+		}
+		if err := walk(realRoot, 1); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+

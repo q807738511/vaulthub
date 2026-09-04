@@ -70,6 +70,34 @@ type nfoDocument struct {
 	FanartThumbs []string      `xml:"fanart>thumb"`
 }
 
+// indexRelFor maps an absolute path back to the indexed rel path the files API
+// and playback expect. Single-path library → rel to lib.Path (no prefix, the
+// v0.9.30 contract). Multi-path library (Paths non-empty) → the root-prefixed
+// form "<root-base>/<rel-to-root>" that walkMultiLibraryFiles emits and safeFile
+// resolves, so artwork / subtitle URLs keep working for files on extra volumes.
+func indexRelFor(lib Library, abs string) string {
+	abs, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return ""
+	}
+	multi := len(lib.AllPaths()) > 1
+	for _, root := range lib.AllPaths() {
+		rootReal, e := filepath.EvalSymlinks(root)
+		if e != nil {
+			continue
+		}
+		rel, e := filepath.Rel(rootReal, abs)
+		if e != nil || rel == "." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) || rel == ".." {
+			continue
+		}
+		rel = filepath.ToSlash(rel)
+		if multi {
+			rel = filepath.Base(rootReal) + "/" + rel
+		}
+		return rel
+	}
+	return ""
+}
 func mediaAssetURL(libID, rel string) string {
 	return "/api/media/file?id=" + url.QueryEscape(libID) + "&path=" + url.QueryEscape(filepath.ToSlash(rel))
 }
@@ -90,11 +118,11 @@ func relativeAssetURL(lib Library, abs string) string {
 	if abs == "" {
 		return ""
 	}
-	rel, e := filepath.Rel(lib.Path, abs)
-	if e != nil {
+	rel := indexRelFor(lib, abs)
+	if rel == "" {
 		return ""
 	}
-	if _, _, e = safeFile(lib, rel); e != nil {
+	if _, _, e := safeFile(lib, rel); e != nil {
 		return ""
 	}
 	return mediaAssetURL(lib.ID, rel)
@@ -131,6 +159,12 @@ func readLocalMediaMetadata(lib Library, mediaPath string) (localMediaMetadata, 
 	nfoNames := []string{stem + ".nfo"}
 	if commonAllowed {
 		nfoNames = append(nfoNames, "movie.nfo")
+	}
+	// v0.9.52：series 库的单集文件通常位于 Show/Season 01/… 下，剧集级
+	// tvshow.nfo 与海报在 Show 根目录。把该目录本身也纳入 nfo 候选，
+	// 这样扁平结构（Show 根直接放视频）也能读到 show 级信息。
+	if lib.Type == "series" {
+		nfoNames = append(nfoNames, "tvshow.nfo")
 	}
 	nfo := firstExistingFile(dir, nfoNames)
 	var doc nfoDocument
@@ -172,9 +206,14 @@ func readLocalMediaMetadata(lib Library, mediaPath string) (localMediaMetadata, 
 					m.TVDBID = strings.TrimSpace(id.Value)
 				}
 			}
-			rel, _ := filepath.Rel(lib.Path, nfo)
+			rel := indexRelFor(lib, nfo)
 			m.NFO = filepath.ToSlash(rel)
 		}
+	}
+	// series：单集 nfo 里常见只给 show 名（<showtitle>），标题留空时用 show 名回填，
+	// 保证剧集列表行始终有可读标题，而不只是“S01E01”。
+	if lib.Type == "series" && m.Title == "" && m.ShowTitle != "" {
+		m.Title = m.ShowTitle
 	}
 	posterNames := []string{stem + "-poster.png", stem + "-poster.jpg", stem + ".png", stem + ".jpg", "poster.png", "poster.jpg", "folder.png", "folder.jpg", "cover.png", "cover.jpg"}
 	logoNames := []string{stem + "-logo.png", stem + "-logo.webp", "logo.png", "logo.webp"}
@@ -199,6 +238,34 @@ func readLocalMediaMetadata(lib Library, mediaPath string) (localMediaMetadata, 
 	if m.Backdrop == "" {
 		m.Backdrop = m.Fanart
 	}
+	// v0.9.52 T4：series 单集在 Season 01/ 子目录时，海报/剧照/logo 常放在
+	// 剧集根目录（Show/）而非单集目录。逐级向上回溯到库根，缺啥补啥；
+	// 扩展存储路径同样生效（indexRelFor 会把绝对路径映射回带前缀的索引路径）。
+	// 注意：不能复用上面被 commonAllowed 截断的 stem 优先列表 —— 剧集根目录
+	// 下是通用名（poster.jpg / fanart.jpg …），用独立的 show 级名称集合查找。
+	if lib.Type == "series" {
+		showPosterNames := []string{"poster.png", "poster.jpg", "folder.png", "folder.jpg", "cover.png", "cover.jpg", "show.png", "show.jpg", "season01-poster.jpg", "default.png", "default.jpg"}
+		showLogoNames := []string{"logo.png", "logo.webp"}
+		showFanartNames := []string{"fanart.jpg", "fanart.png", "show-fanart.jpg", "backdrop.jpg"}
+		showBackdropNames := []string{"backdrop.jpg", "backdrop.png", "fanart.jpg", "fanart.png"}
+		for _, showDir := range seriesShowDirs(lib, dir) {
+			if m.Poster == "" {
+				m.Poster = relativeAssetURL(lib, firstExistingFile(showDir, showPosterNames))
+			}
+			if m.Logo == "" {
+				m.Logo = relativeAssetURL(lib, firstExistingFile(showDir, showLogoNames))
+			}
+			if m.Fanart == "" {
+				m.Fanart = relativeAssetURL(lib, firstExistingFile(showDir, showFanartNames))
+			}
+			if m.Backdrop == "" {
+				m.Backdrop = relativeAssetURL(lib, firstExistingFile(showDir, showBackdropNames))
+			}
+			if m.Backdrop == "" {
+				m.Backdrop = m.Fanart
+			}
+		}
+	}
 	ents, _ := os.ReadDir(dir)
 	for _, x := range ents {
 		if x.IsDir() {
@@ -213,10 +280,59 @@ func readLocalMediaMetadata(lib Library, mediaPath string) (localMediaMetadata, 
 			continue
 		}
 		abs := filepath.Join(dir, x.Name())
-		rel, _ := filepath.Rel(lib.Path, abs)
+		rel := indexRelFor(lib, abs)
+		if rel == "" {
+			continue
+		}
 		m.Subtitles = append(m.Subtitles, localMetadataSubtitle{Label: "本地 · " + x.Name(), Language: subtitleLanguage(x.Name(), stem), URL: "/api/media/subtitles/proxy?id=" + url.QueryEscape(lib.ID) + "&path=" + url.QueryEscape(filepath.ToSlash(rel))})
 	}
 	return m, nil
+}
+
+// seriesShowDirs walks from the episode's own directory up to (but excluding)
+// the media library root, yielding directories that may hold show/season level
+// artwork for a series library. Multi-path libraries are handled through
+// AllPaths so extra volumes resolve their own ancestors. v0.9.52：剧集海报/
+// 剧照/logo 读取修复 —— 单集在 Season 01/ 下时向 Show 根回溯查找。
+func seriesShowDirs(lib Library, startDir string) []string {
+	roots := lib.AllPaths()
+	realRoots := make([]string, 0, len(roots))
+	for _, r := range roots {
+		if rr, e := filepath.EvalSymlinks(r); e == nil {
+			realRoots = append(realRoots, rr)
+		}
+	}
+	isRoot := func(d string) bool {
+		for _, rr := range realRoots {
+			if d == rr {
+				return true
+			}
+		}
+		return false
+	}
+	// 找到包含 startDir 的最深 root,作为向上回溯的终点。
+	boundary := ""
+	for _, rr := range realRoots {
+		if withinRoot(startDir, rr) {
+			if boundary == "" || len(rr) > len(boundary) {
+				boundary = rr
+			}
+		}
+	}
+	var dirs []string
+	cur := startDir
+	for {
+		parent := filepath.Dir(cur)
+		if parent == cur || isRoot(cur) {
+			break
+		}
+		dirs = append(dirs, parent)
+		cur = parent
+		if boundary != "" && cur == boundary {
+			break
+		}
+	}
+	return dirs
 }
 
 func (a *App) localMetadata(w http.ResponseWriter, r *http.Request) {

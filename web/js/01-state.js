@@ -8,7 +8,7 @@ const VAULTHUB_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
    历史故障：v0.8.3→v0.8.5 的前端修改在服务端已生效，但浏览器仍执行缓存里的
    旧 02-media.js，用户看到「没有更新」。现在入口页 no-store、静态资源带 ?v=，
    并在启动时做一次一致性自查，不一致就绕过缓存强制重载一次。 */
-const VAULTHUB_SCRIPT_VERSION = "0.9.51";
+const VAULTHUB_SCRIPT_VERSION = "0.9.52";
 function ensureFreshAssets() {
   /* expected 为空 = 浏览器执行的 index.html 早于 v0.8.6（旧版本入口页没有声明
      版本号），同样属于"页面是旧的"，也需要换 URL 重新取一次。 */
@@ -325,7 +325,7 @@ const I18N = {
     kindBookDesc: "子类型：电子书 / 漫画 · 刮削源 Google Books、Bangumi",
     kindVideoDesc: "子类型：电视剧集 / 电影 · 刮削源 TMDB、豆瓣",
     kindAudioDesc: "子类型：音乐 / 音乐 MV · 刮削源 MusicBrainz、网易云",
-    libKind: "媒体大类", libSubType: "子类型", libPath: "媒体路径（容器内绝对路径）", libName: "库名称（手动命名，用于刮削）",
+    libKind: "媒体大类", libSubType: "子类型", libPath: "媒体路径（容器内绝对路径）", libExtraPath: "附加存储路径（可选，每行一个）", libName: "库名称（手动命名，用于刮削）",
     libAdd: "添加媒体库", libRefresh: "刷新", libRescanAll: "全部重新扫描",
     colLibName: "库名称", colLibKind: "大类 / 子类型", colLibPath: "媒体路径", colLibItems: "项目", colLibState: "扫描状态", colLibActs: "操作",
     libEmpty: "尚未添加媒体库，填写上方表单即可开始刮削",
@@ -611,7 +611,7 @@ const I18N = {
     kindVideoDesc: "子類型：電視劇集 / 電影 · 刮削源 TMDB、豆瓣",
     kindAudioDesc: "子類型：音樂 / 音樂 MV · 刮削源 MusicBrainz、網易雲",
     libKind: "媒體大類", libSubType: "子類型",
-    libPath: "媒體路徑（容器內絕對路徑）", libName: "庫名稱（手動命名，用於刮削）",
+    libPath: "媒體路徑（容器內絕對路徑）", libExtraPath: "附加儲存路徑（選填，每行一個）", libName: "庫名稱（手動命名，用於刮削）",
     libAdd: "新增媒體庫", libRefresh: "重新整理", libRescanAll: "全部重新掃描",
     colLibName: "庫名稱", colLibKind: "大類 / 子類型", colLibPath: "媒體路徑",
     colLibItems: "項目", colLibState: "掃描狀態", colLibActs: "操作",
@@ -832,7 +832,7 @@ const I18N = {
     kindVideoDesc: "Subtypes: TV series / movie · scrapers TMDB, Douban",
     kindAudioDesc: "Subtypes: music / music video · scrapers MusicBrainz, NetEase",
     libKind: "Category", libSubType: "Subtype",
-    libPath: "Media path (absolute path inside the container)", libName: "Library name (manual, used for scraping)",
+    libPath: "Media path (absolute path inside the container)", libExtraPath: "Extra storage paths (optional, one per line)", libName: "Library name (manual, used for scraping)",
     libAdd: "Add library", libRefresh: "Refresh", libRescanAll: "Rescan all",
     colLibName: "Library", colLibKind: "Category / subtype", colLibPath: "Media path",
     colLibItems: "Items", colLibState: "Scan state", colLibActs: "Actions",

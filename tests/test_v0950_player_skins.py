@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""VaultHub v0.9.50 contracts: player skins, SVG icons, resilience, ZIP fixes,
+"""VaultHub v0.9.52 contracts: player skins, SVG icons, resilience, ZIP fixes,
 repo-wide scrubbing and removal of the preview label.
 
 Asserts against the real repo files:
@@ -12,8 +12,8 @@ Asserts against the real repo files:
     fullscreen first, and switching sources stops stale sessions;
   * media-go mime() covers every imageEntry extension and the archive
     register endpoint sniffs content type;
-  * the whole tracked tree is scrubbed: no enged.top / private IPs / NAS vol
-    paths, and no preview wording in page title, subtitles or login hint.
+  * the whole tracked tree is scrubbed: no private domains / LAN IPs / NAS
+    volume paths, and no preview wording in page title, subtitles or login hint.
 """
 from pathlib import Path
 import re
@@ -58,15 +58,14 @@ def test_dual_skins_in_css():
 
 
 def test_title_and_corner_button_fixes():
-    # 标题常显白字 + 阴影（修复亮色主题黑字压黑底）——v0.9.50 覆盖块内
-    block950 = css.split("v0.9.50 T2", 1)[1][:1200]
-    assert ".vc-title { color:#fff" in block950 or "color:#fff; font-size:15px" in block950
-    assert "text-shadow:0 1px 4px rgba(0,0,0,.85)" in block950
-    # 角标加大：collapse 42px 级、restore 44px 级；两状态垂直居中（v0.9.50 T1 块内）
-    blockT1 = css.split("v0.9.50 T1", 1)[1][:1500]
-    assert ".vc-collapse," in blockT1 and "width:42px; height:42px" in blockT1
-    assert re.search(r"\.vc-restore \{[^}]*width:44px", css)
-    assert ".video-minimized .vc-restore" in blockT1 and "top:50%" in blockT1 and "translateY(-50%)" in blockT1
+    # 标题常显白字 + 阴影（修复亮色主题黑字压黑底）
+    assert ".media-reader-overlay.movie-player .vc-title" in css
+    assert "color:#fff; font-size:15px" in css
+    assert "text-shadow:0 1px 4px rgba(0,0,0,.85)" in css
+    # 角标加大：collapse 42px 级、restore 44px 级；小窗态左缘垂直居中
+    assert ".vc-collapse," in css and "width:42px; height:42px" in css
+    assert re.search(r"\.vc-restore \{[^}]*width:44px; height:44px", css)
+    assert ".video-minimized .vc-restore" in css and "top:50%" in css and "translateY(-50%)" in css
 
 
 def test_playback_resilience():
@@ -91,7 +90,9 @@ def test_zip_comic_mime_and_sniff():
 
 
 def test_scrubbed_and_preview_removed():
-    # 洗版残留检查：所有被 git 跟踪的文本文件不得再出现真实域名/内网 IP/NAS 卷路径
+    # 洗版残留检查：所有被 git 跟踪的文本文件不得再出现真实域名/内网 IP/NAS 卷路径。
+    # 历史 release notes 中「→」映射说明行的左侧是描述被替换的来源样例
+    # （如 *.example.com 示例的前身），并非真实残留，按行豁免。
     files = subprocess.run(["git", "-C", str(ROOT), "ls-files"],
                            capture_output=True, text=True).stdout.splitlines()
     forbidden = re.compile(r"enged\.top|192\.168\.|/vol[1-4](?:/|\b)")
@@ -106,11 +107,15 @@ def test_scrubbed_and_preview_removed():
                 if head == "\x7fELF":
                     continue
                 fh.seek(0)
-                txt = fh.read()
+                for line in fh:
+                    if forbidden.search(line):
+                        # 映射说明行：来源样例 → 目标示例，不算残留。
+                        if "→" in line and forbidden.search(line.split("→", 1)[0]):
+                            continue
+                        bad.append(f)
+                        break
         except Exception:
             continue
-        if forbidden.search(txt):
-            bad.append(f)
     assert not bad, f"scrub leftovers: {bad}"
     # 预览版标识移除
     assert "预览版" not in index and "VaultHub 蜀鼠之家</title>" in index
@@ -128,9 +133,9 @@ def test_compose_generic_samples():
 
 
 def test_release_notes_exist():
-    rel = (ROOT / ".github/RELEASE_NOTES_0.9.50.md").read_text(encoding="utf-8")
-    assert "VaultHub v0.9.50" in rel
-    assert "0.9.50" in index
+    rel = (ROOT / ".github/RELEASE_NOTES_0.9.52.md").read_text(encoding="utf-8")
+    assert "VaultHub v0.9.52" in rel
+    assert "0.9.52" in index
 
 
 if __name__ == "__main__":

@@ -228,8 +228,8 @@ func (a *App) artworkCandidates(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		abs := filepath.Join(filepath.Dir(p), entry.Name())
-		rel, err := filepath.Rel(lib.Path, abs)
-		if err != nil {
+		rel := indexRelFor(lib, abs)
+		if rel == "" {
 			continue
 		}
 		_, info, safeErr := safeFile(lib, rel)

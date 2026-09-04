@@ -155,7 +155,14 @@ function toggleAudioFavorite(libId, path) {
   const lib = findMediaLibrary(localMediaSelection.audio); if (lib) loadLocalFiles("audio", lib, audioCursor);
 }
 function toggleActiveAudioFavorite() { if (activeAudio) toggleAudioFavorite(activeAudio.libId, activeAudio.path); }
-function updateAudioFavoriteButton() { const button = document.getElementById("audioFavoriteButton"); if (button) button.textContent = activeAudio && isAudioFavorite(activeAudio.libId, activeAudio.path) ? "♥" : "♡"; }
+function updateAudioFavoriteButton() {
+  const button = document.getElementById("audioFavoriteButton");
+  if (!button) return;
+  const fav = !!(activeAudio && isAudioFavorite(activeAudio.libId, activeAudio.path));
+  button.innerHTML = fav ? audioIcon("heartFill") : audioIcon("heart");
+  button.title = fav ? "取消喜欢" : "喜欢";
+  button.classList.toggle("audio-fav-on", fav);
+}
 function audioFavoriteRows() {
   const favorites = new Set(readAudioFavorites()), rows = [];
   localMediaLibraries.filter(lib => lib.type === "audio").forEach(lib => {
@@ -540,7 +547,7 @@ function normalizeLibraryPayload(data) {
     name: String(lib.name || lib.id || `媒体库 ${idx + 1}`),
     type: String(lib.type || "audio"),
     path: String(lib.path || ""),
-    paths: Array.isArray(lib.paths) ? lib.paths.map(String) : (lib.path ? [String(lib.path)] : []),
+    paths: Array.isArray(lib.paths) ? lib.paths.map(String).filter(Boolean) : [],
     files: Array.isArray(lib.files) ? lib.files : null
   }));
 }
@@ -981,7 +988,10 @@ const AUDIO_LOOP_LABEL = { sequence: "顺序", list: "列表循环", single: "�
 function setAudioLoop(mode) {
   audioLoopMode = AUDIO_LOOP_ORDER.includes(mode) ? mode : "sequence";
   const button = document.getElementById("audioLoopButton");
-  if (button) { button.title = "播放模式：" + AUDIO_LOOP_LABEL[audioLoopMode]; button.textContent = { sequence: "🔁", list: "🔁", single: "🔂", random: "🔀" }[audioLoopMode]; }
+  if (button) {
+    button.title = "播放模式：" + AUDIO_LOOP_LABEL[audioLoopMode];
+    button.innerHTML = audioIcon(audioLoopMode === "single" ? "repeatOne" : audioLoopMode === "random" ? "repeat" : "repeat");
+  }
   const lib = findMediaLibrary(localMediaSelection.audio);
   if (lib && audioView === "tracks") loadLocalFiles("audio", lib, audioCursor);
 }
@@ -991,7 +1001,11 @@ function toggleAudioMaximize() {
   audioMaximized = !audioMaximized;
   player.classList.toggle("maximized", audioMaximized);
   const button = document.getElementById("audioMaximizeButton");
-  if (button) { button.textContent = audioMaximized ? "🗗" : "⛶"; button.title = audioMaximized ? "还原" : "最大化"; }
+  if (button) {
+    button.innerHTML = audioIcon(audioMaximized ? "restore" : "expand");
+    button.title = audioMaximized ? "还原" : "最大化";
+    button.classList.toggle("audio-max-on", audioMaximized);
+  }
 }
 function parseLyrics(lrc) {
   const lines = [];
@@ -1038,12 +1052,18 @@ function playAudioFile(libId, path) {
   document.getElementById("audioPlayerMeta").textContent = `${meta.artist} · ${meta.album}`;
   const cover = document.getElementById("audioCover");
   cover.src = meta.cover || ""; cover.alt = `${meta.title} 海报`; cover.style.background = meta.cover ? "" : coverGradient(meta.title);
-  document.getElementById("audioPauseButton").textContent = "Ⅱ";
+  audioSetPauseIcon(true);
   renderPlayerLyrics(meta);
   updateAudioFavoriteButton();
 }
-function audioTogglePause() { const player=document.getElementById("audioPlayerElement"); if(!player?.src) return; if(player.paused) { player.play().catch(() => {}); document.getElementById("audioPauseButton").textContent="Ⅱ"; } else { player.pause(); document.getElementById("audioPauseButton").textContent="▶"; } }
-function audioStop() { const player=document.getElementById("audioPlayerElement"); if(!player) return; player.pause(); player.currentTime=0; player.removeAttribute("src"); player.load(); activeAudio=null; document.getElementById("audio-bottom-player")?.classList.remove("show"); document.getElementById("audioPauseButton").textContent="▶"; }
+function audioSetPauseIcon(paused) {
+  const btn = document.getElementById("audioPauseButton"); if (!btn) return;
+  btn.innerHTML = paused
+    ? '<svg class="vc-svg audio-svg" viewBox="0 0 24 24" aria-hidden="true"><rect x="6.6" y="5" width="4.1" height="14" rx="1.5" fill="currentColor"/><rect x="13.3" y="5" width="4.1" height="14" rx="1.5" fill="currentColor"/></svg>'
+    : '<svg class="vc-svg audio-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.2 5.6v12.8a.9.9 0 0 0 1.37.77l10.2-6.4a.9.9 0 0 0 0-1.54L9.57 4.83A.9.9 0 0 0 8.2 5.6Z" fill="currentColor"/></svg>';
+}
+function audioTogglePause() { const player=document.getElementById("audioPlayerElement"); if(!player?.src) return; if(player.paused) { player.play().catch(() => {}); audioSetPauseIcon(true); } else { player.pause(); audioSetPauseIcon(false); } }
+function audioStop() { const player=document.getElementById("audioPlayerElement"); if(!player) return; player.pause(); player.currentTime=0; player.removeAttribute("src"); player.load(); activeAudio=null; document.getElementById("audio-bottom-player")?.classList.remove("show"); audioSetPauseIcon(false); }
 function audioPrevious() { if(!activeAudio || !audioFiles.length) return; const index=(activeAudio.index-1+audioFiles.length)%audioFiles.length; playAudioFile(activeAudio.libId,audioFiles[index].path); }
 function audioNext() {
   if(!activeAudio || !audioFiles.length) return;
@@ -1949,10 +1969,36 @@ function decodeTextBytes(bytes) {
   catch (e) { return new TextDecoder("gb18030").decode(bytes); }
 }
 
-/* ================= v0.9.51 播放器内联 SVG 图标集 =================
-   旧版用 Unicode 字形/emoji（⌄ ⏮ 🔁 ⚙ …），各平台渲染差异大且不能按
+/* ================= v0.9.52 播放器内联 SVG 图标集 =================
+   旧版用 Unicode 字形/emoji（冉 ⏮ 🔁 ⚙ …），各平台渲染差异大且不能按
    主题换肤。v0.9.51 起全部按钮图标改为 24 视口内联 SVG：描边型走
-   currentColor（可随 PotPlayer/Apple 两套皮肤换色），实心型自带 fill。 */
+   currentColor（可随 Apple 皮肤换色），实心型自带 fill。
+   v0.9.52：修复 SVG stroke-width 缺失导致的图标显示异常，
+   统一添加 stroke-width=2 stroke-linecap=round stroke-linejoin=round。 */
+const AUDIO_ICON_SVG = {
+  prev: '<path d="M5.8 5.4v13.2" stroke="currentColor"/><path d="M18.6 6.3 10.4 12l8.2 5.7Z" fill="currentColor"/>',
+  play: '<path d="M8.2 5.6v12.8a.9.9 0 0 0 1.37.77l10.2-6.4a.9.9 0 0 0 0-1.54L9.57 4.83A.9.9 0 0 0 8.2 5.6Z" fill="currentColor"/>',
+  pause: '<rect x="6.6" y="5" width="4.1" height="14" rx="1.5" fill="currentColor"/><rect x="13.3" y="5" width="4.1" height="14" rx="1.5" fill="currentColor"/>',
+  stop: '<rect x="6.6" y="6.6" width="10.8" height="10.8" rx="2" fill="currentColor"/>',
+  next: '<path d="M18.2 5.4v13.2" stroke="currentColor"/><path d="M5.4 6.3l8.2 5.7-8.2 5.7Z" fill="currentColor"/>',
+  repeat: '<path d="m17 2.4 4 4-4 4"/><path d="M21 6.4H8.5a4.5 4.5 0 0 0-4.5 4.5v.6"/><path d="m7 21.6-4-4 4-4"/><path d="M3 17.6h12.5a4.5 4.5 0 0 0 4.5-4.5v-.6"/>',
+  repeatOne: '<path d="m17 2.4 4 4-4 4"/><path d="M21 6.4H8.5a4.5 4.5 0 0 0-4.5 4.5v.6"/><path d="m7 21.6-4-4 4-4"/><path d="M3 17.6h12.5a4.5 4.5 0 0 0 4.5-4.5v-.6"/><text x="12.05" y="16.6" font-size="5.6" font-weight="700" text-anchor="middle" fill="currentColor">1</text>',
+  heart: '<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>',
+  heartFill: '<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" fill="currentColor"/>',
+  shuffle: '<path d="m16 3.2 4.8.1-.1 4.8"/><path d="M4.2 19.8 20.6 3.4"/><path d="m20.6 16.2.1 4.8-4.8-.1"/><path d="m14.8 14.8 5.8 5.8"/><path d="M4.2 4.2l5.6 5.6"/>',
+  expand: '<path d="M4 9.6V4h5.6"/><path d="M20 9.6V4h-5.6"/><path d="M4 14.4V20h5.6"/><path d="M20 14.4V20h-5.6"/>',
+  restore: '<path d="M9.6 4v5.6H4"/><path d="M14.4 4v5.6H20"/><path d="M9.6 20v-5.6H4"/><path d="M14.4 20v-5.6H20"/>',
+  info: '<circle cx="12" cy="12" r="8.4"/><path d="M12 11.2v4.6"/><circle cx="12" cy="7.7" r="1.05" fill="currentColor"/>',
+};
+function audioIcon(name) {
+  const body = AUDIO_ICON_SVG[name];
+  if (!body) return "";
+  return `<svg class="vc-svg audio-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${body}</svg>`;
+}
+
+/* v0.9.51 播放器内联 SVG 图标集 —— 视频播放器专用。
+   v0.9.52：添加 stroke-width=2 stroke-linecap=round stroke-linejoin=round
+   修复各主题下图标显示为空/异常的问题。 */
 const VIDEO_ICON_SVG = {
   collapse: '<path d="M12 3.2v10.6"/><path d="m7.6 9.6 4.4 4.2 4.4-4.2"/><path d="M4 20.6h16"/>',
   restore: '<path d="M12 20.8V10.2"/><path d="m7.6 14.4 4.4-4.2 4.4 4.2"/><path d="M4 3.4h16"/>',
@@ -1978,7 +2024,7 @@ const VIDEO_ICON_SVG = {
 function videoIcon(name) {
   const body = VIDEO_ICON_SVG[name];
   if (!body) return "";
-  return `<svg class="vc-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${body}</svg>`;
+  return `<svg class="vc-svg video-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${body}</svg>`;
 }
 function videoPlayPauseIcon(paused) { return videoIcon(paused ? "play" : "pause"); }
 

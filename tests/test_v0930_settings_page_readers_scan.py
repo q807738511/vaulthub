@@ -64,13 +64,14 @@ assert 'event.target.closest(".lib-kind-form")' in HOME, "点击卡片内控件�
 
 # ---------------------------------------------------------------- 3. 扫描深度
 assert "func walkLibraryFiles(" in WALK, "缺少深度扫描 walker"
-assert "walkLibraryFiles(ctx, l.Path, scanMaxDepth()" in GO, "扫描必须改用新 walker"
+assert "walkMultiLibraryFiles(ctx, scanPaths, scanMaxDepth()" in GO, "扫描必须走多路径 walker（v0.9.52）"
+assert "return walkLibraryFiles(ctx, roots[0], maxDepth, emit)" in WALK, "单路径库必须退化为无前缀扫描"
 assert "filepath.Walk(l.Path" not in GO, "不能再使用 lstat 语义的 filepath.Walk"
 assert "os.Stat(full)" in WALK, "必须用 Stat 穿透符号链接"
 assert "filepath.EvalSymlinks(full)" in WALK, "链接必须解析成真实路径"
 assert "func allowedRealPath(" in WALK, "需要统一的路径边界判定"
 assert "allowedRealPath(realRoot, real)" in WALK, "扫描必须校验解析后的路径边界"
-assert "allowedRealPath(root, p)" in GO, "safeFile 必须使用同一套边界判定"
+assert "allowedRealPath(rootReal, resolved)" in GO, "safeFile 必须使用同一套边界判定"
 assert "func mediaRootBoundary(" in WALK and 'mediaRootPath = env("MEDIA_ROOT"' in GO, \
     "符号链接边界必须来自 MEDIA_ROOT 挂载点"
 assert 'raw == "" || raw == "/"' in WALK, "空或根路径不能成为边界"
@@ -114,11 +115,11 @@ assert ".media-reader-overlay.reader-theme-custom .media-reader-body" in CSS, "�
 assert "readerThemeClass()" in JS, "阅读器必须应用主题类"
 
 # ---------------------------------------------------------------- 版本与发布引用
-assert HTML.count("v0.9.50") >= 2, "关于与侧栏版本必须是 v0.9.50"
-assert 'VAULTHUB_ASSET_VERSION = "0.9.50"' in HTML, "资源版本必须是 0.9.50"
-assert 'VAULTHUB_SCRIPT_VERSION = "0.9.50"' in STATE, "脚本版本必须是 0.9.50"
-assert "ghcr.io/q807738511/vaulthub:latest" in COMPOSE, "v0.9.50 起 Compose 跟随 latest"
-assert (ROOT / ".github/RELEASE_NOTES_0.9.50.md").exists(), "缺少 v0.9.50 release notes"
+assert HTML.count("v0.9.52") >= 2, "关于与侧栏版本必须是 v0.9.52"
+assert 'VAULTHUB_ASSET_VERSION = "0.9.52"' in HTML, "资源版本必须是 0.9.52"
+assert 'VAULTHUB_SCRIPT_VERSION = "0.9.52"' in STATE, "脚本版本必须是 0.9.52"
+assert "ghcr.io/q807738511/vaulthub:latest" in COMPOSE, "v0.9.52 起 Compose 跟随 latest"
+assert (ROOT / ".github/RELEASE_NOTES_0.9.52.md").exists(), "缺少 v0.9.52 release notes"
 
 # ---------------------------------------------------------------- 历史契约不回退
 assert 'id="view-search"' in HTML and "function runMediaSearch()" in JS, "媒体搜索不能回退"
