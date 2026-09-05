@@ -22,7 +22,7 @@ type audioScrapeResult struct {
 	Release   string `json:"release_id,omitempty"`
 }
 
-/* v0.9.54：音乐刮削主源换成 iTunes Search API —— 无需注册/密钥、返回极简 JSON、
+/* v0.9.55：音乐刮削主源换成 iTunes Search API —— 无需注册/密钥、返回极简 JSON、
    中文曲库完整（按 TW/US store 依次查询），专辑与高清封面一次到位；
    刮削与音频容器格式无关（mp3/flac/m4a/ogg/wav/aac/ape/opus 等媒体库已支持格式
    全部按 文件名→标签 解析出的 标题/歌手 查询）。MusicBrainz 保留为兜底源，
@@ -141,7 +141,7 @@ func audioCandidateMatches(title, artist string, score int, gotTitle string, cre
 	return false
 }
 
-/* v0.9.54 入口：iTunes 主源，失败回落 MusicBrainz（英文/小众曲目）。 */
+/* v0.9.55 入口：iTunes 主源，失败回落 MusicBrainz（英文/小众曲目）。 */
 func (a *App) scrapeAudio(ctx context.Context, title, artist string) (audioScrapeResult, error) {
 	if out, ok := a.scrapeAudioItunes(ctx, title, artist); ok {
 		return out, nil
@@ -181,7 +181,7 @@ func (a *App) scrapeAudioItunes(ctx context.Context, title, artist string) (audi
 			return audioScrapeResult{}, false
 		}
 		req.Header.Set("Accept", "application/json")
-		req.Header.Set("User-Agent", "VaultHub/0.9.54 (https://github.com/q807738511/vaulthub)")
+		req.Header.Set("User-Agent", "VaultHub/0.9.55 (https://github.com/q807738511/vaulthub)")
 		res, err := client.Do(req)
 		a.itunesScrapeLast = time.Now()
 		a.itunesScrapeMu.Unlock()

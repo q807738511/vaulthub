@@ -46,10 +46,10 @@ class V0913Contracts(unittest.TestCase):
         self.assertIn('/api/media/metadata/override?', JS)
 
     def test_version_is_0913(self):
-        self.assertIn('v0.9.54', HTML)
+        self.assertIn('v0.9.55', HTML)
         self.assertNotIn('?v=0.9.13', HTML)
 
-    # v0.9.54: ZIP/CBZ archive directory cache + iTunes-first music scraper
+    # v0.9.55: ZIP/CBZ archive directory cache + iTunes-first music scraper
     def test_v0953_zip_directory_cache_exists(self):
         self.assertIn('newZipArchiveCache', ZIPCACHE)
         self.assertIn('rawIdx', ZIPCACHE)

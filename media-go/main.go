@@ -45,7 +45,7 @@ type App struct {
 	itunesScrapeMu    sync.Mutex // iTunes Search API: ~200ms/request 节流
 	itunesScrapeLast  time.Time
 	zipCacheMu        sync.Mutex
-	zipCache          *zipArchiveCache // v0.9.54: ZIP/CBZ 中央目录 LRU 缓存（漫画读取提速）
+	zipCache          *zipArchiveCache // v0.9.55: ZIP/CBZ 中央目录 LRU 缓存（漫画读取提速）
 	libs              []Library
 	jobs              map[string]uint64             // library id -> running generation
 	generations       map[string]uint64             // invalidates stale scans after delete/recreate
@@ -419,6 +419,13 @@ var managerSessionOK = func(r *http.Request) bool {
 // writeAuth guards every mutating media endpoint through the manager-owned
 // HttpOnly session cookie. Password login is the only write authority.
 func writeAuth(r *http.Request) bool {
+	return managerSessionOK(r)
+}
+
+// readAuth 同样基于 manager 会话（v0.9.55）：文件列表/文件流/归档读取等
+// 媒体内容端点也需要登录会话；开放模式下浏览器前端自动登录携带 Cookie，
+// 未登录（无 vh_session Cookie）的裸请求一律 401，杜绝未授权读取与下载。
+func readAuth(r *http.Request) bool {
 	return managerSessionOK(r)
 }
 
@@ -1361,7 +1368,12 @@ func (a *App) indexStatus(w http.ResponseWriter, r *http.Request) {
 // files serves paginated listings straight from SQLite. It never walks the
 // filesystem, so it stays fast even during a rebuild. If a library has never
 // been indexed it kicks off a background scan and returns an empty page.
+// v0.9.55: 文件列表读取需要登录会话（readAuth）。
 func (a *App) files(w http.ResponseWriter, r *http.Request) {
+	if !readAuth(r) {
+		errJSON(w, 401, "login required")
+		return
+	}
 	id := r.URL.Query().Get("id")
 	l, ok := a.find(id)
 	if !ok || !validID(id) {
@@ -1455,6 +1467,10 @@ func (a *App) files(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) serve(w http.ResponseWriter, r *http.Request) {
+	if !readAuth(r) {
+		errJSON(w, 401, "login required")
+		return
+	}
 	q := r.URL.Query()
 	l, ok := a.find(q.Get("id"))
 	if !ok {
@@ -1477,6 +1493,10 @@ func (a *App) serve(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) serveLegacy(w http.ResponseWriter, r *http.Request) {
+	if !readAuth(r) {
+		errJSON(w, 401, "login required")
+		return
+	}
 	const prefix = "/api/media/file/"
 	rest := strings.TrimPrefix(r.URL.Path, prefix)
 	slash := strings.IndexByte(rest, '/')
@@ -1550,6 +1570,10 @@ func iconvTo(s, enc string) (string, bool) {
 }
 
 func (a *App) archive(w http.ResponseWriter, r *http.Request) {
+	if !readAuth(r) {
+		errJSON(w, 401, "login required")
+		return
+	}
 	l, ok := a.find(r.URL.Query().Get("id"))
 	if !ok {
 		errJSON(w, 404, "library not found")
@@ -1560,7 +1584,7 @@ func (a *App) archive(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, 404, "file not found")
 		return
 	}
-	/* v0.9.54：归档目录解析结果按 (路径,size,mtime) 缓存（LRU），
+	/* v0.9.55：归档目录解析结果按 (路径,size,mtime) 缓存（LRU），
 	   漫画逐页请求不再反复 OpenReader + 全量 iconv 解码文件名。 */
 	a.zipCacheMu.Lock()
 	if a.zipCache == nil {
@@ -1954,6 +1978,10 @@ func probe(w http.ResponseWriter, r *http.Request, a *App) {
 	writeJSON(w, 200, map[string]any{"audio_codec": ac, "video_codec": vc, "width": width, "height": height, "format_name": x.Format.FormatName, "container": strings.TrimPrefix(ext, "."), "bit_rate": x.Format.BitRate, "duration": x.Format.Duration, "video_metadata": true, "container_likely_supported": container, "audio_likely_supported": audio, "compat_recommended": !container || !audio})
 }
 func streams(w http.ResponseWriter, r *http.Request, a *App) {
+	if !readAuth(r) {
+		errJSON(w, 401, "login required")
+		return
+	}
 	l, ok := a.find(r.URL.Query().Get("id"))
 	if !ok {
 		errJSON(w, 404, "invalid media path")

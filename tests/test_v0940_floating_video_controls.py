@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""v0.9.54 契约测试（承接 v0.9.40 悬浮控制栏契约并升级）
+"""v0.9.55 契约测试（承接 v0.9.40 悬浮控制栏契约并升级）
 
 覆盖需求：
 1. 点击视频直接播放：初次切换源即自动 play；播放计划请求带 20s 超时，不再卡住。
@@ -154,15 +154,15 @@ for key in ("vpCollapse", "vpExpand", "vpPreparing", "vpFullscreen", "vpPrev", "
             "vpRewind", "vpForward", "vpPlayPause", "vpClose", "vpMore", "vpInfo",
             "vpRepeat", "vpShuffle", "vpSettings", "vpQuality", "vpPlaylist", "vpVolume", "vpProgress"):
     check(STATE.count(f"{key}:") >= 3, f"播放器文案 {key} 必须三语齐备")
-check(HTML.count("v0.9.54") >= 2, "关于与侧栏版本必须是 v0.9.54")
-check('VAULTHUB_ASSET_VERSION = "0.9.54"' in HTML, "资源版本必须是 0.9.54")
-check('VAULTHUB_SCRIPT_VERSION = "0.9.54"' in STATE, "脚本版本必须是 0.9.54")
-check("ghcr.io/q807738511/vaulthub:latest" in COMPOSE, "v0.9.54 起 Compose 跟随 latest")
-check((ROOT / ".github/RELEASE_NOTES_0.9.54.md").exists(), "缺少 v0.9.54 release notes")
+check(HTML.count("v0.9.55") >= 2, "关于与侧栏版本必须是 v0.9.55")
+check('VAULTHUB_ASSET_VERSION = "0.9.55"' in HTML, "资源版本必须是 0.9.55")
+check('VAULTHUB_SCRIPT_VERSION = "0.9.55"' in STATE, "脚本版本必须是 0.9.55")
+check("ghcr.io/q807738511/vaulthub:latest" in COMPOSE, "v0.9.55 起 Compose 跟随 latest")
+check((ROOT / ".github/RELEASE_NOTES_0.9.55.md").exists(), "缺少 v0.9.55 release notes")
 
 if failures:
-    print(f"FAIL: {len(failures)} 项 v0.9.54 契约未满足")
+    print(f"FAIL: {len(failures)} 项 v0.9.55 契约未满足")
     for item in failures:
         print("  -", item)
     sys.exit(1)
-print("PASS: v0.9.54 点击即播、计划超时、引擎隐藏、>256MB 不软解、静音删除、剧集播放列表门控与自动连播、最小化小窗、标题移入左上角、异常兜底")
+print("PASS: v0.9.55 点击即播、计划超时、引擎隐藏、>256MB 不软解、静音删除、剧集播放列表门控与自动连播、最小化小窗、标题移入左上角、异常兜底")

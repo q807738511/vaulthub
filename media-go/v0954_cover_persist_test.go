@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-/* v0.9.54：封面持久化端点单测（真实 httptest 下载 + 落盘 + 读回）。 */
+/* v0.9.55：封面持久化端点单测（真实 httptest 下载 + 落盘 + 读回）。 */
 
 func TestV0954SniffImageExt(t *testing.T) {
 	cases := map[string]string{

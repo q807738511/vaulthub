@@ -32,7 +32,7 @@ type manager struct {
 	sessions           map[string]time.Time
 	failures           map[string]loginFailure
 	username           string
-	open               bool          // v0.9.54 开放模式（无密码）：true 时不校验登录
+	open               bool          // v0.9.55 开放模式（无密码）：true 时不校验登录
 	salt, hash         string        // 凭据哈希（sha256(salt+password)），auth.json 持久化
 	authFile           string        // /data/auth.json：账户与鉴权模式的持久化文件
 	caddyConfig        []byte
@@ -41,11 +41,12 @@ type manager struct {
 
 const sessionIdleTimeout = 30 * time.Minute
 
-/* ---------- v0.9.54 鉴权模式与账户持久化 ---------- */
+/* ---------- v0.9.55 鉴权模式与账户持久化 ---------- */
 
 // storedAuth 是 /data/auth.json 的磁盘形态。模式说明：
 //   - mode=password（默认）：必须登录；username/salt/hash 用于校验。
-//   - mode=open：开放模式（无密码），任何人都能进入；此时不存 hash。
+//   - mode=open：开放模式（免登录进入）；v0.9.55 起**保留** salt/hash 凭据，
+//     以便从开放模式切回密码模式/修改密码时仍能验证原密码。
 // 持久化文件优先于环境变量（ADMIN_USERNAME/ADMIN_PASSWORD）；文件不存在时
 // 按环境变量推导 —— ADMIN_PASSWORD 为空则直接进入开放模式。
 type storedAuth struct {
@@ -103,12 +104,14 @@ func (m *manager) loadAuthFile(file string) bool {
 	}
 	m.authFile = file
 	m.username = u
+	// v0.9.55：开放模式也保留 salt/hash（切回密码模式/改密时验证原密码用）。
 	m.salt, m.hash = s.Salt, s.Hash
 	m.open = s.Mode == "open"
 	return true
 }
 
-// saveAuthFile 原子写 /data/auth.json（0600）。mode=open 时不落 hash。
+// saveAuthFile 原子写 /data/auth.json（0600）。开放模式同样落 salt/hash 凭据，
+// 保证切回密码模式时必须先通过原密码验证。
 func (m *manager) saveAuthFile() error {
 	if m.authFile == "" {
 		return nil
@@ -121,8 +124,8 @@ func (m *manager) saveAuthFile() error {
 		s.Mode = "open"
 	} else {
 		s.Mode = "password"
-		s.Salt, s.Hash = m.salt, m.hash
 	}
+	s.Salt, s.Hash = m.salt, m.hash
 	b, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return err
@@ -145,9 +148,11 @@ func (m *manager) saveAuthFile() error {
 	return os.Rename(tmpName, m.authFile)
 }
 
-// passwordOK 常数时间校验明文密码。开放模式没有密码，恒 false（不应被调用）。
+// passwordOK 常数时间校验明文密码。v0.9.55：开放模式若保留了 hash（曾设置过密码）
+// 同样参与校验 —— 从开放模式切回密码模式/修改密码必须验证原密码；从未设置过
+// 密码的纯开放模式 hash 为空，恒 false（此时无凭据可校验，允许直接设置新密码）。
 func (m *manager) passwordOK(pw string) bool {
-	if m.open || m.hash == "" {
+	if m.hash == "" {
 		return false
 	}
 	want := sha256Hex(m.salt + "\x00" + pw)
@@ -177,7 +182,7 @@ func (m *manager) logged(r *http.Request) bool {
 	return ok
 }
 func (m *manager) require(w http.ResponseWriter, r *http.Request) bool {
-	// v0.9.54 开放模式：无密码屏障，所有管理端点直接放行。
+	// v0.9.55 开放模式：无密码屏障，所有管理端点直接放行。
 	if m.open {
 		return true
 	}
@@ -300,18 +305,21 @@ func (m *manager) authMode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// 公共端点：登录遮罩/启动探测需要知道当前鉴权模式（开放模式直接自动登录）。
+	// v0.9.55：同时暴露 has_password —— 开放模式曾设置过密码时，账户变更仍需验证。
 	m.mu.RLock()
-	open, user := m.open, m.username
+	open, user, hashed := m.open, m.username, m.hash != ""
 	m.mu.RUnlock()
 	mode := "password"
 	if open {
 		mode = "open"
 	}
-	m.reply(w, 200, map[string]any{"ok": true, "mode": mode, "username": user})
+	m.reply(w, 200, map[string]any{"ok": true, "mode": mode, "username": user, "has_password": hashed})
 }
 
-// account 修改登录用户名 / 登录密码 / 鉴权模式（v0.9.54）。需要有效会话；
-// 从密码模式切到开放模式必须校验当前密码（用户须先以密码登录才改得出开放模式）。
+// account 修改登录用户名 / 登录密码 / 鉴权模式（v0.9.55+）。需要有效会话。
+// v0.9.55 安全修正：只要系统存在密码凭据（hash 非空，无论当前是密码模式还是
+// 开放模式），任何账户变更（改用户名/改密码/切换模式）都必须验证原密码；
+// 从未设置过密码的纯开放模式（hash 为空）才允许直接设置新密码。
 func (m *manager) account(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		m.reply(w, 405, map[string]any{"ok": false})
@@ -356,18 +364,17 @@ func (m *manager) account(w http.ResponseWriter, r *http.Request) {
 	if x.Password != "" {
 		wantOpen = false // 设置了新密码 = 密码模式
 	}
-	// 凭据校验：
-	//   - 当前密码模式：任何变更（含切换开放）都要当前密码；
-	//   - 当前开放模式：无当前密码可言（跳过），但切回密码模式必须给新密码。
-	if !curOpen && !m.passwordOK(x.OldPassword) {
+	// v0.9.55 凭据校验：存在密码凭据时（曾设置过密码），任何变更必须验证原密码。
+	// 纯开放模式（从未设置密码，hash 为空）首次设置密码不需要旧密码。
+	if m.hash != "" && !m.passwordOK(x.OldPassword) {
 		m.reply(w, 403, map[string]any{"ok": false, "error": "当前密码不正确"})
 		return
 	}
 	if wantOpen {
-		// 开放模式（无密码）：不落 hash。
+		// 开放模式（免登录进入）：v0.9.55 保留 salt/hash 凭据，
+		// 切回密码模式/修改密码时仍需原密码验证，防止开放模式成为无验证改密的通道。
 		m.open = true
 		m.username = newUser
-		m.salt, m.hash = "", ""
 		if err := m.saveAuthFile(); err != nil {
 			m.reply(w, 500, map[string]any{"ok": false, "error": "持久化失败：" + err.Error()})
 			return
@@ -376,8 +383,8 @@ func (m *manager) account(w http.ResponseWriter, r *http.Request) {
 		m.reply(w, 200, map[string]any{"ok": true, "mode": "open", "username": m.username, "message": "已切换为开放模式（无密码），任何人无需登录即可进入"})
 		return
 	}
-	// 密码模式：开放模式切换回来必须提供新密码；密码模式只改名时可留空。
-	if curOpen && x.Password == "" {
+	// 密码模式：开放模式切换回来必须设置新密码（纯开放模式无凭据可沿用）。
+	if curOpen && m.hash == "" && x.Password == "" {
 		m.reply(w, 400, map[string]any{"ok": false, "error": "请设置新登录密码"})
 		return
 	}
@@ -432,7 +439,7 @@ func (m *manager) sessionCheck(w http.ResponseWriter, r *http.Request) {
 		m.reply(w, 403, map[string]any{"ok": false, "error": "loopback only"})
 		return
 	}
-	// v0.9.54 开放模式：媒体写操作等依赖本回环会话校验的调用全部放行。
+	// v0.9.55 开放模式：媒体写操作等依赖本回环会话校验的调用全部放行。
 	if m.open {
 		m.reply(w, 200, map[string]any{"ok": true, "mode": "open", "idle_timeout_seconds": int(sessionIdleTimeout.Seconds())})
 		return
@@ -771,7 +778,7 @@ func main() {
 		log.Fatal(err)
 	}
 	m := &manager{sessions: map[string]time.Time{}, failures: map[string]loginFailure{}, caddyConfig: b}
-	// v0.9.54：鉴权持久化文件优先；文件缺失时按环境变量推导
+	// v0.9.55：鉴权持久化文件优先；文件缺失时按环境变量推导
 	// （ADMIN_PASSWORD 为空 → 开放模式）。首次通过系统设置保存账户后才生成 auth.json。
 	authFile := os.Getenv("MANAGER_AUTH_FILE")
 	if authFile == "" {
@@ -784,7 +791,7 @@ func main() {
 		m.salt, m.hash = s.Salt, s.Hash
 		m.open = s.Mode == "open"
 		if m.open {
-			log.Printf("v0.9.54: no login password configured -> running in OPEN mode (no password). " +
+			log.Printf("v0.9.55: no login password configured -> running in OPEN mode (no password). " +
 				"Log in via another instance to change it in 系统设置 → 账户与登录, or set ADMIN_PASSWORD.")
 		}
 	}

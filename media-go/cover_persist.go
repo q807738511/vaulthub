@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-/* v0.9.54：封面刮削持久化 —— 把刮削到的封面以「媒体文件同名 sidecar」写入媒体库
+/* v0.9.55：封面刮削持久化 —— 把刮削到的封面以「媒体文件同名 sidecar」写入媒体库
    所在目录（如 One Piece v01.cbz → One Piece v01.cover.jpg），展示端始终读本地文件，
    不再依赖第三方图床热链，换浏览器/清缓存后封面依然在。
 
@@ -134,7 +134,7 @@ func (a *App) coverSave(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, 400, "invalid cover url")
 		return
 	}
-	req.Header.Set("User-Agent", "VaultHub/0.9.54 cover-scraper (https://github.com/q807738511/vaulthub)")
+	req.Header.Set("User-Agent", "VaultHub/0.9.55 cover-scraper (https://github.com/q807738511/vaulthub)")
 	res, err := client.Do(req)
 	if err != nil {
 		errJSON(w, 502, "cover download failed: "+err.Error())

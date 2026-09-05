@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// v0.9.54：鉴权模式与账户持久化单测。
+// v0.9.55：鉴权模式与账户持久化单测。
 //  1. 环境变量推导：ADMIN_PASSWORD 为空 → open；非空 → password（hash 可验）。
 //  2. auth.json 读写往返 + 文件优先于环境变量。
 //  3. 密码校验（常数时间比较路径）与错误密码拒绝。
@@ -78,19 +78,31 @@ func TestV0954AuthFileRoundTrip(t *testing.T) {
 	if !m2.passwordOK("hello123") {
 		t.Fatal("round-tripped credentials must verify")
 	}
-	// open mode round trip: hash dropped
+	// open mode round trip: v0.9.55 保留 hash（切回密码模式/改密时验证原密码）
 	m3 := &manager{authFile: file}
 	m3.username = "newbie"
 	m3.open = true
+	m3.salt = "0123456789abcdef0123456789abcdef"
+	m3.hash = sha256Hex(m3.salt + "\x00" + "hello123")
 	if err := m3.saveAuthFile(); err != nil {
 		t.Fatalf("save open: %v", err)
 	}
 	m4 := &manager{}
-	if !m4.loadAuthFile(file) || !m4.open || m4.hash != "" {
+	if !m4.loadAuthFile(file) || !m4.open || m4.hash != m3.hash {
 		t.Fatalf("open mode round trip failed: %+v", m4)
 	}
-	if m4.passwordOK("hello123") {
-		t.Fatal("open mode must not verify any password")
+	if !m4.passwordOK("hello123") {
+		t.Fatal("open mode with retained hash must verify the original password")
+	}
+	if m4.passwordOK("nope") {
+		t.Fatal("open mode retained hash must reject wrong password")
+	}
+}
+
+func TestV0955OpenModeWithoutHashCannotVerify(t *testing.T) {
+	m := &manager{open: true, username: "ADMIN", salt: "", hash: ""}
+	if m.passwordOK("anything") {
+		t.Fatal("pure open mode (never set a password) must not verify any password")
 	}
 }
 

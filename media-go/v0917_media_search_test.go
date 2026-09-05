@@ -10,9 +10,13 @@ import (
 )
 
 // filesQuery drives GET /api/media/files with an arbitrary query string and
-// decodes the JSON payload the frontend consumes.
+// decodes the JSON payload the frontend consumes. v0.9.55: files 读取端点
+// 需登录会话，读取类测试统一 stub manager 会话校验（401 专项测试自行覆盖）。
 func filesQuery(t *testing.T, a *App, query string) map[string]any {
 	t.Helper()
+	old := managerSessionOK
+	managerSessionOK = func(*http.Request) bool { return true }
+	defer func() { managerSessionOK = old }()
 	rr := httptest.NewRecorder()
 	a.files(rr, httptest.NewRequest(http.MethodGet, "/api/media/files?"+query, nil))
 	if rr.Code != http.StatusOK {

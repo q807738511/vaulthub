@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""v0.9.54 契约测试 —— 四项需求的可静态检查断言：
+"""v0.9.55 契约测试 —— 四项需求的可静态检查断言：
    1) 音乐播放器歌词页（展开双页 + 歌词磨砂覆盖海报 + 时间同步滚动）
    2) 音乐/漫画封面刮削写入媒体库文件持久化（/api/media/cover）
    3) 鉴权模式：开放模式（无密码）+ 系统设置可改用户名/密码
@@ -92,16 +92,16 @@ check("详情页复用语境关闭按钮", "movieDetailCloseButton()" in MEDIA a
 check("关闭详情复位语境", "seriesEpisodeReturn=null" in MEDIA)
 
 # ---------------------------------------------------------------- 版本与发布
-check("release notes", (ROOT / ".github" / "RELEASE_NOTES_0.9.54.md").exists(), "缺少 v0.9.54 release notes")
-check("版本串", HTML.count("v0.9.54") >= 2 and 'VAULTHUB_SCRIPT_VERSION = "0.9.54"' in STATE)
-check("资产缓存版本", 'v=0.9.54' in HTML)
+check("release notes", (ROOT / ".github" / "RELEASE_NOTES_0.9.55.md").exists(), "缺少 v0.9.55 release notes")
+check("版本串", HTML.count("v0.9.55") >= 2 and 'VAULTHUB_SCRIPT_VERSION = "0.9.55"' in STATE)
+check("资产缓存版本", 'v=0.9.55' in HTML)
 check("compose 跟随 latest", (ROOT / "docker-compose.yml").read_text(encoding="utf-8").find("ghcr.io/q807738511/vaulthub:latest") >= 0)
 check("无旧版本残留", "0.9.53" not in HTML and "0.9.53" not in STATE and "0.9.53" not in MEDIA
       and "0.9.53" not in COVERGO)
 
 if failures:
-    print(f"FAIL: {len(failures)} 项 v0.9.54 契约未满足")
+    print(f"FAIL: {len(failures)} 项 v0.9.55 契约未满足")
     for f in failures:
         print("  - " + f)
     sys.exit(1)
-print("PASS: v0.9.54 lyrics pages, cover persistence, auth mode & movie return contracts")
+print("PASS: v0.9.55 lyrics pages, cover persistence, auth mode & movie return contracts")
