@@ -175,7 +175,7 @@ function renderAudioFavorites(lib) {
   return rows.length ? `<div class="media-file-list">${rows.map(({lib: rowLib, path}) => renderAudioRow(rowLib, { path })).join("")}</div>` : '<div class="empty-tip">还没有喜欢的歌曲，请在歌曲列表中点击 ♡ 收藏。</div>';
 }
 
-/* ================= 手动歌单（v0.9.53） =================
+/* ================= 手动歌单（v0.9.54） =================
    歌曲行的 ♫ 按钮弹出歌单勾选器：可把当前歌曲加入多个本地歌单或新建歌单；
    「歌单」页签展示全部歌单，支持播放整单/查看/删除。循环模式只保留在
    底部播放器（cycleAudioLoop），列表页不再放播放模式按钮。 */
@@ -467,11 +467,32 @@ function renderSeriesLibraryContent(host, lib, files) {
   host.innerHTML = `<section class="content-collection">${mediaLibraryHeading(lib, `${shows.length} 部剧 · ${files.length} 集`)}${body}</section>`;
 }
 function renderSeriesShowCard(lib, show) { const art=show.poster?`<img src="${esc(show.poster)}" alt="${esc(show.title)}" loading="lazy">`:`<span>${esc(show.title)}</span>`; const seasons=show.seasonList?.length||0, episodes=show.files?.length||0; return `<article class="media-poster-card series-show-card" data-series-show="${esc(show.key)}" onclick="openSeriesDetails(${jsAttrArg(lib.id)},${jsAttrArg(show.key)})"><div class="media-poster-art" style="${show.poster?"":`background:${coverGradient(show.title)}`}">${art}</div><div class="media-poster-info"><strong>${esc(show.title)}</strong><small>${esc([show.year, `${seasons} 季`, `${episodes} 集`, show.provider].filter(Boolean).join(" · "))}</small></div></article>`; }
-function openSeriesDetails(libId, showKey) { enterMovieDetailSidebarMode(); const lib=findMediaLibrary(libId), viewer=document.getElementById("local-media-viewer-movie"); if(!lib||!viewer)return; const show=readSeriesShow(libId,showKey); if(!show)return; const hero={title:show.title,overview:show.overview||"已按 Plex / Emby 风格根据根目录、Season 01 和 S01E01 规则聚合到同一剧集。",poster:show.poster,logo:show.logo,fanart:show.fanart,backdrop:show.backdrop,year:show.year,provider:show.provider,watched:show.watched,media_type:"series"}; /* v0.9.51：进入剧集详情即把该剧的分集按季/集顺序设为播放队列，
+/* v0.9.54：影视详情右上角关闭按钮按语境返回 ——
+   剧集详情/电影详情下显示「返回媒体库」；单集详情查看时显示「返回详情」（回到剧集详情页）。 */
+let activeSeriesDetail = null;  // 最近一次打开的剧集详情 {libId, showKey}
+let seriesEpisodeReturn = null; // 单集详情返回目标（返回详情 = 回到该剧集详情页）
+function movieDetailCloseButton() {
+  const ep = seriesEpisodeReturn;
+  return ep
+    ? `<button class="media-reader-close" title="返回剧集详情" onclick="closeEpisodeDetail()">✕ 返回详情</button>`
+    : `<button class="media-reader-close" title="关闭并返回媒体库" onclick="closeMovieDetails()">✕ 返回媒体库</button>`;
+}
+function openEpisodeDetails(libId, path) {
+  const s = activeSeriesDetail;
+  seriesEpisodeReturn = s && s.libId === libId ? { libId: s.libId, showKey: s.showKey } : null;
+  openMovieDetails(libId, path);
+}
+function closeEpisodeDetail() {
+  const target = seriesEpisodeReturn;
+  seriesEpisodeReturn = null;
+  closeMovieDetails();
+  if (target) openSeriesDetails(target.libId, target.showKey);
+}
+function openSeriesDetails(libId, showKey) { enterMovieDetailSidebarMode(); const lib=findMediaLibrary(libId), viewer=document.getElementById("local-media-viewer-movie"); if(!lib||!viewer)return; const show=readSeriesShow(libId,showKey); if(!show)return; activeSeriesDetail={libId, showKey}; seriesEpisodeReturn=null; const hero={title:show.title,overview:show.overview||"已按 Plex / Emby 风格根据根目录、Season 01 和 S01E01 规则聚合到同一剧集。",poster:show.poster,logo:show.logo,fanart:show.fanart,backdrop:show.backdrop,year:show.year,provider:show.provider,watched:show.watched,media_type:"series"}; /* v0.9.51：进入剧集详情即把该剧的分集按季/集顺序设为播放队列，
      这样播放器的「上一个 / 下一个 / 播放列表」走的是同一部剧而不是整库。 */
   setVideoPlaylist(libId, (show.seasonList||[]).flatMap(season=>(season.episodes||[]).map(ep=>({path:ep.path}))));
-  const seasons=(show.seasonList||[]).map(season=>`<section class="series-season-block"><h3>Season ${String(season.season).padStart(2,"0")}</h3><div class="media-file-list">${season.episodes.map(ep=>renderSeriesEpisodeRow(lib,ep)).join("")}</div></section>`).join(""); viewer.innerHTML=`<div class="media-reader-overlay movie-detail-page series-detail-page"><div class="movie-detail-scroll"><button class="media-reader-close" onclick="closeMovieDetails()">✕</button>${renderMovieHero(lib,show.files?.[0]?.path||"",hero)}<section><h3>剧集列表</h3><div class="hint">按标准命名规则聚合：根目录剧名 / Season 01 / 剧名 S01E01 标题；刮削先锁定主剧集，再将本地多季多集挂载到同一条目。</div></section>${seasons}</div></div>`; scrollViewerIntoView(viewer); }
-function renderSeriesEpisodeRow(lib, ep) { const path=String(ep.path), meta=ep.meta||movieMetadataFor(path), parsed=ep.parsed||parseSeriesEpisode(path); return `<div class="media-file-row series-episode-row"><div class="media-file-name" title="${esc(path)}"><b>${esc(parsed.label)} · ${esc(meta.title||parsed.title)}</b><small>${esc([meta.year,meta.provider].filter(Boolean).join(" · "))}</small></div><span class="media-file-meta">${esc(fileExt(path).toUpperCase())} · ${formatFileSize(ep.size)}</span><div class="media-actions"><button class="btn" onclick="openLocalMedia('movie',${jsAttrArg(lib.id)},${jsAttrArg(path)})">▶ 播放</button><button class="btn" onclick="openMovieDetails(${jsAttrArg(lib.id)},${jsAttrArg(path)})">详情</button></div></div>`; }
+  const seasons=(show.seasonList||[]).map(season=>`<section class="series-season-block"><h3>Season ${String(season.season).padStart(2,"0")}</h3><div class="media-file-list">${season.episodes.map(ep=>renderSeriesEpisodeRow(lib,ep)).join("")}</div></section>`).join(""); viewer.innerHTML=`<div class="media-reader-overlay movie-detail-page series-detail-page"><div class="movie-detail-scroll">${movieDetailCloseButton()}${renderMovieHero(lib,show.files?.[0]?.path||"",hero)}<section><h3>剧集列表</h3><div class="hint">按标准命名规则聚合：根目录剧名 / Season 01 / 剧名 S01E01 标题；刮削先锁定主剧集，再将本地多季多集挂载到同一条目。</div></section>${seasons}</div></div>`; scrollViewerIntoView(viewer); }
+function renderSeriesEpisodeRow(lib, ep) { const path=String(ep.path), meta=ep.meta||movieMetadataFor(path), parsed=ep.parsed||parseSeriesEpisode(path); return `<div class="media-file-row series-episode-row"><div class="media-file-name" title="${esc(path)}"><b>${esc(parsed.label)} · ${esc(meta.title||parsed.title)}</b><small>${esc([meta.year,meta.provider].filter(Boolean).join(" · "))}</small></div><span class="media-file-meta">${esc(fileExt(path).toUpperCase())} · ${formatFileSize(ep.size)}</span><div class="media-actions"><button class="btn" onclick="openLocalMedia('movie',${jsAttrArg(lib.id)},${jsAttrArg(path)})">▶ 播放</button><button class="btn" onclick="openEpisodeDetails(${jsAttrArg(lib.id)},${jsAttrArg(path)})">详情</button></div></div>`; }
 function renderMovieLibrary(lib, files) { const host = document.createElement("div"); renderMovieLibraryContent(host, lib, files); return host.innerHTML; }
 function renderMovieRow(lib, file) { const path=String(file.path), meta=movieMetadataFor(path); return `<div class="media-file-row"><div class="media-file-name" title="${esc(path)}"><b>${esc(meta.title)}</b><small>${esc([meta.year, meta.provider].filter(Boolean).join(" · "))}</small></div><span class="media-file-meta">${esc(fileExt(path).toUpperCase())} · ${formatFileSize(file.size)}</span><div class="media-actions"><button class="btn" data-media-group="movie" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openLocalMediaButton(this)">▶ 播放</button></div></div>`; }
 function movieStateKey(kind, libId, path) { return `vaulthub_movie_${kind}_${libId}_${path}`; }
@@ -486,14 +507,14 @@ async function saveMediaMetadataEditor(){const libId=document.getElementById("me
 function rateMovie(libId,path){const raw=prompt("请为该视频评分（0-10）",localStorage.getItem(movieStateKey("rating",libId,path))||"");if(raw===null)return;const n=Number(raw);if(!Number.isFinite(n)||n<0||n>10){toast("⚠️ 评分应为 0-10");return;}localStorage.setItem(movieStateKey("rating",libId,path),String(n));document.querySelector("[data-user-rating]")?.replaceChildren(document.createTextNode(`我的评分 ${n.toFixed(1)}`));}
 async function shareMovie(title){try{if(navigator.share)await navigator.share({title,text:title,url:location.href});else{await navigator.clipboard.writeText(location.href);toast("✅ 页面链接已复制");}}catch(e){}}
 async function openMovieDetails(libId,path){enterMovieDetailSidebarMode();const lib=findMediaLibrary(libId),viewer=document.getElementById("local-media-viewer-movie");if(!lib||!viewer)return;let meta=movieMetadataFor(path);viewer.innerHTML=renderMovieDetails(lib,path,meta);try{const res=await fetch(`/api/media/metadata?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}`,{cache:"no-store"});if(res.ok){const local=await res.json();if(local.nfo||local.poster||local.logo||local.fanart||local.backdrop||local.tags?.length||local.watched||local.subtitles?.length){meta={...meta,...local,title:local.title||meta.title,year:local.year||meta.year};const all=readMovieMetadata();all[path]=meta;writeMovieMetadata(all);viewer.innerHTML=renderMovieDetails(lib,path,meta);}}}catch(e){}if(meta.tmdb_id&&meta.provider!=="本地 NFO"){try{const res=await fetch(`/api/media/tmdb?id=${encodeURIComponent(meta.tmdb_id)}&type=${encodeURIComponent(meta.media_type||lib.type)}`,{cache:"force-cache"});if(res.ok){const detail=await res.json();meta={...meta,overview:detail.overview||meta.overview,rating:Number(detail.vote_average||meta.rating||0),runtime:detail.runtime||detail.episode_run_time?.[0],genres:(detail.genres||[]).map(x=>x.name),cast:(detail.credits?.cast||[]).slice(0,12),recommendations:(detail.recommendations?.results||[]).slice(0,8)};viewer.innerHTML=renderMovieDetails(lib,path,meta);}}catch(e){}}scrollViewerIntoView(viewer);}
-function closeMovieDetails(){const viewer=document.getElementById("local-media-viewer-movie");if(viewer)viewer.innerHTML="";leaveMovieDetailSidebarMode();}
+function closeMovieDetails(){seriesEpisodeReturn=null;const viewer=document.getElementById("local-media-viewer-movie");if(viewer)viewer.innerHTML="";leaveMovieDetailSidebarMode();}
 /* esc() 只做 HTML 实体转义，浏览器解析 style 属性时会把 &#39; 还原成单引号，
    足以闭合 url('…') 并注入任意 CSS 声明。海报地址可能来自本地 NFO、TMDB 或豆瓣，
    都属于外部内容，因此进 CSS 前必须先剔除引号、反斜杠、括号与换行。 */
 function cssUrlValue(url) { return String(url || "").replace(/[\u0000-\u001f"'()\\]/g, "").trim(); }
 function movieHeroArt(meta) { if (meta?.fanart) return { kind:"fanart-art", url:meta.fanart }; if (meta?.backdrop) return { kind:"backdrop-art", url:meta.backdrop }; if (meta?.poster) return { kind:"poster-art", url:meta.poster }; return { kind:"no-art", url:"" }; }
 function renderMovieHero(lib,path,meta) { const heroArt = movieHeroArt(meta); const safeArt = cssUrlValue(heroArt.url); const style = safeArt ? `--movie-hero-art:url('${esc(safeArt)}')` : ""; const logo=meta.logo?`<img class="movie-detail-logo" src="${esc(meta.logo)}" alt="${esc(meta.title)} Logo">`:`<h1>${esc(meta.title)}</h1>`; return `<header class="movie-detail-hero ${heroArt.kind}" style="${style}">${logo}<p>${esc(meta.overview||"暂无电影介绍；可在系统设置中配置 TMDB API 进行刮削。")}</p><div class="movie-detail-actions"><button class="btn btn-primary" onclick="openLocalMedia('movie',${jsAttrArg(lib.id)},${jsAttrArg(path)})">▶ 播放</button><button class="btn" onclick="shareMovie(${jsAttrArg(meta.title)})">↗ 分享</button><button class="btn" onclick="toggleMovieFavorite(${jsAttrArg(lib.id)},${jsAttrArg(path)},this)">${movieFlag("favorite",lib.id,path)?"♥ 已收藏":"♡ 收藏"}</button><button class="btn" onclick="rateMovie(${jsAttrArg(lib.id)},${jsAttrArg(path)})">★ <span data-user-rating>评分</span></button><button class="btn" onclick="toggleMovieWatched(${jsAttrArg(lib.id)},${jsAttrArg(path)},this)">${meta.watched||movieFlag("watched",lib.id,path)?"✓ 已观看":"○ 未观看"}</button><button class="btn" onclick="openMediaMetadataEditor(${jsAttrArg(lib.id)},${jsAttrArg(path)})">✎ 编辑</button></div></header>`; }
-function renderMovieDetails(lib,path,meta){const cast=(meta.cast||[]).map(x=>`<article><b>${esc(x.name||"")}</b><small>${esc(x.character||"")}</small></article>`).join("")||'<div class="empty-tip">暂无演职人员信息</div>';const rec=(meta.recommendations||[]).map(x=>`<article><b>${esc(x.title||x.name||"")}</b><small>${esc(String(x.release_date||x.first_air_date||"").slice(0,4))}</small></article>`).join("")||'<div class="empty-tip">暂无视频推荐</div>';return `<div class="media-reader-overlay movie-detail-page"><div class="movie-detail-scroll"><button class="media-reader-close" onclick="closeMovieDetails()">✕</button>${renderMovieHero(lib,path,meta)}<section><h3>演职人员</h3><div class="movie-detail-strip">${cast}</div></section><section><h3>视频推荐</h3><div class="movie-detail-strip">${rec}</div></section><section><h3>视频元数据</h3><dl class="movie-meta-list"><dt>文件</dt><dd>${esc(path)}</dd><dt>年份</dt><dd>${esc(meta.year||"--")}</dd><dt>类型</dt><dd>${esc((meta.genres||[]).join(" / ")||"--")}</dd><dt>时长</dt><dd>${meta.runtime?esc(meta.runtime+" 分钟"):"--"}</dd><dt>TMDB 评分</dt><dd>${meta.rating?esc(meta.rating.toFixed(1)):"--"}</dd><dt>来源</dt><dd>${esc(meta.provider||"文件名")}</dd></dl></section></div></div>`;}
+function renderMovieDetails(lib,path,meta){const cast=(meta.cast||[]).map(x=>`<article><b>${esc(x.name||"")}</b><small>${esc(x.character||"")}</small></article>`).join("")||'<div class="empty-tip">暂无演职人员信息</div>';const rec=(meta.recommendations||[]).map(x=>`<article><b>${esc(x.title||x.name||"")}</b><small>${esc(String(x.release_date||x.first_air_date||"").slice(0,4))}</small></article>`).join("")||'<div class="empty-tip">暂无视频推荐</div>';return `<div class="media-reader-overlay movie-detail-page"><div class="movie-detail-scroll">${movieDetailCloseButton()}${renderMovieHero(lib,path,meta)}<section><h3>演职人员</h3><div class="movie-detail-strip">${cast}</div></section><section><h3>视频推荐</h3><div class="movie-detail-strip">${rec}</div></section><section><h3>视频元数据</h3><dl class="movie-meta-list"><dt>文件</dt><dd>${esc(path)}</dd><dt>年份</dt><dd>${esc(meta.year||"--")}</dd><dt>类型</dt><dd>${esc((meta.genres||[]).join(" / ")||"--")}</dd><dt>时长</dt><dd>${meta.runtime?esc(meta.runtime+" 分钟"):"--"}</dd><dt>TMDB 评分</dt><dd>${meta.rating?esc(meta.rating.toFixed(1)):"--"}</dd><dt>来源</dt><dd>${esc(meta.provider||"文件名")}</dd></dl></section></div></div>`;}
 function renderMoviePoster(lib, file) { const path=String(file.path), meta=movieMetadataFor(path), watched=!!meta.watched||movieFlag("watched",lib.id,path), art=meta.poster ? `<img src="${esc(meta.poster)}" alt="${esc(meta.title)}" loading="lazy">` : `<span>${esc(meta.title)}</span>`; return `<article class="media-poster-card ${watched?"is-read":""}" data-media-group="movie" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openMovieDetails(${jsAttrArg(lib.id)},${jsAttrArg(path)})"><div class="media-poster-art" style="${meta.poster ? "" : `background:${coverGradient(meta.title)}`}" >${art}<button class="movie-poster-settings" data-movie-settings title="观看状态" onclick="event.stopPropagation();toggleMovieWatched(${jsAttrArg(lib.id)},${jsAttrArg(path)},this)">${watched?"✓ 已观看":"○ 未观看"}</button></div><div class="media-poster-info"><strong>${esc(meta.title)}</strong><small>${esc([meta.year,meta.provider].filter(Boolean).join(" · ") || fileExt(path).toUpperCase())}</small></div></article>`; }
 function scrapeSeriesMetadata(host, lib, files) { return scrapeMovieMetadata(host, lib, files); }
 function toggleMediaResourceView(group) { mediaResourceView = mediaResourceView === "poster" ? "list" : "poster"; try { localStorage.setItem("vaulthub_media_resource_view",mediaResourceView); } catch(e) {} const lib=findMediaLibrary(localMediaSelection[group]); if(lib) loadLocalFiles(group,lib,group === "audio" ? audioCursor : 0); }
@@ -988,6 +1009,40 @@ function readAudioMetadata() {
 function writeAudioMetadata(data) {
   try { localStorage.setItem(audioMetadataCache, JSON.stringify(data)); } catch (e) {}
 }
+/* v0.9.54：封面写入媒体库持久化 —— 刮削/手动设置封面后自动 POST 到后端，
+   存成媒体文件同目录 sidecar（<名>.cover.jpg/png/webp/gif），展示走同源本地 URL，
+   换浏览器/清缓存后封面仍在；媒体目录只读时静默回退远端直链，不影响展示。 */
+const coverPersistAttempted = new Set(); // 会话级：每个文件每会话最多尝试一次落盘
+function coverIsLocal(url) { return String(url || "").indexOf("/api/media/cover") === 0; }
+async function persistCoverToLibrary(libId, path, coverUrl) {
+  if (!libId || !path || !coverUrl || coverIsLocal(coverUrl)) return coverUrl;
+  const key = `${libId}\n${path}`;
+  if (coverPersistAttempted.has(key)) return coverUrl;
+  coverPersistAttempted.add(key);
+  try {
+    const res = await fetch("/api/media/cover", { method: "POST", headers: sessionWriteHeaders(true), credentials: "same-origin", body: JSON.stringify({ id: libId, path: String(path), url: coverUrl }) });
+    const data = res.ok ? await res.json() : null;
+    return data && data.url ? data.url : coverUrl;
+  } catch (e) { return coverUrl; }
+}
+async function localizeAudioCover(libId, path) {
+  const meta = audioMetadataFor(path);
+  if (!meta || !meta.cover || coverIsLocal(meta.cover)) return;
+  const local = await persistCoverToLibrary(libId, path, meta.cover);
+  if (local !== meta.cover) {
+    const all = readAudioMetadata();
+    all[path] = { ...(all[path] || {}), cover: local };
+    writeAudioMetadata(all);
+    syncActiveAudioCover(path);
+  }
+}
+function syncActiveAudioCover(path) {
+  if (!activeAudio || String(activeAudio.path) !== String(path)) return;
+  const meta = audioMetadataFor(path);
+  const coverEl = document.getElementById("audioCover");
+  if (coverEl && meta.cover) { coverEl.src = meta.cover; coverEl.style.background = ""; }
+  updateAudioExpandArt(meta);
+}
 function audioBaseMetadata(path) {
   /* 先用原始文件名解析「歌手 - 歌名」，displayBookTitle 会把连字符换成空格，
      直接拿它切分会丢掉歌手信息。 */
@@ -1027,11 +1082,20 @@ function audioMatchAcceptable(fallback, item) {
   /* 标题必须对上；歌手在文件名没给出时不作要求。 */
   return titleOk && artistOk;
 }
-/* v0.9.53：每页面会话内每首歌最多自动刮一次（成功/失败都记），刷新页面即重新尝试 ——
+/* v0.9.54：每页面会话内每首歌最多自动刮一次（成功/失败都记），刷新页面即重新尝试 ——
    既避免同一会话内反复请求（旧逻辑会把失败的文件名兜底永久留在 localStorage，
    刷新后永不重刮；5 分钟时间窗又让「刚失败想立即刷新重试」的用户干等）。 */
 const audioScrapeAttemptedSession = new Set();
-async function scrapeAudioMetadata(host, lib, files) {
+/* v0.9.54：刮削串行链 —— 首页「最近入库」、音乐库视图、周期刷新会并发触发多次
+   scrapeAudioMetadata；并行整表/交错写会把刚本地化的封面冲回远端。链式串行后，
+   后发调用等前一轮完成，pending 过滤自然为空（已有 provider 不再刮）。 */
+let audioScrapeChain = Promise.resolve();
+function scrapeAudioMetadata(host, lib, files) {
+  const run = audioScrapeChain.then(() => scrapeAudioMetadataInner(host, lib, files));
+  audioScrapeChain = run.catch(() => {});
+  return run;
+}
+async function scrapeAudioMetadataInner(host, lib, files) {
   const all = readAudioMetadata();
   const pending = files.filter(file => {
     const path = String(file.path);
@@ -1041,21 +1105,19 @@ async function scrapeAudioMetadata(host, lib, files) {
     if (meta.provider) return false; // 已成功（iTunes/MusicBrainz）或手动编辑（manual）都不再自动覆盖
     return true;
   });
+  let updated = false;
   for (const file of pending) {
-    const meta = audioBaseMetadata(String(file.path));
-    all[file.path] = meta;
-  }
-  writeAudioMetadata(all);
-  if (pending.length) renderAudioLibraryContent(host, lib, files);
-  for (const file of pending) {
-    const path = String(file.path), fallback = all[path];
+    const path = String(file.path), fallback = audioBaseMetadata(path);
     const known = fallback.artist && fallback.artist !== "未知歌手";
     try {
       const response = await fetch(`/api/media/audio/metadata?title=${encodeURIComponent(fallback.title)}&artist=${encodeURIComponent(known?fallback.artist:"")}`, { cache: "force-cache" });
       const item = response.ok ? await response.json() : null;
       if (item) {
-        all[path] = {
-          ...fallback,
+        /* v0.9.54：单路径合并写，不再基于旧快照整表覆写 —— 音乐库视图与首页「最近入库」
+           可能并发触发多次刮削，整表写会把另一路刚本地化的封面冲回远端。 */
+        const cur = readAudioMetadata();
+        cur[path] = {
+          ...(cur[path] || fallback),
           title: item.title || fallback.title,
           artist: item.artist || fallback.artist,
           album: item.album || fallback.album,
@@ -1063,11 +1125,15 @@ async function scrapeAudioMetadata(host, lib, files) {
           provider: item.provider || "MusicBrainz",
           checkedAt: Date.now(),
         };
-        writeAudioMetadata(all); renderAudioLibraryContent(host, lib, files);
+        writeAudioMetadata(cur);
+        // 封面写入媒体库持久化（每路径独立合并写，落盘失败自动回退远端直链）
+        await localizeAudioCover(lib.id, path);
+        updated = true;
       }
     } catch (e) { /* Keep filename-derived metadata when scraping is unavailable. */ }
     audioScrapeAttemptedSession.add(path); // 无论成败，本会话内不再重复请求该曲
   }
+  if (updated && host && lib) renderAudioLibraryContent(host, lib, files);
 }
 function audioCoverData(meta, title) {
   return meta.cover ? `<img src="${esc(meta.cover)}" alt="${esc(title)}" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:${JSON.stringify(title)}}))">` : esc(title);
@@ -1094,7 +1160,7 @@ function openAudioTracks(libId, kind, key) {
 }
 let audioTracksBack = "albums"; // 曲目列表「← 返回」目标：albums | artists | playlists
 function renderAudioTrackList(lib, files) {
-  /* v0.9.53：曲目列表头部不再放播放模式按钮（随机/列表循环/顺序），
+  /* v0.9.54：曲目列表头部不再放播放模式按钮（随机/列表循环/顺序），
      循环模式只在播放器底部按钮中体现（cycleAudioLoop）。 */
   const back = audioTracksBack === "artists" ? "artists" : audioTracksBack === "playlists" ? "playlists" : "albums";
   return `<div class="audio-track-head"><button class="btn" onclick="audioTrackTitle='';audioArtistFilter='';audioPlaylistFilter='';setAudioView('${back}')">← 返回</button><strong>${esc(audioTrackTitle)}</strong><span class="media-file-meta">${files.length} 首</span></div>${files.length ? `<div class="media-file-list">${files.map(file => renderAudioRow(lib, file)).join("")}</div>` : '<div class="empty-tip">该列表下暂无歌曲</div>'}`;
@@ -1114,9 +1180,29 @@ function renderAudioRow(lib, file) { const path = String(file.path), meta = audi
 function refreshAudioMetadata() { try { localStorage.removeItem(audioMetadataCache); } catch (e) {} audioScrapeAttemptedSession.clear(); const lib = findMediaLibrary(localMediaSelection.audio); if (lib) loadLocalFiles("audio", lib, 0); toast("🔄 正在重新刮削音乐信息"); }
 function openAudioMetadata(path) { const meta = audioMetadataFor(path); document.getElementById("audioMetadataPath").value=path; document.getElementById("audioMetadataTitle").value=meta.title; document.getElementById("audioMetadataArtist").value=meta.artist; document.getElementById("audioMetadataAlbum").value=meta.album; document.getElementById("audioMetadataCover").value=meta.cover; document.getElementById("audioMetadataLyrics").value=meta.lyrics; openModal("audioMetadataModal"); }
 function manualAudioMetadata(path) { openAudioMetadata(path); }
-function saveManualAudioMetadata() { const path=document.getElementById("audioMetadataPath").value, all=readAudioMetadata(); all[path]={title:document.getElementById("audioMetadataTitle").value.trim()||audioBaseMetadata(path).title,artist:document.getElementById("audioMetadataArtist").value.trim()||"未知歌手",album:document.getElementById("audioMetadataAlbum").value.trim()||"未知专辑",cover:document.getElementById("audioMetadataCover").value.trim(),lyrics:document.getElementById("audioMetadataLyrics").value,provider:"manual",checkedAt:Date.now()}; writeAudioMetadata(all); closeModal("audioMetadataModal"); const lib=findMediaLibrary(localMediaSelection.audio); if(lib) loadLocalFiles("audio",lib,audioCursor); }
+function saveManualAudioMetadata() { const path=document.getElementById("audioMetadataPath").value, all=readAudioMetadata(); all[path]={title:document.getElementById("audioMetadataTitle").value.trim()||audioBaseMetadata(path).title,artist:document.getElementById("audioMetadataArtist").value.trim()||"未知歌手",album:document.getElementById("audioMetadataAlbum").value.trim()||"未知专辑",cover:document.getElementById("audioMetadataCover").value.trim(),lyrics:document.getElementById("audioMetadataLyrics").value,provider:"manual",checkedAt:Date.now()}; writeAudioMetadata(all); closeModal("audioMetadataModal"); const lib=findMediaLibrary(localMediaSelection.audio); if(lib) loadLocalFiles("audio",lib,audioCursor); if(lib) localizeAudioCover(lib.id, path); syncActiveAudioCover(path); }
 let audioLoopMode = "sequence";
 let audioMaximized = false;
+let audioExpandPage = "poster"; // 展开播放器当前页：poster | lyrics（v0.9.54）
+let lastLyricActiveIndex = -1;  // 歌词高亮切换检测（避免重复滚动）
+function setAudioExpandPage(page) {
+  if (page !== "poster" && page !== "lyrics") page = "poster";
+  audioExpandPage = page;
+  const shell = document.getElementById("audioExpand");
+  if (shell) shell.dataset.page = page;
+  const posterTab = document.getElementById("audioExpandPosterTab"), lyricsTab = document.getElementById("audioExpandLyricsTab");
+  if (posterTab) posterTab.classList.toggle("active", page === "poster");
+  if (lyricsTab) lyricsTab.classList.toggle("active", page === "lyrics");
+  if (page === "lyrics") scrollActiveLyricIntoView();
+}
+function updateAudioExpandArt(meta) {
+  const big = document.getElementById("audioBigPoster"), bg = document.getElementById("audioLyricsBg"), fb = document.getElementById("audioBigPosterFallback");
+  if (!big) return;
+  const src = meta.cover || "", title = meta.title || "";
+  if (src) { big.src = src; if (bg) bg.src = src; }
+  else { big.removeAttribute("src"); if (bg) bg.removeAttribute("src"); }
+  if (fb) { fb.textContent = title; fb.style.display = src ? "none" : "flex"; }
+}
 const AUDIO_LOOP_ORDER = ["sequence", "list", "single", "random"];
 const AUDIO_LOOP_LABEL = { sequence: "顺序", list: "列表循环", single: "单曲循环", random: "随机播放" };
 function setAudioLoop(mode) {
@@ -1134,6 +1220,14 @@ function toggleAudioMaximize() {
   const player = document.getElementById("audio-bottom-player"); if (!player) return;
   audioMaximized = !audioMaximized;
   player.classList.toggle("maximized", audioMaximized);
+  if (audioMaximized) {
+    const meta = activeAudio ? audioMetadataFor(activeAudio.path) : null;
+    if (meta) updateAudioExpandArt(meta);
+    setAudioExpandPage(audioExpandPage === "lyrics" ? "lyrics" : "poster");
+    const lib = activeAudio ? findMediaLibrary(activeAudio.libId) : null;
+    if (lib && activeAudio) localizeAudioCover(lib.id, activeAudio.path);
+    if (audioExpandPage === "lyrics") scrollActiveLyricIntoView();
+  }
   const button = document.getElementById("audioMaximizeButton");
   if (button) {
     button.innerHTML = audioIcon(audioMaximized ? "restore" : "expand");
@@ -1154,12 +1248,27 @@ function parseLyrics(lrc) {
 function renderPlayerLyrics(meta) {
   const el = document.getElementById("audioPlayerLyrics"); if (!el) return;
   const lines = parseLyrics(meta.lyrics);
-  el.innerHTML = lines.length ? lines.map((line, i) => `<span class="lyric-line" data-time="${line.time}" data-index="${i}">${esc(line.text)}</span>`).join("\n") : "";
+  if (lines.length) {
+    el.classList.remove("audio-lyric-empty");
+    el.innerHTML = lines.map((line, i) => `<span class="lyric-line" data-time="${line.time}" data-index="${i}">${esc(line.text)}</span>`).join("\n");
+  } else {
+    el.classList.add("audio-lyric-empty");
+    el.innerHTML = '<span>暂无歌词信息。可在音乐文件/曲目行的「✎ 编辑歌曲信息」中粘贴 LRC 歌词，每行形如 [00:12.50] 歌词文本，播放时即可同步高亮。</span>';
+  }
+  lastLyricActiveIndex = -1;
 }
 function seekLyric(event) {
   const line = event.target.closest("[data-time]");
   const player = document.getElementById("audioPlayerElement");
   if (line && player && Number.isFinite(Number(line.dataset.time))) player.currentTime = Number(line.dataset.time);
+}
+/* 歌词跟随播放时间同步：高亮当前行并把该行滚到歌词区中部（v0.9.54）。 */
+function scrollActiveLyricIntoView() {
+  const el = document.getElementById("audioPlayerLyrics"); if (!el || !el.offsetParent) return;
+  const active = el.querySelector(".lyric-line.active");
+  if (!active) return;
+  const top = active.offsetTop - el.clientHeight / 2 + active.clientHeight / 2;
+  if (Math.abs(el.scrollTop - top) > 6) el.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
 }
 function updateLyricHighlight() {
   const el = document.getElementById("audioPlayerLyrics"), player = document.getElementById("audioPlayerElement");
@@ -1170,6 +1279,10 @@ function updateLyricHighlight() {
   let activeIndex = -1;
   lines.forEach((line, i) => { if (Number(line.dataset.time) <= current) activeIndex = i; });
   lines.forEach((line, i) => line.classList.toggle("active", i === activeIndex));
+  if (activeIndex !== lastLyricActiveIndex) {
+    lastLyricActiveIndex = activeIndex;
+    if (el.offsetParent) scrollActiveLyricIntoView();
+  }
 }
 function playAudioFile(libId, path) {
   const lib = findMediaLibrary(libId), player = document.getElementById("audioPlayerElement"); if (!lib || !player) return;
@@ -1188,6 +1301,8 @@ function playAudioFile(libId, path) {
   cover.src = meta.cover || ""; cover.alt = `${meta.title} 海报`; cover.style.background = meta.cover ? "" : coverGradient(meta.title);
   audioSetPauseIcon(true);
   renderPlayerLyrics(meta);
+  updateAudioExpandArt(meta);
+  localizeAudioCover(lib.id, path); // v0.9.54：远端封面顺带落盘持久化（只读媒体库自动回退）
   updateAudioFavoriteButton();
 }
 function audioSetPauseIcon(paused) {
@@ -1236,7 +1351,7 @@ function writeCoverCache(cache) {
   try { localStorage.setItem(coverScrapeCache, JSON.stringify(cache)); } catch (e) {}
 }
 function coverSearchTitle(title) {
-  /* v0.9.53：封面搜索词清洗增强 —— 除「全本/卷册部」外再清尾部 v01/Vol.3/第1话 等编号，
+  /* v0.9.54：封面搜索词清洗增强 —— 除「全本/卷册部」外再清尾部 v01/Vol.3/第1话 等编号，
      提升 Bangumi/AniList 命中率（One Piece v01 → One Piece）。 */
   return String(title).replace(/[（(][^）)]*(?:全本|未删节|完结|全集|简体|繁体|中文|日文|双页)[^）)]*[）)]/g, " ")
     .replace(/第?\s*\d+\s*[卷册部话集]/g, " ")
@@ -1245,8 +1360,22 @@ function coverSearchTitle(title) {
     .replace(/[-_.]+\s*$/, " ")
     .replace(/\s+/g, " ").trim();
 }
-function bookCoverFallback(img) { img.removeAttribute("src"); img.classList.remove("loaded"); img.hidden = true; }
-/* v0.9.53：漫画/书籍封面刮削多源化。
+function bookCoverFallback(img) {
+  /* 本地 sidecar 封面缺失（如用户删了文件）时清掉缓存键，下次渲染可重新刮削。 */
+  const card = img.closest("[data-media-library]");
+  if (card) {
+    try {
+      const cache = readCoverCache();
+      const key = coverCacheKey(card.dataset.mediaLibrary || "", card.dataset.mediaPath || "");
+      if (cache[key]) { delete cache[key]; writeCoverCache(cache); }
+    } catch (e) {}
+  }
+  img.removeAttribute("src"); img.classList.remove("loaded"); img.hidden = true;
+}
+/* v0.9.54：封面缓存键改为「库 + 文件」—— 同一标题的书在不同媒体库/路径下
+   各自持久化本地 sidecar 封面，互不串用。 */
+function coverCacheKey(libId, path) { return (libId ? libId + "\n" : "") + String(path || "").toLowerCase(); }
+/* v0.9.54：漫画/书籍封面刮削多源化。
    刮削只看文件名解析出的标题，与封装格式无关（cbz/cbr/zip/pdf/epub… 全部生效）；
    Bangumi 负责中文漫画，AniList（GraphQL，无需密钥）负责日漫/全球漫画高清封面，
    Google Books / OpenLibrary 兜底实体书。每源独立 6s 超时（AbortController），
@@ -1265,7 +1394,7 @@ async function coverFetchJson(url, options, timeoutMs = COMIC_COVER_TIMEOUT) {
 async function bangumiCover(title) {
   const data = await coverFetchJson("https://api.bgm.tv/v0/search/subjects", {
     method: "POST",
-    headers: { "Content-Type": "application/json", "User-Agent": "VaultHub/0.9.53 (https://github.com/q807738511/vaulthub)" },
+    headers: { "Content-Type": "application/json", "User-Agent": "VaultHub/0.9.54 (https://github.com/q807738511/vaulthub)" },
     body: JSON.stringify({ keyword: title, sort: "match", filter: { type: [1], nsfw: false } })
   });
   const item = data?.data?.find(entry => entry?.images?.large || entry?.images?.common || entry?.images?.medium);
@@ -1309,14 +1438,19 @@ function firstCover(factories) {
 }
 async function scrapeBookCover(img) {
   const title = coverSearchTitle(img.dataset.coverTitle || ""); if (!title) return;
-  const cache = readCoverCache(), key = title.toLowerCase(), cached = cache[key];
+  const card = img.closest("[data-media-library]");
+  const libId = card?.dataset.mediaLibrary || "", mediaPath = card?.dataset.mediaPath || "";
+  const cache = readCoverCache(), key = coverCacheKey(libId, mediaPath), cached = cache[key];
   if (cached?.url) { img.hidden = false; img.src = cached.url; return; }
   if (cached?.checkedAt && Date.now() - cached.checkedAt < COMIC_COVER_FAIL_RETRY) return;
   /* 漫画档（Bangumi 中文 + AniList 日漫/全球）优先，书目档（Google/OpenLibrary）兜底。 */
   const tier1 = await firstCover([() => bangumiCover(title), () => anilistCover(title)]);
   const coverUrl = tier1 || await firstCover([() => googleBookCover(title), () => openLibraryCover(title)]);
-  cache[key] = { url: coverUrl, checkedAt: Date.now() }; writeCoverCache(cache);
-  if (coverUrl) { img.hidden = false; img.src = coverUrl; }
+  /* v0.9.54：命中后写入媒体库同目录（<名>.cover.*），展示改为本地持久化 URL；
+     只读媒体库/落盘失败自动回退远端直链。 */
+  const local = libId && mediaPath && coverUrl ? await persistCoverToLibrary(libId, mediaPath, coverUrl) : coverUrl;
+  cache[key] = { url: local || "", checkedAt: Date.now() }; writeCoverCache(cache);
+  if (local) { img.hidden = false; img.src = local; }
 }
 function refreshBookCovers() {
   try { localStorage.removeItem(coverScrapeCache); } catch (e) {}

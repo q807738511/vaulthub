@@ -17,6 +17,12 @@
 	handle /api/logout {
 		reverse_proxy http://127.0.0.1:9099
 	}
+	handle /api/auth/mode {
+		reverse_proxy http://127.0.0.1:9099
+	}
+	handle /api/account {
+		reverse_proxy http://127.0.0.1:9099
+	}
 	handle /api/system/runtime {
 		reverse_proxy http://127.0.0.1:9099
 	}
