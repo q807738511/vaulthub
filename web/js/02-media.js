@@ -175,7 +175,7 @@ function renderAudioFavorites(lib) {
   return rows.length ? `<div class="media-file-list">${rows.map(({lib: rowLib, path}) => renderAudioRow(rowLib, { path })).join("")}</div>` : '<div class="empty-tip">还没有喜欢的歌曲，请在歌曲列表中点击 ♡ 收藏。</div>';
 }
 
-/* ================= 手动歌单（v0.9.54） =================
+/* ================= 手动歌单（v0.9.55） =================
    歌曲行的 ♫ 按钮弹出歌单勾选器：可把当前歌曲加入多个本地歌单或新建歌单；
    「歌单」页签展示全部歌单，支持播放整单/查看/删除。循环模式只保留在
    底部播放器（cycleAudioLoop），列表页不再放播放模式按钮。 */
@@ -467,7 +467,7 @@ function renderSeriesLibraryContent(host, lib, files) {
   host.innerHTML = `<section class="content-collection">${mediaLibraryHeading(lib, `${shows.length} 部剧 · ${files.length} 集`)}${body}</section>`;
 }
 function renderSeriesShowCard(lib, show) { const art=show.poster?`<img src="${esc(show.poster)}" alt="${esc(show.title)}" loading="lazy">`:`<span>${esc(show.title)}</span>`; const seasons=show.seasonList?.length||0, episodes=show.files?.length||0; return `<article class="media-poster-card series-show-card" data-series-show="${esc(show.key)}" onclick="openSeriesDetails(${jsAttrArg(lib.id)},${jsAttrArg(show.key)})"><div class="media-poster-art" style="${show.poster?"":`background:${coverGradient(show.title)}`}">${art}</div><div class="media-poster-info"><strong>${esc(show.title)}</strong><small>${esc([show.year, `${seasons} 季`, `${episodes} 集`, show.provider].filter(Boolean).join(" · "))}</small></div></article>`; }
-/* v0.9.54：影视详情右上角关闭按钮按语境返回 ——
+/* v0.9.55：影视详情右上角关闭按钮按语境返回 ——
    剧集详情/电影详情下显示「返回媒体库」；单集详情查看时显示「返回详情」（回到剧集详情页）。 */
 let activeSeriesDetail = null;  // 最近一次打开的剧集详情 {libId, showKey}
 let seriesEpisodeReturn = null; // 单集详情返回目标（返回详情 = 回到该剧集详情页）
@@ -1009,7 +1009,7 @@ function readAudioMetadata() {
 function writeAudioMetadata(data) {
   try { localStorage.setItem(audioMetadataCache, JSON.stringify(data)); } catch (e) {}
 }
-/* v0.9.54：封面写入媒体库持久化 —— 刮削/手动设置封面后自动 POST 到后端，
+/* v0.9.55：封面写入媒体库持久化 —— 刮削/手动设置封面后自动 POST 到后端，
    存成媒体文件同目录 sidecar（<名>.cover.jpg/png/webp/gif），展示走同源本地 URL，
    换浏览器/清缓存后封面仍在；媒体目录只读时静默回退远端直链，不影响展示。 */
 const coverPersistAttempted = new Set(); // 会话级：每个文件每会话最多尝试一次落盘
@@ -1082,11 +1082,11 @@ function audioMatchAcceptable(fallback, item) {
   /* 标题必须对上；歌手在文件名没给出时不作要求。 */
   return titleOk && artistOk;
 }
-/* v0.9.54：每页面会话内每首歌最多自动刮一次（成功/失败都记），刷新页面即重新尝试 ——
+/* v0.9.55：每页面会话内每首歌最多自动刮一次（成功/失败都记），刷新页面即重新尝试 ——
    既避免同一会话内反复请求（旧逻辑会把失败的文件名兜底永久留在 localStorage，
    刷新后永不重刮；5 分钟时间窗又让「刚失败想立即刷新重试」的用户干等）。 */
 const audioScrapeAttemptedSession = new Set();
-/* v0.9.54：刮削串行链 —— 首页「最近入库」、音乐库视图、周期刷新会并发触发多次
+/* v0.9.55：刮削串行链 —— 首页「最近入库」、音乐库视图、周期刷新会并发触发多次
    scrapeAudioMetadata；并行整表/交错写会把刚本地化的封面冲回远端。链式串行后，
    后发调用等前一轮完成，pending 过滤自然为空（已有 provider 不再刮）。 */
 let audioScrapeChain = Promise.resolve();
@@ -1113,7 +1113,7 @@ async function scrapeAudioMetadataInner(host, lib, files) {
       const response = await fetch(`/api/media/audio/metadata?title=${encodeURIComponent(fallback.title)}&artist=${encodeURIComponent(known?fallback.artist:"")}`, { cache: "force-cache" });
       const item = response.ok ? await response.json() : null;
       if (item) {
-        /* v0.9.54：单路径合并写，不再基于旧快照整表覆写 —— 音乐库视图与首页「最近入库」
+        /* v0.9.55：单路径合并写，不再基于旧快照整表覆写 —— 音乐库视图与首页「最近入库」
            可能并发触发多次刮削，整表写会把另一路刚本地化的封面冲回远端。 */
         const cur = readAudioMetadata();
         cur[path] = {
@@ -1160,7 +1160,7 @@ function openAudioTracks(libId, kind, key) {
 }
 let audioTracksBack = "albums"; // 曲目列表「← 返回」目标：albums | artists | playlists
 function renderAudioTrackList(lib, files) {
-  /* v0.9.54：曲目列表头部不再放播放模式按钮（随机/列表循环/顺序），
+  /* v0.9.55：曲目列表头部不再放播放模式按钮（随机/列表循环/顺序），
      循环模式只在播放器底部按钮中体现（cycleAudioLoop）。 */
   const back = audioTracksBack === "artists" ? "artists" : audioTracksBack === "playlists" ? "playlists" : "albums";
   return `<div class="audio-track-head"><button class="btn" onclick="audioTrackTitle='';audioArtistFilter='';audioPlaylistFilter='';setAudioView('${back}')">← 返回</button><strong>${esc(audioTrackTitle)}</strong><span class="media-file-meta">${files.length} 首</span></div>${files.length ? `<div class="media-file-list">${files.map(file => renderAudioRow(lib, file)).join("")}</div>` : '<div class="empty-tip">该列表下暂无歌曲</div>'}`;
@@ -1183,7 +1183,7 @@ function manualAudioMetadata(path) { openAudioMetadata(path); }
 function saveManualAudioMetadata() { const path=document.getElementById("audioMetadataPath").value, all=readAudioMetadata(); all[path]={title:document.getElementById("audioMetadataTitle").value.trim()||audioBaseMetadata(path).title,artist:document.getElementById("audioMetadataArtist").value.trim()||"未知歌手",album:document.getElementById("audioMetadataAlbum").value.trim()||"未知专辑",cover:document.getElementById("audioMetadataCover").value.trim(),lyrics:document.getElementById("audioMetadataLyrics").value,provider:"manual",checkedAt:Date.now()}; writeAudioMetadata(all); closeModal("audioMetadataModal"); const lib=findMediaLibrary(localMediaSelection.audio); if(lib) loadLocalFiles("audio",lib,audioCursor); if(lib) localizeAudioCover(lib.id, path); syncActiveAudioCover(path); }
 let audioLoopMode = "sequence";
 let audioMaximized = false;
-let audioExpandPage = "poster"; // 展开播放器当前页：poster | lyrics（v0.9.54）
+let audioExpandPage = "poster"; // 展开播放器当前页：poster | lyrics（v0.9.55）
 let lastLyricActiveIndex = -1;  // 歌词高亮切换检测（避免重复滚动）
 function setAudioExpandPage(page) {
   if (page !== "poster" && page !== "lyrics") page = "poster";
@@ -1262,7 +1262,7 @@ function seekLyric(event) {
   const player = document.getElementById("audioPlayerElement");
   if (line && player && Number.isFinite(Number(line.dataset.time))) player.currentTime = Number(line.dataset.time);
 }
-/* 歌词跟随播放时间同步：高亮当前行并把该行滚到歌词区中部（v0.9.54）。 */
+/* 歌词跟随播放时间同步：高亮当前行并把该行滚到歌词区中部（v0.9.55）。 */
 function scrollActiveLyricIntoView() {
   const el = document.getElementById("audioPlayerLyrics"); if (!el || !el.offsetParent) return;
   const active = el.querySelector(".lyric-line.active");
@@ -1302,7 +1302,7 @@ function playAudioFile(libId, path) {
   audioSetPauseIcon(true);
   renderPlayerLyrics(meta);
   updateAudioExpandArt(meta);
-  localizeAudioCover(lib.id, path); // v0.9.54：远端封面顺带落盘持久化（只读媒体库自动回退）
+  localizeAudioCover(lib.id, path); // v0.9.55：远端封面顺带落盘持久化（只读媒体库自动回退）
   updateAudioFavoriteButton();
 }
 function audioSetPauseIcon(paused) {
@@ -1332,8 +1332,11 @@ function renderLocalFileRow(group, lib, file) {
   const ext = fileExt(path);
   const viewable = ["mp3","flac","m4a","ogg","wav","jpg","jpeg","png","webp","gif","txt","pdf","mp4","m4v","webm","mov"].includes(ext);
   const archiveLike = [...MEDIA_FORMATS.comic, ...MEDIA_FORMATS.book].includes(ext);
-  const action = group === "movie" && MEDIA_FORMATS.movie.includes(ext) ? "播放" : viewable ? "查看" : (archiveLike ? "打开" : "下载");
-  return `<div class="media-file-row"><div class="media-file-name" title="${esc(path)}">${esc(path)}</div><span class="media-file-meta">${esc(ext.toUpperCase() || "FILE")} · ${formatFileSize(file.size)}</span><button class="btn" data-media-group="${esc(group)}" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openLocalMediaButton(this)">${action}</button></div>`;
+  /* v0.9.55：清除下载权限 —— 不可在线预览的格式不再提供下载按钮，
+     文件读取端点（/api/media/file 等）也已要求登录会话。 */
+  const action = group === "movie" && MEDIA_FORMATS.movie.includes(ext) ? "播放" : viewable ? "查看" : (archiveLike ? "打开" : "不可预览");
+  const disabled = action === "不可预览" ? " disabled" : "";
+  return `<div class="media-file-row"><div class="media-file-name" title="${esc(path)}">${esc(path)}</div><span class="media-file-meta">${esc(ext.toUpperCase() || "FILE")} · ${formatFileSize(file.size)}</span>${disabled ? `<span class="media-file-note">该格式不支持在线预览</span>` : `<button class="btn" data-media-group="${esc(group)}" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openLocalMediaButton(this)">${action}</button>`}</div>`;
 }
 function displayBookTitle(path) {
   return String(path).split("/").pop().replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim() || "未命名书籍";
@@ -1351,7 +1354,7 @@ function writeCoverCache(cache) {
   try { localStorage.setItem(coverScrapeCache, JSON.stringify(cache)); } catch (e) {}
 }
 function coverSearchTitle(title) {
-  /* v0.9.54：封面搜索词清洗增强 —— 除「全本/卷册部」外再清尾部 v01/Vol.3/第1话 等编号，
+  /* v0.9.55：封面搜索词清洗增强 —— 除「全本/卷册部」外再清尾部 v01/Vol.3/第1话 等编号，
      提升 Bangumi/AniList 命中率（One Piece v01 → One Piece）。 */
   return String(title).replace(/[（(][^）)]*(?:全本|未删节|完结|全集|简体|繁体|中文|日文|双页)[^）)]*[）)]/g, " ")
     .replace(/第?\s*\d+\s*[卷册部话集]/g, " ")
@@ -1372,10 +1375,10 @@ function bookCoverFallback(img) {
   }
   img.removeAttribute("src"); img.classList.remove("loaded"); img.hidden = true;
 }
-/* v0.9.54：封面缓存键改为「库 + 文件」—— 同一标题的书在不同媒体库/路径下
+/* v0.9.55：封面缓存键改为「库 + 文件」—— 同一标题的书在不同媒体库/路径下
    各自持久化本地 sidecar 封面，互不串用。 */
 function coverCacheKey(libId, path) { return (libId ? libId + "\n" : "") + String(path || "").toLowerCase(); }
-/* v0.9.54：漫画/书籍封面刮削多源化。
+/* v0.9.55：漫画/书籍封面刮削多源化。
    刮削只看文件名解析出的标题，与封装格式无关（cbz/cbr/zip/pdf/epub… 全部生效）；
    Bangumi 负责中文漫画，AniList（GraphQL，无需密钥）负责日漫/全球漫画高清封面，
    Google Books / OpenLibrary 兜底实体书。每源独立 6s 超时（AbortController），
@@ -1394,7 +1397,7 @@ async function coverFetchJson(url, options, timeoutMs = COMIC_COVER_TIMEOUT) {
 async function bangumiCover(title) {
   const data = await coverFetchJson("https://api.bgm.tv/v0/search/subjects", {
     method: "POST",
-    headers: { "Content-Type": "application/json", "User-Agent": "VaultHub/0.9.54 (https://github.com/q807738511/vaulthub)" },
+    headers: { "Content-Type": "application/json", "User-Agent": "VaultHub/0.9.55 (https://github.com/q807738511/vaulthub)" },
     body: JSON.stringify({ keyword: title, sort: "match", filter: { type: [1], nsfw: false } })
   });
   const item = data?.data?.find(entry => entry?.images?.large || entry?.images?.common || entry?.images?.medium);
@@ -1446,7 +1449,7 @@ async function scrapeBookCover(img) {
   /* 漫画档（Bangumi 中文 + AniList 日漫/全球）优先，书目档（Google/OpenLibrary）兜底。 */
   const tier1 = await firstCover([() => bangumiCover(title), () => anilistCover(title)]);
   const coverUrl = tier1 || await firstCover([() => googleBookCover(title), () => openLibraryCover(title)]);
-  /* v0.9.54：命中后写入媒体库同目录（<名>.cover.*），展示改为本地持久化 URL；
+  /* v0.9.55：命中后写入媒体库同目录（<名>.cover.*），展示改为本地持久化 URL；
      只读媒体库/落盘失败自动回退远端直链。 */
   const local = libId && mediaPath && coverUrl ? await persistCoverToLibrary(libId, mediaPath, coverUrl) : coverUrl;
   cache[key] = { url: local || "", checkedAt: Date.now() }; writeCoverCache(cache);
@@ -2521,8 +2524,10 @@ async function openLocalMedia(group, libId, path) {
     restoreReaderProgress(viewer, lib.id, path);
     return;
   } else {
-    const note = MEDIA_FORMATS.comic.includes(ext) ? "该漫画/压缩格式已加入书架。当前浏览器不能直接解析时，可下载后用专业阅读器打开。" : MEDIA_FORMATS.book.includes(ext) ? "该电子书格式已加入书架。浏览器不支持直接解析时，可在新窗口打开或下载阅读。" : "该格式可下载或交给浏览器打开。";
-    body = `<div class="reader-book-fallback"><div class="book-cover" style="max-width:220px;margin:0 auto 24px;background:${coverGradient(displayBookTitle(path))}"><span class="book-cover-title">${esc(displayBookTitle(path))}</span></div><p>${note}</p><p><a class="btn btn-primary" href="${esc(url)}" target="_blank" rel="noopener">↗ 尝试在浏览器打开</a></p></div>`;
+    /* v0.9.55：清除下载权限 —— 不可预览格式不再提供「新窗口直开原文件」的链接
+       （该链接等于绕过播放器直接下载原文件），仅提示不支持。 */
+    const note = MEDIA_FORMATS.comic.includes(ext) ? "该漫画/压缩格式已加入书架，但当前浏览器不能直接解析。" : MEDIA_FORMATS.book.includes(ext) ? "该电子书格式已加入书架，但当前浏览器不支持直接解析。" : "该格式不支持在线预览。";
+    body = `<div class="reader-book-fallback"><div class="book-cover" style="max-width:220px;margin:0 auto 24px;background:${coverGradient(displayBookTitle(path))}"><span class="book-cover-title">${esc(displayBookTitle(path))}</span></div><p>${note}</p></div>`;
   }
   const isVideoPlayer = group === "movie" && MEDIA_FORMATS.movie.includes(ext);
   viewer.innerHTML = viewerShell(group, lib, path, body, url, { player: isVideoPlayer });

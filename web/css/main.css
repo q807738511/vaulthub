@@ -765,7 +765,7 @@
   .audio-player.maximized .audio-player-controls { flex-wrap:wrap; justify-content:flex-end; }
   .audio-player .audio-expand { display:none; }
   .audio-player.maximized .audio-expand { display:flex; flex:1 1 auto; min-height:0; flex-direction:column; gap:10px; margin-top:12px; }
-  /* v0.9.54：展开双页 —— 海报页 / 歌词页（歌词覆盖海报磨砂蒙版）。 */
+  /* v0.9.55：展开双页 —— 海报页 / 歌词页（歌词覆盖海报磨砂蒙版）。 */
   .audio-expand-tabs { display:inline-flex; gap:4px; align-self:center; padding:3px; border:1px solid var(--border); border-radius:999px; background:var(--card2); }
   .audio-expand-tabs button { border:0; border-radius:999px; padding:6px 18px; color:var(--text2); background:transparent; cursor:pointer; font-size:13px; }
   .audio-expand-tabs button.active { color:#fff; background:var(--accent); }
@@ -1092,6 +1092,53 @@
     .form-2col { grid-template-columns: 1fr; }
     .tb-info { display: none; }
     .brand-copy { display: none; }
+    /* v0.9.55 移动端：侧栏改顶栏 —— 左侧固定侧栏变成顶栏下方的横向导航条，
+       媒体库/自定义项横向滚动，主区域左外边距归零。 */
+    .sidebar {
+      top: var(--topbar-h); bottom: auto; left: 0; right: 0;
+      width: 100% !important; min-width: 0; max-width: none;
+      height: 44px; flex-direction: row; align-items: center;
+      border-right: none; border-bottom: 1px solid var(--border);
+      overflow-x: auto; overflow-y: hidden;
+      -webkit-overflow-scrolling: touch;
+    }
+    .sidebar .nav {
+      flex: 1; display: flex; flex-direction: row; align-items: center;
+      padding: 0 8px; overflow-x: auto; overflow-y: hidden; gap: 2px;
+      scrollbar-width: none;
+    }
+    .sidebar .nav::-webkit-scrollbar { display: none; }
+    .sidebar .nav-group { display: none; }
+    .sidebar .nav-item {
+      flex-shrink: 0; height: 32px; margin: 0 2px; padding: 0 10px;
+      justify-content: center; white-space: nowrap;
+    }
+    .sidebar .nav-item .txt { display: inline; }
+    .sidebar .nav-item .cnt { display: inline; }
+    .sidebar .nav-empty { display: none; }
+    .sidebar .nav-tools { display: none !important; }
+    .sidebar-foot {
+      flex-direction: row; align-items: center; gap: 6px;
+      padding: 0 8px; border-top: none; border-left: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .sidebar-foot .ver { display: none; }
+    .sidebar-foot-row { gap: 4px; }
+    .rail-settings { width: auto; height: 30px; padding: 0 10px; }
+    .rail-settings .txt { display: none; }
+    .rail-collapse { display: none; }
+    .sidebar-resizer { display: none; }
+    body.sidebar-hidden .sidebar { width: 100% !important; }
+    body.sidebar-hidden .nav-group,
+    body.sidebar-hidden .nav-item .txt,
+    body.sidebar-hidden .nav-item .cnt,
+    body.sidebar-hidden .sidebar-foot .ver,
+    body.sidebar-hidden .nav-empty,
+    body.sidebar-hidden .rail-settings .txt { display: none; }
+    body.sidebar-hidden .nav-item { justify-content: center; padding: 0 10px; }
+    body.sidebar-hidden .nav { padding: 0 8px; }
+    body.sidebar-hidden .sidebar-foot { justify-content: flex-start; }
+    .main { margin-left: 0 !important; padding-top: calc(var(--topbar-h) + 44px); }
   }
 
 /* ================= v0.9.51 播放器 Apple 统一皮肤 =================
