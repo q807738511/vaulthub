@@ -329,3 +329,63 @@ func TestItunesPickPrefersArtistMatchOverExactTitle(t *testing.T) {
 		t.Fatalf("no-artist-match fallback should take the exact title: %+v ok=%v", out3, ok3)
 	}
 }
+
+/* 评审建议 #3：带 "(Album Version)" 等后缀的自家版本必须优先于「标题完全相等」
+   的翻唱版本 —— 即使在 iTunes 结果里翻唱排在前。第一/二趟的 titleOK（包含命中）
+   + 歌手校验要兜住这个场景，不允许因后缀整轮落空掉到 MusicBrainz。 */
+func TestItunesPickSuffixTitlePrefersArtistVersion(t *testing.T) {
+	tracks := []itunesTrack{
+		{TrackName: "千里之外", ArtistName: "雨天 & 楊蔓", CollectionName: "世間情歌"},
+		{TrackName: "千里之外 (Album Version)", ArtistName: "周杰倫", CollectionName: "依然范特西"},
+	}
+	out, ok := itunesPick("千里之外", "周杰伦", tracks)
+	if !ok {
+		t.Fatal("should pick a candidate")
+	}
+	if out.Album != "依然范特西" || out.Artist != "周杰倫" {
+		t.Fatalf("suffix-title artist version should win over exact-title cover: %+v", out)
+	}
+	// 翻唱版文字同名（完全相等）时仍可被标题兜底命中（旧行为保留）
+	out2, ok2 := itunesPick("千里之外", "未知歌手", tracks)
+	if !ok2 || out2.Album != "世間情歌" {
+		t.Fatalf("unknown-artist exact-title fallback changed: %+v ok=%v", out2, ok2)
+	}
+}
+
+/* 评审建议 #2：itunesPickArtist 与歌曲侧 audioArtistNameMatches 统一为
+   「共享 ≥2 个非拉丁字符」—— 仅共享一个字的歌手（如 邓丽君/邓紫棋）不视为同一人；
+   简繁差异（周杰倫/周杰伦 共享 周杰）仍正常命中。 */
+func TestItunesPickArtistSharedThreshold(t *testing.T) {
+	type hit struct{ got string }
+	cases := []struct {
+		want, got string
+		ok        bool
+	}{
+		{"周杰伦", "周杰倫", true},   // 简繁：共享 周杰 ≥2
+		{"五月天", "五月天", true},   // 完全相等
+		{"邓丽君", "邓紫棋", false},  // 仅共享 邓 =1，不同歌手
+		{"Adele", "Jay-Z", false},   // 拉丁名：无包含关系，共享字符 2 <3
+		{"abcd", "abcf", true},      // 拉丁名：共享 3 个字符（宽松匹配下限）
+		{"The Beatles", "The Beatles", true},
+	}
+	for _, c := range cases {
+		hits := []itunesArtistResult{{ArtistName: c.got}}
+		_, ok := itunesPickArtist(c.want, hits)
+		if ok != c.ok {
+			t.Fatalf("itunesPickArtist(%q vs %q) = ok=%v, want %v", c.want, c.got, ok, c.ok)
+		}
+	}
+}
+
+/* 评审建议 #4b：sharedCommonAscii 只计不同字符（aaa 不再重复加分）。 */
+func TestSharedCommonAsciiCountsDistinct(t *testing.T) {
+	if got := sharedCommonAscii("abx-", "aaaa"); got != 1 {
+		t.Fatalf("distinct shared chars of abx-/aaaa = %d, want 1", got)
+	}
+	if got := sharedCommonAscii("jaychou", "jay"); got != 3 {
+		t.Fatalf("jaychou/jay = %d, want 3", got)
+	}
+	if got := sharedCommonAscii("周杰伦", "周杰倫"); got != 0 {
+		t.Fatalf("non-ASCII chars must be ignored, got %d", got)
+	}
+}

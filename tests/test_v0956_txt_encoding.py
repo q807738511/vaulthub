@@ -3,10 +3,10 @@
 背景：旧实现只有「UTF-8 严格解码失败 → 一律 GB18030」两条路，Windows 记事本存的
 UTF-16（"Unicode"）、繁体 Big5、日文 Shift-JIS 都会解成乱码。
 本测试用 Python 的编解码器复刻 decodeTextBytes 的判定顺序（BOM → UTF-16 零字节特征
-→ UTF-8 严格 → 多候选打分），保证 JS 侧逻辑与断言同步：
-  1. 源码静态契约：候选表/打分函数/BOM 与零字节分支都在；
-  2. 行为契约：同一套判定规则跑 12 组真实编码样本，不得出现 U+FFFD / NUL，
-     且首行必须与原文一致。
+→ UTF-16 奇偶位配对探测 → UTF-8 严格 → 多候选打分），保证 JS 侧逻辑与断言同步：
+  1. 源码静态契约：候选表/打分函数/BOM/零字节分支/配对探测都在；
+  2. 行为契约：同一套判定规则跑 14 组真实编码样本（含纯 CJK 无 BOM UTF-16 的
+     合法 UTF-8 字节串伪装边界），不得出现 U+FFFD / NUL，且首行必须与原文一致。
 浏览器端同一批样本的真实验证见 /opt/data/vh0956-decode-test.js（node 抽函数直跑）。
 """
 from pathlib import Path
@@ -28,6 +28,8 @@ check("打分函数", "function scoreDecodedText(text)" in JS and "function deco
 check("UTF-8 BOM 分支", "0xEF && view[1] === 0xBB && view[2] === 0xBF" in JS)
 check("UTF-16 LE/BE BOM 分支", "0xFF && view[1] === 0xFE" in JS and "0xFE && view[1] === 0xFF" in JS)
 check("无 BOM UTF-16 零字节特征", "zeroEven" in JS and "zeroOdd" in JS and "> 0.15" in JS)
+check("UTF-16 奇偶位配对探测", "function probeUtf16Pairing(src)" in JS and '>= 0x4E && hi <= 0x9F' in JS)
+check("配对探测与打分流全量择优", "TEXT_DECODE_CANDIDATES" in JS and "return best;" in JS)
 check("UTF-8 严格优先", 'new TextDecoder("utf-8", { fatal: true })' in JS)
 check("替换符/控制字符扣分", '"\\uFFFD"' in JS and "score -= 8" in JS)
 check("半角片假名误判扣分", "0xFF61" in JS and "0xFF9F" in JS)
@@ -67,6 +69,30 @@ def score_text(text):
     return score + (0 if cjk else -5)
 
 
+def probe_utf16_pairing(raw):
+    """与 web/js/02-media.js 的 probeUtf16Pairing 同规则：无 BOM 纯 CJK UTF-16 的
+    奇偶字节位「汉字高字节占比」特征（UTF-16LE 奇数位、UTF-16BE 偶数位落在
+    0x4E–0x9F；其它编码的字节分布与此相斥）。"""
+    n = len(raw) & ~1
+    if n < 32:
+        return None
+    odd = even = hi_odd = hi_even = 0
+    for i in range(0, n, 2):
+        lo, hi = raw[i], raw[i + 1]
+        odd += 1
+        even += 1
+        if 0x4E <= hi <= 0x9F:
+            hi_odd += 1
+        if 0x4E <= lo <= 0x9F:
+            hi_even += 1
+    r_odd, r_even = hi_odd / odd, hi_even / even
+    if r_odd >= 0.8 and r_even <= 0.45:
+        return "utf-16-le"
+    if r_even >= 0.8 and r_odd <= 0.45:
+        return "utf-16-be"
+    return None
+
+
 def decode_bytes(raw):
     """与 web/js/02-media.js 的 decodeTextBytes 同序判定。"""
     if raw[:3] == b"\xef\xbb\xbf":
@@ -80,6 +106,29 @@ def decode_bytes(raw):
     zero_odd = sum(1 for i, b in enumerate(probe) if b == 0 and i % 2 == 1)
     if len(probe) >= 16 and (zero_even + zero_odd) / len(probe) > 0.15:
         return probe and raw.decode("utf-16-le" if zero_odd >= zero_even else "utf-16-be", "replace")
+    # 配对探测：命中后与 UTF-8 严格结果 + 全部候选按打分择优
+    pairing = probe_utf16_pairing(raw)
+    if pairing:
+        u16 = raw.decode(pairing, "replace")
+        if u16:
+            best, best_score = u16, score_text(u16)
+            for enc in CANDIDATES:
+                if enc == pairing:
+                    continue
+                try:
+                    text = raw.decode(enc, "replace")
+                except (UnicodeDecodeError, LookupError):
+                    continue
+                s = score_text(text)
+                if s > best_score:
+                    best, best_score = text, s
+            try:
+                s8 = score_text(raw.decode("utf-8"))
+                if s8 > best_score:
+                    best, best_score = raw.decode("utf-8"), s8
+            except UnicodeDecodeError:
+                pass
+            return best
     try:
         return raw.decode("utf-8")
     except UnicodeDecodeError:
@@ -121,6 +170,14 @@ CASES = [
     ("Shift-JIS 日文", JP.encode("shift_jis"), "第一章 はじまり"),
     ("EUC-KR 韩文", KR.encode("euc-kr"), "제1장 시작"),
     ("纯 ASCII", ASCII.encode("ascii"), "Chapter 1"),
+]
+
+# 纯 CJK（无换行/ASCII）无 BOM UTF-16 —— 零字节密度趋近 0，LE 版本字节对恰好
+# 构成合法 UTF-8 序列（严格 UTF-8 分支会抢先解出乱码），必须靠奇偶位配对探测救回。
+EDGE = "话还这过试" * 6
+CASES += [
+    ("纯 CJK UTF-16LE 无 BOM（UTF-8 伪装边界）", EDGE.encode("utf-16-le"), "话还这过试"),
+    ("纯 CJK UTF-16BE 无 BOM", EDGE.encode("utf-16-be"), "话还这过试"),
 ]
 
 for name, raw, want_head in CASES:

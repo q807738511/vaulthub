@@ -1255,10 +1255,14 @@ async function saveAudioGroupEdit() {
   });
   writeAudioMetadata(all);
   if (kind === "artist") {
-    // 歌手改名/换头像：同步歌手缓存，避免卡片仍显示旧头像
+    // 歌手改名/换头像：同步歌手缓存，避免卡片仍显示旧头像；
+    // 保留此前刮削解析出的合作演唱参与者（collaborators），不以 [name] 覆盖。
     const artistCache = readAudioArtistCache();
+    const prev = artistCache[String(key)];
     delete artistCache[String(key)];
-    artistCache[name] = { name, cover: cover || "", provider: "manual", collaborators: [name], checkedAt: Date.now() };
+    artistCache[name] = { name, cover: cover || (prev && prev.cover) || "", provider: "manual",
+      collaborators: (prev && Array.isArray(prev.collaborators) && prev.collaborators.length && prev.collaborators[0] !== name)
+        ? prev.collaborators : [name], checkedAt: Date.now() };
     writeAudioArtistCache(artistCache);
     audioArtistAttemptedSession.add(name);
   }
@@ -2479,6 +2483,27 @@ function scoreDecodedText(text) {
 function decodeWithEncoding(bytes, encoding) {
   try { return new TextDecoder(encoding).decode(bytes); } catch (e) { return ""; }
 }
+/* v0.9.56 边界补强：无 BOM 的纯 CJK UTF-16（无换行/ASCII 时零字节密度趋近 0）
+   会漏过上面的零字节特征，若全部字节对又恰好构成合法 UTF-8 序列，还会被严格
+   UTF-8 分支抢先解成乱码。这里用「奇偶字节位汉字高字节占比」探测 UTF-16 配对
+   结构：UTF-16LE 的奇数位字节（两字节单元的高 8 位）绝大多数落在 0x4E–0x9F，
+   偶数位（低 8 位）近似均匀分布；UTF-16BE 恰好相反。GB18030/Big5/Shift-JIS/
+   EUC-KR/UTF-8 的字节分布与此特征相斥（高字节多 >0x9F 或 <0x4E），不会误报。 */
+function probeUtf16Pairing(src) {
+  const n = src.length & ~1;
+  if (n < 32) return null;
+  let odd = 0, even = 0, hiOdd = 0, hiEven = 0;
+  for (let i = 0; i < n; i += 2) {
+    const lo = src[i], hi = src[i + 1];
+    odd++; even++;
+    if (hi >= 0x4E && hi <= 0x9F) hiOdd++;
+    if (lo >= 0x4E && lo <= 0x9F) hiEven++;
+  }
+  const rOdd = hiOdd / odd, rEven = hiEven / even;
+  if (rOdd >= 0.8 && rEven <= 0.45) return "utf-16le";
+  if (rEven >= 0.8 && rOdd <= 0.45) return "utf-16be";
+  return null;
+}
 function decodeTextBytes(bytes) {
   const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   // 1) BOM 明示（TextDecoder 自动吃掉 BOM 字符）
@@ -2495,9 +2520,32 @@ function decodeTextBytes(bytes) {
   if (probe >= 16 && (zeroEven + zeroOdd) / probe > 0.15) {
     return decodeWithEncoding(view, zeroOdd >= zeroEven ? "utf-16le" : "utf-16be");
   }
-  // 3) 合法 UTF-8 优先（严格模式：非法字节序列直接抛错）
+  // 3) 无 BOM 且零字节密度低：用奇偶位配对结构探测纯 CJK UTF-16。
+  //    命中后与「严格 UTF-8 结果」和「打分流全部候选」全量择优 —— 既能救回
+  //    合法 UTF-8 字节串伪装下的 UTF-16（严格分支会解出零散字符，得分偏低），
+  //    也杜绝把真正的 GBK/Big5/UTF-8 文本误判成 UTF-16（那些解码的得分更高）。
+  const pairing = probeUtf16Pairing(view);
+  if (pairing) {
+    const u16 = decodeWithEncoding(view, pairing);
+    if (u16) {
+      let best = u16, bestScore = scoreDecodedText(u16);
+      for (const enc of TEXT_DECODE_CANDIDATES) {
+        if (enc === pairing) continue;
+        const t = decodeWithEncoding(view, enc);
+        if (!t) continue;
+        const s = scoreDecodedText(t);
+        if (s > bestScore) { best = t; bestScore = s; }
+      }
+      try {
+        const s8 = scoreDecodedText(new TextDecoder("utf-8", { fatal: true }).decode(view));
+        if (s8 > bestScore) { best = new TextDecoder("utf-8", { fatal: true }).decode(view); bestScore = s8; }
+      } catch (e) { /* 非法 UTF-8 */ }
+      return best;
+    }
+  }
+  // 4) 合法 UTF-8 优先（严格模式：非法字节序列直接抛错）
   try { return new TextDecoder("utf-8", { fatal: true }).decode(view); } catch (e) { /* 继续猜测 */ }
-  // 4) 多候选打分：常用汉字/标点/ASCII 加分，替换符、控制字符、半角片假名扣分
+  // 5) 多候选打分：常用汉字/标点/ASCII 加分，替换符、控制字符、半角片假名扣分
   let best = "", bestScore = -Infinity;
   for (const encoding of TEXT_DECODE_CANDIDATES) {
     const text = decodeWithEncoding(view, encoding);

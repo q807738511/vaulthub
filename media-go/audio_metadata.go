@@ -131,7 +131,23 @@ func itunesPick(title, artist string, tracks []itunesTrack) (audioScrapeResult, 
 			}
 		}
 	}
-	// 第二趟：歌手无从校验（未知歌手）或全部落空 → 只接受标题完全相等的首条
+	// 第二趟（歌手已知）：宽松标题 + 歌手再次校验（容忍 "(Album Version)" 等
+	// 标题后缀；与第一趟条件等价，此处显式成阶梯，保证带后缀的自家版本优先于
+	// 后续只认精确标题的兜底，不会因后缀整轮落空掉到 MusicBrainz）。
+	for _, tr := range tracks {
+		gotTitle := normalizedAudioText(tr.TrackName)
+		if !titleOK(gotTitle) {
+			continue
+		}
+		gotArtist := normalizedAudioText(tr.ArtistName)
+		for _, cand := range artistCandidates {
+			if audioArtistNameMatches(cand, gotArtist) {
+				return build(tr), true
+			}
+		}
+	}
+	// 第三趟：歌手全部落空（或未知歌手）→ 只接受标题完全相等的首条；
+	// 未知歌手下可放宽为标题包含命中（保持旧回退语义）。
 	for _, tr := range tracks {
 		gotTitle := normalizedAudioText(tr.TrackName)
 		if gotTitle == wantTitle || (unknownArtist && titleOK(gotTitle)) {
@@ -454,20 +470,21 @@ func itunesPickArtist(want string, hits []itunesArtistResult) (itunesArtistResul
 		if got == wantNorm || strings.Contains(got, wantNorm) || strings.Contains(wantNorm, got) {
 			return h, true
 		}
-		// 简繁/别名差异：共享至少一个非拉丁字符（汉字/假名）即视为同一歌手；
-		// 纯拉丁名要求共享 3 个以上字符，避免「Jay」误配到「Jay-Z」以外的对象。
-		shared := 0
-		for _, r := range wantNorm {
-			if r < 128 {
-				continue
+		// 简繁/别名差异：共享至少两个非拉丁字符（汉字/假名）才视为同一歌手，
+			// 与歌曲侧 audioArtistNameMatches 的 ≥2 门槛保持一致，避免「邓丽君/邓紫棋」
+			// 这类仅共享一字的不同歌手误配；纯拉丁名要求共享 3 个以上字符。
+			shared := 0
+			for _, r := range wantNorm {
+				if r < 128 {
+					continue
+				}
+				if strings.ContainsRune(got, r) {
+					shared++
+				}
 			}
-			if strings.ContainsRune(got, r) {
-				shared++
+			if shared >= 2 {
+				return h, true
 			}
-		}
-		if shared >= 1 {
-			return h, true
-		}
 		if len(wantNorm) >= 4 && len(got) >= 4 && sharedCommonAscii(wantNorm, got) >= 3 {
 			return h, true
 		}
@@ -487,6 +504,7 @@ func sharedCommonAscii(a, b string) int {
 	for _, r := range b {
 		if r < 128 && set[r] {
 			n++
+			delete(set, r) // 只计一次：重复字符（如 "aaa"）不重复加分
 		}
 	}
 	return n
