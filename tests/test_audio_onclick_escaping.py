@@ -15,6 +15,7 @@ assert "openAudioMetadata('${esc(file.path)}')" not in html, "manual metadata ha
 assert 'onclick="playAudioFile(${jsAttrArg(lib.id)},${jsAttrArg(file.path)})"' in html or 'onclick="playAudioFile(${jsAttrArg(lib.id)},${jsAttrArg(path)})"' in html, "file view play handler does not use HTML-attribute-safe JS literals"
 assert 'openAudioTracks(\'${esc(lib.id)}\',\'album\',${esc(JSON.stringify(album))})' in html, "album card track handler is not HTML-attribute-safe"
 assert 'openAudioTracks(\'${esc(lib.id)}\',\'artist\',${esc(JSON.stringify(artist))})' in html, "artist card track handler is not HTML-attribute-safe"
-assert 'onclick="openAudioMetadata(${jsAttrArg(file.path)})"' in html or 'onclick="openAudioMetadata(${jsAttrArg(path)})"' in html, "manual metadata handler does not use HTML-attribute-safe JS literals"
+# v0.9.56：曲目行整行可点击播放，行内编辑按钮带 stopPropagation 前缀
+assert 'onclick="event.stopPropagation();openAudioMetadata(${jsAttrArg(path)})"' in html or 'onclick="event.stopPropagation();openAudioMetadata(${jsAttrArg(file.path)})"' in html or 'onclick="openAudioMetadata(${jsAttrArg(file.path)})"' in html or 'onclick="openAudioMetadata(${jsAttrArg(path)})"' in html, "manual metadata handler does not use HTML-attribute-safe JS literals"
 
 print("PASS: audio inline handlers use HTML-attribute-safe JS string escaping")

@@ -63,7 +63,7 @@ func TestMultiPathLibraryScansAndServes(t *testing.T) {
 
 // 单路径库 rel 仍不带前缀 —— v0.9.52 之前所有存量库与请求契约不变。
 func TestSinglePathLibraryKeepsUnprefixedPaths(t *testing.T) {
-	// v0.9.55：files 读取端点需登录会话，测试里 stub manager 会话校验。
+	// v0.9.56：files 读取端点需登录会话，测试里 stub manager 会话校验。
 	old := managerSessionOK
 	managerSessionOK = func(*http.Request) bool { return true }
 	defer func() { managerSessionOK = old }()

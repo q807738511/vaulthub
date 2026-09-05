@@ -50,7 +50,8 @@ done
 echo ""
 echo "[3/5] 安装文件到 $TARGET_DIR ..."
 mkdir -p "$TARGET_DIR"
-for name in Dockerfile docker-compose.yml .dockerignore Caddyfile index.html caddy vaulthub-manager README.md; do
+# v0.9.56: README.md 拆分出 Update Log.md，两者都随版本分发
+for name in Dockerfile docker-compose.yml .dockerignore Caddyfile index.html caddy vaulthub-manager README.md "Update Log.md"; do
   cp -a "$FILES_DIR/$name" "$TARGET_DIR/$name"
 done
 

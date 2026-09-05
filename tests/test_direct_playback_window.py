@@ -20,11 +20,11 @@ for forbidden in [
 
 assert 'mediaFileUrl(lib, path)' in html, "video/audio resources should use direct media file URLs"
 assert 'class="media-viewer-body media-video-body"' in html, "video reader does not use full-window video body"
-# v0.9.55：原生 controls 被自定义悬浮控制栏取代（左上折叠 / 右上全屏 / 中部传输键 /
+# v0.9.56：原生 controls 被自定义悬浮控制栏取代（左上折叠 / 右上全屏 / 中部传输键 /
 # 右下功能键 / 顶部进度条），保留 controls 会出现两条控制条并互相遮挡。
 assert '<video data-movie-player playsinline preload="metadata"' in html, "video element should be user-started direct playback"
 assert '<video data-movie-player controls' not in html, "自定义悬浮控制栏不能与浏览器原生 controls 并存"
-assert 'class="video-chrome"' in html and 'data-video-chrome' in html, "缺少 v0.9.55 悬浮控制栏容器"
+assert 'class="video-chrome"' in html and 'data-video-chrome' in html, "缺少 v0.9.56 悬浮控制栏容器"
 assert 'autoplay preload="metadata" style="width:100%;max-height:72vh' not in html, "old constrained autoplay video remains"
 assert 'onloadedmetadata="this.muted=false;this.volume=1"' in html, "video audio initialization is missing"
 assert 'mediaCompatUrl(lib, path)' in html, "audio-compatible playback URL is missing"

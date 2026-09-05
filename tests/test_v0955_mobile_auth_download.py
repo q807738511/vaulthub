@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""v0.9.55 契约测试：
+"""v0.9.56 契约测试：
 T1 移动端侧栏改顶栏（@media≤768 .sidebar 横向导航 + .main 边距归零 + 折叠/拖拽隐藏）
 T2 密码验证鉴权（open 模式保留 salt/hash、account 任意变更需旧密码、passwordOK 不因 open 短路）
 T3 文件列表读取鉴权 + 清除下载权限（readAuth、/api/media/file|archive|streams 401、前端去下载按钮/直链）

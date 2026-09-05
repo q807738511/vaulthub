@@ -45,7 +45,7 @@ type App struct {
 	itunesScrapeMu    sync.Mutex // iTunes Search API: ~200ms/request 节流
 	itunesScrapeLast  time.Time
 	zipCacheMu        sync.Mutex
-	zipCache          *zipArchiveCache // v0.9.55: ZIP/CBZ 中央目录 LRU 缓存（漫画读取提速）
+	zipCache          *zipArchiveCache // v0.9.56: ZIP/CBZ 中央目录 LRU 缓存（漫画读取提速）
 	libs              []Library
 	jobs              map[string]uint64             // library id -> running generation
 	generations       map[string]uint64             // invalidates stale scans after delete/recreate
@@ -422,7 +422,7 @@ func writeAuth(r *http.Request) bool {
 	return managerSessionOK(r)
 }
 
-// readAuth 同样基于 manager 会话（v0.9.55）：文件列表/文件流/归档读取等
+// readAuth 同样基于 manager 会话（v0.9.56）：文件列表/文件流/归档读取等
 // 媒体内容端点也需要登录会话；开放模式下浏览器前端自动登录携带 Cookie，
 // 未登录（无 vh_session Cookie）的裸请求一律 401，杜绝未授权读取与下载。
 func readAuth(r *http.Request) bool {
@@ -1368,7 +1368,7 @@ func (a *App) indexStatus(w http.ResponseWriter, r *http.Request) {
 // files serves paginated listings straight from SQLite. It never walks the
 // filesystem, so it stays fast even during a rebuild. If a library has never
 // been indexed it kicks off a background scan and returns an empty page.
-// v0.9.55: 文件列表读取需要登录会话（readAuth）。
+// v0.9.56: 文件列表读取需要登录会话（readAuth）。
 func (a *App) files(w http.ResponseWriter, r *http.Request) {
 	if !readAuth(r) {
 		errJSON(w, 401, "login required")
@@ -1584,7 +1584,7 @@ func (a *App) archive(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, 404, "file not found")
 		return
 	}
-	/* v0.9.55：归档目录解析结果按 (路径,size,mtime) 缓存（LRU），
+	/* v0.9.56：归档目录解析结果按 (路径,size,mtime) 缓存（LRU），
 	   漫画逐页请求不再反复 OpenReader + 全量 iconv 解码文件名。 */
 	a.zipCacheMu.Lock()
 	if a.zipCache == nil {
@@ -2328,6 +2328,8 @@ func main() {
 	mux.HandleFunc("/api/media/metadata/artwork", a.artworkCandidates)
 	mux.HandleFunc("/api/media/reading/progress", a.readingProgress)
 	mux.HandleFunc("/api/media/audio/metadata", a.audioMetadata)
+	/* v0.9.56：歌手维度刮削（单人/组合/合作演唱关系），返回演唱者头像作为歌手封面。 */
+	mux.HandleFunc("/api/media/audio/artist", a.audioArtist)
 	mux.HandleFunc("/api/media/network/speed", a.networkSpeed)
 	mux.HandleFunc("/api/media/compat", a.compat)
 	fmt.Println("VaultHub media API listening on 127.0.0.1:9100")

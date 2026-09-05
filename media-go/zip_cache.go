@@ -11,7 +11,7 @@ import (
 // 漫画翻页/首屏会连续请求同一归档的目录与每个页面条目；旧实现每次请求都重新
 // zip.OpenReader 全量解析目录并逐条 iconv 解码文件名（decodeZipNames），
 // 大压缩包 + 非 UTF-8 文件名时单页请求就要付出整个归档的解析代价。
-// v0.9.55：同一归档的目录解析只做一次，后续请求直接复用内存索引。
+// v0.9.56：同一归档的目录解析只做一次，后续请求直接复用内存索引。
 type zipCacheEntry struct {
 	rc      *zip.ReadCloser
 	files   []*zip.File

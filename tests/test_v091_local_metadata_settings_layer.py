@@ -7,7 +7,7 @@ css=(root/'web/css/main.css').read_text()
 html=(root/'index.html').read_text()
 for marker in ['stem + ".nfo"','"movie.nfo"','poster.png','fanart.jpg','.srt','localMediaMetadata','safeFile(lib, mediaPath)','commonAllowed']:
     assert marker in go, marker
-# v0.9.55 T4：series 库单集元数据必须能读取剧集根目录的 tvshow.nfo 与海报
+# v0.9.56 T4：series 库单集元数据必须能读取剧集根目录的 tvshow.nfo 与海报
 # （向上回溯 Show 根），因此 tvshow.nfo 现在是 series 分支的合法候选。
 assert 'tvshow.nfo' in go
 assert 'seriesShowDirs' in go and 'showPosterNames' in go
@@ -22,5 +22,5 @@ assert '#settingsModal' not in css
 assert '<section class="view settings-view" id="view-settings">' in html
 assert '<dialog' not in html
 assert '.auth-mask { position:fixed; inset:0; z-index:2000;' in css
-assert 'v0.9.55' in html
-print('PASS: v0.9.55 local NFO/artwork/subtitle and top settings contracts')
+assert 'v0.9.56' in html
+print('PASS: v0.9.56 local NFO/artwork/subtitle and top settings contracts')

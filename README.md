@@ -1,817 +1,143 @@
-# 体验链接(开启了开放模式)https://sszj.enged.top/
+# VaultHub · 蜀鼠之家
 
-# VaultHub 蜀鼠之家 v0.9.55：移动端顶栏化 · 密码验证鉴权加固 · 文件读取鉴权与下载权限清除 · 开放模式登录窗口移除
+**自托管一站式媒体中心**：把你的电影、剧集、音乐、漫画、电子书放进同一个 Web 界面，统一刮削、播放与阅读。
 
-v0.9.55 围绕移动端体验与安全加固做了一轮修正：
+> 常见的影视、音频、漫画、电子书等容器都是功能比较单一的（PLEX/EMBY：影视、音频；Komga：纯漫画；Navidrome：纯音乐向）。参考这个思路，把它们聚合到一起又做了轻量化，后续可能会做成 APP，可以期待下（有隐藏功能可以挖掘一下）。
 
-- **移动端优化（侧栏改顶栏）**：≤768px 窄屏下左侧固定侧栏改为顶栏下方的横向导航条 —— 主导航/媒体库/自定义项横向滚动，主区域左外边距归零，折叠按钮与拖拽调宽在移动端隐藏，触屏滚动更顺手。
-- **密码验证鉴权加固**：修复「校验旧密码完全没有作用、修改后直接生效」问题 —— 此前切换到开放模式会清空密码凭据，之后任何人无需验证即可改密/切回密码模式；现在开放模式**保留** sha256+salt 凭据，只要系统曾设置过密码，任何账户变更（改用户名/改密码/启用开放/禁用开放）都必须验证原密码，杜绝开放模式成为无验证改密的通道（从未设置过密码的纯开放模式首次设置密码除外）。
-- **文件列表读取鉴权 + 清除下载权限**：文件列表 `/api/media/files`、文件流 `/api/media/file`、归档 `/api/media/archive`、转码流 `/api/media/streams` 等媒体内容端点全部要求登录会话（未登录 401）；前端不可在线预览的格式不再提供「下载」按钮与「尝试在浏览器打开」直链（该直链等于绕过播放器直接下载原文件）。
-- **开放模式不再显示登录窗口**：登录遮罩初始即隐藏，开放模式下全程不出现登录窗口；启用开放模式与禁用开放模式都必须对密码进行验证（启用需当前密码，禁用需验证原密码并设置新密码）。
+📌 完整更新日志见 [Update Log.md](Update Log.md) · 各版本发布说明见 `.github/RELEASE_NOTES_*.md`
 
-详见 [RELEASE_NOTES_0.9.55.md](.github/RELEASE_NOTES_0.9.55.md)
+---
 
-<details>
-<summary>v0.9.54：音乐播放器歌词页 · 封面落盘媒体库持久化 · 开放模式鉴权 · 影视详情返回语义（上一版）</summary>
+## 功能介绍
 
-- **音乐播放器歌词页**：展开播放器后提供「海报 / 歌词」双页切换 —— 海报页展示歌曲/专辑大图；切到歌词页后，歌词以磨砂（毛玻璃）蒙版形式覆盖在海报上显示，海报模糊作底让歌词更清晰；歌词逐行高亮并**跟随播放时间自动滚动**到可视区中部，点击任意歌词行可跳转到对应时间点。
-- **封面刮削写入媒体库（持久化展示）**：音乐与漫画/电子书刮削命中封面后，自动把图片下载写入媒体文件同目录的 sidecar（如 `One Piece v01.cbz → One Piece v01.cover.jpg`），展示改为读取本地持久化文件 —— 换浏览器、清缓存甚至刮削源失效后封面依然在；媒体目录只读/落盘失败时自动回退远端直链，不影响展示。
-- **鉴权模式（开放模式 / 密码模式）**：不设置登录密码（`ADMIN_PASSWORD` 为空且无持久化配置）时进入**开放模式** —— 打开页面免密码自动进入、不再出现登录遮罩；已设密码的部署可在 系统设置 → 账户与登录 中（需输入当前密码）**切换为开放模式**。同一面板新增**登录用户名与登录密码变更**，凭据哈希（sha256+salt）与模式持久化到 `/data/auth.json`，重启后依然生效；从开放模式切回密码模式需直接设置新密码。
-- **影视详情右上角返回按钮语义化**：单集详情查看时右上角显示「✕ 返回详情」（点击回到该剧集的剧集详情页）；剧集详情/电影详情页右上角显示「✕ 返回媒体库」（点击关闭详情回到媒体库列表）。
+### 🎬 影视：智能播放与转码
 
-详见 [RELEASE_NOTES_0.9.54.md](.github/RELEASE_NOTES_0.9.54.md)
-</details>
+使用自刮削和源文件刮削混合模式，可以配合 MoviePilot 容器使用其刮削后的文件进行读取；自带刮削能力需要填写 TMDB 的 API Key 并赋予容器代理能力才能实现（也可以通过 MP 的硬链接来使用 115 等网盘的影视资源）。
 
-<details>
-<summary>v0.9.53：音乐歌单与播放模式归位 · 漫画读取提速 · iTunes 音乐刮削 · 漫画封面多源刮削（上一版）</summary>
+1. 播放器按 **原生直连 → FFmpeg 兼容流 → 转码流** 自动切换，音频不兼容自动重编码为 AAC
+2. 画质档位：自动 / 原画直放 / 1080p / 720p / 480p，转码结果分档缓存
+3. **硬件转码自动探测**：`auto` 按 QSV → CUDA/NVENC → VAAPI 择优，不可用时自动回退 CPU（libx264）
+4. 悬浮控制栏、全屏、倍速、音轨/字幕选择、播放列表与剧集连播、中断自愈与画质记忆
+5. 内置 ffprobe 探测 + 转码缓存自动清理；在线字幕与提取内嵌字幕为 WebVTT
 
-- **音乐库操作修正**：专辑/曲目列表头部不再摆放 随机/列表循环/顺序 播放模式按钮，循环模式只在底部播放器中体现（点击循环图标在 顺序→列表循环→单曲→随机 间切换）；歌曲行的 播放/喜欢/编辑 之外新增「♫ 加入歌单」按钮 —— 弹窗勾选即可加入多个歌单或新建歌单，音乐库新增「歌单」页签支持整单播放、查看曲目与删除。
-- **漫画读取提速**：ZIP/CBZ 中央目录按（路径、大小、修改时间）做 LRU 缓存，翻页与首屏不再每次重新解析整个归档目录、逐条 iconv 解码文件名；数百页大包与 GBK/日文文件名压缩包提速明显。
-- **音乐刮削源升级**：音乐元数据主源切换为 iTunes Search API（免注册免密钥、极简 JSON、TW/US store 中文曲库完整、专辑与 600×600 高清封面一次返回），MusicBrainz 保留为兜底源；刮削与容器格式无关，mp3/flac/m4a/ogg/wav/aac/ape/opus 等媒体库已支持格式同样生效。
-- **漫画封面刮削多源化**：新增 AniList（日漫/全球漫画高清封面）与 Bangumi（中文漫画）组成漫画档优先竞速，Google Books / OpenLibrary 兜底实体书；每源独立 6s 超时（AbortController）与失败 1 小时短缓存，任一源不可达不再让封面永远转圈；cbz/cbr/zip/pdf/epub 等封装格式按文件名标题统一生效。
+### 🎵 音乐：刮削、歌词与收藏
 
-详见 [RELEASE_NOTES_0.9.53.md](.github/RELEASE_NOTES_0.9.53.md)
-</details>
+使用自刮削模式读取并写入海报信息（iTunes 源），刮削准确性非常不错；UI 也采用类似 Apple 的按钮风格。
 
-<details>
-<summary>v0.9.52：播放器图标修复 · 音频播放器 Apple 化 · 媒体库多存储路径 · 剧集信息读取修复（上一版）</summary>
+1. 刮削主源 iTunes Search（免密钥），MusicBrainz 兜底；命中即落**封面 sidecar** 持久化，换浏览器/清缓存不丢
+2. 歌手维度独立刮削（单人/组合/合作演唱），头像圆形展示并标注「合作演唱」；专辑与歌手都可 ✎ **批量编辑**（改名/换封面写入该分组全部曲目）
+3. 专辑与歌手可点击进入该分组**全部曲目**；**喜欢**收藏（列表 ♡ + 居中播放器 ♥ 双入口），歌单可整单播放
+4. Apple 风格居中播放器：海报 / **歌词**双页切换，歌词逐行高亮、随播放自动滚动、点击跳转
+5. 音乐刮削失败自动以文件名展示，不影响浏览与播放
 
-- **视频悬浮控制栏图标修复**：v0.9.51 的内联 SVG 图标缺 `stroke-width`/描边兜底，描边型图标在各主题下显示为空或异常；统一补充 `fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round` 兜底规则与图标类名。
-- **音频播放器 Apple 化**：底部音频播放器控制栏全面换用 Apple 风格圆形毛玻璃按钮与内联 SVG 图标（播放/暂停/循环/喜欢/最大化/详情），喜欢按钮支持空心/实心心形状态切换与红心高亮，循环/最大化按钮状态同步更新图标与标题。
-- **单媒体库多存储路径**：媒体库支持挂载多个存储路径（`paths` 字段），扫描、检索、播放、本地元数据与海报读取全部打通；单路径存量库行为不变，多路径条目以根目录名为前缀避免索引主键冲突。
-- **剧集信息读取修复**：本地元数据（NFO/海报/剧照/字幕）在扩展存储路径下生成正确可访问的相对 URL，剧集海报与单集截图信息可正常读取展示。
+### 🎞️ 剧集：带图示卡片列表
 
-详见 [RELEASE_NOTES_0.9.52.md](.github/RELEASE_NOTES_0.9.52.md)
-</details>
+- 剧集按 Plex/Emby 风格聚合（根目录剧名 / Season 01 / S01E01），主列表以带封面海报的卡片展示
+- 剧集详情内每一集也以**图示卡片**呈现：封面/剧集主视觉 + 集号角标 + 集名，点击卡片直接播放
 
-<details>
-<summary>v0.9.51：音画同步修复 · Apple 统一皮肤 · 缓存策略优化（上一版）</summary>
+### 📚 漫画和电子书
 
-- **音画同步修复**：后端 FFmpeg 转码流增加 `-fflags +genpts+igndts` + `-async 1` + CFR 帧率对齐，前端增加 browser-side 漂移监控（每 2 秒比对视频时钟与系统时钟，超阈值自动微调 playbackRate），彻底解决长时间播放后音画不同步问题。
-- **Apple 统一皮肤**：移除 v0.9.50 的 PotPlayer（暗色圆角方形）皮肤，所有主题（暗色/亮色/自定义）统一使用 Apple 风格圆形毛玻璃按钮 + 弹性 hover 动效 + iOS 蓝 accent，消除 UI 失真与主题切换割裂感。
-- **视频缓存策略优化**：后端响应头 `X-Accel-Buffering: no` + `Transfer-Encoding: chunked` 降低转码流的缓冲上限，减少播放器与解码器的时钟漂移窗口；状态面板新增缓冲进度指示器。
-</details>
+1. 漫画 ZIP/CBZ 中央目录缓存提速，GBK/日文文件名正常解码；阅读进度**服务端持久化**，换设备接着读
+2. TXT 编码自动识别：BOM → 无 BOM UTF-16 → UTF-8 严格 → 多候选打分（GBK/GB18030、Big5、Shift-JIS、EUC-KR）；超长文本按 Range 分块读取合并，不会乱码/截断
+3. 封面多源刮削：AniList / Bangumi 竞速优先，Google Books / OpenLibrary 兜底，单源失败不影响其它
 
-<details>
-<summary>v0.9.50：播放器小窗/标题/中断自愈 · ZIP 漫画 · 双皮肤 SVG · 全仓库洗版（上一版）</summary>
+### 🖥️ 系统与集成
 
-- **左上角角标加大居中**：最小化（`⌄`）与还原（`⌃`）按钮统一 42–44px，正常态在顶条垂直居中、小窗态在小窗左缘垂直居中，两状态观感一致。
-- **视频标题常显**：播放器内标题/年份/时间固定白色 + 阴影，修复亮色主题下主标题继承深色文字、压在深色渐变上看不清的问题。
-- **播放中断自动恢复**：转码流/基础流全失败且原片超过软解上限时，自动重建一次完整播放计划（新转码会话），仍失败才提示并支持点击画面重试；最小化前先退出全屏，切换片源自动清理旧转码会话。
-- **ZIP/CBZ 漫画图片修复**：图片 MIME 补全 webp/gif/bmp/avif/tiff，读取时先做 512B 内容嗅探——修复 `nosniff` + `octet-stream` 组合下浏览器拒绝渲染图片的问题。
-- **全仓库洗版 + 撤销预览版标识**：真实域名 → `example.com`、内网 IP → `192.0.2.x` 文档网段、NAS `/vol*` 路径 → `/srv` 通用示例（含历史 release notes，只替换敏感值、保留语义）；移除页面标题/副标题与登录提示里的「预览版」字样。
-</details>
+1. 首页服务器监控（CPU / 内存 / 网络 / 磁盘）、播放与刮削会话、最近入库
+2. **内置 Caddy**：读取、编辑并热加载容器内 Caddyfile，一个入口按 Host 分流到内网各服务
+3. PT 管理（MoviePilot · Savept 监护室，需额外安装 MP 实现）、媒体搜索、三语界面（简中/繁中/EN）、暗/亮/自定义主题
+4. **移动端适配**：≤768px 窄屏侧栏自动变为顶栏下方横向导航条，导航项可横向滑动查看更多
 
-> 部署模型沿用 v0.9.42（compose 跟随 GHCR `latest`、`vaulthub.env` 可选），详见下节。
-> 镜像内置默认值已全部示例化（`192.0.2.10` / `home.example.com`），首次部署请按自己的环境在
-> `docker-compose.yml`（卷映射、ADMIN 账号）与 `vaulthub.env`（域名、代理、刮削密钥）里覆盖。
+---
 
-## v0.9.42 更新（部署模型，v0.9.50 沿用）
+## 部署方式
 
-### 部署模型：latest 跟新 + 固定版本测试
-
-- compose 默认 `image: ghcr.io/q807738511/vaulthub:latest` + `pull_policy: always`。
-- 发布流程不变：测试按具体版本号（`v0.9.42`）验证 → 推送 main 与 tag → CI 构建并把 **`v0.9.42` 与 `latest` 指向同一 digest**。
-- 日常升级（NAS 上一条命令，之后无需再改 compose）：
-  ```bash
-  cd /srv/vaulthub
-  docker compose pull && docker compose up -d --force-recreate
-  ```
-- 回滚/锁定：临时把 compose 镜像行改回 `ghcr.io/q807738511/vaulthub:v0.9.41` 再 `docker compose up -d --force-recreate`。
-- 注意：Docker Hub 仓库开了 immutable tags，其 `latest` 标签不会跟随；同步以固定版本号标签为准（生产走 GHCR 不受影响）。
-
-### env 文件可选（默认值内置镜像）
-
-- `docker-compose.yml` 的 `env_file` 改为 `path: ./vaulthub.env` + `required: false`（需 compose ≥ v2.24）；文件缺失不再报 `env file ... not found`。
-- Dockerfile `ENV` 已与 `vaulthub.env` 模板 25 个键逐键对齐（含 `TZ=Asia/Shanghai`、`MEDIA_SCAN_MAX_DEPTH=32`、`VAAPI_DEVICE=/dev/dri/renderD128`、`NVIDIA_DRIVER_CAPABILITIES=compute,video,utility`、缓存与刮削默认值等），Go 侧另有 `env(key, default)` 兜底。
-- 首次部署可以只放 compose；需要个性化时再放 `vaulthub.env`（或同目录 `.env` 覆盖，compose ≥ v2.24 支持对 env_file 内容插值）。
-- `scripts/merge-env.sh`（键级合并，不依赖 git）：拿新版模板合并，只追加本地缺失的键、保留已有值、写前备份：
-  ```bash
-  sh scripts/merge-env.sh /下载目录/vaulthub.env     # 本地模板
-  VAULTHUB_GH_TOKEN=ghp_xxx sh scripts/merge-env.sh \
-    https://raw.githubusercontent.com/q807738511/vaulthub/main/vaulthub.env   # 私有仓库直拉
-  ```
-
-<details>
-<summary>v0.9.41：播放器启动/引擎/列表/最小化修正（上一版）</summary>
-
-## v0.9.41 更新
-
-### 点击即播与计划超时
-
-- 初次打开播放器即自动尝试播放；被浏览器自动播放策略拦截时提示「点击画面开始播放」。
-- 播放计划请求带 20 秒 AbortController 超时，超时后自动转用本地降级策略，不再卡在「正在准备播放…」。
-
-### 播放器交互修正
-
-- **引擎隐藏**：状态行、信息面板、诊断与设置浮层不再展示引擎标签与「三层播放」手动选择。
-- **静音删除**：右下角静音按钮移除，音量滑条移入设置浮层，滑到 0 即静音。
-- **播放列表门控**：仅电视剧集类型播放（series 库或 `SxxExx`/`第N集` 分集文件）显示播放列表按钮；电影播放隐藏；剧集播完自动连播下一集，电影播完停在结尾。
-- **最小化整个播放器**：左上角 `⌄` 将播放器缩成右下角小窗继续播放，左下角 `⌃` 还原整屏播放器。
-- **标题移入播放器**：播放器不再渲染外层标题条与 ✕，标题显示在左上角 `⌄` 右侧；关闭统一走底部控制栏 ✕。movie 组的 PDF/图片等非视频浏览仍保留外层标题与关闭按钮。
-- **异常兜底**：智能转码流（带 task）失败先切换基础兼容流重试一次；仍失败且原片 ≤256 MB 才尝试浏览器软解，超过 256 MB 直接提示可操作错误。
-
-### 悬浮控制栏（v0.9.40 架构延续）
-
-一整层 `.video-chrome` 覆盖在 `<video>` 之上，顶部与底部各一条，中间留空给画面。整层只靠
-`.media-video-body.video-controls-visible` 淡入淡出，**控制层本身永不接收指针事件**，只有顶部条、
-底部条和浮层可点：否则鼠标停在画面中央会被当成「停在控制栏上」，3 秒定时器永远不触发隐藏，
-点画面也无法切换播放/暂停。
-
-- **触发识别**：`pointermove` / `touchstart` / `click` 唤出；3 秒无操作隐藏。暂停中、鼠标停在控制条上、
-  任一浮层展开时不隐藏（定时器会顺延而不是收走正在操作的面板）
-- **全屏**：右上角 `⛶` 优先整块播放区全屏（控制栏一起进全屏），浏览器拒绝时回落到 `<video>` 元素
-- **标题**：剧集显示「剧名 · SxxExx」+ 分集标题，电影显示片名 + 年份。剧集判定不再只看媒体库类型，
-  电影库里混放的 `S01E02`、`第 1 季 第 05 集` 同样识别
-- **进度条**：点击定位、按住拖动、键盘 ←/→/Home/End，带缓冲区间与进度点
-
-### 转码质量
-
-设置浮层提供 自动 / 原画直放 / 1080p / 720p / 480p。显式选择分辨率时后端强制重新编码
-（`copy` 无法缩放）并按 `scale=-2:min(ih,cap)` 下采样，低于上限的源不会被放大也不会白白转码；
-VAAPI 走 `scale_vaapi`，滤镜是替换而非叠加（ffmpeg 只认最后一个 `-vf`）。不同档位的
-转码缓存键各自独立，1080p 与 720p 不会互相覆盖。
-
-### 播放列表与重复/随机
-
-剧集详情会把当前剧的分集写入播放队列，「上一个 / 下一个 / 播放列表」在同一队列内跳转。
-顺序模式到队列末尾会提示而不越界，列表循环环回第一项，随机播放随机取下一项；播放结束按当前模式
-自动续播（单集循环重播本集）。
-
-</details>
-
-<details>
-<summary>v0.9.30：系统设置独立配置页、卡片式媒体库添加与阅读器修复</summary>
-
-v0.9.30 修七件事：系统设置从弹窗改为独立配置页；媒体库添加把子类型、媒体路径、库名称和添加按钮收进大类卡片（去掉卡片下方的额外表单）；扫描穿透符号链接目录，NAS 上链接进来的季目录/合集不再漏索引；漫画（ZIP/CBZ）与电子书铺满阅读区且阅读进度改为服务端持久化，重新打开回到上次位置；「重新刮削」文案统一改为「重新扫描」；亮色/自定义主题下电子书整页跟随主题。
-
-</details>
-
-<details>
-<summary>v0.8.7：侧栏切库、顶栏标题与 compose 精简</summary>
-
-v0.8.7 修三件事：侧栏从「漫画」点到「电子书」后高亮和内容真正跟着切换；阅读器/播放器顶栏的长文件名不再压住右侧按钮；部署配置精简为 `docker-compose.yml`（常用项）+ `vaulthub.env`（固定项），环境变量统一 `KEY=value` 写法。
-
-</details>
-
-<details>
-<summary>v0.8.6：前端资源缓存修复</summary>
-
-v0.8.6 修复升级后浏览器仍然执行旧前端脚本的问题：v0.8.4/v0.8.5 已经删除的播放器设置按钮、标记已读按钮、下载按钮和书架页电子书/漫画切换按钮，在旧缓存下会继续显示，看起来像“没有更新”。现在 `index.html` 入口页 `no-store`，`/web/` 静态资源带 `?v=<版本>` 且长缓存，前端启动时还会自查脚本版本，不一致时自动绕过缓存重载一次。
-
-</details>
-
-## v0.9.30 更新
-
-### 系统设置改为独立配置页
-
-系统设置原先是 `<dialog id="settingsModal">` 顶层弹窗，宽度被 `.modal.wide` 限死在 720px，
-媒体库表单、刮削配置和 Caddy 入口都要在弹窗里二次滚动。现在改成 `.view` 页面
-`#view-settings`：宽度跟随内容区，侧栏与顶栏保持可用，侧栏底部的设置按钮进入后高亮，
-右上角「返回上一页」回到进入设置前的视图。四个标签页（媒体库 / 外观主题 / 刮削与硬件 /
-账户与登录）逻辑不变，`openSettingsPage(tab)` / `closeSettingsPage()` 取代原来的
-`openModal('settingsModal')`。其它弹窗（关于、模块设置、PT 登录等）仍是 `modal-mask`。
-
-### 媒体库添加：表单收进大类卡片
-
-「媒体库增加 → 本地媒体库」原来是三张大类卡片 + 卡片下方一排公共表单（媒体大类下拉、
-子类型、媒体路径、库名称），选卡片和选下拉两处都能改大类。现在每张卡片自带子类型、
-媒体路径、库名称和「添加媒体库」按钮，公共表单与「媒体大类」下拉一并删除，
-`addHomeMediaLibrary(group)` 按大类取值。点击卡片内的输入框不会被当成切换大类。
-
-### 加深媒体库扫描深度
-
-扫描原先用 `filepath.Walk`，它按 `lstat` 判断类型：符号链接目录不会被递归，
-符号链接文件被当成非普通文件跳过。NAS 上把季目录或整个合集链接进媒体库是常见做法，
-这些内容因此整块缺失。现在改用 `walkLibraryFiles`：
-
-- `os.Stat` 穿透链接，链接指向目录就递归、指向文件就索引
-- 解析后的真实路径必须落在媒体库根目录或 `MEDIA_ROOT` 挂载点内（`allowedRealPath`），
-  `safeFile()` 使用同一套判定，因此「能被索引」等于「能被播放」；指向 `/etc` 之类的链接
-  仍然既不索引也不放行
-- 按递归路径（而不是全局）记录已访问目录，`a -> b -> a` 这类环会终止，
-  同一目标目录通过两个不同路径可达时两条路径都会被索引
-- 单个目录不可读只跳过该目录，不再让一个权限错误清空整库索引
-- 新增 `MEDIA_SCAN_MAX_DEPTH`（默认 32，`0` = 不限制）
-
-### 漫画与电子书阅读修复
-
-- ZIP/CBZ 页容器 `.comic-archive-pages` 此前没有任何样式，于是按内容宽度收缩、
-  图片被 `max-height:100%` 压成一屏高，左右露出阅读器底色。现在整页竖排、
-  占满阅读区宽度、单页按宽度自适应且不再限制高度
-- 文档阅读器（TXT / ZIP 漫画）容器加 `reader-doc`，正文区高度改为内容驱动。
-  原先固定一屏高 + `align-items:stretch` 会把纸张拉成一屏，超出的正文直接画在深色底上
-- 亮色 / 自定义主题下正文区背景跟随主题（原先写死 `#17191d`），
-  这就是「只有最上面一页是亮色，剩下还是暗色」的原因
-
-### 阅读进度服务端持久化
-
-阅读进度原先只写 `localStorage`，而且从不回填 `scrollTop`，所以关闭再打开永远从第一页开始
-（第一屏的滚动事件还会把进度覆盖成 0）。现在：
-
-- 新增 `GET/PUT /api/media/reading/progress`，需要有效管理会话，媒体路径走
-  `safeFile()` 同一套校验，数据落在 `MEDIA_READING_PROGRESS`（默认
-  `/data/media-reading-progress.json`）
-- 前端 800ms 合并写入，关闭阅读器时立即落盘；打开文档时按保存的百分比恢复滚动位置，
-  恢复期间抑制进度记录
-- `localStorage` 仍写一份，仅用于即时渲染
-
-### 媒体库操作文案改为扫描
-
-「重新刮削」→「重新扫描」，「全部重新刮削」→「全部重新扫描」，表头「刮削状态」→「扫描状态」，
-i18n 键 `libRescrape`/`actRescrape` 改为 `libRescanAll`/`actRescan`，三种语言同步更新。
-
-## v0.8.0 更新
-
-- 视频播放器按“原生直连 → FFmpeg 兼容流 → WASM SIMD 软件解码”自动切换，并显示当前引擎；WASM 资产随镜像自托管，不依赖第三方 CDN。
-- 音乐/MV 页面保留“我的媒体库”“最新音乐”“喜欢”，专辑与歌手可点击进入曲目列表，歌曲和居中播放器均可收藏。
-- 电子书/漫画直接展示海报书架与已读收藏；无刮削封面时使用文件名生成封面。
-- 电影/电视剧默认使用海报与作品名展示，页面内不再出现来源切换、管理按钮和 TMDB 配置文字。
-- 删除管理令牌输入、浏览器 token 存储和 `ADMIN_TOKEN`/`X-VaultHub-Token` 旁路；管理员写操作统一由账号密码登录 Session 鉴权。
-- 索引增加启动孤儿清理、双重存储失败 tombstone 与重启恢复保护。
-
-## v0.8.1 更新
-
-- 新增 `MEDIA_CACHE_DIR`、`MEDIA_CACHE_MAX_BYTES`、`MEDIA_CACHE_MAX_AGE_HOURS` 和 `MEDIA_CACHE_CLEANUP_INTERVAL_HOURS`，转码缓存不再固定占用系统盘，并按大小和保留时间自动清理。
-- 音乐播放器只有存在当前播放项目时显示；停止播放、播放列表结束或切换到其他页面后不会显示空播放器。
-- 清理媒体内容页顶部重复的大类/来源标签；漫画和电子书使用媒体库导航及页面内子类型按钮独立切换，不再依赖顶部标签。
-
-### 原子索引替换
-
-- 扫描结果先写入 `scan_staging(lib, generation, ...)`，正式 `files` 表在扫描期间保持不变
-- 完整 staging 成功后，在一个 SQLite 事务中完成删除旧索引、复制新索引和清理 staging
-- 取消或错误会清理当前 generation 的 staging，保留上一份完整索引，不再暴露 2,000 条一批的部分结果
-
-### 安全删除扫描中的媒体库
-
-- 删除会推进任务 generation、取消正在运行的扫描，并清理 `files`、`index_status` 与 `scan_staging`
-- 旧任务失效后不能再写回正式索引或状态
-- 删除进行中，相同媒体库 ID 的创建请求返回 409；清理完成后才能复用，避免旧删除把新索引清空
-- 配置写入使用临时文件加原子 rename；配置保存失败时不修改内存状态
-
-### 动态一致性测试
-
-新增 Go 动态测试覆盖：写库阶段取消仍保留旧索引、扫描中删除后复用相同 ID、删除与同 ID 创建并发竞争。Race detector 连续 10 轮共 30 次通过，原有 26 个契约测试全部通过。
-
-## v0.7.0 更新
-
-### 构建卡加载现在可以监测
-
-以前媒体库首次打开只会显示一句「正在后台建立低速索引，请稍后刷新」，既看不到进度、
-也分不清是卡死还是仍在扫描。现在：
-
-- 后端 `/api/media/index/status` 在原有 `state` / `scanned` / `total` 之外补充
-  `percent`、`elapsed`、`now`；正在扫描时 `percent` 最高只报 99，避免 UI 提前显示完成
-- 扫描已在进行但还没落库时，`/api/media/files` 也会返回 `status: indexing` 与 `scanning: true`，
-  不再表现为一个空目录
-- 前端渲染真实进度块：进度条、已扫描/总数、已用时长、手动刷新和**取消构建**按钮，每 2 秒轮询一次
-- 走盘阶段（还不知道总数）显示不确定态动画条与「正在统计文件数量…」，进入写库阶段切换为百分比
-- 构建结束自动加载文件列表并提示；取消走 `POST /api/media/index/cancel?id=`，未登录返回 401
-
-实测（隔离容器，6 万个文件的书库）：`percent` 从 3% → 33% → 53% → 83% 连续递增，
-`elapsed` 同步累计，结束后 `state=ready`、`percent=100`、`total=60000`；构建中调用取消
-在 1.5 秒内变为 `state=cancelled`、`message=scan cancelled`。
-
-### 侧边栏不再重复展示资源大类
-
-「电子书刊 / 影视作品 / 音视作品」这三个大类此前既是侧栏分组标题，又各自是一个可点击条目，
-组内再列出该类下的媒体库，同一个名字出现两三次。现在侧栏只有：
-
-- **主导航**：首页、PT 管理
-- **媒体库**：一个扁平列表，每项就是创建媒体库时填写的名称（本地库带项目数，外连服务带 ↗）
-- **自定义**：自定义模块
-
-大类只在「系统设置 → 媒体库 → 媒体库增加」里作为分类选择出现，用于决定子类型与刮削源。
-侧栏的「添加模块」按钮也移除了，模块显隐改由「系统设置 → 外观主题 → 模块设置」进入。
-
-### 媒体库的管理与增加集成进系统设置
-
-原来媒体库路径管理挂在首页最下方，添加媒体库又另有一个独立弹窗，两处入口维护同一份数据。
-现在合并为「系统设置 → 媒体库」一个标签页：
-
-- **已添加的媒体库**：一张表列出全部库（库名、大类/子类型、路径、项目数、刮削状态），
-  每行都有重新刮削、打开媒体库、删除三个按钮
-- **媒体库增加**：先选来源，再填表单
-
-独立的 `mediaLibraryModal` 弹窗与其保存逻辑一并删除，避免两套代码写同一个接口。
-新增媒体库前仍会先确认服务端会话，异常时提示重新登录而不是静默失败。
-
-### 本地媒体库与外连服务统一为「媒体库增加」的两种来源
-
-过去每个大类页面里都内嵌一份服务器配置表单（Komga/Kavita/Calibre-Web、Plex/Emby/Jellyfin、
-Navidrome/道理鱼），这也是大类入口在侧栏和顶栏反复出现的根因。现在外连服务和本地库一样，
-只是媒体库的一种来源：
-
-- 在「媒体库增加 → 外连服务」里填服务名称、内网地址、反代域名，保存后出现在侧栏媒体库列表
-- 内网访问自动走内网地址，公网访问自动走反代域名（原 `serviceAccessUrl` 的自动切换逻辑保留，
-  Navidrome 根路径仍会自动补 `/app/`）
-- 大类页面只剩内容宿主，由「本地媒体库 / 外连服务」切换条决定显示本地文件还是嵌入服务页
-
-### 系统设置与关于并入账户头像，并支持头像设置
-
-> v0.9.17 起顶栏账户下拉菜单已移除，登录状态、关于和退出登录都在「系统设置 → 账户与登录」。
-
-顶栏右上角的 ⚙ 与 ℹ 两个按钮取消，改为左侧账户头像的下拉菜单：头像设置、系统设置、关于、退出登录，
-菜单头部直接显示当前登录状态。头像设置支持文字缩写/emoji、背景色和上传图片，
-仅保存在本浏览器 `localStorage`（键 `vaulthub_avatar_v1`），不上传服务器。
-
-### 顶栏去掉首页/资料库按钮，右侧只放信息
-
-顶栏的横向主导航（首页 / 资料库 / PT 管理）整体移除，导航统一由侧边栏负责。
-顶栏左侧是品牌与账户头像，右侧改成信息区：媒体库总量与总项目数、正在构建的索引统计，不再放任何按钮。
-
-### 首页最近入库点击即读取播放
-
-首页海报卡片以前直接调 `openLocalMedia()`，但阅读器容器 `#local-media-viewer-<group>`
-只有在对应媒体库视图渲染之后才存在，所以在首页点击等于什么都没发生。现在改走
-`openHomeMediaItem()`：先切到该库的视图、等容器就绪，再打开阅读器；音乐文件直接进播放器。
-
-### 顺带修掉两个缺陷
-
-- **登录后遮罩偶发重新弹出**：启动探测与 60 秒轮询是异步的，慢响应可能在用户登录成功之后才回来，
-  用过期结果把状态改回未登录。现在登录/退出会推进 `vaultHubAuthEpoch`，过期探测结果直接丢弃。
-- **TXT 打开后误报「文本读取失败」**：滚动定位和文本读取在同一个 `try` 里，
-  `scrollIntoView` 抛错会让已经渲染好的正文被一条读取失败的红字替换。滚动已移出 `try`
-  并收进 `scrollViewerIntoView()` 守卫。
-
-## v0.6.31 更新
-
-### 系统设置里可以退出登录
-
-系统设置新增「账户与登录」标签页。退出会先 `POST /api/logout` 让服务端销毁 Session，再复位前端状态、
-关闭弹窗与 Caddy 页面并弹出登录遮罩；主题、语言、侧栏宽度等本机偏好保留不清。
-
-### Caddy 配置改为独立整页
-
-Caddyfile 动辄百余行，挤在弹窗里没法看。系统设置的 Caddy 标签页现在只保留入口按钮和
-「已配置 N 条路由」徽标，点击进入铺满视口的整页编辑器，textarea 吃掉全部剩余高度，
-顶部固定「保存并应用 / 重新载入 / 关闭」和行数徽标。保存仍由内置 Caddy 校验并热加载，失败自动回滚。
-
-### 「检测显卡」现在真的会检测
-
-此前 `/api/media/hardware` 返回的是硬编码占位值 —— 永远 `selected: cpu`、`vaapi/qsv/cuda` 永远 false，
-所以点按钮不会有任何变化。现在后端做真实探测：
-
-- 枚举 `/dev/dri/renderD*` 判断有没有 DRM 渲染节点（可用 `VAAPI_DEVICE` 指定）
-- 检查 `/dev/nvidiactl`、`/dev/nvidia0`、`/dev/nvidia-uvm` 判断 NVIDIA 透传
-- 跑 `ffmpeg -encoders` 解析实际编译进的编码器（`h264_vaapi` / `h264_qsv` / `h264_nvenc` / `libx264`），
-  结果缓存避免重复起进程
-- `auto` 按 QSV → CUDA → VAAPI 择优；显式指定但不可用时回退 CPU
-
-前端显示「当前 / 可用」徽标加一行明细（DRM 设备路径、NVIDIA 设备节点、FFmpeg 编码器列表），
-点按钮给出 toast 反馈，文案三语齐全。
-
-### 登录状态监测
-
-- 启动时和每 60 秒核对 `/api/system/runtime`，在设置页显示「登录状态正常 / 异常」徽标
-- 增删媒体库前先确认服务端会话，异常时直接提示「登录状态异常，请重新登录后再添加/删除媒体库」
-  并弹出登录遮罩，不再让用户点了按钮却毫无反应
-- 任何受保护请求返回 401 都会同步刷新徽标；切换语言时徽标与提示会重绘
-
-### 视频缓存加速
-
-原实现在缓存未命中时要等 FFmpeg 把整个文件转完、落盘、再从头发送，多 GB 的片子等于打不开。现在分两条路：
-
-- **缓存未命中**：直接把 FFmpeg 输出以 fragmented MP4（`+frag_keyframe+empty_moov+default_base_moof`）
-  流式推给浏览器，逐块 flush，第一个 fragment 到达就能起播；响应头 `X-VaultHub-Compat: live`
-- **同时**在后台用脱离请求生命周期的 context 生成 `+faststart` 的可 seek 版本，下次打开直接命中缓存
-  并支持 Range（`X-VaultHub-Compat: cache`）。同一 cache key 的后台构建会去重，
-  可用 `COMPAT_PRECACHE=0` 关闭预缓存
-- 源视频已是 H.264 时继续 `-c:v copy`；需要重编码时按检测到的硬件走
-  `h264_vaapi` / `h264_qsv` / `h264_nvenc`，软件回退用 `-preset veryfast`
-- 音频统一 AAC 立体声 160k，仍按 `audio_track` 选轨
-
-实测（隔离容器，60 秒测试片）：首次请求 TTFB 约 0.19–0.20 秒即开始出流；后台预缓存落盘后
-第二次请求 TTFB 约 0.001 秒、`Accept-Ranges: bytes`、Range 请求返回 206。
-
-## v0.6.30.Branch-update 分支更新（界面改版，已合入 v0.6.31）
-
-界面改成 Plex Web 风格：
-
-- 配色从 GitHub 深蓝（`#0D1117` / `#58A6FF`）换成 Plex 灰青（底色 `#1E1E1E`，主色 `#54C0C0`，
-  明亮主题主色加深为 `#0F8F8F` 保证对比度），圆角由 10px 收到 6px，去掉毛玻璃效果，整体密度提高。
-- 导航改为双层：新增全宽顶栏放品牌、横向主导航（首页 / 资料库 / PT 管理）和右上工具区，
-  原侧栏下移到顶栏之下。~~横向主导航与右上工具区~~已在 v0.7.0 移除：顶栏右侧只放信息，
-  系统设置/关于收进账户头像菜单。
-- 侧栏宽度可拖拽（62–340px，默认 236px），宽度记忆在 `localStorage` 的 `vaulthub_sidebar_w`；
-  折叠后变成 62px 图标栏。
-- ~~侧栏分类由「主导航 / 媒体 / 系统 / 自定义」改为「主导航 / 电子书刊 / 影视作品 / 音视作品 / 自定义」，
-  每组列出该大类下的媒体库并带「更多 ›」入口。~~ v0.7.0 改为「主导航 / 媒体库 / 自定义」，
-  媒体库是一个扁平列表，不再重复展示三个大类。
-
-首页重构为四个板块：
-
-1. **服务器监控** —— CPU、内存、网络、磁盘四张指标卡，磁盘卡显示剩余容量，阈值 90% 标红、75% 标黄。
-2. **正在进行中的操作** —— 展示当前播放会话与刮削信息；没有会话时显示占位提示。
-3. **最近入库** —— 电子书刊 / 影视作品 / 音视作品三条海报轨，按入库时间倒序；音视作品用方形封面。
-4. ~~**媒体库路径管理**~~ —— 表格按「具体路径 + 手动命名」维护媒体库，手动名称即刮削库名，
-   分三大类六子类（电子书刊：漫画 / 电子书；影视作品：电影 / 剧集；音视作品：音乐 / MV）。
-   v0.7.0 起该表格迁至「系统设置 → 媒体库」，首页只保留前三个板块。
-
-其他调整：
-
-- **移除容器管理（Docker）和青龙面板**，两者不再作为可添加模块出现。老配置里残留的 `docker`
-  条目会被自动过滤，不影响其余模块显示；仍需要容器管理请留在 v0.6.30。
-- 后端 `/api/media/files` 新增 `sort=mtime` 参数支撑「最近入库」，默认仍按 `path` 排序，
-  文件浏览器的字母序不变。
-
-顺带修掉四个既有缺陷：
-
-- 登录遮罩显隐反了。`classList.toggle('hidden', !logged)` 配合 `.auth-mask.hidden{display:none}`，
-  登录成功时反而把遮罩显示出来盖住页面，已改为 `!!logged`。
-- 海报标题解析。影视标题会带出 `2160p`、`WEB-DL`、`S01E12` 等发布规格，音乐的「歌手 - 歌名」
-  在连字符被归一化成空格后切不出歌手；改为在原始文件名上先剥离规格再归一化。
-- 音乐刮削张冠李戴。MusicBrainz 的 `/recording` 检索总会返回「最像」的一条，之前无条件采纳
-  `recordings[0]`，导致「周杰伦 - 七里香.mp3」被刮成标题「周杰倫」、歌手「王泰翔 2000wtx」。
-  改为结构化查询（`recording:"…" AND artist:"…"`）加打分与文本双重校验，`score` 低于 88
-  或标题/歌手对不上就保留文件名解析结果。
-- 语言切换只翻译一半。英文与繁中的 i18n 词典缺 55 个新键，而首页表格、子类型下拉、海报占位、
-  刮削状态徽标等文案由 JS 拼装，`applyI18n()` 只覆盖静态 `data-i18n` 节点，切到英文后大面积
-  残留简体中文。补齐三语词典（键集完全一致），新增 `tf()` 占位符插值函数把动态文案也纳入词典，
-  并让 `setLang()` 重跑首页各渲染器。
-
-## v0.6.18 更新
-
-- Docker Compose 支持 `/dev/dri` 透传，并提供 NVIDIA Container Toolkit 的 `gpus` 配置示例。
-- 系统设置新增显卡加速选项：自动、CPU、VAAPI、Intel QSV、NVIDIA CUDA/NVENC。
-- `/api/media/hardware` 检测设备和 ffmpeg 编码器；硬件不可用自动回退 CPU。
-- `/api/media/compat` 支持 `hw` 参数，响应头 `X-VaultHub-Hardware` 显示实际使用的加速模式。
-- 长 TXT 按 Range 分块读取并完整合并，不再只缓存/显示首屏。
-- TXT 继续自动识别 UTF-8，失败时回退 GB18030。
-- 电子书正文、目录、阅读背景同步系统暗色、亮色和自定义主题；切换主题时已打开阅读器即时更新。
-
-## GPU 配置
-
-Intel/AMD VAAPI 或 QSV：
-
-```yaml
-environment:
-  FFMPEG_HWACCEL: "auto"
-  VAAPI_DEVICE: "/dev/dri/renderD128"
-devices:
-  - /dev/dri:/dev/dri
-```
-
-CPU-only主机请保持默认 Compose 不映射 `/dev/dri`；需要 VAAPI/QSV 时，在服务的 `devices:` 下取消注释并重建容器。NVIDIA 主机使用 `gpus: all`，并使用带 NVENC 支持的 CUDA 运行时镜像。
-
-NVIDIA：宿主机安装 NVIDIA Container Toolkit 后，在 Compose 中启用：
-
-```yaml
-gpus: all
-environment:
-  FFMPEG_HWACCEL: "cuda"
-  NVIDIA_VISIBLE_DEVICES: "all"
-  NVIDIA_DRIVER_CAPABILITIES: "compute,video,utility"
-```
-
-硬件设备、权限或 ffmpeg 编码器不可用时会自动回退 CPU，不影响播放。
-
-
-- 新增 `/api/media/probe`，使用 ffprobe 判定容器和音频编码是否可能被浏览器直接支持。
-- 新增 `/api/media/compat`，直连无声或不兼容时输出 H.264 + AAC 的 MP4 兼容流。
-- 前端自动判定规则：MKV/AVI/RMVB/WMV/FLV/TS/M2TS/VOB/ISO 等容器直接使用兼容流；MP4/WebM 等先直连，再结合 probe 的音频编码结果自动切换。
-- 播放器保留“直连原片”和“音频兼容”手动按钮，直连错误时自动切换兼容流。
-- 桌面端视频阅读器不再覆盖左侧边栏，只占用侧栏右侧空间；移动端继续全屏。
-
-## v0.6.16 更新
-
-- 删除 0.6.16 之后引入的转码/画质切换功能，影视播放改回 `/api/media/file` 直连。
-- 视频播放器不再自动播放，避免浏览器拦截有声自动播放；加载元数据后强制取消静音并恢复音量。
-- 视频阅读窗口铺满当前页面阅读区域，隐藏视频下方提示信息。
-- 放开电子书、漫画、PDF/图片阅读窗口高度限制，阅读器按可视窗口拉伸。
-
-## v0.6.15 更新
-
-- 漫画本地库支持：EPUB、MOBI、ZIP、CBZ、PDF、RAR、CBR、7Z、CB7、JPG/PNG 等散图、CPG、LZH、CBL、TAR、CBT。
-- 电子书本地库支持：EPUB、PDF、MOBI、AZW/AZW3、CHM、EXE、UMD、JAR/JAD、CAJ、PDG、DJVU、CEB、DOC/DOCX、XPS、TXT。
-- 影视栏目新增“本地媒体库 / 外连服务”切换；本地库支持 MP4、MKV、AVI、MOV、WEBM、TS/M2TS、WMV、FLV、MPG/MPEG、RMVB、ISO 等影片文件。
-- 影视本地库支持文件名兜底展示、豆瓣默认刮削、`TMDB_API_KEY` 环境变量启用 TMDB 刮削代理。
-
-### TMDB 可选配置
-
-```yaml
-environment:
-  - TMDB_API_KEY=你的_tmdb_api_key
-```
-
-未配置 `TMDB_API_KEY` 时，影视库仍可正常读取和播放，刮削失败会使用文件名展示。
-
-
-- 新增本地媒体库设置：名称、类型和多个容器目录路径。
-- 媒体源可在“本地媒体库”和原有“外连服务”之间切换。
-- 本地音乐支持浏览器原生播放，本地图片/TXT/PDF 支持直接预览，其他电子书和压缩漫画可下载或由浏览器支持能力打开。
-- 本地媒体文件通过 `home.examples.top/api/media/*` 同源访问，浏览器不会连接 NAS 内网 IP。
-- 媒体列表接口只返回库配置；文件索引由后台单线程低速任务生成，带临时文件原子替换，避免页面请求阻塞。
-- 文件列表使用 `/api/media/files` 分页接口，默认每页 100 条，避免一次性构造巨型 JSON 和浏览器 DOM。
-- 扫描会跳过 `@eaDir`、`.cache`、`#recycle`，并按批次休眠降低磁盘 I/O 竞争；索引保存到 `/data/media-index`。
-- TXT 预览按 1 MiB Range 分块读取并完整合并；不一次性请求超大正文，同时保证长文末尾和全部章节可读。
-- 媒体库路径改为任意容器内已挂载的绝对目录，不再强制要求 `/media` 前缀；仍保留真实路径和符号链接逃逸校验。
-
-- 项目名称改为 `VaultHub 蜀鼠之家`。
-- Compose 服务名为 `vaulthub`，容器名为 `VaultHub`。
-- ~~本地镜像名为 `vaulthub:0.6.0-local`。~~（旧的本地构建方式，保留兼容；当前推荐直接使用 `ghcr.io/q807738511/vaulthub:latest` 或固定版本标签。）
-
-## 镜像拉取与加速站
-
-镜像发布在 GitHub Container Registry：
-
-```
-ghcr.io/q807738511/vaulthub:<版本标签>   # 例如 v0.8.0
-ghcr.io/q807738511/vaulthub:latest        # 随 main 漂移，生产不建议
-```
-
-**建议固定版本标签部署（如 `v0.8.7`），不要用 `latest`**：`latest` 会随每次推送变化，出问题难回滚。
-
-### 中国网络：直连 GHCR 拉不动怎么办
-
-部分网络（含家庭 NAS）直连 `ghcr.io` 会在大层（约 175MB 的 Debian + ffmpeg 层）卡住，表现为 Docker 反复 `Retrying`、镜像拉不全、容器起不来后被 `unless-stopped` 反复重启。**这不是镜像或构建问题，是拉取线路对 GHCR 限速。** 换加速站即可，镜像内容完全一致（digest 相同）。
-
-可用加速站（实测拉取本仓库镜像成功，digest 与官方一致）：
-
-| 加速站 | 前缀 | 备注 |
-|--------|------|------|
-| 南京大学 | `ghcr.nju.edu.cn` | 稳定，推荐 |
-| 1ms.run | `ghcr.1ms.run` | 可用，偶发 `unknown blob`，重试一次即可 |
-
-> 加速站可能随时失效或限流；若某个不可用，换另一个或稍后重试。`ghcr.m.daocloud.io` 不支持本仓库路径转发（`pull access denied`），请勿使用。
-
-用法一——compose 直接写加速站地址（最简单）：
+### Compose
 
 ```yaml
 services:
   vaulthub:
-    image: ghcr.nju.edu.cn/q807738511/vaulthub:v0.8.7
-```
-
-> 注意只有一个冒号：`vaulthub:v0.8.7`，不是 `vaulthub::v0.8.7`。
-
-用法二——保持 compose 用官方名，手动拉取后打回原名（便于随时切回直连）：
-
-```bash
-docker pull ghcr.nju.edu.cn/q807738511/vaulthub:v0.8.7
-docker tag  ghcr.nju.edu.cn/q807738511/vaulthub:v0.8.7 ghcr.io/q807738511/vaulthub:v0.8.7
-# compose 仍写 image: ghcr.io/q807738511/vaulthub:v0.8.7
-docker compose up -d
-```
-
-用法三——给 Docker daemon 配 registry 镜像（一劳永逸，需重启 Docker）：编辑 `/etc/docker/daemon.json` 后 `systemctl restart docker`（会短暂影响所有容器）。
-- 左上角页面名改为 `蜀鼠之家`，图标改为动画中华鼠图标。
-- 电子书和漫画合并为 `超漫画`，统一包含 Komga / Kavita / Calibre-Web。
-- 新增 WebUI 的 `Caddy 配置` 页面，可读取、保存并热加载容器内 Caddyfile。
-- YAML 只保留首次启动预配置；实际 Caddyfile 持久化到 `./data/Caddyfile`。
-- 保留 v0.4.2 的 Komga 路由修复和媒体公网自动映射。
-
-## 首次配置
-
-v0.9.42 起部署只需 **`docker-compose.yml` 一个文件**（镜像默认 `:latest` 跟随最新正式版，全部环境默认值已内置镜像）：
-
-| 文件 | 放什么 | 什么时候改 |
-|------|--------|-----------|
-| `docker-compose.yml` | 镜像引用、端口、卷、常用环境变量 | 首次部署/改路径/改账号时 |
-| `vaulthub.env`（可选） | 想覆盖镜像内置默认值时（缓存大小、监控挂载、硬件转码声明等） | 需要个性化时 |
-
-环境变量分三层：镜像内 Dockerfile `ENV` 默认值（与 `vaulthub.env` 模板逐键对齐）→ 可选 `vaulthub.env`（compose ≥ v2.24 用 `required: false` 加载，缺失不报错）→ 可选同目录 `.env` 覆盖（compose 会对其内容插值）。compose 的 `environment:` 只放经常调的那几项：`ADMIN_USERNAME`、`ADMIN_PASSWORD`、`TMDB_API_KEY`、`MEDIA_SCRAPER_MODE`、`SYSTEM_MONITOR_FILESYSTEMS`。硬件转码选择 `FFMPEG_HWACCEL` 默认 `auto`，无需配置。
-
-> 关于代理：TMDB 客户端使用自带 SSRF 防护的自定义 `http.Transport`，没有设置 `Proxy`，所以 `PROXY_HOST` 和标准的 `HTTPS_PROXY` 都不会生效。若你的网络必须走代理才能访问 `api.themoviedb.org`，请在网关或 Clash 侧做透明代理/分流。
-
-两个文件的环境变量都必须写成 `KEY=value`：
-
-```yaml
     image: ghcr.io/q807738511/vaulthub:latest
-    env_file:
-      - path: ./vaulthub.env   # v0.9.42：可选覆盖层，缺失时直接用镜像内置默认值
-        required: false
+    # 当网络环境异常可以改用 docker.io/q807738511/vaulthub:latest 进行拉取镜像
+    container_name: VaultHub
+    pull_policy: always
+    # 如需显卡加入解码，参考下方「硬件解码配置」加入解码配置需求
+    ports:
+      - "8088:8088"
     environment:
-      - ADMIN_USERNAME=${ADMIN_USERNAME:-ADMIN}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-ADMIN123}
+      - ADMIN_USERNAME=admin
+      - ADMIN_PASSWORD=admin123
+      - TMDB_API_KEY=
+      - MEDIA_SCRAPER_MODE=auto
+      # 系统监控的卷名列表（逗号分隔），与下方 /host/<卷名> 只读挂载一一对应；
+      # 只需监控一个卷时填单个卷名即可（示例：vh-data）。
+      - SYSTEM_MONITOR_FILESYSTEMS=vh-data
+    volumes:
+      - ./data:/data
+      - /media:/media  # 媒体库
+      - /data2:/data/transcode-cache  # 媒体缓存目录
+      # Docker 状态监控（容器页面/刮削辅助需要）
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # 系统监控：/proc 与 /sys 为必需只读挂载。
+      # 卷监控：把要监控的卷根目录挂到 /host/<卷名>:ro 并同步修改上面的
+      # SYSTEM_MONITOR_FILESYSTEMS，例如：
+      #   - /mnt/vh-data:/host/vh-data:ro
+      #   - /mnt/vh-media:/host/vh-media:ro
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /srv:/host/vh-data:ro
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
 ```
 
-在 `environment` 列表里写成 `- KEY: "value"` 会让 compose 报
-`services.vaulthub.environment.[N]: unexpected type map[string]interface {}` —— 列表项里的 `KEY: value` 会被 YAML 解析成映射而不是字符串。同一段里不要混用列表写法（`- KEY=value`）和映射写法（`KEY: value`）。
-
-改完 `vaulthub.env` 需要重建容器才会重新注入，`restart` 不够：
+### Docker Pull
 
 ```bash
-docker compose up -d --force-recreate
+docker pull q807738511/vaulthub:latest
 ```
 
-v0.9.42 起 `vaulthub.env` **不再是必需文件**：compose 用 `path + required: false` 加载，文件缺失时直接使用镜像内置默认值；文件存在时其内容优先于镜像默认。要求 compose ≥ v2.24（2024-02 发布）；更老的 compose 请先升级，或继续保留该文件避免 `env file ... not found`。历史部署脚本 `scripts/install.sh` / `upgrade.sh` 仍会投递该文件，已存在时保留你的改动。
+---
 
-#### 版本升级后自动补齐 vaulthub.env 的新键（不依赖 git）
+## 硬件解码配置
 
-新版本可能在 `vaulthub.env` 模板里增加新的环境变量（例如 v0.9.30 增加的 `MEDIA_SCAN_MAX_DEPTH`）。v0.9.42 起**不做合并也完全可用**（镜像已内置全部默认值）；只有当你维护了本地 `vaulthub.env` 覆盖文件、又想让新键的说明与默认值进到文件里时，才需要合并。`scripts/merge-env.sh` 做**键级合并**：只把本地缺失的键（连同默认值和紧邻的说明注释）追加进你的文件，已改过的值一律不动，写入前自动备份为 `vaulthub.env.bak-<时间戳>`，重复执行幂等：
+针对不同的显示设备，这里准备了几种 Docker 用的解码方式。
 
-```bash
-# 方式一：本地已有新版模板文件
-sh scripts/merge-env.sh /下载目录/vaulthub.env
-
-# 方式二：直接拉私有仓库的模板（token 需仓库读取权限）
-VAULTHUB_GH_TOKEN=ghp_xxx sh scripts/merge-env.sh \
-  https://raw.githubusercontent.com/q807738511/vaulthub/main/vaulthub.env
-
-# 先预览将追加的内容，不落盘
-sh scripts/merge-env.sh -n /下载目录/vaulthub.env
-
-# 合并后重建容器生效（restart 不够）
-docker compose up -d --force-recreate
-```
-
-不想用 git、也不想整目录替换时的升级流程：拉新版 compose 与 `vaulthub.env` 模板 → `merge-env.sh` 合并 → `docker compose up -d --force-recreate`。本地文件缺失时脚本会用模板整体创建（等价于首次安装）。
-
-旧的变量化 `.env` 写法仍兼容，但当前家庭 NAS 固定部署不再要求使用：
-
-- ~~`WEBUI_PORT=8088`~~
-- ~~`NAS_IP=192.0.2.10`~~
-- ~~`DASHBOARD_ORIGIN=https://home.examples.top`~~
-- ~~`ADMIN_TOKEN`~~（v0.8.0 已删除，写接口统一使用登录 Session）
-
-端口和媒体卷可以直接写在 Compose 中。`NAS_IP`、`DASHBOARD_ORIGIN`、`WEB_ROOT`、`XDG_CONFIG_HOME`、`XDG_DATA_HOME` 已有镜像默认值；当前环境不变时无需重复声明。v0.8.0 起 Caddy 与媒体库写操作均要求先使用 `ADMIN_USERNAME` / `ADMIN_PASSWORD` 登录。
-
-## 本地媒体目录
-
-~~先在 `.env` 中填写 NAS 的宿主机目录：~~（旧的变量化媒体路径方式，仍兼容但不再推荐。）
-
-- ~~`MUSIC_PATH=/srv/音乐`~~
-- ~~`COMIC_PATH=/srv/漫画`~~
-- ~~`BOOK_PATH=/srv/电子书`~~
-
-~~Compose 会把它们只读映射为 `/media/music`、`/media/comics`、`/media/books`。~~
-
-当前推荐直接在 Compose 中配置只读卷。可以映射一个公共媒体根目录：
+### 1. NVIDIA 显卡（安装 NVIDIA Container Toolkit 后可用）
 
 ```yaml
-volumes:
-  - ./data:/data
-  - /media:/media:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      - FFMPEG_HWACCEL=cuda
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,video,utility
 ```
 
-也可以只映射需要的具体目录：
+### 2. Intel 核显 / AMD 卡（QSV / VAAPI）
 
 ```yaml
-volumes:
-  - ./data:/data
-  - /srv/音乐:/media/music:ro
-  - /srv/漫画:/media/comics:ro
-  - /srv/komga/书画:/media/books:ro
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - video
+      - render        # 组不存在则删掉该行
+    environment:
+      - FFMPEG_HWACCEL=auto        # auto: QSV → VAAPI; AMD 可显式 vaapi
 ```
 
-宿主机路径写在冒号左边，容器路径写在右边，`:ro` 表示只读。容器路径在
-**账户头像 → 系统设置 → 媒体库 → 媒体库增加 → 本地媒体库** 里填写（v0.7.0 起首页不再有该表单）：
+---
 
-```text
-/media/music
-/media/comics
-/media/books
-```
+## 相关链接
 
-同一媒体库可添加多个路径。跨卷时可在 Compose 的 `volumes` 中继续增加只读映射，例如：
-
-```yaml
-- /vol5/音乐:/media/music-vol5:ro
-```
-
-然后在同一个音乐库中添加 `/media/music-vol5`。为避免泄露容器文件，媒体 API 只接受容器内已挂载的绝对目录。
-
-首次添加后媒体库会立即开始建立索引，「系统设置 → 媒体库」的表格与该库页面都会显示实时进度
-（已扫描数量、百分比、已用时长），大库可以随时点「取消构建」中止。
-
-## 界面导览（v0.9.41）
-
-| 位置 | 内容 |
-| --- | --- |
-| 顶栏左侧 | 品牌标识（无菜单） |
-| 顶栏右侧 | 只读信息：正在构建的索引与播放统计，无按钮 |
-| 侧边栏 | 主导航（首页、媒体搜索、PT 管理）→ 媒体库（你创建的库名与外连服务）→ 自定义（管理 › 进入模块设置）→ 底部「系统设置」 |
-| 首页 | 服务器监控 / 正在进行中的操作 / 最近入库（点击海报直接开始阅读或播放） |
-| 媒体搜索 | 独立页面，直接检索所有已索引媒体库的文件名，命中项可直接打开 |
-| 系统设置 | **独立配置页**（`#view-settings`，不再是弹窗）：媒体库 / 外观主题 / 刮削与硬件 / 账户与登录四个标签页，右上角「返回上一页」 |
-| 系统设置 → 媒体库 | 已添加媒体库表格（重新扫描 / 打开 / 删除）+ 媒体库增加：三张大类卡片各自含子类型、媒体路径、库名称与添加按钮 |
-| 系统设置 → 外观主题 | 语言、主题、背景图、侧栏宽度 |
-| 系统设置 → 刮削与硬件 | 刮削来源、全部重新扫描、API 测速、转码缓存、显卡检测 |
-| 系统设置 → 账户与登录 | 登录状态、Caddy 反向代理入口（编辑器为独立整页）、关于、退出登录 |
-| 视频播放器 | 悬浮控制栏：滑动鼠标唤出、3 秒无操作隐藏；左上 `⌄` 折叠 / 左下 `⌃` 展开、右上 `⛶` 全屏；左下标题与时间；中部上一个 / 快退 / 暂停播放 / 快进 / 下一个 / 关闭；右下更多（获取信息）/ 重复 / 随机 / 设置（转码质量、音频流、字幕）/ 播放列表 / 声音；底部方框上方为可拖动进度条 |
-
-资源大类（电子书刊 / 影视作品 / 音视作品）只在配置媒体库时用于选择子类型和刮削源，
-不再作为侧边栏或顶栏的导航入口。媒体库进入后左上角标题使用添加时填写的库名称。
-
-## 公网接入方案
-
-VaultHub 支持两种公网接入方式：
-
-1. **Cloudflare Tunnel（推荐）**：无需公网 IP，也无需路由器开放 80/443。
-2. **传统反向代理**：公网 DNS + 路由器端口转发 + Lucky/NPM；需要可用公网 IP。
-
-两种方式的核心规则相同：`home`、`kom`、`yy` 三个域名都必须先进入 VaultHub 的 `8088`，再由容器内 Caddy 按 Host 分流。不要把 `kom` 直接代理到 `25600`，也不要把 `yy` 直接代理到 `4533`，否则会绕过 Caddy 的 iframe 响应头处理。
-
-### 方案一：Cloudflare Tunnel
-
-在 Cloudflare Zero Trust → Networks → Tunnels → Public Hostnames 添加：
-
-```text
-home.examples.top  -> HTTP -> 192.0.2.10:8088   # VaultHub 主页
-kom.examples.top   -> HTTP -> 192.0.2.10:8088   # Caddy 再转 Komga :25600
-yy.examples.top    -> HTTP -> 192.0.2.10:8088   # Caddy 再转 Navidrome :4533
-```
-
-Cloudflare 提供公网 HTTPS，Tunnel 到 NAS 使用内网 HTTP。三条记录应属于同一个在线 Tunnel，DNS CNAME 应指向同一个 `<tunnel-id>.cfargotunnel.com`。
-
-验证：
-
-```bash
-curl -I https://home.examples.top/
-curl -I https://kom.examples.top/
-curl -I https://yy.examples.top/app/
-curl -sI https://kom.examples.top/ | grep -i content-security-policy
-```
-
-最后一条应包含 `frame-ancestors https://home.examples.top`。若返回 522，先检查该域名的 Public Hostname 是否指向 `192.0.2.10:8088`，再确认 DNS 没有指向旧 Tunnel。
-
-### 方案二：公网 DNS + Lucky/NPM 传统反向代理
-
-适合不使用 Tunnel、家里有公网 IPv4，或已正确配置 IPv6 入站访问的环境。IPv4 处于运营商 CGNAT 时不能使用此方案，除非先申请公网 IP。
-
-访问链路：
-
-```text
-浏览器 HTTPS :443
-  -> 公网 DNS（home/kom/yy 指向家庭公网 IP）
-  -> 路由器 TCP 443 端口转发
-  -> Lucky 或 Nginx Proxy Manager
-  -> http://192.0.2.10:8088
-  -> VaultHub 内置 Caddy 按 Host 分流
-```
-
-#### 1. DNS 解析
-
-在域名 DNS 服务商添加三条记录：
-
-```text
-A     home  -> 家庭公网 IPv4
-A     kom   -> 家庭公网 IPv4
-A     yy    -> 家庭公网 IPv4
-```
-
-若公网 IP 会变化，先在 Lucky/路由器配置 DDNS。使用 IPv6 时创建 AAAA 记录，并确认 NAS、代理和防火墙都允许 IPv6 443 入站。若 DNS 托管在 Cloudflare，传统源站模式可使用橙云代理，但它不等于 Tunnel，源站仍需开放 443。
-
-#### 2. 路由器端口转发
-
-```text
-公网 TCP 443 -> Lucky/NPM 所在主机的 TCP 443
-公网 TCP 80  -> Lucky/NPM 所在主机的 TCP 80（证书 HTTP 验证或跳转，可选）
-```
-
-不要把公网端口转发到 VaultHub 管理 API，也不要开放 `9099`。若运营商封锁 80，可使用 DNS Challenge 申请证书；443 仍需公网可达。
-
-#### 3. Lucky 配置
-
-创建 HTTPS Web 服务监听（通常为 443），申请 `home.examples.top`、`kom.examples.top`、`yy.examples.top` 证书，并建立三个按主机名匹配的子规则：
-
-```text
-前端域名 home.examples.top -> 后端 http://192.0.2.10:8088
-前端域名 kom.examples.top  -> 后端 http://192.0.2.10:8088
-前端域名 yy.examples.top   -> 后端 http://192.0.2.10:8088
-```
-
-启用 WebSocket，保留原始 `Host` 请求头，并设置 `X-Forwarded-Proto: https`。不要使用 Lucky 管理端口 `16601` 作为反代入口。
-
-#### 4. Nginx Proxy Manager 配置
-
-分别新建三个 Proxy Host：
-
-```text
-Domain Names: home.examples.top / kom.examples.top / yy.examples.top
-Scheme:       http
-Forward Host: 192.0.2.10
-Forward Port: 8088
-Websockets:   开启
-SSL:          为每个域名申请证书，开启 Force SSL
-```
-
-NPM 默认会转发原始 Host；不要在 Advanced 中覆盖成 `Host 192.0.2.10`。三个域名虽然共用同一个目标端口，但 Caddy 会根据原始 Host 分别返回 VaultHub、Komga 和 Navidrome。
-
-#### 5. 安全与验证
-
-- 路由器只开放反向代理的 80/443，不开放 `8088`、`4533`、`25600`、`61208` 或 `9099`。
-- 建议在 `home.examples.top` 前增加额外访问控制；VaultHub 管理写操作使用 HttpOnly 登录 Session。
-- `DASHBOARD_ORIGIN` 必须保持 `https://home.examples.top`。
-
-```bash
-curl -I https://home.examples.top/
-curl -I https://kom.examples.top/
-curl -I https://yy.examples.top/app/
-curl -sI https://kom.examples.top/ | grep -i content-security-policy
-```
-
-### 两种方案对比
-
-| 项目 | Cloudflare Tunnel | 传统反向代理 |
-|---|---|---|
-| 公网 IP | 不需要 | 需要公网 IPv4 或可入站 IPv6 |
-| 路由器开放端口 | 不需要 | 需要转发 443，通常还需 80 |
-| HTTPS 证书 | Cloudflare 托管 | Lucky/NPM 自行申请和续期 |
-| 源站 IP 暴露 | 不暴露 | 通常会暴露 |
-| 故障点 | cloudflared、Tunnel DNS | DDNS、端口转发、证书、防火墙 |
-| VaultHub/Caddy 配置 | 相同 | 相同 |
-
-当前环境已使用 Tunnel，继续使用方案一最省事。方案二适合作为不依赖 cloudflared 的备用接入方式，两种方案不建议让同一域名同时生效，以免 DNS 流量指向不一致。
-
+- **更新日志（历史版本）**：[Update Log.md](Update Log.md)
+- **本版本发布说明**：`.github/RELEASE_NOTES_0.9.56.md`
+- **Docker Hub**：`q807738511/vaulthub`
+- **GHCR**：`ghcr.io/q807738511/vaulthub`

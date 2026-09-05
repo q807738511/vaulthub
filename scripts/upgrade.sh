@@ -40,14 +40,15 @@ fi
 
 echo "Creating backup: $BACKUP_DIR"
 mkdir -p "$BACKUP_DIR"
-for name in Dockerfile docker-compose.yml .env vaulthub.env .dockerignore Caddyfile index.html caddy vaulthub-manager README.md SHA256SUMS data; do
+# v0.9.56: README.md 拆分出 Update Log.md，两者都随版本分发
+for name in Dockerfile docker-compose.yml .env vaulthub.env .dockerignore Caddyfile index.html caddy vaulthub-manager README.md "Update Log.md" SHA256SUMS data; do
   if [ -e "$TARGET_DIR/$name" ]; then
     cp -a "$TARGET_DIR/$name" "$BACKUP_DIR/"
   fi
 done
 
 echo "Installing VaultHub $VERSION files ..."
-for name in Dockerfile docker-compose.yml .dockerignore Caddyfile index.html caddy vaulthub-manager README.md; do
+for name in Dockerfile docker-compose.yml .dockerignore Caddyfile index.html caddy vaulthub-manager README.md "Update Log.md"; do
   cp -a "$FILES_DIR/$name" "$TARGET_DIR/$name"
 done
 

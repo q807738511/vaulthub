@@ -64,7 +64,7 @@ assert 'event.target.closest(".lib-kind-form")' in HOME, "点击卡片内控件�
 
 # ---------------------------------------------------------------- 3. 扫描深度
 assert "func walkLibraryFiles(" in WALK, "缺少深度扫描 walker"
-assert "walkMultiLibraryFiles(ctx, scanPaths, scanMaxDepth()" in GO, "扫描必须走多路径 walker（v0.9.55）"
+assert "walkMultiLibraryFiles(ctx, scanPaths, scanMaxDepth()" in GO, "扫描必须走多路径 walker（v0.9.56）"
 assert "return walkLibraryFiles(ctx, roots[0], maxDepth, emit)" in WALK, "单路径库必须退化为无前缀扫描"
 assert "filepath.Walk(l.Path" not in GO, "不能再使用 lstat 语义的 filepath.Walk"
 assert "os.Stat(full)" in WALK, "必须用 Stat 穿透符号链接"
@@ -115,11 +115,11 @@ assert ".media-reader-overlay.reader-theme-custom .media-reader-body" in CSS, "�
 assert "readerThemeClass()" in JS, "阅读器必须应用主题类"
 
 # ---------------------------------------------------------------- 版本与发布引用
-assert HTML.count("v0.9.55") >= 2, "关于与侧栏版本必须是 v0.9.55"
-assert 'VAULTHUB_ASSET_VERSION = "0.9.55"' in HTML, "资源版本必须是 0.9.55"
-assert 'VAULTHUB_SCRIPT_VERSION = "0.9.55"' in STATE, "脚本版本必须是 0.9.55"
-assert "ghcr.io/q807738511/vaulthub:latest" in COMPOSE, "v0.9.55 起 Compose 跟随 latest"
-assert (ROOT / ".github/RELEASE_NOTES_0.9.55.md").exists(), "缺少 v0.9.55 release notes"
+assert HTML.count("v0.9.56") >= 2, "关于与侧栏版本必须是 v0.9.56"
+assert 'VAULTHUB_ASSET_VERSION = "0.9.56"' in HTML, "资源版本必须是 0.9.56"
+assert 'VAULTHUB_SCRIPT_VERSION = "0.9.56"' in STATE, "脚本版本必须是 0.9.56"
+assert "ghcr.io/q807738511/vaulthub:latest" in COMPOSE, "v0.9.56 起 Compose 跟随 latest"
+assert (ROOT / ".github/RELEASE_NOTES_0.9.56.md").exists(), "缺少 v0.9.56 release notes"
 
 # ---------------------------------------------------------------- 历史契约不回退
 assert 'id="view-search"' in HTML and "function runMediaSearch()" in JS, "媒体搜索不能回退"

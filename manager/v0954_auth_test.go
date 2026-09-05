@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// v0.9.55：鉴权模式与账户持久化单测。
+// v0.9.56：鉴权模式与账户持久化单测。
 //  1. 环境变量推导：ADMIN_PASSWORD 为空 → open；非空 → password（hash 可验）。
 //  2. auth.json 读写往返 + 文件优先于环境变量。
 //  3. 密码校验（常数时间比较路径）与错误密码拒绝。
@@ -78,7 +78,7 @@ func TestV0954AuthFileRoundTrip(t *testing.T) {
 	if !m2.passwordOK("hello123") {
 		t.Fatal("round-tripped credentials must verify")
 	}
-	// open mode round trip: v0.9.55 保留 hash（切回密码模式/改密时验证原密码）
+	// open mode round trip: v0.9.56 保留 hash（切回密码模式/改密时验证原密码）
 	m3 := &manager{authFile: file}
 	m3.username = "newbie"
 	m3.open = true
