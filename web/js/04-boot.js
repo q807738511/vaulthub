@@ -24,7 +24,7 @@ loadBoards();
 loadHiddenModules();
 loadSidebarWidth();
 loadSidebarRail();
-/* v0.9.55：先探测鉴权模式 —— 开放模式自动登录（无登录遮罩），密码模式沿用登录探测。 */
+/* v0.9.56：先探测鉴权模式 —— 开放模式自动登录（无登录遮罩），密码模式沿用登录探测。 */
 initVaultHubAuth();
 
 document.body.dataset.theme = settings.theme === "light" ? "light" : "dark";
@@ -44,6 +44,7 @@ setInterval(() => refreshSessionStatus(false), 60000);
 
 applyI18n();
 initSidebarResizer();
+initSidebarNavOverflowWatch();
 renderCustomNav();
 initMediaLogin();
 renderPtLoginState();

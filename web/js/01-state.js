@@ -8,7 +8,7 @@ const VAULTHUB_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
    历史故障：v0.8.3→v0.8.5 的前端修改在服务端已生效，但浏览器仍执行缓存里的
    旧 02-media.js，用户看到「没有更新」。现在入口页 no-store、静态资源带 ?v=，
    并在启动时做一次一致性自查，不一致就绕过缓存强制重载一次。 */
-const VAULTHUB_SCRIPT_VERSION = "0.9.55";
+const VAULTHUB_SCRIPT_VERSION = "0.9.56";
 function ensureFreshAssets() {
   /* expected 为空 = 浏览器执行的 index.html 早于 v0.8.6（旧版本入口页没有声明
      版本号），同样属于"页面是旧的"，也需要换 URL 重新取一次。 */
@@ -98,12 +98,12 @@ async function requireVaultHubLogin() {
 async function handleProtectedResponse(res) { if (res.status === 401) { if (vaultHubAuthMode === "open") { await vaultHubAutoLogin(); handleVaultHubAuthResult(true); markVaultHubActivity(); return true; } handleVaultHubAuthResult(false); renderSessionStatus(false); return false; } markVaultHubActivity(); renderSessionStatus(true); return true; }
 function guardProtectedAction(fn) { return async (...args)=>{if(vaultHubAuthenticated || await requireVaultHubLogin()) return fn(...args);}; }
 
-/* ---------- v0.9.55 鉴权模式（开放模式 / 密码模式） ---------- */
+/* ---------- v0.9.56 鉴权模式（开放模式 / 密码模式） ---------- */
 /* /api/auth/mode 是公共端点：启动时先探测当前模式。密码模式维持原登录遮罩流程；
    开放模式（无密码）自动登录一次拿到会话 Cookie，全程不出现登录遮罩，
    会话因 30 分钟空闲失效后也会在探测/写操作时静默恢复。 */
 let vaultHubAuthMode = "password";
-/* v0.9.55：系统是否曾设置过密码（auth.json 里有 hash 凭据）。开放模式若曾设置过
+/* v0.9.56：系统是否曾设置过密码（auth.json 里有 hash 凭据）。开放模式若曾设置过
    密码，账户变更（改密/切回密码模式）仍需验证原密码；纯开放模式则不需要。 */
 let vaultHubHasPassword = false;
 async function vaultHubFetchAuthMode() {
@@ -1332,7 +1332,33 @@ function initSidebarResizer() {
   window.addEventListener("touchend", stop);
 }
 
-/* ================= v0.9.55 系统设置 → 账户与登录：登录凭据与鉴权模式 ================= */
+/* v0.9.56：移动端顶栏（侧栏改顶栏）可横向滚动查看更多 —— 当导航项总宽超过
+   可视宽度时给 .sidebar 加 .nav-overflow（右侧渐隐提示「还有更多」），
+   滚动到最右端后移除提示。桌面端此函数无副作用（class 只被 ≤768px 媒体查询消费）。 */
+function updateSidebarNavOverflow() {
+  const side = document.getElementById("sidebar");
+  const nav = side ? side.querySelector(":scope > .nav") : null;
+  if (!side || !nav) return;
+  const hasOverflow = nav.scrollWidth > nav.clientWidth + 2;
+  const atEnd = hasOverflow && nav.scrollLeft + nav.clientWidth >= nav.scrollWidth - 2;
+  side.classList.toggle("nav-overflow", hasOverflow && !atEnd);
+}
+function initSidebarNavOverflowWatch() {
+  const nav = document.querySelector("#sidebar > .nav");
+  if (!nav) return;
+  const update = () => requestAnimationFrame(updateSidebarNavOverflow);
+  nav.addEventListener("scroll", update, { passive: true });
+  window.addEventListener("resize", update);
+  /* 自定义导航项 / 媒体库导航项是异步渲染进 .nav 的（renderCustomNav /
+     refreshMediaLibraries），用 MutationObserver 兜底，DOM 变化后重测一次。 */
+  if (typeof MutationObserver !== "undefined") {
+    const mo = new MutationObserver(update);
+    mo.observe(nav, { childList: true, subtree: true });
+  }
+  update();
+}
+
+/* ================= v0.9.56 系统设置 → 账户与登录：登录凭据与鉴权模式 ================= */
 async function loadAccountCredentialsUI() {
   const modeBadge = document.getElementById("accountAuthModeBadge");
   const userEl = document.getElementById("accountAuthUsername");
@@ -1359,7 +1385,7 @@ async function saveAccountCredentials() {
   const f = accountCredFields();
   const username = (f.u && f.u.value || "").trim(), pw = f.n && f.n.value || "", pw2 = f.n2 && f.n2.value || "";
   const curPw = f.c && f.c.value || "";
-  /* v0.9.55：系统存在密码凭据（密码模式或开放模式曾设置密码）时，
+  /* v0.9.56：系统存在密码凭据（密码模式或开放模式曾设置密码）时，
      修改用户名/密码必须验证当前密码；纯开放模式（从未设密码）首次设置除外。 */
   const needOld = vaultHubHasPassword || vaultHubAuthMode !== "open";
   if (needOld && !curPw) { toast("⚠️ 请输入当前密码后再保存账户信息"); return; }
@@ -1378,7 +1404,7 @@ async function saveAccountCredentials() {
 async function switchAccountOpenMode() {
   const f = accountCredFields();
   const curPw = f.c && f.c.value || "";
-  /* v0.9.55：启用开放模式必须验证当前密码（v0.9.55 起即如此，保持）。 */
+  /* v0.9.56：启用开放模式必须验证当前密码（v0.9.56 起即如此，保持）。 */
   if (!curPw) { toast("⚠️ 请输入当前密码后再切换开放模式"); return; }
   if (!confirm("切换为开放模式后，任何人都无需密码即可进入系统设置，确定继续？")) return;
   try {
@@ -1395,7 +1421,7 @@ async function switchAccountPasswordMode() {
   const f = accountCredFields();
   const username = (f.u && f.u.value || "").trim(), pw = f.n && f.n.value || "", pw2 = f.n2 && f.n2.value || "";
   const curPw = f.c && f.c.value || "";
-  /* v0.9.55：系统曾设置过密码（密码模式或开放模式保留凭据）时必须验证原密码；
+  /* v0.9.56：系统曾设置过密码（密码模式或开放模式保留凭据）时必须验证原密码；
      从未设置过密码的纯开放模式则直接设置新密码即可。 */
   const needOld = vaultHubHasPassword || vaultHubAuthMode !== "open";
   if (needOld && !curPw) { toast("⚠️ 请输入当前密码后再切回密码模式"); return; }

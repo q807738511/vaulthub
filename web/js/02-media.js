@@ -175,7 +175,7 @@ function renderAudioFavorites(lib) {
   return rows.length ? `<div class="media-file-list">${rows.map(({lib: rowLib, path}) => renderAudioRow(rowLib, { path })).join("")}</div>` : '<div class="empty-tip">还没有喜欢的歌曲，请在歌曲列表中点击 ♡ 收藏。</div>';
 }
 
-/* ================= 手动歌单（v0.9.55） =================
+/* ================= 手动歌单（v0.9.56） =================
    歌曲行的 ♫ 按钮弹出歌单勾选器：可把当前歌曲加入多个本地歌单或新建歌单；
    「歌单」页签展示全部歌单，支持播放整单/查看/删除。循环模式只保留在
    底部播放器（cycleAudioLoop），列表页不再放播放模式按钮。 */
@@ -467,7 +467,7 @@ function renderSeriesLibraryContent(host, lib, files) {
   host.innerHTML = `<section class="content-collection">${mediaLibraryHeading(lib, `${shows.length} 部剧 · ${files.length} 集`)}${body}</section>`;
 }
 function renderSeriesShowCard(lib, show) { const art=show.poster?`<img src="${esc(show.poster)}" alt="${esc(show.title)}" loading="lazy">`:`<span>${esc(show.title)}</span>`; const seasons=show.seasonList?.length||0, episodes=show.files?.length||0; return `<article class="media-poster-card series-show-card" data-series-show="${esc(show.key)}" onclick="openSeriesDetails(${jsAttrArg(lib.id)},${jsAttrArg(show.key)})"><div class="media-poster-art" style="${show.poster?"":`background:${coverGradient(show.title)}`}">${art}</div><div class="media-poster-info"><strong>${esc(show.title)}</strong><small>${esc([show.year, `${seasons} 季`, `${episodes} 集`, show.provider].filter(Boolean).join(" · "))}</small></div></article>`; }
-/* v0.9.55：影视详情右上角关闭按钮按语境返回 ——
+/* v0.9.56：影视详情右上角关闭按钮按语境返回 ——
    剧集详情/电影详情下显示「返回媒体库」；单集详情查看时显示「返回详情」（回到剧集详情页）。 */
 let activeSeriesDetail = null;  // 最近一次打开的剧集详情 {libId, showKey}
 let seriesEpisodeReturn = null; // 单集详情返回目标（返回详情 = 回到该剧集详情页）
@@ -491,8 +491,9 @@ function closeEpisodeDetail() {
 function openSeriesDetails(libId, showKey) { enterMovieDetailSidebarMode(); const lib=findMediaLibrary(libId), viewer=document.getElementById("local-media-viewer-movie"); if(!lib||!viewer)return; const show=readSeriesShow(libId,showKey); if(!show)return; activeSeriesDetail={libId, showKey}; seriesEpisodeReturn=null; const hero={title:show.title,overview:show.overview||"已按 Plex / Emby 风格根据根目录、Season 01 和 S01E01 规则聚合到同一剧集。",poster:show.poster,logo:show.logo,fanart:show.fanart,backdrop:show.backdrop,year:show.year,provider:show.provider,watched:show.watched,media_type:"series"}; /* v0.9.51：进入剧集详情即把该剧的分集按季/集顺序设为播放队列，
      这样播放器的「上一个 / 下一个 / 播放列表」走的是同一部剧而不是整库。 */
   setVideoPlaylist(libId, (show.seasonList||[]).flatMap(season=>(season.episodes||[]).map(ep=>({path:ep.path}))));
-  const seasons=(show.seasonList||[]).map(season=>`<section class="series-season-block"><h3>Season ${String(season.season).padStart(2,"0")}</h3><div class="media-file-list">${season.episodes.map(ep=>renderSeriesEpisodeRow(lib,ep)).join("")}</div></section>`).join(""); viewer.innerHTML=`<div class="media-reader-overlay movie-detail-page series-detail-page"><div class="movie-detail-scroll">${movieDetailCloseButton()}${renderMovieHero(lib,show.files?.[0]?.path||"",hero)}<section><h3>剧集列表</h3><div class="hint">按标准命名规则聚合：根目录剧名 / Season 01 / 剧名 S01E01 标题；刮削先锁定主剧集，再将本地多季多集挂载到同一条目。</div></section>${seasons}</div></div>`; scrollViewerIntoView(viewer); }
-function renderSeriesEpisodeRow(lib, ep) { const path=String(ep.path), meta=ep.meta||movieMetadataFor(path), parsed=ep.parsed||parseSeriesEpisode(path); return `<div class="media-file-row series-episode-row"><div class="media-file-name" title="${esc(path)}"><b>${esc(parsed.label)} · ${esc(meta.title||parsed.title)}</b><small>${esc([meta.year,meta.provider].filter(Boolean).join(" · "))}</small></div><span class="media-file-meta">${esc(fileExt(path).toUpperCase())} · ${formatFileSize(ep.size)}</span><div class="media-actions"><button class="btn" onclick="openLocalMedia('movie',${jsAttrArg(lib.id)},${jsAttrArg(path)})">▶ 播放</button><button class="btn" onclick="openEpisodeDetails(${jsAttrArg(lib.id)},${jsAttrArg(path)})">详情</button></div></div>`; }
+  const episodeArt = show.poster || show.fanart || show.backdrop || "";
+  const seasons=(show.seasonList||[]).map(season=>`<section class="series-season-block"><h3>Season ${String(season.season).padStart(2,"0")}</h3><div class="series-episode-list">${season.episodes.map(ep=>renderSeriesEpisodeRow(lib,ep,episodeArt)).join("")}</div></section>`).join(""); viewer.innerHTML=`<div class="media-reader-overlay movie-detail-page series-detail-page"><div class="movie-detail-scroll">${movieDetailCloseButton()}${renderMovieHero(lib,show.files?.[0]?.path||"",hero)}<section><h3>剧集列表</h3><div class="hint">按标准命名规则聚合：根目录剧名 / Season 01 / 剧名 S01E01 标题；刮削先锁定主剧集，再将本地多季多集挂载到同一条目。点击剧集卡片直接播放，点击「详情」查看单集信息。</div></section>${seasons}</div></div>`; scrollViewerIntoView(viewer); }
+function renderSeriesEpisodeRow(lib, ep, artUrl) { const path=String(ep.path), meta=ep.meta||movieMetadataFor(path), parsed=ep.parsed||parseSeriesEpisode(path); const safeArt=cssUrlValue(artUrl||meta.poster||""); const style=safeArt?`style="background-image:url('${esc(safeArt)}')"`:""; const label=parsed.label||`S${String(parsed.season||1).padStart(2,"0")}E${String(parsed.episode||0).padStart(2,"0")}`; return `<article class="series-episode-row series-episode-card" data-series-episode="${esc(path)}" onclick="openLocalMedia('movie',${jsAttrArg(lib.id)},${jsAttrArg(path)})"><div class="series-episode-thumb" ${style}><span class="series-episode-label">${esc(label)}</span></div><div class="series-episode-body"><div class="series-episode-title" title="${esc(path)}"><b>${esc(meta.title||parsed.title||label)}</b><small>${esc([meta.year,meta.provider].filter(Boolean).join(" · "))}</small></div><span class="media-file-meta">${esc(fileExt(path).toUpperCase())} · ${formatFileSize(ep.size)}</span><div class="media-actions"><button class="btn" onclick="event.stopPropagation();openLocalMedia('movie',${jsAttrArg(lib.id)},${jsAttrArg(path)})">▶ 播放</button><button class="btn" onclick="event.stopPropagation();openEpisodeDetails(${jsAttrArg(lib.id)},${jsAttrArg(path)})">详情</button></div></div></article>`; }
 function renderMovieLibrary(lib, files) { const host = document.createElement("div"); renderMovieLibraryContent(host, lib, files); return host.innerHTML; }
 function renderMovieRow(lib, file) { const path=String(file.path), meta=movieMetadataFor(path); return `<div class="media-file-row"><div class="media-file-name" title="${esc(path)}"><b>${esc(meta.title)}</b><small>${esc([meta.year, meta.provider].filter(Boolean).join(" · "))}</small></div><span class="media-file-meta">${esc(fileExt(path).toUpperCase())} · ${formatFileSize(file.size)}</span><div class="media-actions"><button class="btn" data-media-group="movie" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openLocalMediaButton(this)">▶ 播放</button></div></div>`; }
 function movieStateKey(kind, libId, path) { return `vaulthub_movie_${kind}_${libId}_${path}`; }
@@ -1009,7 +1010,7 @@ function readAudioMetadata() {
 function writeAudioMetadata(data) {
   try { localStorage.setItem(audioMetadataCache, JSON.stringify(data)); } catch (e) {}
 }
-/* v0.9.55：封面写入媒体库持久化 —— 刮削/手动设置封面后自动 POST 到后端，
+/* v0.9.56：封面写入媒体库持久化 —— 刮削/手动设置封面后自动 POST 到后端，
    存成媒体文件同目录 sidecar（<名>.cover.jpg/png/webp/gif），展示走同源本地 URL，
    换浏览器/清缓存后封面仍在；媒体目录只读时静默回退远端直链，不影响展示。 */
 const coverPersistAttempted = new Set(); // 会话级：每个文件每会话最多尝试一次落盘
@@ -1059,6 +1060,62 @@ function audioMetadataFor(path) {
   const all = readAudioMetadata();
   return { ...audioBaseMetadata(path), ...(all[path] || {}) };
 }
+
+/* v0.9.56：歌手刮削 —— 歌手维度独立于单曲元数据。
+   localStorage 缓存结构：{ [artist]: { name, cover, provider, collaborators:[], checkedAt } }
+   会话内已尝试过的歌手不再重复请求；刮削失败（无 provider）保持文字/渐变占位。 */
+const audioArtistCache = "vaulthub_audio_artists_v1";
+const audioArtistAttemptedSession = new Set();
+function readAudioArtistCache() {
+  try { return JSON.parse(localStorage.getItem(audioArtistCache) || "{}") || {}; } catch (e) { return {}; }
+}
+function writeAudioArtistCache(data) {
+  try { localStorage.setItem(audioArtistCache, JSON.stringify(data)); } catch (e) {}
+}
+function audioArtistInfoFor(artist) {
+  const all = readAudioArtistCache();
+  return all[String(artist)] || null;
+}
+async function scrapeAudioArtists(host, lib, files) {
+  const pending = new Set();
+  files.forEach(file => {
+    const meta = audioMetadataFor(String(file.path));
+    const artist = (meta && meta.artist) || "未知歌手";
+    if (artist === "未知歌手" || pending.has(artist) || audioArtistAttemptedSession.has(artist)) return;
+    const cached = audioArtistInfoFor(artist);
+    if (cached && cached.cover) return; // 已有头像不再重复拉
+    pending.add(artist);
+  });
+  let updated = false;
+  for (const artist of pending) {
+    try {
+      const response = await fetch(`/api/media/audio/artist?name=${encodeURIComponent(artist)}`, { cache: "force-cache" });
+      const item = response.ok ? await response.json() : null;
+      const all = readAudioArtistCache();
+      if (item && item.provider) {
+        all[artist] = { name: item.name || artist, cover: item.cover || "", provider: item.provider, collaborators: Array.isArray(item.collaborators) ? item.collaborators : [artist], checkedAt: Date.now() };
+        updated = true;
+      } else {
+        /* 刮削失败（404/两源都没命中）：记一条 provider 为空的缓存 —— 卡片保持
+           文件名解析出的歌手名文字占位，且刷新后不再反复请求同一歌手。 */
+        all[artist] = { name: artist, cover: "", provider: "", collaborators: [artist], checkedAt: Date.now() };
+      }
+      writeAudioArtistCache(all);
+    } catch (e) { /* 网络异常：保持占位，会话内不再重试 */ }
+    audioArtistAttemptedSession.add(artist);
+  }
+  if (updated && host && lib) {
+    const target = document.getElementById("local-media-content-audio");
+    if (target) loadLocalFiles("audio", lib, audioCursor);
+  }
+}
+function refreshAudioArtistScrape() {
+  try { localStorage.removeItem(audioArtistCache); } catch (e) {}
+  audioArtistAttemptedSession.clear();
+  const lib = findMediaLibrary(localMediaSelection.audio);
+  if (lib) loadLocalFiles("audio", lib, audioCursor);
+  toast("🔄 正在重新刮削歌手信息");
+}
 /* MusicBrainz 的 /recording 检索永远会返回「最像」的一条，哪怕相关度很低。
    之前无条件采纳 recordings[0]，导致「周杰伦 - 七里香.mp3」被刮成标题
    “周杰倫”、歌手“王泰翔 2000wtx”，「五月天 - 倔强.flac」被刮成
@@ -1082,11 +1139,11 @@ function audioMatchAcceptable(fallback, item) {
   /* 标题必须对上；歌手在文件名没给出时不作要求。 */
   return titleOk && artistOk;
 }
-/* v0.9.55：每页面会话内每首歌最多自动刮一次（成功/失败都记），刷新页面即重新尝试 ——
+/* v0.9.56：每页面会话内每首歌最多自动刮一次（成功/失败都记），刷新页面即重新尝试 ——
    既避免同一会话内反复请求（旧逻辑会把失败的文件名兜底永久留在 localStorage，
    刷新后永不重刮；5 分钟时间窗又让「刚失败想立即刷新重试」的用户干等）。 */
 const audioScrapeAttemptedSession = new Set();
-/* v0.9.55：刮削串行链 —— 首页「最近入库」、音乐库视图、周期刷新会并发触发多次
+/* v0.9.56：刮削串行链 —— 首页「最近入库」、音乐库视图、周期刷新会并发触发多次
    scrapeAudioMetadata；并行整表/交错写会把刚本地化的封面冲回远端。链式串行后，
    后发调用等前一轮完成，pending 过滤自然为空（已有 provider 不再刮）。 */
 let audioScrapeChain = Promise.resolve();
@@ -1113,7 +1170,7 @@ async function scrapeAudioMetadataInner(host, lib, files) {
       const response = await fetch(`/api/media/audio/metadata?title=${encodeURIComponent(fallback.title)}&artist=${encodeURIComponent(known?fallback.artist:"")}`, { cache: "force-cache" });
       const item = response.ok ? await response.json() : null;
       if (item) {
-        /* v0.9.55：单路径合并写，不再基于旧快照整表覆写 —— 音乐库视图与首页「最近入库」
+        /* v0.9.56：单路径合并写，不再基于旧快照整表覆写 —— 音乐库视图与首页「最近入库」
            可能并发触发多次刮削，整表写会把另一路刚本地化的封面冲回远端。 */
         const cur = readAudioMetadata();
         cur[path] = {
@@ -1135,32 +1192,127 @@ async function scrapeAudioMetadataInner(host, lib, files) {
   }
   if (updated && host && lib) renderAudioLibraryContent(host, lib, files);
 }
+/* ================= v0.9.56 专辑/歌手批量编辑 =================
+   需求：「允许编辑专辑或者歌手」—— 专辑/歌手卡片上的 ✎ 打开批量编辑弹窗，
+   改名与封面一次写入该专辑/歌手下的全部曲目（localStorage 元数据层，
+   与手动适配单曲同一存储），provider 记为 manual 后自动刮削不再覆盖。
+   注意：分组曲目要按整库拉取（fetchAllLibraryFiles），只用当前页会漏改后面几页。 */
+async function audioGroupFilesAll(kind, key) {
+  const target = String(key), lib = findMediaLibrary(localMediaSelection.audio);
+  let pool = audioFiles || [];
+  if (lib) {
+    try {
+      const all = await fetchAllLibraryFiles(lib.id, { has_more: true }, 0);
+      const audioOnly = all.filter(file => supportedLocalMediaFile("audio", lib, String(file.path)));
+      if (audioOnly.length) pool = audioOnly;
+    } catch (e) { /* 整库拉取失败：退回当前页，至少不阻塞编辑 */ }
+  }
+  return pool.filter(file => {
+    const meta = audioMetadataFor(String(file.path));
+    return kind === "artist" ? meta.artist === target : meta.album === target;
+  });
+}
+async function openAudioGroupEdit(kind, key) {
+  const isArtist = kind === "artist";
+  const files = await audioGroupFilesAll(kind, key);
+  const meta = files.length ? audioMetadataFor(String(files[0].path)) : { cover: "" };
+  document.getElementById("audioGroupEditKind").value = isArtist ? "artist" : "album";
+  document.getElementById("audioGroupEditKey").value = String(key);
+  document.getElementById("audioGroupEditTitle").innerHTML = `编辑${isArtist ? "歌手" : "专辑"}<button class="close" onclick="closeModal('audioGroupEditModal')">✕</button>`;
+  document.getElementById("audioGroupEditNameLabel").textContent = isArtist ? "歌手名" : "专辑名";
+  document.getElementById("audioGroupEditName").value = String(key);
+  document.getElementById("audioGroupEditCover").value = isArtist ? ((audioArtistInfoFor(key) || {}).cover || "") : (meta.cover || "");
+  document.getElementById("audioGroupEditHint").textContent = `将同时更新该${isArtist ? "歌手" : "专辑"}下的 ${files.length} 首曲目信息。`;
+  openModal("audioGroupEditModal");
+}
+async function saveAudioGroupEdit() {
+  const kind = document.getElementById("audioGroupEditKind").value;
+  const key = document.getElementById("audioGroupEditKey").value;
+  const name = document.getElementById("audioGroupEditName").value.trim();
+  const cover = document.getElementById("audioGroupEditCover").value.trim();
+  if (!name) { toast("⚠️ 名称不能为空"); return; }
+  const files = await audioGroupFilesAll(kind, key);
+  if (!files.length) { toast("⚠️ 该分组下没有曲目"); return; }
+  const all = readAudioMetadata();
+  files.forEach(file => {
+    const path = String(file.path), base = audioBaseMetadata(path), cur = all[path] || base;
+    all[path] = {
+      ...cur,
+      artist: kind === "artist" ? name : (cur.artist || base.artist),
+      album: kind === "album" ? name : (cur.album || base.album),
+      cover: cover || cur.cover || "",
+      provider: "manual",
+      checkedAt: Date.now(),
+    };
+  });
+  writeAudioMetadata(all);
+  if (kind === "artist") {
+    // 歌手改名/换头像：同步歌手缓存，避免卡片仍显示旧头像
+    const artistCache = readAudioArtistCache();
+    delete artistCache[String(key)];
+    artistCache[name] = { name, cover: cover || "", provider: "manual", collaborators: [name], checkedAt: Date.now() };
+    writeAudioArtistCache(artistCache);
+    audioArtistAttemptedSession.add(name);
+  }
+  if (audioArtistFilter === String(key)) audioArtistFilter = name;
+  if (audioTrackTitle === String(key)) audioTrackTitle = name;
+  closeModal("audioGroupEditModal");
+  toast(`✅ 已更新 ${files.length} 首曲目`);
+  const lib = findMediaLibrary(localMediaSelection.audio);
+  if (lib) loadLocalFiles("audio", lib, audioCursor);
+}
+
 function audioCoverData(meta, title) {
-  return meta.cover ? `<img src="${esc(meta.cover)}" alt="${esc(title)}" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:${JSON.stringify(title)}}))">` : esc(title);
+  /* v0.9.56 修复：onerror 里原来直接插 JSON.stringify(title)，其双引号会提前闭合
+     HTML 属性 —— 封面加载失败时抛 SyntaxError: Unexpected end of input，
+     文字占位反而不生效。改用 jsAttrArg（JSON 串再做 HTML 转义）。 */
+  return meta.cover ? `<img src="${esc(meta.cover)}" alt="${esc(title)}" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:${jsAttrArg(title)}}))">` : esc(title);
 }
 function renderAudioAlbums(lib, files) {
   const groups = new Map();
   files.forEach(file => { const meta = audioMetadataFor(String(file.path)); const key = meta.album || "未知专辑"; if (!groups.has(key)) groups.set(key, { meta, files: [] }); groups.get(key).files.push(file); });
-  return `<div class="audio-album-grid">${[...groups.entries()].map(([album, group]) => `<article class="audio-album-card" onclick="openAudioTracks('${esc(lib.id)}','album',${esc(JSON.stringify(album))})"><div class="audio-album-cover" style="background:${coverGradient(album)}">${audioCoverData(group.meta, album)}</div><div class="audio-album-info"><strong>${esc(album)}</strong><small>${esc(group.meta.artist)} · ${group.files.length} 首</small><div class="media-actions"><button class="btn" title="喜欢专辑" onclick="event.stopPropagation();toggleAudioFavorite(${jsAttrArg(lib.id)},${jsAttrArg(group.files[0].path)})">${isAudioFavorite(lib.id, group.files[0].path) ? "♥" : "♡"}</button><button class="btn" title="查看专辑曲目" onclick="event.stopPropagation();openAudioTracks('${esc(lib.id)}','album',${esc(JSON.stringify(album))})">▶ 曲目</button></div></div></article>`).join("")}</div>`;
+  /* v0.9.56：卡片整卡点击 → 该专辑全部曲目；✎ 批量编辑专辑名/封面（不触发跳转）。 */
+  return `<div class="audio-album-grid">${[...groups.entries()].map(([album, group]) => `<article class="audio-album-card" onclick="openAudioTracks('${esc(lib.id)}','album',${esc(JSON.stringify(album))})"><div class="audio-album-cover" style="background:${coverGradient(album)}">${audioCoverData(group.meta, album)}</div><div class="audio-album-info"><strong>${esc(album)}</strong><small>${esc(group.meta.artist)} · ${group.files.length} 首</small><div class="media-actions"><button class="btn" title="喜欢专辑" onclick="event.stopPropagation();toggleAudioFavorite(${jsAttrArg(lib.id)},${jsAttrArg(group.files[0].path)})">${isAudioFavorite(lib.id, group.files[0].path) ? "♥" : "♡"}</button><button class="btn" title="编辑专辑" onclick="event.stopPropagation();openAudioGroupEdit('album',${jsAttrArg(album)})">✎</button><button class="btn" title="查看专辑曲目" onclick="event.stopPropagation();openAudioTracks('${esc(lib.id)}','album',${esc(JSON.stringify(album))})">▶ 曲目</button></div></div></article>`).join("")}</div>`;
 }
 function renderAudioArtists(lib, files) {
   const groups = new Map();
   files.forEach(file => { const meta = audioMetadataFor(String(file.path)); const key = meta.artist || "未知歌手"; if (!groups.has(key)) groups.set(key, []); groups.get(key).push(file); });
-  return `<div class="audio-album-grid">${[...groups.entries()].map(([artist, songs]) => `<article class="audio-album-card" onclick="openAudioTracks('${esc(lib.id)}','artist',${esc(JSON.stringify(artist))})"><div class="audio-album-cover" style="background:${coverGradient(artist)}">${esc(artist)}</div><div class="audio-album-info"><strong>${esc(artist)}</strong><small>${songs.length} 首歌曲</small><div class="media-actions"><button class="btn" title="喜欢歌手" onclick="event.stopPropagation();toggleAudioFavorite(${jsAttrArg(lib.id)},${jsAttrArg(songs[0].path)})">${isAudioFavorite(lib.id, songs[0].path) ? "♥" : "♡"}</button><button class="btn" title="查看歌手歌曲" onclick="event.stopPropagation();openAudioTracks('${esc(lib.id)}','artist',${esc(JSON.stringify(artist))})">▶ 曲目</button></div></div></article>`).join("")}</div>`;
+  /* v0.9.56：歌手卡片封面优先用歌手刮削头像（localStorage 缓存），
+     未刮削/失败时回落渐变首字；✎ 批量编辑歌手名/头像（不触发跳转）。 */
+  return `<div class="audio-album-grid audio-artist-grid">${[...groups.entries()].map(([artist, songs]) => { const artistMeta = audioArtistInfoFor(artist); const cover = artistMeta && artistMeta.cover ? `<img class="audio-artist-avatar" src="${esc(artistMeta.cover)}" alt="${esc(artist)}" loading="lazy" onerror="this.parentElement.classList.add('audio-artist-avatar-fallback');this.remove()">` : ""; return `<article class="audio-album-card audio-artist-card" onclick="openAudioTracks('${esc(lib.id)}','artist',${esc(JSON.stringify(artist))})"><div class="audio-album-cover audio-artist-cover" style="${cover ? "" : `background:${coverGradient(artist)}`}">${cover || esc(artist)}</div><div class="audio-album-info"><strong>${esc(artist)}</strong><small>${songs.length} 首歌曲${artistMeta && artistMeta.collaborators && artistMeta.collaborators.length > 1 ? " · 合作演唱" : ""}</small><div class="media-actions"><button class="btn" title="喜欢歌手" onclick="event.stopPropagation();toggleAudioFavorite(${jsAttrArg(lib.id)},${jsAttrArg(songs[0].path)})">${isAudioFavorite(lib.id, songs[0].path) ? "♥" : "♡"}</button><button class="btn" title="编辑歌手" onclick="event.stopPropagation();openAudioGroupEdit('artist',${jsAttrArg(artist)})">✎</button><button class="btn" title="查看歌手歌曲" onclick="event.stopPropagation();openAudioTracks('${esc(lib.id)}','artist',${esc(JSON.stringify(artist))})">▶ 曲目</button></div></div></article>`; }).join("")}</div>`;
 }
 let audioArtistFilter = "";
-function openAudioTracks(libId, kind, key) {
+/* v0.9.56：点击专辑/歌手卡片 → 展示该专辑/歌手全部曲目。
+   之前沿用 loadLocalFiles 分页只取第一页、tracks 视图又隐藏翻页器，
+   曲目较多的专辑/歌手只能看到前 N 首；现改为整单拉取（与歌单 loadPlaylistTracks
+   同款），并把 audioFiles 设为该集合 —— 点击任一曲目播放后，上一首/下一首/
+   自动连播都在该专辑/歌手内，满足「点击曲目直接播放歌手/专辑」。 */
+async function openAudioTracks(libId, kind, key) {
   audioArtistFilter = String(key);
   audioPlaylistFilter = "";
   audioTrackTitle = String(key);
   audioView = "tracks";
   audioTracksBack = kind === "artist" ? "artists" : "albums";
   const lib = findMediaLibrary(libId);
-  if (lib) loadLocalFiles("audio", lib, 0);
+  const host = document.getElementById("local-media-content-audio");
+  if (!lib || !host) return;
+  try {
+    const all = await fetchAllLibraryFiles(lib.id, { has_more: true }, 0);
+    const files = all
+      .filter(file => supportedLocalMediaFile("audio", lib, String(file.path)))
+      .filter(file => { const meta = audioMetadataFor(String(file.path)); return meta.artist === key || meta.album === key; })
+      .sort((a, b) => String(a.path).localeCompare(String(b.path), "zh-CN"));
+    audioFiles = files;
+    audioCursor = 0;
+    if (!files.length) { audioTrackTitle = ""; audioArtistFilter = ""; audioView = audioTracksBack; }
+    renderAudioLibraryContent(host, lib, files);
+  } catch (e) {
+    loadLocalFiles("audio", lib, 0); // 拉取失败回退分页视图
+  }
 }
 let audioTracksBack = "albums"; // 曲目列表「← 返回」目标：albums | artists | playlists
 function renderAudioTrackList(lib, files) {
-  /* v0.9.55：曲目列表头部不再放播放模式按钮（随机/列表循环/顺序），
+  /* v0.9.56：曲目列表头部不再放播放模式按钮（随机/列表循环/顺序），
      循环模式只在播放器底部按钮中体现（cycleAudioLoop）。 */
   const back = audioTracksBack === "artists" ? "artists" : audioTracksBack === "playlists" ? "playlists" : "albums";
   return `<div class="audio-track-head"><button class="btn" onclick="audioTrackTitle='';audioArtistFilter='';audioPlaylistFilter='';setAudioView('${back}')">← 返回</button><strong>${esc(audioTrackTitle)}</strong><span class="media-file-meta">${files.length} 首</span></div>${files.length ? `<div class="media-file-list">${files.map(file => renderAudioRow(lib, file)).join("")}</div>` : '<div class="empty-tip">该列表下暂无歌曲</div>'}`;
@@ -1173,17 +1325,21 @@ function renderAudioLibraryContent(host, lib, files) {
   const latestGrid = audioView === "albums" && latest.length ? `<section class="content-collection latest-music"><div class="content-section-heading"><div><span class="eyebrow">最新音乐</span><h3>最近识别与入库</h3></div></div><div class="audio-latest-grid">${latest.map(file => renderAudioLatestCard(lib, file)).join("")}</div></section>` : "";
   const audioTabs = `<div class="audio-view-tabs"><button class="${audioView === "albums" ? "active" : ""}" onclick="setAudioView('albums')">专辑</button><button class="${audioView === "artists" ? "active" : ""}" onclick="setAudioView('artists')">歌手</button><button class="${audioView === "playlists" || (audioView === "tracks" && audioPlaylistFilter) ? "active" : ""}" onclick="setAudioView('playlists')">♫ 歌单</button><button class="${audioView === "favorites" ? "active" : ""}" onclick="setAudioView('favorites')">♥ 喜欢</button><label class="page-size-picker">每页 <select id="audioPageSize" onchange="setAudioPageSize(this.value)"><option value="20"${audioPageSize===20?' selected':''}>20</option><option value="50"${audioPageSize===50?' selected':''}>50</option><option value="100"${audioPageSize===100?' selected':''}>100</option></select></label></div>`;
   host.innerHTML = `<section class="content-collection">${mediaLibraryHeading(lib, "", audioTabs)}${body}${audioView === "favorites" || audioView === "tracks" || audioView === "playlists" ? "" : pager}</section>${latestGrid}`;
+  /* v0.9.56：歌手视图渲染后异步刮削歌手头像（成功后自动重渲染刷新封面）。
+   刮削失败（两源都没命中）时把 provider 留空写进缓存，卡片走「文件名/歌手名文字占位」，
+   即用户要求的「刮削失败则以文件名展示」。 */
+  if (audioView === "artists") scrapeAudioArtists(host, lib, files);
 }
 function renderAudioLatestCard(lib, file) { const path=String(file.path), meta=audioMetadataFor(path); return `<article class="audio-latest-card" onclick="playAudioFile(${jsAttrArg(lib.id)},${jsAttrArg(path)})"><div class="audio-latest-cover" style="background:${coverGradient(meta.title)}">${audioCoverData(meta, meta.title)}</div><div><strong>${esc(meta.title)}</strong><small>${esc(meta.artist)}</small></div><button class="btn" title="喜欢" onclick="event.stopPropagation();toggleAudioFavorite(${jsAttrArg(lib.id)},${jsAttrArg(path)})">${isAudioFavorite(lib.id,path)?"♥":"♡"}</button></article>`; }
 function renderAudioLibrary(lib, files) { const host = document.createElement("div"); renderAudioLibraryContent(host, lib, files); return host.innerHTML; }
-function renderAudioRow(lib, file) { const path = String(file.path), meta = audioMetadataFor(path); return `<div class="media-file-row"><div class="media-file-name" title="${esc(path)}"><b>${esc(meta.title)}</b><small>${esc(meta.artist)} · ${esc(meta.album)}</small></div><span class="media-file-meta">${esc(fileExt(path).toUpperCase())}</span><div class="media-actions"><button class="btn" title="播放" onclick="playAudioFile(${jsAttrArg(lib.id)},${jsAttrArg(path)})">▶</button><button class="btn" title="喜欢" onclick="toggleAudioFavorite(${jsAttrArg(lib.id)},${jsAttrArg(path)})">${isAudioFavorite(lib.id, path) ? "♥" : "♡"}</button><button class="btn" title="加入歌单" onclick="openAudioPlaylistPicker(${jsAttrArg(lib.id)},${jsAttrArg(path)})">♫</button><button class="btn" title="编辑歌曲信息" onclick="openAudioMetadata(${jsAttrArg(path)})">✎</button></div></div>`; }
+function renderAudioRow(lib, file) { const path = String(file.path), meta = audioMetadataFor(path); return `<div class="media-file-row audio-row-click" data-audio-path="${esc(path)}" onclick="playAudioFile(${jsAttrArg(lib.id)},${jsAttrArg(path)})"><div class="media-file-name" title="${esc(path)}"><b>${esc(meta.title)}</b><small>${esc(meta.artist)} · ${esc(meta.album)}</small></div><span class="media-file-meta">${esc(fileExt(path).toUpperCase())}</span><div class="media-actions"><button class="btn" title="播放" onclick="event.stopPropagation();playAudioFile(${jsAttrArg(lib.id)},${jsAttrArg(path)})">▶</button><button class="btn" title="喜欢" onclick="event.stopPropagation();toggleAudioFavorite(${jsAttrArg(lib.id)},${jsAttrArg(path)})">${isAudioFavorite(lib.id, path) ? "♥" : "♡"}</button><button class="btn" title="加入歌单" onclick="event.stopPropagation();openAudioPlaylistPicker(${jsAttrArg(lib.id)},${jsAttrArg(path)})">♫</button><button class="btn" title="编辑歌曲信息" onclick="event.stopPropagation();openAudioMetadata(${jsAttrArg(path)})">✎</button></div></div>`; }
 function refreshAudioMetadata() { try { localStorage.removeItem(audioMetadataCache); } catch (e) {} audioScrapeAttemptedSession.clear(); const lib = findMediaLibrary(localMediaSelection.audio); if (lib) loadLocalFiles("audio", lib, 0); toast("🔄 正在重新刮削音乐信息"); }
 function openAudioMetadata(path) { const meta = audioMetadataFor(path); document.getElementById("audioMetadataPath").value=path; document.getElementById("audioMetadataTitle").value=meta.title; document.getElementById("audioMetadataArtist").value=meta.artist; document.getElementById("audioMetadataAlbum").value=meta.album; document.getElementById("audioMetadataCover").value=meta.cover; document.getElementById("audioMetadataLyrics").value=meta.lyrics; openModal("audioMetadataModal"); }
 function manualAudioMetadata(path) { openAudioMetadata(path); }
 function saveManualAudioMetadata() { const path=document.getElementById("audioMetadataPath").value, all=readAudioMetadata(); all[path]={title:document.getElementById("audioMetadataTitle").value.trim()||audioBaseMetadata(path).title,artist:document.getElementById("audioMetadataArtist").value.trim()||"未知歌手",album:document.getElementById("audioMetadataAlbum").value.trim()||"未知专辑",cover:document.getElementById("audioMetadataCover").value.trim(),lyrics:document.getElementById("audioMetadataLyrics").value,provider:"manual",checkedAt:Date.now()}; writeAudioMetadata(all); closeModal("audioMetadataModal"); const lib=findMediaLibrary(localMediaSelection.audio); if(lib) loadLocalFiles("audio",lib,audioCursor); if(lib) localizeAudioCover(lib.id, path); syncActiveAudioCover(path); }
 let audioLoopMode = "sequence";
 let audioMaximized = false;
-let audioExpandPage = "poster"; // 展开播放器当前页：poster | lyrics（v0.9.55）
+let audioExpandPage = "poster"; // 展开播放器当前页：poster | lyrics（v0.9.56）
 let lastLyricActiveIndex = -1;  // 歌词高亮切换检测（避免重复滚动）
 function setAudioExpandPage(page) {
   if (page !== "poster" && page !== "lyrics") page = "poster";
@@ -1262,7 +1418,7 @@ function seekLyric(event) {
   const player = document.getElementById("audioPlayerElement");
   if (line && player && Number.isFinite(Number(line.dataset.time))) player.currentTime = Number(line.dataset.time);
 }
-/* 歌词跟随播放时间同步：高亮当前行并把该行滚到歌词区中部（v0.9.55）。 */
+/* 歌词跟随播放时间同步：高亮当前行并把该行滚到歌词区中部（v0.9.56）。 */
 function scrollActiveLyricIntoView() {
   const el = document.getElementById("audioPlayerLyrics"); if (!el || !el.offsetParent) return;
   const active = el.querySelector(".lyric-line.active");
@@ -1302,7 +1458,7 @@ function playAudioFile(libId, path) {
   audioSetPauseIcon(true);
   renderPlayerLyrics(meta);
   updateAudioExpandArt(meta);
-  localizeAudioCover(lib.id, path); // v0.9.55：远端封面顺带落盘持久化（只读媒体库自动回退）
+  localizeAudioCover(lib.id, path); // v0.9.56：远端封面顺带落盘持久化（只读媒体库自动回退）
   updateAudioFavoriteButton();
 }
 function audioSetPauseIcon(paused) {
@@ -1332,7 +1488,7 @@ function renderLocalFileRow(group, lib, file) {
   const ext = fileExt(path);
   const viewable = ["mp3","flac","m4a","ogg","wav","jpg","jpeg","png","webp","gif","txt","pdf","mp4","m4v","webm","mov"].includes(ext);
   const archiveLike = [...MEDIA_FORMATS.comic, ...MEDIA_FORMATS.book].includes(ext);
-  /* v0.9.55：清除下载权限 —— 不可在线预览的格式不再提供下载按钮，
+  /* v0.9.56：清除下载权限 —— 不可在线预览的格式不再提供下载按钮，
      文件读取端点（/api/media/file 等）也已要求登录会话。 */
   const action = group === "movie" && MEDIA_FORMATS.movie.includes(ext) ? "播放" : viewable ? "查看" : (archiveLike ? "打开" : "不可预览");
   const disabled = action === "不可预览" ? " disabled" : "";
@@ -1354,7 +1510,7 @@ function writeCoverCache(cache) {
   try { localStorage.setItem(coverScrapeCache, JSON.stringify(cache)); } catch (e) {}
 }
 function coverSearchTitle(title) {
-  /* v0.9.55：封面搜索词清洗增强 —— 除「全本/卷册部」外再清尾部 v01/Vol.3/第1话 等编号，
+  /* v0.9.56：封面搜索词清洗增强 —— 除「全本/卷册部」外再清尾部 v01/Vol.3/第1话 等编号，
      提升 Bangumi/AniList 命中率（One Piece v01 → One Piece）。 */
   return String(title).replace(/[（(][^）)]*(?:全本|未删节|完结|全集|简体|繁体|中文|日文|双页)[^）)]*[）)]/g, " ")
     .replace(/第?\s*\d+\s*[卷册部话集]/g, " ")
@@ -1375,10 +1531,10 @@ function bookCoverFallback(img) {
   }
   img.removeAttribute("src"); img.classList.remove("loaded"); img.hidden = true;
 }
-/* v0.9.55：封面缓存键改为「库 + 文件」—— 同一标题的书在不同媒体库/路径下
+/* v0.9.56：封面缓存键改为「库 + 文件」—— 同一标题的书在不同媒体库/路径下
    各自持久化本地 sidecar 封面，互不串用。 */
 function coverCacheKey(libId, path) { return (libId ? libId + "\n" : "") + String(path || "").toLowerCase(); }
-/* v0.9.55：漫画/书籍封面刮削多源化。
+/* v0.9.56：漫画/书籍封面刮削多源化。
    刮削只看文件名解析出的标题，与封装格式无关（cbz/cbr/zip/pdf/epub… 全部生效）；
    Bangumi 负责中文漫画，AniList（GraphQL，无需密钥）负责日漫/全球漫画高清封面，
    Google Books / OpenLibrary 兜底实体书。每源独立 6s 超时（AbortController），
@@ -1397,7 +1553,7 @@ async function coverFetchJson(url, options, timeoutMs = COMIC_COVER_TIMEOUT) {
 async function bangumiCover(title) {
   const data = await coverFetchJson("https://api.bgm.tv/v0/search/subjects", {
     method: "POST",
-    headers: { "Content-Type": "application/json", "User-Agent": "VaultHub/0.9.55 (https://github.com/q807738511/vaulthub)" },
+    headers: { "Content-Type": "application/json", "User-Agent": "VaultHub/0.9.56 (https://github.com/q807738511/vaulthub)" },
     body: JSON.stringify({ keyword: title, sort: "match", filter: { type: [1], nsfw: false } })
   });
   const item = data?.data?.find(entry => entry?.images?.large || entry?.images?.common || entry?.images?.medium);
@@ -1449,7 +1605,7 @@ async function scrapeBookCover(img) {
   /* 漫画档（Bangumi 中文 + AniList 日漫/全球）优先，书目档（Google/OpenLibrary）兜底。 */
   const tier1 = await firstCover([() => bangumiCover(title), () => anilistCover(title)]);
   const coverUrl = tier1 || await firstCover([() => googleBookCover(title), () => openLibraryCover(title)]);
-  /* v0.9.55：命中后写入媒体库同目录（<名>.cover.*），展示改为本地持久化 URL；
+  /* v0.9.56：命中后写入媒体库同目录（<名>.cover.*），展示改为本地持久化 URL；
      只读媒体库/落盘失败自动回退远端直链。 */
   const local = libId && mediaPath && coverUrl ? await persistCoverToLibrary(libId, mediaPath, coverUrl) : coverUrl;
   cache[key] = { url: local || "", checkedAt: Date.now() }; writeCoverCache(cache);
@@ -2281,9 +2437,67 @@ async function fetchCompleteTextFile(url) {
   let offset = 0; for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
   return bytes;
 }
+/* v0.9.56 TXT 编码识别修复 —— 旧实现只有「UTF-8 严格解码失败就当 GB18030」两条路，
+   于是 Windows 记事本存的 UTF-16（"Unicode" 选项）、繁体 Big5、日文 Shift-JIS 全被
+   按 GB18030 解出乱码（实测 UTF-16 正文夹大量 U+0000，Big5 变成「材彻 代刚彻竊」）。
+   现在按 BOM → UTF-16 零字节特征 → UTF-8 严格 → 多候选打分 的顺序判定。 */
+const TEXT_DECODE_CANDIDATES = ["gb18030", "big5", "shift-jis", "euc-kr", "utf-16le", "utf-16be"];
+/* 高频汉字表（简体 + 繁体）：给候选编码打分用 —— 编码猜错时解出的汉字多为生僻字，
+   命中率会显著低于正确编码。 */
+const TEXT_COMMON_CJK = new Set(
+  ("的一是不了在人有我他这中大来上国个到说们为子和你地出道时年得就那要下以生会自着去之过家学对可她里后小么心多天而能好都然没日于起还发成事只作当想看文无开手十用主行方又如前所本见经头面公同三已老从动两长知民样第些现使部真才等次将女并平点几高" +
+   "话说读写听问题体长为万医声图东语测试章节内容验证编码破折号僻字书名包含标点段落文本行列表页题目字数十百千万亿" +
+   "话這來時們個過還後說國學會沒對開間問題經體長爲兩實現變頭萬醫聲書寫圖東語測試章節讀聽內容驗證編碼標點").split("")
+);
+function scoreDecodedText(text) {
+  if (!text) return -Infinity;
+  let score = 0, cjk = 0;
+  const limit = Math.min(text.length, 4000);
+  for (let i = 0; i < limit; i++) {
+    const ch = text[i], code = text.charCodeAt(i);
+    if (ch === "\uFFFD") { score -= 8; continue; }                       // 非法字节
+    if (code < 32 && ch !== "\n" && ch !== "\r" && ch !== "\t") { score -= 8; continue; } // 控制字符/NUL
+    if (code >= 0xFF61 && code <= 0xFF9F) { score -= 4; continue; }      // 半角片假名：GBK 文本被误判成 Shift-JIS 的典型产物
+    if (code >= 0xE000 && code <= 0xF8FF) { score -= 4; continue; }      // 私用区
+    if (code >= 0x4E00 && code <= 0x9FFF) { cjk++; score += TEXT_COMMON_CJK.has(ch) ? 4 : -1; continue; } // 汉字
+    if (code >= 0x3040 && code <= 0x30FF) { score += 1; continue; }      // 平/片假名（日文正文合法）
+    if (code >= 0xAC00 && code <= 0xD7A3) { score += 1; continue; }      // 韩文音节
+    if (code >= 0x3000 && code <= 0x303F) { score += 2; continue; }      // 中文标点（、。《》——）
+    if (code >= 0xFF01 && code <= 0xFF60) { score += 1; continue; }      // 全角 ASCII/标点
+    if (code >= 32 && code < 127) { score += 1; continue; }              // ASCII 可打印
+  }
+  return score + (cjk ? 0 : -5);
+}
+function decodeWithEncoding(bytes, encoding) {
+  try { return new TextDecoder(encoding).decode(bytes); } catch (e) { return ""; }
+}
 function decodeTextBytes(bytes) {
-  try { return new TextDecoder("utf-8", { fatal: true }).decode(bytes); }
-  catch (e) { return new TextDecoder("gb18030").decode(bytes); }
+  const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  // 1) BOM 明示（TextDecoder 自动吃掉 BOM 字符）
+  if (view.length >= 3 && view[0] === 0xEF && view[1] === 0xBB && view[2] === 0xBF) return decodeWithEncoding(view, "utf-8");
+  if (view.length >= 2 && view[0] === 0xFF && view[1] === 0xFE) return decodeWithEncoding(view, "utf-16le");
+  if (view.length >= 2 && view[0] === 0xFE && view[1] === 0xFF) return decodeWithEncoding(view, "utf-16be");
+  // 2) 无 BOM 的 UTF-16：ASCII 主导的正文里每隔一字节就是 0x00
+  const probe = Math.min(view.length, 4096);
+  let zeroEven = 0, zeroOdd = 0;
+  for (let i = 0; i < probe; i++) {
+    if (view[i] !== 0) continue;
+    if (i % 2 === 0) zeroEven++; else zeroOdd++;
+  }
+  if (probe >= 16 && (zeroEven + zeroOdd) / probe > 0.15) {
+    return decodeWithEncoding(view, zeroOdd >= zeroEven ? "utf-16le" : "utf-16be");
+  }
+  // 3) 合法 UTF-8 优先（严格模式：非法字节序列直接抛错）
+  try { return new TextDecoder("utf-8", { fatal: true }).decode(view); } catch (e) { /* 继续猜测 */ }
+  // 4) 多候选打分：常用汉字/标点/ASCII 加分，替换符、控制字符、半角片假名扣分
+  let best = "", bestScore = -Infinity;
+  for (const encoding of TEXT_DECODE_CANDIDATES) {
+    const text = decodeWithEncoding(view, encoding);
+    if (!text) continue;
+    const score = scoreDecodedText(text);
+    if (score > bestScore) { best = text; bestScore = score; }
+  }
+  return best || new TextDecoder("gb18030").decode(view);
 }
 
 /* ================= v0.9.52 播放器内联 SVG 图标集 =================
@@ -2524,7 +2738,7 @@ async function openLocalMedia(group, libId, path) {
     restoreReaderProgress(viewer, lib.id, path);
     return;
   } else {
-    /* v0.9.55：清除下载权限 —— 不可预览格式不再提供「新窗口直开原文件」的链接
+    /* v0.9.56：清除下载权限 —— 不可预览格式不再提供「新窗口直开原文件」的链接
        （该链接等于绕过播放器直接下载原文件），仅提示不支持。 */
     const note = MEDIA_FORMATS.comic.includes(ext) ? "该漫画/压缩格式已加入书架，但当前浏览器不能直接解析。" : MEDIA_FORMATS.book.includes(ext) ? "该电子书格式已加入书架，但当前浏览器不支持直接解析。" : "该格式不支持在线预览。";
     body = `<div class="reader-book-fallback"><div class="book-cover" style="max-width:220px;margin:0 auto 24px;background:${coverGradient(displayBookTitle(path))}"><span class="book-cover-title">${esc(displayBookTitle(path))}</span></div><p>${note}</p></div>`;

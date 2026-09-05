@@ -506,6 +506,9 @@
   .library-chip small { display: block; margin-top: 2px; color: var(--text2); }
   .media-file-list { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--card); }
   .media-file-row { display: grid; grid-template-columns: minmax(0,1fr) auto auto; align-items: center; gap: 10px; min-height: 48px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  /* v0.9.56：音乐曲目行整行可点击播放（专辑/歌手曲目列表、喜欢、歌单内） */
+  .media-file-row.audio-row-click { cursor: pointer; transition: background .15s; }
+  .media-file-row.audio-row-click:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
   .media-file-row:last-child { border-bottom: 0; }
   .media-file-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .media-file-meta { color: var(--text2); font-size: 11px; white-space: nowrap; }
@@ -554,9 +557,27 @@
   .series-detail-page .movie-detail-scroll header { min-height: 52vh; }
   .series-season-block { padding: 0 clamp(24px,8vw,120px) 20px; }
   .series-season-block h3 { margin: 0 0 12px; font-size: 18px; }
+  .series-episode-row { display:flex; gap:12px; align-items:flex-start; padding:10px; border:1px solid var(--border); border-radius:10px; background:var(--card); cursor:pointer; transition:border-color .16s; }
+  .series-episode-row:hover { border-color:var(--accent); }
   .series-episode-row .media-actions { flex-wrap:wrap; }
   .series-episode-row .media-file-name b { display:block; }
   .series-episode-row .media-file-name small { display:block; margin-top:4px; }
+  /* v0.9.56 剧集列表图示卡片：左侧 16:9 缩略图 + 右下集号角标，右侧标题/元数据/操作 */
+  .series-episode-card { min-width:0; }
+  .series-episode-thumb { position:relative; flex:0 0 150px; height:84px; border-radius:7px; background:linear-gradient(145deg,#284b63,#1b2838) center/cover no-repeat; background-size:cover; background-position:center; overflow:hidden; display:flex; align-items:flex-end; justify-content:flex-start; }
+  .series-episode-thumb .series-episode-label { position:relative; z-index:1; display:inline-block; margin:6px; padding:2px 8px; border-radius:6px; background:rgba(0,0,0,.55); color:#fff; font-size:11px; font-weight:700; letter-spacing:.3px; backdrop-filter:blur(3px); }
+  .series-episode-body { flex:1; min-width:0; display:flex; flex-direction:column; gap:6px; align-items:flex-start; }
+  .series-episode-title { min-width:0; }
+  .series-episode-title b, .series-episode-title small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .series-episode-title b { font-size:14px; }
+  .series-episode-title small { margin-top:3px; color:var(--text2); font-size:12px; }
+  .series-episode-card .media-actions { margin-top:2px; }
+  .series-episode-card .media-file-meta { color:var(--text2); font-size:12px; }
+  /* v0.9.56：季内单集改为纵向堆叠的图示卡片列表 */
+  .series-episode-list { display:flex; flex-direction:column; gap:10px; margin-top:4px; }
+  @media (max-width: 560px) {
+    .series-episode-thumb { flex-basis:110px; height:62px; }
+  }
   .movie-meta-list { display:grid; grid-template-columns:minmax(90px,160px) 1fr; gap:10px 16px; }
   .movie-meta-list dt { color:var(--text2); } .movie-meta-list dd { margin:0; overflow-wrap:anywhere; }
   .media-poster-info { padding:10px; }
@@ -752,6 +773,11 @@
   .audio-album-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:14px; margin-bottom:16px; }
   .audio-album-card { min-width:0; border:1px solid var(--border); border-radius:10px; background:var(--card); overflow:hidden; cursor:pointer; }
   .audio-album-card:hover { border-color:var(--accent); }
+  /* v0.9.56 歌手卡片：头像作封面 —— 圆形裁切，失败自动回落渐变文字。 */
+  .audio-artist-cover { padding:18px; }
+  .audio-artist-cover img.audio-artist-avatar { width:100%; height:100%; border-radius:50%; object-fit:cover; box-shadow:0 2px 10px rgba(0,0,0,.25); }
+  .audio-artist-cover.audio-artist-avatar-fallback { color:#fff; font-weight:700; text-align:center; }
+  .audio-artist-grid .audio-album-card { text-align:center; }
   .audio-album-cover { aspect-ratio:1; display:flex; align-items:center; justify-content:center; padding:14px; color:#fff; text-align:center; font-weight:700; line-height:1.4; background:linear-gradient(145deg,#284b63,#1b2838); }
   .audio-album-cover img { width:100%; height:100%; object-fit:cover; }
   .audio-album-info { padding:9px 10px; }
@@ -765,7 +791,7 @@
   .audio-player.maximized .audio-player-controls { flex-wrap:wrap; justify-content:flex-end; }
   .audio-player .audio-expand { display:none; }
   .audio-player.maximized .audio-expand { display:flex; flex:1 1 auto; min-height:0; flex-direction:column; gap:10px; margin-top:12px; }
-  /* v0.9.55：展开双页 —— 海报页 / 歌词页（歌词覆盖海报磨砂蒙版）。 */
+  /* v0.9.56：展开双页 —— 海报页 / 歌词页（歌词覆盖海报磨砂蒙版）。 */
   .audio-expand-tabs { display:inline-flex; gap:4px; align-self:center; padding:3px; border:1px solid var(--border); border-radius:999px; background:var(--card2); }
   .audio-expand-tabs button { border:0; border-radius:999px; padding:6px 18px; color:var(--text2); background:transparent; cursor:pointer; font-size:13px; }
   .audio-expand-tabs button.active { color:#fff; background:var(--accent); }
@@ -1092,8 +1118,11 @@
     .form-2col { grid-template-columns: 1fr; }
     .tb-info { display: none; }
     .brand-copy { display: none; }
-    /* v0.9.55 移动端：侧栏改顶栏 —— 左侧固定侧栏变成顶栏下方的横向导航条，
-       媒体库/自定义项横向滚动，主区域左外边距归零。 */
+    /* v0.9.56 移动端：侧栏改顶栏 —— 左侧固定侧栏变成顶栏下方的横向导航条，
+       媒体库/自定义项横向滚动，主区域左外边距归零。
+       v0.9.56：增加 scroll-snap-type x mandatory 让滚动停靠，隐藏滚动条，
+       左右两侧加 fade 渐变遮罩提示「还有更多选项」，
+       强制水平 touch scroll（避免系统错误地禁用）。 */
     .sidebar {
       top: var(--topbar-h); bottom: auto; left: 0; right: 0;
       width: 100% !important; min-width: 0; max-width: none;
@@ -1101,13 +1130,26 @@
       border-right: none; border-bottom: 1px solid var(--border);
       overflow-x: auto; overflow-y: hidden;
       -webkit-overflow-scrolling: touch;
+      overscroll-behavior-x: contain;
+      touch-action: pan-x;
     }
     .sidebar .nav {
       flex: 1; display: flex; flex-direction: row; align-items: center;
       padding: 0 8px; overflow-x: auto; overflow-y: hidden; gap: 2px;
       scrollbar-width: none;
+      scroll-snap-type: x mandatory;
+      -webkit-overflow-scrolling: touch;
     }
     .sidebar .nav::-webkit-scrollbar { display: none; }
+    .sidebar .nav-item { scroll-snap-align: start; }
+    /* v0.9.56：右侧「还有更多」提示 —— 用 inset box-shadow 模拟边缘渐隐，
+       内容可读性不受影响；.nav-overflow 类由 01-state.js 在内容超出视口时加上。 */
+    .sidebar.nav-overflow {
+      box-shadow: inset -14px 0 12px -12px rgba(0, 0, 0, .45);
+    }
+    body.theme-light .sidebar.nav-overflow {
+      box-shadow: inset -14px 0 12px -12px rgba(0, 0, 0, .18);
+    }
     .sidebar .nav-group { display: none; }
     .sidebar .nav-item {
       flex-shrink: 0; height: 32px; margin: 0 2px; padding: 0 10px;
