@@ -1077,6 +1077,14 @@ function audioArtistInfoFor(artist) {
   return all[String(artist)] || null;
 }
 async function scrapeAudioArtists(host, lib, files) {
+  /* 与歌曲刮削共用 audioScrapeChain：artists 视图渲染/视图切换并发触发多轮
+     歌手刮削时，交错读写会互相覆盖刚写入的歌手缓存条目（同类竞态歌曲侧已由
+     同一串行链解决）。串行后 in-flight 去重由 audioArtistAttemptedSession 兜住。 */
+  const run = audioScrapeChain.then(() => scrapeAudioArtistsInner(host, lib, files));
+  audioScrapeChain = run.catch(() => {});
+  return run;
+}
+async function scrapeAudioArtistsInner(host, lib, files) {
   const pending = new Set();
   files.forEach(file => {
     const meta = audioMetadataFor(String(file.path));
