@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
@@ -14,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -29,12 +31,128 @@ type manager struct {
 	configMu           sync.Mutex
 	sessions           map[string]time.Time
 	failures           map[string]loginFailure
-	username, password string
+	username           string
+	open               bool          // v0.9.54 开放模式（无密码）：true 时不校验登录
+	salt, hash         string        // 凭据哈希（sha256(salt+password)），auth.json 持久化
+	authFile           string        // /data/auth.json：账户与鉴权模式的持久化文件
 	caddyConfig        []byte
 	children           []*exec.Cmd
 }
 
 const sessionIdleTimeout = 30 * time.Minute
+
+/* ---------- v0.9.54 鉴权模式与账户持久化 ---------- */
+
+// storedAuth 是 /data/auth.json 的磁盘形态。模式说明：
+//   - mode=password（默认）：必须登录；username/salt/hash 用于校验。
+//   - mode=open：开放模式（无密码），任何人都能进入；此时不存 hash。
+// 持久化文件优先于环境变量（ADMIN_USERNAME/ADMIN_PASSWORD）；文件不存在时
+// 按环境变量推导 —— ADMIN_PASSWORD 为空则直接进入开放模式。
+type storedAuth struct {
+	Mode     string `json:"mode,omitempty"` // "password" | "open"
+	Username string `json:"username"`
+	Salt     string `json:"salt,omitempty"`
+	Hash     string `json:"hash,omitempty"`
+	Updated  int64  `json:"updated,omitempty"`
+}
+
+func sha256Hex(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])
+}
+
+func newAuthSalt() string {
+	raw := make([]byte, 16)
+	if _, e := rand.Read(raw); e != nil {
+		return sha256Hex(fmt.Sprintf("%d", time.Now().UnixNano()))[:32]
+	}
+	return hex.EncodeToString(raw)
+}
+
+// deriveStoredAuth 把环境变量凭据整理成 storedAuth：ADMIN_PASSWORD 为空时
+// 表示“不设置登录密码”→ 开放模式。
+func deriveStoredAuth(usernameEnv, passwordEnv string) storedAuth {
+	u := strings.TrimSpace(usernameEnv)
+	if u == "" {
+		u = "ADMIN"
+	}
+	pw := passwordEnv
+	if pw == "" {
+		return storedAuth{Mode: "open", Username: u}
+	}
+	salt := newAuthSalt()
+	return storedAuth{Mode: "password", Username: u, Salt: salt, Hash: sha256Hex(salt + "\x00" + pw)}
+}
+
+// loadAuthFile 读取持久化账户文件；文件不存在或解析失败返回 false（保持现状）。
+func (m *manager) loadAuthFile(file string) bool {
+	b, e := os.ReadFile(file)
+	if e != nil {
+		return false
+	}
+	var s storedAuth
+	if json.Unmarshal(b, &s) != nil {
+		return false
+	}
+	u := strings.TrimSpace(s.Username)
+	if u == "" || (s.Mode != "password" && s.Mode != "open") {
+		return false
+	}
+	if s.Mode == "password" && (s.Hash == "" || len(s.Salt) < 8) {
+		return false
+	}
+	m.authFile = file
+	m.username = u
+	m.salt, m.hash = s.Salt, s.Hash
+	m.open = s.Mode == "open"
+	return true
+}
+
+// saveAuthFile 原子写 /data/auth.json（0600）。mode=open 时不落 hash。
+func (m *manager) saveAuthFile() error {
+	if m.authFile == "" {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(m.authFile), 0755); err != nil {
+		return err
+	}
+	s := storedAuth{Username: m.username, Updated: time.Now().Unix()}
+	if m.open {
+		s.Mode = "open"
+	} else {
+		s.Mode = "password"
+		s.Salt, s.Hash = m.salt, m.hash
+	}
+	b, err := json.MarshalIndent(s, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(m.authFile), ".auth-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if err = tmp.Chmod(0600); err == nil {
+		_, err = tmp.Write(b)
+	}
+	if closeErr := tmp.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return err
+	}
+	return os.Rename(tmpName, m.authFile)
+}
+
+// passwordOK 常数时间校验明文密码。开放模式没有密码，恒 false（不应被调用）。
+func (m *manager) passwordOK(pw string) bool {
+	if m.open || m.hash == "" {
+		return false
+	}
+	want := sha256Hex(m.salt + "\x00" + pw)
+	return len(want) == len(m.hash) && subtle.ConstantTimeCompare([]byte(want), []byte(m.hash)) == 1
+}
 
 func (m *manager) reply(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -59,6 +177,10 @@ func (m *manager) logged(r *http.Request) bool {
 	return ok
 }
 func (m *manager) require(w http.ResponseWriter, r *http.Request) bool {
+	// v0.9.54 开放模式：无密码屏障，所有管理端点直接放行。
+	if m.open {
+		return true
+	}
 	if m.logged(r) {
 		return true
 	}
@@ -93,6 +215,10 @@ func clientKey(r *http.Request) string {
 	return h
 }
 func (m *manager) loginAllowed(r *http.Request) bool {
+	// 开放模式不做登录限流（自动登录也不应触发 429）。
+	if m.open {
+		return true
+	}
 	key := clientKey(r)
 	m.mu.RLock()
 	f := m.failures[key]
@@ -136,7 +262,10 @@ func (m *manager) login(w http.ResponseWriter, r *http.Request) {
 		m.reply(w, 400, map[string]any{"ok": false, "error": "invalid json"})
 		return
 	}
-	userOK := len(x.Username) == len(m.username) && len(x.Password) == len(m.password) && subtle.ConstantTimeCompare([]byte(x.Username), []byte(m.username)) == 1 && subtle.ConstantTimeCompare([]byte(x.Password), []byte(m.password)) == 1
+	userOK := m.open // 开放模式：任意凭据（含空）都放行，只为下发会话 Cookie
+	if !m.open {
+		userOK = len(x.Username) == len(m.username) && subtle.ConstantTimeCompare([]byte(x.Username), []byte(m.username)) == 1 && m.passwordOK(x.Password)
+	}
 	if !userOK {
 		m.loginFailed(r)
 		m.reply(w, 401, map[string]any{"ok": false, "error": "invalid credentials"})
@@ -165,6 +294,128 @@ func (m *manager) logout(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{Name: "vh_session", Value: "", Path: "/", HttpOnly: true, Secure: r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https"), SameSite: http.SameSiteLaxMode, MaxAge: -1})
 	m.reply(w, 200, map[string]any{"ok": true})
 }
+func (m *manager) authMode(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		m.reply(w, 405, map[string]any{"ok": false})
+		return
+	}
+	// 公共端点：登录遮罩/启动探测需要知道当前鉴权模式（开放模式直接自动登录）。
+	m.mu.RLock()
+	open, user := m.open, m.username
+	m.mu.RUnlock()
+	mode := "password"
+	if open {
+		mode = "open"
+	}
+	m.reply(w, 200, map[string]any{"ok": true, "mode": mode, "username": user})
+}
+
+// account 修改登录用户名 / 登录密码 / 鉴权模式（v0.9.54）。需要有效会话；
+// 从密码模式切到开放模式必须校验当前密码（用户须先以密码登录才改得出开放模式）。
+func (m *manager) account(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		m.reply(w, 405, map[string]any{"ok": false})
+		return
+	}
+	if !m.require(w, r) {
+		return
+	}
+	b, _ := io.ReadAll(io.LimitReader(r.Body, 65536))
+	var x struct {
+		OldPassword string `json:"old_password"`
+		Username    string `json:"username"`
+		Password    string `json:"password"`
+		Mode        string `json:"mode"` // "password" | "open"
+	}
+	if json.Unmarshal(b, &x) != nil {
+		m.reply(w, 400, map[string]any{"ok": false, "error": "invalid json"})
+		return
+	}
+	if x.Mode != "" && x.Mode != "password" && x.Mode != "open" {
+		m.reply(w, 400, map[string]any{"ok": false, "error": "invalid auth mode"})
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	curOpen := m.open
+	newUser := strings.TrimSpace(x.Username)
+	if newUser == "" {
+		newUser = m.username
+	}
+	if len(newUser) > 64 || strings.ContainsAny(newUser, "/\\\n\r") {
+		m.reply(w, 400, map[string]any{"ok": false, "error": "用户名不合法"})
+		return
+	}
+	wantOpen := curOpen
+	if x.Mode == "open" {
+		wantOpen = true
+	}
+	if x.Mode == "password" {
+		wantOpen = false
+	}
+	if x.Password != "" {
+		wantOpen = false // 设置了新密码 = 密码模式
+	}
+	// 凭据校验：
+	//   - 当前密码模式：任何变更（含切换开放）都要当前密码；
+	//   - 当前开放模式：无当前密码可言（跳过），但切回密码模式必须给新密码。
+	if !curOpen && !m.passwordOK(x.OldPassword) {
+		m.reply(w, 403, map[string]any{"ok": false, "error": "当前密码不正确"})
+		return
+	}
+	if wantOpen {
+		// 开放模式（无密码）：不落 hash。
+		m.open = true
+		m.username = newUser
+		m.salt, m.hash = "", ""
+		if err := m.saveAuthFile(); err != nil {
+			m.reply(w, 500, map[string]any{"ok": false, "error": "持久化失败：" + err.Error()})
+			return
+		}
+		m.dropOtherSessions(r)
+		m.reply(w, 200, map[string]any{"ok": true, "mode": "open", "username": m.username, "message": "已切换为开放模式（无密码），任何人无需登录即可进入"})
+		return
+	}
+	// 密码模式：开放模式切换回来必须提供新密码；密码模式只改名时可留空。
+	if curOpen && x.Password == "" {
+		m.reply(w, 400, map[string]any{"ok": false, "error": "请设置新登录密码"})
+		return
+	}
+	if x.Password != "" {
+		if len(x.Password) < 6 {
+			m.reply(w, 400, map[string]any{"ok": false, "error": "密码至少 6 位"})
+			return
+		}
+		if strings.EqualFold(x.Password, newUser) {
+			m.reply(w, 400, map[string]any{"ok": false, "error": "密码不能与用户名相同"})
+			return
+		}
+		m.salt = newAuthSalt()
+		m.hash = sha256Hex(m.salt + "\x00" + x.Password)
+	}
+	m.open = false
+	m.username = newUser
+	if err := m.saveAuthFile(); err != nil {
+		m.reply(w, 500, map[string]any{"ok": false, "error": "持久化失败：" + err.Error()})
+		return
+	}
+	m.dropOtherSessions(r)
+	m.reply(w, 200, map[string]any{"ok": true, "mode": "password", "username": m.username, "message": "账户信息已保存"})
+}
+
+// dropOtherSessions 凭据变更后使其它会话失效（保留当前请求的会话）。
+func (m *manager) dropOtherSessions(r *http.Request) {
+	current := ""
+	if c, e := r.Cookie("vh_session"); e == nil {
+		current = c.Value
+	}
+	for sid := range m.sessions {
+		if sid != current {
+			delete(m.sessions, sid)
+		}
+	}
+}
+
 func (m *manager) health(w http.ResponseWriter, r *http.Request) {
 	m.reply(w, 200, map[string]any{"ok": true, "service": "go-manager", "time": time.Now().UTC()})
 }
@@ -179,6 +430,11 @@ func (m *manager) sessionCheck(w http.ResponseWriter, r *http.Request) {
 	}
 	if ip := net.ParseIP(host); ip == nil || !ip.IsLoopback() {
 		m.reply(w, 403, map[string]any{"ok": false, "error": "loopback only"})
+		return
+	}
+	// v0.9.54 开放模式：媒体写操作等依赖本回环会话校验的调用全部放行。
+	if m.open {
+		m.reply(w, 200, map[string]any{"ok": true, "mode": "open", "idle_timeout_seconds": int(sessionIdleTimeout.Seconds())})
 		return
 	}
 	if !m.logged(r) {
@@ -284,6 +540,8 @@ func routes(m *manager) http.Handler {
 	mux.HandleFunc("/api/health", m.health)
 	mux.HandleFunc("/api/login", m.login)
 	mux.HandleFunc("/api/logout", m.logout)
+	mux.HandleFunc("/api/auth/mode", m.authMode)
+	mux.HandleFunc("/api/account", m.account)
 	mux.HandleFunc("/api/session/check", m.sessionCheck)
 	mux.HandleFunc("/api/system/runtime", m.runtime)
 	mux.HandleFunc("/api/admin/docker/scan", m.docker)
@@ -320,6 +578,8 @@ var managerRoutes = []string{
 	"handle /api/health",
 	"handle /api/login",
 	"handle /api/logout",
+	"handle /api/auth/mode",
+	"handle /api/account",
 	"handle /api/system/runtime",
 	"handle /api/admin/*",
 }
@@ -510,12 +770,23 @@ func main() {
 	if err := os.Rename(tmp, "/data/Caddyfile"); err != nil {
 		log.Fatal(err)
 	}
-	m := &manager{sessions: map[string]time.Time{}, failures: map[string]loginFailure{}, username: os.Getenv("ADMIN_USERNAME"), password: os.Getenv("ADMIN_PASSWORD"), caddyConfig: b}
-	if m.username == "" {
-		m.username = "ADMIN"
+	m := &manager{sessions: map[string]time.Time{}, failures: map[string]loginFailure{}, caddyConfig: b}
+	// v0.9.54：鉴权持久化文件优先；文件缺失时按环境变量推导
+	// （ADMIN_PASSWORD 为空 → 开放模式）。首次通过系统设置保存账户后才生成 auth.json。
+	authFile := os.Getenv("MANAGER_AUTH_FILE")
+	if authFile == "" {
+		authFile = "/data/auth.json"
 	}
-	if m.password == "" {
-		m.password = "ADMIN123"
+	if !m.loadAuthFile(authFile) {
+		s := deriveStoredAuth(os.Getenv("ADMIN_USERNAME"), os.Getenv("ADMIN_PASSWORD"))
+		m.authFile = authFile
+		m.username = s.Username
+		m.salt, m.hash = s.Salt, s.Hash
+		m.open = s.Mode == "open"
+		if m.open {
+			log.Printf("v0.9.54: no login password configured -> running in OPEN mode (no password). " +
+				"Log in via another instance to change it in 系统设置 → 账户与登录, or set ADMIN_PASSWORD.")
+		}
 	}
 	for _, bin := range []string{"/usr/bin/media-api", "/usr/bin/subtitle-api"} {
 		if c := start(bin); c != nil {

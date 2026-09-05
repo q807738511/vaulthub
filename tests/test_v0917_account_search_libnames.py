@@ -46,8 +46,8 @@ assert "switchSetTab('caddy')" not in STATE and 'switchSetTab("caddy")' not in S
 assert "openCaddyPage()" in ACCOUNT, "Caddy 配置入口必须在账户与登录页"
 assert 'id="caddyRouteCount"' in ACCOUNT, "Caddy 路由计数徽标必须随入口迁移"
 assert 'id="caddyPage"' in HTML and 'id="caddyFile"' in HTML, "Caddyfile 独立整页编辑器必须保留"
-assert 'if (key === "account") { refreshSessionStatus(false); loadCaddyConfig(); }' in STATE, \
-    "进入账户与登录页必须同时刷新会话状态与 Caddyfile"
+assert 'if (key === "account") { refreshSessionStatus(false); loadCaddyConfig(); loadAccountCredentialsUI(); }' in STATE, \
+    "进入账户与登录页必须同时刷新会话状态与 Caddyfile，并加载 v0.9.54 登录凭据/鉴权模式面板"
 assert "openSettingsPage('account')" in STATE, "openCaddyModal 必须打开账户与登录页"
 
 # ---------------------------------------------------------------- 3. 外观与主题移除模块设置
@@ -90,11 +90,11 @@ for preset in ["<h3>电影</h3>", "<h3>电视剧集</h3>", "<h3>音乐与 MV</h3
 assert '"电子书" : "漫画"' not in JS, "书刊标题不能按预设大类渲染"
 
 # ---------------------------------------------------------------- 版本与发布引用
-assert "v0.9.53" in HTML and HTML.count("v0.9.53") >= 2, "关于与侧栏版本必须是 v0.9.53"
-assert 'VAULTHUB_ASSET_VERSION = "0.9.53"' in HTML, "资源版本必须是 0.9.53"
-assert 'VAULTHUB_SCRIPT_VERSION = "0.9.53"' in STATE, "脚本版本必须是 0.9.53"
-assert "ghcr.io/q807738511/vaulthub:latest" in COMPOSE, "v0.9.53 起 Compose 跟随 latest"
-assert (ROOT / ".github/RELEASE_NOTES_0.9.53.md").exists(), "缺少 v0.9.53 release notes"
+assert "v0.9.54" in HTML and HTML.count("v0.9.54") >= 2, "关于与侧栏版本必须是 v0.9.54"
+assert 'VAULTHUB_ASSET_VERSION = "0.9.54"' in HTML, "资源版本必须是 0.9.54"
+assert 'VAULTHUB_SCRIPT_VERSION = "0.9.54"' in STATE, "脚本版本必须是 0.9.54"
+assert "ghcr.io/q807738511/vaulthub:latest" in COMPOSE, "v0.9.54 起 Compose 跟随 latest"
+assert (ROOT / ".github/RELEASE_NOTES_0.9.54.md").exists(), "缺少 v0.9.54 release notes"
 
 # 历史契约不能回退
 assert 'if (group === "movie" && data.has_more)' in JS, "影视库全量加载不能回退"

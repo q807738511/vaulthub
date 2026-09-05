@@ -8,7 +8,7 @@ const VAULTHUB_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
    历史故障：v0.8.3→v0.8.5 的前端修改在服务端已生效，但浏览器仍执行缓存里的
    旧 02-media.js，用户看到「没有更新」。现在入口页 no-store、静态资源带 ?v=，
    并在启动时做一次一致性自查，不一致就绕过缓存强制重载一次。 */
-const VAULTHUB_SCRIPT_VERSION = "0.9.53";
+const VAULTHUB_SCRIPT_VERSION = "0.9.54";
 function ensureFreshAssets() {
   /* expected 为空 = 浏览器执行的 index.html 早于 v0.8.6（旧版本入口页没有声明
      版本号），同样属于"页面是旧的"，也需要换 URL 重新取一次。 */
@@ -53,7 +53,7 @@ function showVaultHubLogin() { document.getElementById('authMask')?.classList.re
 function markVaultHubActivity() {
   if (!vaultHubAuthenticated) return;
   clearTimeout(vaultHubIdleTimer);
-  vaultHubIdleTimer=setTimeout(async()=>{ vaultHubAuthenticated=false; try { await fetch('/api/logout',{method:'POST',credentials:'same-origin'}); } catch (_) {} showVaultHubLogin(); }, VAULTHUB_IDLE_TIMEOUT_MS);
+  vaultHubIdleTimer=setTimeout(async()=>{ vaultHubAuthenticated=false; try { await fetch('/api/logout',{method:'POST',credentials:'same-origin'}); } catch (_) {} if (vaultHubAuthMode === "open") { await vaultHubAutoLogin(); handleVaultHubAuthResult(true); return; } showVaultHubLogin(); }, VAULTHUB_IDLE_TIMEOUT_MS);
 }
 ['click','keydown','pointerdown','touchstart','scroll'].forEach(type=>document.addEventListener(type,markVaultHubActivity,{passive:true}));
 /* 已登录时给遮罩加上 .hidden（CSS 里 .auth-mask.hidden{display:none}），
@@ -77,6 +77,12 @@ async function vaultHubLogin() {
 }
 async function requireVaultHubLogin() {
   const epoch = vaultHubAuthEpoch;
+  /* 开放模式：无密码屏障，会话丢失时静默自动登录（不发登录遮罩）。 */
+  if (vaultHubAuthMode === "open") {
+    await vaultHubAutoLogin();
+    if (epoch !== vaultHubAuthEpoch) return vaultHubAuthenticated;
+    return handleVaultHubAuthResult(true);
+  }
   try {
     const res=await fetch('/api/system/runtime',{cache:'no-store'});
     const logged=res.ok;
@@ -89,8 +95,45 @@ async function requireVaultHubLogin() {
     return false;
   }
 }
-async function handleProtectedResponse(res) { if (res.status === 401) { handleVaultHubAuthResult(false); renderSessionStatus(false); return false; } markVaultHubActivity(); renderSessionStatus(true); return true; }
+async function handleProtectedResponse(res) { if (res.status === 401) { if (vaultHubAuthMode === "open") { await vaultHubAutoLogin(); handleVaultHubAuthResult(true); markVaultHubActivity(); return true; } handleVaultHubAuthResult(false); renderSessionStatus(false); return false; } markVaultHubActivity(); renderSessionStatus(true); return true; }
 function guardProtectedAction(fn) { return async (...args)=>{if(vaultHubAuthenticated || await requireVaultHubLogin()) return fn(...args);}; }
+
+/* ---------- v0.9.54 鉴权模式（开放模式 / 密码模式） ---------- */
+/* /api/auth/mode 是公共端点：启动时先探测当前模式。密码模式维持原登录遮罩流程；
+   开放模式（无密码）自动登录一次拿到会话 Cookie，全程不出现登录遮罩，
+   会话因 30 分钟空闲失效后也会在探测/写操作时静默恢复。 */
+let vaultHubAuthMode = "password";
+async function vaultHubFetchAuthMode() {
+  try {
+    const res = await fetch("/api/auth/mode", { cache: "no-store" });
+    if (res.ok) {
+      const data = await res.json();
+      vaultHubAuthMode = data.mode === "open" ? "open" : "password";
+      if (typeof loadAccountCredentialsUI === "function") loadAccountCredentialsUI();
+    }
+  } catch (e) { /* 服务未就绪时保持默认密码模式，稍后探测会重试 */ }
+  return vaultHubAuthMode;
+}
+async function vaultHubAutoLogin() {
+  try {
+    const res = await fetch("/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: "", password: "" }) });
+    const data = await res.json();
+    return !!(res.ok && data.ok);
+  } catch (e) { return false; }
+}
+async function initVaultHubAuth() {
+  await vaultHubFetchAuthMode();
+  if (vaultHubAuthMode !== "open") return requireVaultHubLogin();
+  const ok = await vaultHubAutoLogin();
+  handleVaultHubAuthResult(true); // 开放模式永不显示登录遮罩
+  renderSessionStatus(ok, ok ? t('sessionOkHint') : '开放模式自动登录失败，将自动重试');
+  if (!ok) {
+    setTimeout(async () => {
+      if (await vaultHubAutoLogin()) { vaultHubAuthenticated = true; refreshSessionStatus(false); }
+    }, 15000);
+  }
+  return vaultHubAuthenticated;
+}
 
 /* ---------- 退出登录 ---------- */
 /* 主动退出：先让服务端销毁 Session，再复位前端状态并显示登录遮罩。
@@ -103,6 +146,13 @@ async function logoutVaultHub() {
   renderSessionStatus(false);
   closeCaddyPage();
   closeModal('avatarModal');
+  if (vaultHubAuthMode === "open") {
+    /* 开放模式无密码屏障：退出后立即静默恢复会话，不展示登录遮罩。 */
+    await vaultHubAutoLogin();
+    handleVaultHubAuthResult(true);
+    toast('🚪 ' + t('loggedOutToast') + '（开放模式已自动恢复）');
+    return;
+  }
   showVaultHubLogin();
   const pass = document.getElementById('vaultHubPassword');
   if (pass) pass.value = '';
@@ -139,6 +189,15 @@ async function refreshSessionStatus(notify) {
   } catch (_) { logged = false; }
   /* 同上：登录/退出发生在探测期间时，不用旧结果覆盖新状态。 */
   if (epoch !== vaultHubAuthEpoch) return vaultHubAuthenticated;
+  /* 开放模式：会话失效（空闲超时/重启）时静默自动登录恢复，不发遮罩。 */
+  if (!logged && vaultHubAuthMode === "open") {
+    await vaultHubAutoLogin();
+    try {
+      const res = await fetch('/api/system/runtime', { cache: 'no-store' });
+      logged = res.ok;
+    } catch (_) { logged = false; }
+    if (logged && notify) toast('✅ 开放模式会话已自动恢复');
+  }
   vaultHubAuthenticated = logged;
   renderSessionStatus(logged, t(logged ? 'sessionOkHint' : 'sessionBadHint'));
   if (notify) toast(logged ? '✅ ' + t('sessionOk') : '⚠️ ' + t('sessionReloginToast'));
@@ -1269,6 +1328,76 @@ function initSidebarResizer() {
   window.addEventListener("touchend", stop);
 }
 
+/* ================= v0.9.54 系统设置 → 账户与登录：登录凭据与鉴权模式 ================= */
+async function loadAccountCredentialsUI() {
+  const modeBadge = document.getElementById("accountAuthModeBadge");
+  const userEl = document.getElementById("accountAuthUsername");
+  const openBtn = document.getElementById("accountOpenModeButton");
+  const pwBtn = document.getElementById("accountPasswordModeButton");
+  const nameInput = document.getElementById("accountNewUsername");
+  if (!modeBadge) return;
+  let mode = vaultHubAuthMode, user = "";
+  try {
+    const res = await fetch("/api/auth/mode", { cache: "no-store" });
+    if (res.ok) { const d = await res.json(); mode = d.mode === "open" ? "open" : "password"; user = d.username || ""; vaultHubAuthMode = mode; }
+  } catch (e) {}
+  modeBadge.textContent = mode === "open" ? "🈳 开放模式（无密码）" : "🔐 密码模式";
+  modeBadge.className = "badge " + (mode === "open" ? "blue" : "green");
+  if (userEl) userEl.textContent = user || "—";
+  if (openBtn) openBtn.style.display = mode === "open" ? "none" : "inline-flex";
+  if (pwBtn) pwBtn.style.display = mode === "open" ? "inline-flex" : "none";
+  if (nameInput) nameInput.placeholder = "当前用户名：" + (user || "—") + "（留空不变）";
+}
+function accountCredFields() {
+  return { u: document.getElementById("accountNewUsername"), c: document.getElementById("accountCurrentPassword"), n: document.getElementById("accountNewPassword"), n2: document.getElementById("accountNewPassword2") };
+}
+async function saveAccountCredentials() {
+  const f = accountCredFields();
+  const username = (f.u && f.u.value || "").trim(), pw = f.n && f.n.value || "", pw2 = f.n2 && f.n2.value || "";
+  if (pw && pw.length < 6) { toast("⚠️ 新密码至少 6 位"); return; }
+  if (pw !== pw2) { toast("⚠️ 两次输入的新密码不一致"); return; }
+  try {
+    const res = await fetch("/api/account", { method: "POST", headers: sessionWriteHeaders(true), credentials: "same-origin", body: JSON.stringify({ old_password: f.c && f.c.value || "", username, password: pw }) });
+    const data = await res.json();
+    if (!res.ok || !data.ok) { toast("⚠️ " + (data.error || ("HTTP " + res.status))); return; }
+    vaultHubAuthMode = data.mode === "open" ? "open" : "password";
+    toast("✅ " + (data.message || "账户信息已保存"));
+    loadAccountCredentialsUI();
+    if (f.c) f.c.value = ""; if (f.n) f.n.value = ""; if (f.n2) f.n2.value = ""; if (f.u) f.u.value = "";
+  } catch (e) { toast("⚠️ 保存失败：" + e.message); }
+}
+async function switchAccountOpenMode() {
+  const f = accountCredFields();
+  const curPw = f.c && f.c.value || "";
+  if (!curPw) { toast("⚠️ 请输入当前密码后再切换开放模式"); return; }
+  if (!confirm("切换为开放模式后，任何人都无需密码即可进入系统设置，确定继续？")) return;
+  try {
+    const res = await fetch("/api/account", { method: "POST", headers: sessionWriteHeaders(true), credentials: "same-origin", body: JSON.stringify({ old_password: curPw, mode: "open" }) });
+    const data = await res.json();
+    if (!res.ok || !data.ok) { toast("⚠️ " + (data.error || ("HTTP " + res.status))); return; }
+    vaultHubAuthMode = "open";
+    toast("✅ " + (data.message || "已切换为开放模式"));
+    loadAccountCredentialsUI();
+    if (f.c) f.c.value = "";
+  } catch (e) { toast("⚠️ 切换失败：" + e.message); }
+}
+async function switchAccountPasswordMode() {
+  const f = accountCredFields();
+  const username = (f.u && f.u.value || "").trim(), pw = f.n && f.n.value || "", pw2 = f.n2 && f.n2.value || "";
+  if (!pw) { toast("⚠️ 请设置新登录密码（至少 6 位）"); return; }
+  if (pw.length < 6) { toast("⚠️ 新密码至少 6 位"); return; }
+  if (pw !== pw2) { toast("⚠️ 两次输入的新密码不一致"); return; }
+  try {
+    const res = await fetch("/api/account", { method: "POST", headers: sessionWriteHeaders(true), credentials: "same-origin", body: JSON.stringify({ old_password: "", username, password: pw, mode: "password" }) });
+    const data = await res.json();
+    if (!res.ok || !data.ok) { toast("⚠️ " + (data.error || ("HTTP " + res.status))); return; }
+    vaultHubAuthMode = "password";
+    toast("✅ 已切回密码模式，下次打开页面需要登录");
+    loadAccountCredentialsUI();
+    if (f.n) f.n.value = ""; if (f.n2) f.n2.value = ""; if (f.u) f.u.value = "";
+  } catch (e) { toast("⚠️ 切换失败：" + e.message); }
+}
+
 /* ================= 系统设置配置页内的标签页（含 Caddy 配置入口） ================= */
 let currentSetTab = "library";
 function switchSetTab(key) {
@@ -1278,7 +1407,7 @@ function switchSetTab(key) {
   if (key === "scrape") { refreshHardwareStatus(); if (typeof loadMediaRuntimeSettings === "function") loadMediaRuntimeSettings(false); }
   /* v0.9.17：账户与登录页同时承载登录状态、Caddy 反向代理入口和关于，
      所以进入该页时既要刷新会话状态，也要把 Caddyfile 读回来更新路由计数。 */
-  if (key === "account") { refreshSessionStatus(false); loadCaddyConfig(); }
+  if (key === "account") { refreshSessionStatus(false); loadCaddyConfig(); loadAccountCredentialsUI(); }
   /* 媒体库标签页：把已添加的库和外连服务都刷新一遍，避免看到上一次的旧列表。 */
   if (key === "library") {
     if (typeof refreshMediaLibraries === "function") refreshMediaLibraries(false);

@@ -45,7 +45,7 @@ type App struct {
 	itunesScrapeMu    sync.Mutex // iTunes Search API: ~200ms/request 节流
 	itunesScrapeLast  time.Time
 	zipCacheMu        sync.Mutex
-	zipCache          *zipArchiveCache // v0.9.53: ZIP/CBZ 中央目录 LRU 缓存（漫画读取提速）
+	zipCache          *zipArchiveCache // v0.9.54: ZIP/CBZ 中央目录 LRU 缓存（漫画读取提速）
 	libs              []Library
 	jobs              map[string]uint64             // library id -> running generation
 	generations       map[string]uint64             // invalidates stale scans after delete/recreate
@@ -1560,7 +1560,7 @@ func (a *App) archive(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, 404, "file not found")
 		return
 	}
-	/* v0.9.53：归档目录解析结果按 (路径,size,mtime) 缓存（LRU），
+	/* v0.9.54：归档目录解析结果按 (路径,size,mtime) 缓存（LRU），
 	   漫画逐页请求不再反复 OpenReader + 全量 iconv 解码文件名。 */
 	a.zipCacheMu.Lock()
 	if a.zipCache == nil {
@@ -2269,6 +2269,8 @@ func main() {
 	mux.HandleFunc("/api/media/files", a.files)
 	mux.HandleFunc("/api/media/file", a.serve)
 	mux.HandleFunc("/api/media/file/", a.serveLegacy)
+	mux.HandleFunc("/api/media/cover", a.coverSave)
+	mux.HandleFunc("/api/media/cover/", a.coverGet)
 	mux.HandleFunc("/api/media/archive/zip", a.archive)
 	mux.HandleFunc("/api/media/archive/zip/register", a.archive)
 	mux.HandleFunc("/api/media/archive", a.archive)

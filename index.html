@@ -4,10 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VaultHub 蜀鼠之家</title>
-<link rel="stylesheet" href="/web/css/main.css?v=0.9.53">
+<link rel="stylesheet" href="/web/css/main.css?v=0.9.54">
 <script>
 /* 资源版本号：index.html 用它给所有静态资源打查询串。 */
-window.VAULTHUB_ASSET_VERSION = "0.9.53";
+window.VAULTHUB_ASSET_VERSION = "0.9.54";
 </script>
 </head>
 <body data-theme="dark">
@@ -72,7 +72,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.53";
   <div class="sidebar-foot">
     <button class="rail-btn rail-settings" id="sidebarSettingsButton" type="button" onclick="openSettingsModalFromSidebar()" title="系统设置" aria-label="系统设置"><span class="ic">⚙</span><span class="txt" data-i18n="settingsTitle">系统设置</span></button>
     <div class="sidebar-foot-row">
-      <span class="ver">v0.9.53 · Floating Player</span>
+      <span class="ver">v0.9.54 · Floating Player</span>
       <button class="rail-btn rail-collapse" id="sidebarCollapseButton" type="button" onclick="toggleBars()" title="折叠 / 展开侧栏" aria-label="折叠或展开侧栏">⇤</button>
     </div>
   </div>
@@ -528,6 +528,20 @@ window.VAULTHUB_ASSET_VERSION = "0.9.53";
           </div>
           <div class="hint" id="sessionStatusHint" data-i18n="sessionHint">会话在最后一次操作后 30 分钟空闲自动失效；增删媒体库等写操作需要有效登录。</div>
         </div>
+        <div class="setblock" id="accountCredentialsBlock">
+          <h4>🔐 登录凭据与鉴权模式</h4>
+          <p>当前模式：<span class="badge" id="accountAuthModeBadge">…</span>　登录用户名：<b id="accountAuthUsername">…</b></p>
+          <div class="cfg-field"><label>新登录用户名</label><input id="accountNewUsername" type="text" placeholder="留空表示不变" autocomplete="username"></div>
+          <div class="cfg-field"><label>当前密码</label><input id="accountCurrentPassword" type="password" placeholder="修改用户名/密码或关闭开放模式时需要" autocomplete="current-password"></div>
+          <div class="cfg-field"><label>新登录密码</label><input id="accountNewPassword" type="password" placeholder="至少 6 位，留空表示不变" autocomplete="new-password"></div>
+          <div class="cfg-field"><label>确认新密码</label><input id="accountNewPassword2" type="password" placeholder="再次输入新密码" autocomplete="new-password"></div>
+          <div class="media-actions">
+            <button class="btn btn-primary" type="button" onclick="saveAccountCredentials()">💾 保存用户名 / 密码</button>
+            <button class="btn" type="button" id="accountOpenModeButton" onclick="switchAccountOpenMode()">🈳 切换为开放模式（无密码）</button>
+            <button class="btn" type="button" id="accountPasswordModeButton" style="display:none" onclick="switchAccountPasswordMode()">🔐 切回密码模式（需设置新密码）</button>
+          </div>
+          <div class="hint">开放模式 = 无密码登录，任何人打开页面即可进入；从密码模式切到开放模式需要先输入当前密码。建议仅在可信内网使用。首次从环境变量启动不设置 ADMIN_PASSWORD 时也会进入开放模式。</div>
+        </div>
         <div class="setblock">
           <h4>🔀 <span data-i18n="caddyRoutes">反向代理服务域名</span></h4>
           <p data-i18n="caddyRoutesHint">维护服务域名与内网上游地址的映射，保存后由内置 Caddy 校验并热加载，失败会自动回滚。</p>
@@ -669,7 +683,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.53";
   <div class="modal">
     <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
     <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
-    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.9.53 · Floating Player</b></div>
+    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.9.54 · Floating Player</b></div>
     <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>Go (media/manager/subtitle) · Caddy · FFmpeg · SQLite · HTML/CSS/JS</b></div>
     <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>VaultHub 内置系统监控</b></div>
     <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>
@@ -696,7 +710,21 @@ window.VAULTHUB_ASSET_VERSION = "0.9.53";
     <button id="audioMaximizeButton" title="最大化" onclick="toggleAudioMaximize()" aria-label="最大化"><svg class="vc-svg audio-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.6V4h5.6"/><path d="M20 9.6V4h-5.6"/><path d="M4 14.4V20h5.6"/><path d="M20 14.4V20h-5.6"/></svg></button>
     <button title="歌曲详情与歌词" onclick="showAudioDetails()" aria-label="详情"><svg class="vc-svg audio-svg" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.4"/><path d="M12 11.2v4.6"/><circle cx="12" cy="7.7" r="1.05" fill="currentColor"/></svg></button>
   </div>
-  <pre class="audio-lyrics" id="audioPlayerLyrics" onclick="seekLyric(event)"></pre>
+  <!-- v0.9.54：展开播放器双页 —— 海报页 / 歌词页（歌词覆盖海报磨砂蒙版，跟随播放时间高亮）。 -->
+  <div class="audio-expand" id="audioExpand" data-page="poster">
+    <div class="audio-expand-tabs">
+      <button type="button" id="audioExpandPosterTab" class="active" data-page="poster" onclick="setAudioExpandPage('poster')">🖼 海报</button>
+      <button type="button" id="audioExpandLyricsTab" data-page="lyrics" onclick="setAudioExpandPage('lyrics')">📜 歌词</button>
+    </div>
+    <div class="audio-expand-page audio-poster-page" data-page="poster">
+      <div class="audio-poster-frame"><img id="audioBigPoster" alt="专辑海报"><span class="audio-poster-fallback" id="audioBigPosterFallback"></span></div>
+    </div>
+    <div class="audio-expand-page audio-lyrics-page" data-page="lyrics">
+      <img id="audioLyricsBg" alt="" aria-hidden="true">
+      <div class="audio-lyrics-scrim"></div>
+      <pre class="audio-player-lyrics" id="audioPlayerLyrics" onclick="seekLyric(event)"></pre>
+    </div>
+  </div>
   <audio id="audioPlayerElement" preload="metadata"></audio>
 </div>
 
@@ -749,10 +777,10 @@ window.VAULTHUB_ASSET_VERSION = "0.9.53";
 
 <div class="toast" id="toast"></div>
 
-<script src="/web/js/01-state.js?v=0.9.53"></script>
-<script src="/web/js/02-media.js?v=0.9.53"></script>
-<script src="/web/js/03-features.js?v=0.9.53"></script>
-<script src="/web/js/05-home.js?v=0.9.53"></script>
-<script src="/web/js/04-boot.js?v=0.9.53"></script>
+<script src="/web/js/01-state.js?v=0.9.54"></script>
+<script src="/web/js/02-media.js?v=0.9.54"></script>
+<script src="/web/js/03-features.js?v=0.9.54"></script>
+<script src="/web/js/05-home.js?v=0.9.54"></script>
+<script src="/web/js/04-boot.js?v=0.9.54"></script>
 </body>
 </html>

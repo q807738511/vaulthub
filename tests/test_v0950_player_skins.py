@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""VaultHub v0.9.53 contracts: player skins, SVG icons, resilience, ZIP fixes,
+"""VaultHub v0.9.54 contracts: player skins, SVG icons, resilience, ZIP fixes,
 repo-wide scrubbing and removal of the preview label.
 
 Asserts against the real repo files:
@@ -133,9 +133,9 @@ def test_compose_generic_samples():
 
 
 def test_release_notes_exist():
-    rel = (ROOT / ".github/RELEASE_NOTES_0.9.53.md").read_text(encoding="utf-8")
-    assert "VaultHub v0.9.53" in rel
-    assert "0.9.53" in index
+    rel = (ROOT / ".github/RELEASE_NOTES_0.9.54.md").read_text(encoding="utf-8")
+    assert "VaultHub v0.9.54" in rel
+    assert "0.9.54" in index
 
 
 if __name__ == "__main__":

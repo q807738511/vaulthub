@@ -38,7 +38,7 @@ required = [
     'ebook-chapters',
     'changeEbookFontSize',
     'toggleEbookFontStyle',
-    # v0.9.53: manual playlists
+    # v0.9.54: manual playlists
     'audioPlaylistsCache',
     'openAudioPlaylistPicker',
     'renderAudioPlaylists',
@@ -69,7 +69,7 @@ assert 'button.innerHTML = fav ? audioIcon("heartFill") : audioIcon("heart")' in
 assert 'audio-fav-on' in html and 'heartFill' in html, "favorite button needs filled-heart state highlight"
 assert 'audioLoopMode === "single"' in html, "single-track loop mode missing"
 assert 'audioLoopMode === "random"' in html, "random play mode missing"
-# v0.9.53: play-mode buttons must live only in the player, not on track/album list headers
+# v0.9.54: play-mode buttons must live only in the player, not on track/album list headers
 assert 'onclick="setAudioLoop(\'random\')"' not in html, "random-play button still shown in track list header"
 assert 'onclick="setAudioLoop(\'sequence\')"' not in html, "sequence-play button still shown in track list header"
 assert 'onclick="setAudioLoop(\'list\')"' not in html, "list-loop button still shown in track list header"

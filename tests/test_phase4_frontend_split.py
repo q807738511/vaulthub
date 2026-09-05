@@ -36,8 +36,9 @@ assert sorted(order) == sorted(set(order)), f"duplicate script tags: {order}"
 # Boot statements (init calls) must live in the LAST file so all functions and
 # globals from earlier files are defined before they run.
 boot = (ROOT / "web" / "js" / "04-boot.js").read_text(encoding="utf-8")
-for call in ["loadSettings();", "requireVaultHubLogin();", "setInterval(tickMetrics, 5000);"]:
+for call in ["loadSettings();", "initVaultHubAuth();", "setInterval(tickMetrics, 5000);"]:
     assert call in boot, f"boot file missing init call: {call}"
+assert "initVaultHubAuth" in boot, "boot 必须优先探测鉴权模式（开放模式自动登录 / 密码模式登录遮罩）"
 
 # Classic (non-module) scripts: inline on*= handlers need global functions.
 assert "type=\"module\"" not in index and "type='module'" not in index, \

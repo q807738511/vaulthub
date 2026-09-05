@@ -28,5 +28,5 @@ for ext in ("epub", "pdf", "mobi", "azw3", "txt", "cbz", "cbr", "cb7", "cbt"):
 assert "MEDIA_FORMATS.book" in JS and "MEDIA_FORMATS.comic" in JS
 assert "archiveLike" in JS
 
-assert "v0.9.53" in HTML
-print("PASS: v0.9.53 full movie listing, media search nav, sidebar detail lifecycle and book/comic recognition contracts")
+assert "v0.9.54" in HTML
+print("PASS: v0.9.54 full movie listing, media search nav, sidebar detail lifecycle and book/comic recognition contracts")

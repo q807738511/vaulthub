@@ -15,6 +15,6 @@ assert '.movie-detail-hero.has-art p' in CSS and 'rgba(255,255,255' in CSS
 assert '.movie-detail-strip article small' in CSS and 'color:var(--text2)' in CSS
 assert 'id="topLibStat"' not in HTML and 'id="homeCount"' not in HTML
 assert '<section class="view settings-view" id="view-settings">' in HTML
-assert 'v0.9.53' in HTML
+assert 'v0.9.54' in HTML
 assert 'ghcr.io/q807738511/vaulthub:latest' in COMPOSE
-print('PASS: v0.9.53 light movie details and prior UI fixes')
+print('PASS: v0.9.54 light movie details and prior UI fixes')
