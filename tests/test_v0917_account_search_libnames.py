@@ -90,9 +90,9 @@ for preset in ["<h3>电影</h3>", "<h3>电视剧集</h3>", "<h3>音乐与 MV</h3
 assert '"电子书" : "漫画"' not in JS, "书刊标题不能按预设大类渲染"
 
 # ---------------------------------------------------------------- 版本与发布引用
-assert "v0.9.56" in HTML and HTML.count("v0.9.56") >= 2, "关于与侧栏版本必须是 v0.9.56"
-assert 'VAULTHUB_ASSET_VERSION = "0.9.56"' in HTML, "资源版本必须是 0.9.56"
-assert 'VAULTHUB_SCRIPT_VERSION = "0.9.56"' in STATE, "脚本版本必须是 0.9.56"
+assert "v0.9.57" in HTML and HTML.count("v0.9.57") >= 2, "关于与侧栏版本必须是 v0.9.57"
+assert 'VAULTHUB_ASSET_VERSION = "0.9.57"' in HTML, "资源版本必须是 0.9.57"
+assert 'VAULTHUB_SCRIPT_VERSION = "0.9.57"' in STATE, "脚本版本必须是 0.9.57"
 assert "ghcr.io/q807738511/vaulthub:latest" in COMPOSE, "v0.9.56 起 Compose 跟随 latest"
 assert (ROOT / ".github/RELEASE_NOTES_0.9.56.md").exists(), "缺少 v0.9.56 release notes"
 

@@ -36,7 +36,7 @@ check("T1 boot 挂载", "initSidebarNavOverflowWatch();" in BOOT)
 # ============ T2 音乐专辑/歌手点击逻辑 ============
 check("T2 openAudioTracks 整单拉取", "async function openAudioTracks(libId, kind, key)" in JS
       and "fetchAllLibraryFiles(lib.id, { has_more: true }, 0)" in JS)
-check("T2 按 artist/album 过滤", "meta.artist === key || meta.album === key" in JS)
+check("T2 按 kind 过滤", 'kind === "artist" ? meta.artist === key : meta.album === key' in JS)
 check("T2 曲目行整行播放", "audio-row-click" in JS and 'onclick="playAudioFile(' in JS)
 check("T2 行内按钮 stopPropagation", JS.count("event.stopPropagation()") >= 6)
 check("T2 播放队列=专辑/歌手集合", "audioFiles = files;" in JS and "audioCursor = 0;" in JS)
@@ -116,7 +116,7 @@ for fname, txt in [("README.md", README), ("Update Log.md", UPDATELOG)]:
 
 # ============ 版本号 ============
 check("版本 HTML >=2", HTML.count("v0.9.56") >= 2)
-check("版本 script 变量", 'VAULTHUB_SCRIPT_VERSION = "0.9.56"' in STATE)
+check("版本 script 变量", 'VAULTHUB_SCRIPT_VERSION = "0.9.57"' in STATE)
 check("版本 release notes 存在", (ROOT / ".github/RELEASE_NOTES_0.9.56.md").exists())
 
 if fails:

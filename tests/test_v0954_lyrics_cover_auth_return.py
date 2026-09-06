@@ -83,8 +83,8 @@ check("开放模式不弹登录遮罩", 'vaultHubAuthMode === "open"' in STATE
       and "vaultHubAuthMode !== \"open\"" in STATE)
 
 # ---------------------------------------------------------------- 4. 影视返回语义
-check("返回语境按钮", "function movieDetailCloseButton()" in MEDIA and "✕ 返回详情" in MEDIA
-      and "✕ 返回媒体库" in MEDIA and "closeEpisodeDetail()" in MEDIA)
+check("返回语境按钮", "function movieDetailCloseButton()" in MEDIA and "movie-return-pill" in MEDIA
+      and "返回详情" in MEDIA and "返回媒体库" in MEDIA and "closeEpisodeDetail()" in MEDIA)
 check("单集详情入口", "function openEpisodeDetails(libId, path)" in MEDIA
       and "activeSeriesDetail" in MEDIA and "seriesEpisodeReturn" in MEDIA)
 # v0.9.56：单集行图示卡片化 —— 整卡点击直接播放该集，卡片内「详情」按钮
@@ -98,8 +98,8 @@ check("关闭详情复位语境", "seriesEpisodeReturn=null" in MEDIA)
 
 # ---------------------------------------------------------------- 版本与发布
 check("release notes", (ROOT / ".github" / "RELEASE_NOTES_0.9.56.md").exists(), "缺少 v0.9.56 release notes")
-check("版本串", HTML.count("v0.9.56") >= 2 and 'VAULTHUB_SCRIPT_VERSION = "0.9.56"' in STATE)
-check("资产缓存版本", 'v=0.9.56' in HTML)
+check("版本串", HTML.count("v0.9.57") >= 2 and 'VAULTHUB_SCRIPT_VERSION = "0.9.57"' in STATE)
+check("资产缓存版本", 'v=0.9.57' in HTML)
 check("compose 跟随 latest", (ROOT / "docker-compose.yml").read_text(encoding="utf-8").find("ghcr.io/q807738511/vaulthub:latest") >= 0)
 check("无旧版本残留", "0.9.53" not in HTML and "0.9.53" not in STATE and "0.9.53" not in MEDIA
       and "0.9.53" not in COVERGO)

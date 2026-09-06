@@ -169,7 +169,7 @@ check("窄屏隐藏电子书字号工具条以保住关闭按钮",
 
 # 详情页关闭按钮是 position:fixed，也必须相对顶栏下方定位，
 # 否则 overlay 下移后它会单独浮在顶栏统计信息上面。
-detail_close = re.search(r"\.movie-detail-scroll>\.media-reader-close \{([^}]*)\}", css)
+detail_close = re.search(r"\.movie-detail-scroll>\.(?:media-reader-close|movie-return-pill) \{([^}]*)\}", css)
 check("详情页关闭按钮避开顶栏",
       detail_close is not None and "var(--topbar-h)" in detail_close.group(1),
       detail_close.group(1).strip() if detail_close else "(缺失)")
@@ -261,8 +261,8 @@ check("rollback.sh 还原 vaulthub.env",
 
 # 版本号
 check("index.html 版本号为 v0.8.7",
-      read("index.html").count("v0.9.56") >= 2,
-      f"出现 {read('index.html').count('v0.9.56')} 次")
+      read("index.html").count("v0.9.57") >= 2,
+      f"出现 {read('index.html').count('v0.9.57')} 次")
 
 # ---------------------------------------------------------------- 输出
 if FAILS:
