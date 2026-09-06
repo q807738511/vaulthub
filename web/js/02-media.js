@@ -473,9 +473,12 @@ let activeSeriesDetail = null;  // 最近一次打开的剧集详情 {libId, sho
 let seriesEpisodeReturn = null; // 单集详情返回目标（返回详情 = 回到该剧集详情页）
 function movieDetailCloseButton() {
   const ep = seriesEpisodeReturn;
+  const arrow = '<svg class="vc-svg" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M19 12H5m6-6-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  /* v0.9.57：圆形按钮放不下「✕ 返回媒体库」长文案，文字溢出穿模 →
+     改为横向药丸（返回箭头 + 中文），宽度随内容自适应，圆角胶囊样式。 */
   return ep
-    ? `<button class="media-reader-close" title="返回剧集详情" onclick="closeEpisodeDetail()">✕ 返回详情</button>`
-    : `<button class="media-reader-close" title="关闭并返回媒体库" onclick="closeMovieDetails()">✕ 返回媒体库</button>`;
+    ? `<button class="movie-return-pill" title="返回剧集详情" onclick="closeEpisodeDetail()">${arrow}返回详情</button>`
+    : `<button class="movie-return-pill" title="关闭并返回媒体库" onclick="closeMovieDetails()">${arrow}返回媒体库</button>`;
 }
 function openEpisodeDetails(libId, path) {
   const s = activeSeriesDetail;
@@ -599,7 +602,7 @@ function setAudioPageSize(size) {
 }
 function setAudioView(view) {
   audioView = ["albums", "artists", "files", "favorites", "playlists", "tracks"].includes(view) ? view : "albums";
-  if (view !== "tracks") { audioTrackTitle = ""; audioArtistFilter = ""; audioPlaylistFilter = ""; }
+  if (view !== "tracks") { audioTrackTitle = ""; audioArtistFilter = ""; audioPlaylistFilter = ""; audioGroupLock = null; }
   const lib = findMediaLibrary(localMediaSelection.audio);
   if (lib) loadLocalFiles("audio", lib, 0);
 }
@@ -902,8 +905,10 @@ async function loadLocalFiles(group, lib, offset = 0) {
       target.innerHTML = `${toolbar}${files.length ? `<div class="book-grid">${files.map(file => renderBookCard(group, lib, file)).join("")}</div>` : `<div class="empty-tip">${esc(emptyTip)}</div>`}${pager}`;
       scrapeVisibleBookCovers(target);
     } else if (group === "audio") {
-      audioFiles = files;
-      audioCursor = offset;
+      /* v0.9.57：专辑/歌手分组播放时（audioGroupLock 活跃）挂起 audioFiles 覆盖 ——
+         歌手刮削完成等异步重载如果无条件重赋分页列表，会把「播放队列=该专辑/歌手」冲回整库；
+         列表展示仍按当前分页数据渲染，仅播放队列保持分组。setAudioView 切换页签即释放锁。 */
+      if (!audioGroupLock) { audioFiles = files; audioCursor = offset; }
       target.innerHTML = renderAudioLibrary(lib, files, data);
       scrapeAudioMetadata(target, lib, files);
     } else if (group === "movie") {
@@ -1077,6 +1082,14 @@ function audioArtistInfoFor(artist) {
   return all[String(artist)] || null;
 }
 async function scrapeAudioArtists(host, lib, files) {
+  /* 与歌曲刮削共用 audioScrapeChain：artists 视图渲染/视图切换并发触发多轮
+     歌手刮削时，交错读写会互相覆盖刚写入的歌手缓存条目（同类竞态歌曲侧已由
+     同一串行链解决）。串行后 in-flight 去重由 audioArtistAttemptedSession 兜住。 */
+  const run = audioScrapeChain.then(() => scrapeAudioArtistsInner(host, lib, files));
+  audioScrapeChain = run.catch(() => {});
+  return run;
+}
+async function scrapeAudioArtistsInner(host, lib, files) {
   const pending = new Set();
   files.forEach(file => {
     const meta = audioMetadataFor(String(file.path));
@@ -1247,10 +1260,14 @@ async function saveAudioGroupEdit() {
   });
   writeAudioMetadata(all);
   if (kind === "artist") {
-    // 歌手改名/换头像：同步歌手缓存，避免卡片仍显示旧头像
+    // 歌手改名/换头像：同步歌手缓存，避免卡片仍显示旧头像；
+    // 保留此前刮削解析出的合作演唱参与者（collaborators），不以 [name] 覆盖。
     const artistCache = readAudioArtistCache();
+    const prev = artistCache[String(key)];
     delete artistCache[String(key)];
-    artistCache[name] = { name, cover: cover || "", provider: "manual", collaborators: [name], checkedAt: Date.now() };
+    artistCache[name] = { name, cover: cover || (prev && prev.cover) || "", provider: "manual",
+      collaborators: (prev && Array.isArray(prev.collaborators) && prev.collaborators.length && prev.collaborators[0] !== name)
+        ? prev.collaborators : [name], checkedAt: Date.now() };
     writeAudioArtistCache(artistCache);
     audioArtistAttemptedSession.add(name);
   }
@@ -1271,15 +1288,17 @@ function audioCoverData(meta, title) {
 function renderAudioAlbums(lib, files) {
   const groups = new Map();
   files.forEach(file => { const meta = audioMetadataFor(String(file.path)); const key = meta.album || "未知专辑"; if (!groups.has(key)) groups.set(key, { meta, files: [] }); groups.get(key).files.push(file); });
-  /* v0.9.56：卡片整卡点击 → 该专辑全部曲目；✎ 批量编辑专辑名/封面（不触发跳转）。 */
-  return `<div class="audio-album-grid">${[...groups.entries()].map(([album, group]) => `<article class="audio-album-card" onclick="openAudioTracks('${esc(lib.id)}','album',${esc(JSON.stringify(album))})"><div class="audio-album-cover" style="background:${coverGradient(album)}">${audioCoverData(group.meta, album)}</div><div class="audio-album-info"><strong>${esc(album)}</strong><small>${esc(group.meta.artist)} · ${group.files.length} 首</small><div class="media-actions"><button class="btn" title="喜欢专辑" onclick="event.stopPropagation();toggleAudioFavorite(${jsAttrArg(lib.id)},${jsAttrArg(group.files[0].path)})">${isAudioFavorite(lib.id, group.files[0].path) ? "♥" : "♡"}</button><button class="btn" title="编辑专辑" onclick="event.stopPropagation();openAudioGroupEdit('album',${jsAttrArg(album)})">✎</button><button class="btn" title="查看专辑曲目" onclick="event.stopPropagation();openAudioTracks('${esc(lib.id)}','album',${esc(JSON.stringify(album))})">▶ 曲目</button></div></div></article>`).join("")}</div>`;
+  /* v0.9.56：卡片整卡点击 → 该专辑全部曲目；✎ 批量编辑专辑名/封面（不触发跳转）。
+     v0.9.57：新增「▶ 播放」—— 不进入列表，直接播放该专辑全部歌曲（队列即专辑）。 */
+  return `<div class="audio-album-grid">${[...groups.entries()].map(([album, group]) => `<article class="audio-album-card" onclick="openAudioTracks('${esc(lib.id)}','album',${esc(JSON.stringify(album))})"><div class="audio-album-cover" style="background:${coverGradient(album)}">${audioCoverData(group.meta, album)}</div><div class="audio-album-info"><strong>${esc(album)}</strong><small>${esc(group.meta.artist)} · ${group.files.length} 首</small><div class="media-actions"><button class="btn" title="直接播放该专辑全部歌曲" onclick="event.stopPropagation();playAudioGroup('${esc(lib.id)}','album',${esc(JSON.stringify(album))})">▶ 播放</button><button class="btn" title="喜欢专辑" onclick="event.stopPropagation();toggleAudioFavorite(${jsAttrArg(lib.id)},${jsAttrArg(group.files[0].path)})">${isAudioFavorite(lib.id, group.files[0].path) ? "♥" : "♡"}</button><button class="btn" title="编辑专辑" onclick="event.stopPropagation();openAudioGroupEdit('album',${jsAttrArg(album)})">✎</button><button class="btn" title="查看专辑曲目" onclick="event.stopPropagation();openAudioTracks('${esc(lib.id)}','album',${esc(JSON.stringify(album))})">▶ 曲目</button></div></div></article>`).join("")}</div>`;
 }
 function renderAudioArtists(lib, files) {
   const groups = new Map();
   files.forEach(file => { const meta = audioMetadataFor(String(file.path)); const key = meta.artist || "未知歌手"; if (!groups.has(key)) groups.set(key, []); groups.get(key).push(file); });
   /* v0.9.56：歌手卡片封面优先用歌手刮削头像（localStorage 缓存），
-     未刮削/失败时回落渐变首字；✎ 批量编辑歌手名/头像（不触发跳转）。 */
-  return `<div class="audio-album-grid audio-artist-grid">${[...groups.entries()].map(([artist, songs]) => { const artistMeta = audioArtistInfoFor(artist); const cover = artistMeta && artistMeta.cover ? `<img class="audio-artist-avatar" src="${esc(artistMeta.cover)}" alt="${esc(artist)}" loading="lazy" onerror="this.parentElement.classList.add('audio-artist-avatar-fallback');this.remove()">` : ""; return `<article class="audio-album-card audio-artist-card" onclick="openAudioTracks('${esc(lib.id)}','artist',${esc(JSON.stringify(artist))})"><div class="audio-album-cover audio-artist-cover" style="${cover ? "" : `background:${coverGradient(artist)}`}">${cover || esc(artist)}</div><div class="audio-album-info"><strong>${esc(artist)}</strong><small>${songs.length} 首歌曲${artistMeta && artistMeta.collaborators && artistMeta.collaborators.length > 1 ? " · 合作演唱" : ""}</small><div class="media-actions"><button class="btn" title="喜欢歌手" onclick="event.stopPropagation();toggleAudioFavorite(${jsAttrArg(lib.id)},${jsAttrArg(songs[0].path)})">${isAudioFavorite(lib.id, songs[0].path) ? "♥" : "♡"}</button><button class="btn" title="编辑歌手" onclick="event.stopPropagation();openAudioGroupEdit('artist',${jsAttrArg(artist)})">✎</button><button class="btn" title="查看歌手歌曲" onclick="event.stopPropagation();openAudioTracks('${esc(lib.id)}','artist',${esc(JSON.stringify(artist))})">▶ 曲目</button></div></div></article>`; }).join("")}</div>`;
+     未刮削/失败时回落渐变首字；✎ 批量编辑歌手名/头像（不触发跳转）。
+     v0.9.57：新增「▶ 播放」—— 直接播放该歌手全部歌曲（队列即歌手）。 */
+  return `<div class="audio-album-grid audio-artist-grid">${[...groups.entries()].map(([artist, songs]) => { const artistMeta = audioArtistInfoFor(artist); const cover = artistMeta && artistMeta.cover ? `<img class="audio-artist-avatar" src="${esc(artistMeta.cover)}" alt="${esc(artist)}" loading="lazy" onerror="this.parentElement.classList.add('audio-artist-avatar-fallback');this.remove()">` : ""; return `<article class="audio-album-card audio-artist-card" onclick="openAudioTracks('${esc(lib.id)}','artist',${esc(JSON.stringify(artist))})"><div class="audio-album-cover audio-artist-cover" style="${cover ? "" : `background:${coverGradient(artist)}`}">${cover || esc(artist)}</div><div class="audio-album-info"><strong>${esc(artist)}</strong><small>${songs.length} 首歌曲${artistMeta && artistMeta.collaborators && artistMeta.collaborators.length > 1 ? " · 合作演唱" : ""}</small><div class="media-actions"><button class="btn" title="直接播放该歌手全部歌曲" onclick="event.stopPropagation();playAudioGroup('${esc(lib.id)}','artist',${esc(JSON.stringify(artist))})">▶ 播放</button><button class="btn" title="喜欢歌手" onclick="event.stopPropagation();toggleAudioFavorite(${jsAttrArg(lib.id)},${jsAttrArg(songs[0].path)})">${isAudioFavorite(lib.id, songs[0].path) ? "♥" : "♡"}</button><button class="btn" title="编辑歌手" onclick="event.stopPropagation();openAudioGroupEdit('artist',${jsAttrArg(artist)})">✎</button><button class="btn" title="查看歌手歌曲" onclick="event.stopPropagation();openAudioTracks('${esc(lib.id)}','artist',${esc(JSON.stringify(artist))})">▶ 曲目</button></div></div></article>`; }).join("")}</div>`;
 }
 let audioArtistFilter = "";
 /* v0.9.56：点击专辑/歌手卡片 → 展示该专辑/歌手全部曲目。
@@ -1287,6 +1306,30 @@ let audioArtistFilter = "";
    曲目较多的专辑/歌手只能看到前 N 首；现改为整单拉取（与歌单 loadPlaylistTracks
    同款），并把 audioFiles 设为该集合 —— 点击任一曲目播放后，上一首/下一首/
    自动连播都在该专辑/歌手内，满足「点击曲目直接播放歌手/专辑」。 */
+async function audioGroupFiles(libId, kind, key) {
+  const lib = findMediaLibrary(libId);
+  if (!lib) return [];
+  const all = await fetchAllLibraryFiles(lib.id, { has_more: true }, 0);
+  return all
+    .filter(file => supportedLocalMediaFile("audio", lib, String(file.path)))
+    .filter(file => { const meta = audioMetadataFor(String(file.path)); return kind === "artist" ? meta.artist === key : meta.album === key; })
+    .sort((a, b) => String(a.path).localeCompare(String(b.path), "zh-CN"));
+}
+/* v0.9.57：分组播放队列锁 —— playAudioGroup / openAudioTracks 设置，
+   刮削完成/分页等异步 loadLocalFiles 不再覆盖 audioFiles（保持「队列=专辑/歌手」），
+   用户切换音乐页签（setAudioView）即释放。 */
+let audioGroupLock = null;
+/* v0.9.57：一键直接播放专辑/歌手全部歌曲（不进曲目列表），
+   队列即该分组 —— 上一首/下一首/自动连播都在分组内。 */
+function playAudioGroup(libId, kind, key) {
+  audioGroupFiles(libId, kind, String(key)).then(files => {
+    if (!files.length) { toast("⚠️ 该分组暂无歌曲"); return; }
+    audioFiles = files;
+    audioCursor = 0;
+    audioGroupLock = { kind, key: String(key) };
+    playAudioFile(libId, files[0].path);
+  }).catch(() => toast("⚠️ 拉取分组歌曲失败"));
+}
 async function openAudioTracks(libId, kind, key) {
   audioArtistFilter = String(key);
   audioPlaylistFilter = "";
@@ -1297,14 +1340,11 @@ async function openAudioTracks(libId, kind, key) {
   const host = document.getElementById("local-media-content-audio");
   if (!lib || !host) return;
   try {
-    const all = await fetchAllLibraryFiles(lib.id, { has_more: true }, 0);
-    const files = all
-      .filter(file => supportedLocalMediaFile("audio", lib, String(file.path)))
-      .filter(file => { const meta = audioMetadataFor(String(file.path)); return meta.artist === key || meta.album === key; })
-      .sort((a, b) => String(a.path).localeCompare(String(b.path), "zh-CN"));
+    const files = await audioGroupFiles(lib.id, kind, String(key));
     audioFiles = files;
     audioCursor = 0;
-    if (!files.length) { audioTrackTitle = ""; audioArtistFilter = ""; audioView = audioTracksBack; }
+    audioGroupLock = { kind, key: String(key) };
+    if (!files.length) { audioTrackTitle = ""; audioArtistFilter = ""; audioView = audioTracksBack; audioGroupLock = null; }
     renderAudioLibraryContent(host, lib, files);
   } catch (e) {
     loadLocalFiles("audio", lib, 0); // 拉取失败回退分页视图
@@ -1313,9 +1353,14 @@ async function openAudioTracks(libId, kind, key) {
 let audioTracksBack = "albums"; // 曲目列表「← 返回」目标：albums | artists | playlists
 function renderAudioTrackList(lib, files) {
   /* v0.9.56：曲目列表头部不再放播放模式按钮（随机/列表循环/顺序），
-     循环模式只在播放器底部按钮中体现（cycleAudioLoop）。 */
+     循环模式只在播放器底部按钮中体现（cycleAudioLoop）。
+     v0.9.57：专辑/歌手分组曲目列表头部增加「▶ 播放全部」——
+     点击直接播放当前分组全部歌曲（队列即该专辑/歌手）。 */
   const back = audioTracksBack === "artists" ? "artists" : audioTracksBack === "playlists" ? "playlists" : "albums";
-  return `<div class="audio-track-head"><button class="btn" onclick="audioTrackTitle='';audioArtistFilter='';audioPlaylistFilter='';setAudioView('${back}')">← 返回</button><strong>${esc(audioTrackTitle)}</strong><span class="media-file-meta">${files.length} 首</span></div>${files.length ? `<div class="media-file-list">${files.map(file => renderAudioRow(lib, file)).join("")}</div>` : '<div class="empty-tip">该列表下暂无歌曲</div>'}`;
+  const groupPlay = (back === "artists" || back === "albums")
+    ? `<button class="btn audio-play-all" title="直接播放当前${back === "artists" ? "歌手" : "专辑"}全部歌曲" onclick="playAudioGroup('${esc(lib.id)}','${back === "artists" ? "artist" : "album"}',${esc(JSON.stringify(audioTrackTitle))})">▶ 播放全部</button>`
+    : "";
+  return `<div class="audio-track-head">${groupPlay}<button class="btn" onclick="audioTrackTitle='';audioArtistFilter='';audioPlaylistFilter='';setAudioView('${back}')">← 返回</button><strong>${esc(audioTrackTitle)}</strong><span class="media-file-meta">${files.length} 首</span></div>${files.length ? `<div class="media-file-list">${files.map(file => renderAudioRow(lib, file)).join("")}</div>` : '<div class="empty-tip">该列表下暂无歌曲</div>'}`;
 }
 function renderAudioLibraryContent(host, lib, files) {
   const latest = [...files].sort((a, b) => Number(b.mtime || 0) - Number(a.mtime || 0)).slice(0, 8);
@@ -2471,6 +2516,27 @@ function scoreDecodedText(text) {
 function decodeWithEncoding(bytes, encoding) {
   try { return new TextDecoder(encoding).decode(bytes); } catch (e) { return ""; }
 }
+/* v0.9.56 边界补强：无 BOM 的纯 CJK UTF-16（无换行/ASCII 时零字节密度趋近 0）
+   会漏过上面的零字节特征，若全部字节对又恰好构成合法 UTF-8 序列，还会被严格
+   UTF-8 分支抢先解成乱码。这里用「奇偶字节位汉字高字节占比」探测 UTF-16 配对
+   结构：UTF-16LE 的奇数位字节（两字节单元的高 8 位）绝大多数落在 0x4E–0x9F，
+   偶数位（低 8 位）近似均匀分布；UTF-16BE 恰好相反。GB18030/Big5/Shift-JIS/
+   EUC-KR/UTF-8 的字节分布与此特征相斥（高字节多 >0x9F 或 <0x4E），不会误报。 */
+function probeUtf16Pairing(src) {
+  const n = src.length & ~1;
+  if (n < 32) return null;
+  let odd = 0, even = 0, hiOdd = 0, hiEven = 0;
+  for (let i = 0; i < n; i += 2) {
+    const lo = src[i], hi = src[i + 1];
+    odd++; even++;
+    if (hi >= 0x4E && hi <= 0x9F) hiOdd++;
+    if (lo >= 0x4E && lo <= 0x9F) hiEven++;
+  }
+  const rOdd = hiOdd / odd, rEven = hiEven / even;
+  if (rOdd >= 0.8 && rEven <= 0.45) return "utf-16le";
+  if (rEven >= 0.8 && rOdd <= 0.45) return "utf-16be";
+  return null;
+}
 function decodeTextBytes(bytes) {
   const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   // 1) BOM 明示（TextDecoder 自动吃掉 BOM 字符）
@@ -2487,9 +2553,32 @@ function decodeTextBytes(bytes) {
   if (probe >= 16 && (zeroEven + zeroOdd) / probe > 0.15) {
     return decodeWithEncoding(view, zeroOdd >= zeroEven ? "utf-16le" : "utf-16be");
   }
-  // 3) 合法 UTF-8 优先（严格模式：非法字节序列直接抛错）
+  // 3) 无 BOM 且零字节密度低：用奇偶位配对结构探测纯 CJK UTF-16。
+  //    命中后与「严格 UTF-8 结果」和「打分流全部候选」全量择优 —— 既能救回
+  //    合法 UTF-8 字节串伪装下的 UTF-16（严格分支会解出零散字符，得分偏低），
+  //    也杜绝把真正的 GBK/Big5/UTF-8 文本误判成 UTF-16（那些解码的得分更高）。
+  const pairing = probeUtf16Pairing(view);
+  if (pairing) {
+    const u16 = decodeWithEncoding(view, pairing);
+    if (u16) {
+      let best = u16, bestScore = scoreDecodedText(u16);
+      for (const enc of TEXT_DECODE_CANDIDATES) {
+        if (enc === pairing) continue;
+        const t = decodeWithEncoding(view, enc);
+        if (!t) continue;
+        const s = scoreDecodedText(t);
+        if (s > bestScore) { best = t; bestScore = s; }
+      }
+      try {
+        const s8 = scoreDecodedText(new TextDecoder("utf-8", { fatal: true }).decode(view));
+        if (s8 > bestScore) { best = new TextDecoder("utf-8", { fatal: true }).decode(view); bestScore = s8; }
+      } catch (e) { /* 非法 UTF-8 */ }
+      return best;
+    }
+  }
+  // 4) 合法 UTF-8 优先（严格模式：非法字节序列直接抛错）
   try { return new TextDecoder("utf-8", { fatal: true }).decode(view); } catch (e) { /* 继续猜测 */ }
-  // 4) 多候选打分：常用汉字/标点/ASCII 加分，替换符、控制字符、半角片假名扣分
+  // 5) 多候选打分：常用汉字/标点/ASCII 加分，替换符、控制字符、半角片假名扣分
   let best = "", bestScore = -Infinity;
   for (const encoding of TEXT_DECODE_CANDIDATES) {
     const text = decodeWithEncoding(view, encoding);

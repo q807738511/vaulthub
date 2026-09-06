@@ -523,7 +523,7 @@
   .movie-detail-scroll { width:100%; height:100%; overflow:auto; background:var(--bg); }
   /* 详情页关闭按钮是 position:fixed，必须相对顶栏下方定位，
      否则它会浮在顶栏的统计信息上面（overlay 下移后尤为明显）。 */
-  .movie-detail-scroll>.media-reader-close { position:fixed; top:calc(var(--topbar-h) + 14px); right:18px; z-index:4; }
+  .movie-detail-scroll>.media-reader-close, .movie-detail-scroll>.movie-return-pill { position:fixed; top:calc(var(--topbar-h) + 14px); right:18px; z-index:4; }
   .movie-detail-scroll header { min-height:min(68vh,680px); display:flex; flex-direction:column; justify-content:flex-end; gap:16px; padding:clamp(80px,12vw,170px) clamp(24px,8vw,120px) clamp(40px,7vw,90px); background-size:cover; background-position:center; }
   .movie-detail-scroll header h1 { margin:0; font-size:clamp(34px,6vw,72px); }
   .movie-detail-scroll header p { max-width:760px; margin:0; line-height:1.8; }
@@ -620,6 +620,11 @@
   /* 播放器顶栏只有一个关闭按钮，标题可以占更多宽度。 */
   .media-reader-head.movie-player-head .media-reader-title { max-width:calc(100% - 60px); }
   .media-reader-close { flex:0 0 auto; width:36px; height:36px; border-radius:50%; border:1px solid var(--border); color:var(--text); background:var(--card2); cursor:pointer; font-size:18px; }
+  /* v0.9.57：影视详情「返回详情 / 返回媒体库」改为横向药丸 —— 返回箭头 + 中文，
+     宽度随文案自适应（原圆形按钮放不下长文案导致穿模），圆角胶囊 + 轻微投影。 */
+  .movie-return-pill { display:inline-flex; align-items:center; gap:7px; height:34px; padding:0 18px 0 13px; border-radius:999px; border:1px solid var(--border); color:var(--text); background:var(--card2); cursor:pointer; font-size:13.5px; font-weight:600; letter-spacing:.3px; white-space:nowrap; box-shadow:0 3px 10px rgba(0,0,0,.22); }
+  .movie-return-pill:hover { border-color:var(--accent); color:var(--accent); }
+  .movie-return-pill svg { flex:0 0 auto; }
   /* overlay 现在从顶栏下方开始，正文高度要同时扣掉顶栏和阅读器顶栏。 */
   .media-reader-body { flex:1; min-height:0; height:calc(100vh - var(--topbar-h) - 51px); overflow:auto; display:flex; align-items:stretch; justify-content:center; background:#17191d; }
   /* v0.9.51：播放器不再渲染外层 .media-reader-head —— video 模式正文要从
