@@ -7,7 +7,8 @@
 📌 完整更新日志见 [Update Log.md](Update Log.md) · 各版本发布说明见 `.github/RELEASE_NOTES_*.md`
 
 ---
-# 体验https://sszj.enged.top
+
+欢迎体验https://sszj.enged.top
 
 ## 功能介绍
 
