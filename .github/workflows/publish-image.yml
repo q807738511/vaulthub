@@ -70,6 +70,5 @@ jobs:
             gh release create "$GITHUB_REF_NAME" \
               --repo "$GITHUB_REPOSITORY" \
               --title "VaultHub $GITHUB_REF_NAME" \
-              --notes-file ".github/RELEASE_NOTES_${GITHUB_REF_NAME#v}.md" \
-              --generate-notes
+              --notes-file ".github/RELEASE_NOTES_${GITHUB_REF_NAME#v}.md"
           fi
