@@ -30,11 +30,16 @@ check("Dockerfile 不再内置 ADMIN123", "ADMIN_PASSWORD=ADMIN123" not in DOCKE
 check("Dockerfile ADMIN_PASSWORD 留空", "ADMIN_PASSWORD= " in DOCKERFILE)
 
 # ---------------------------------------------------------------- 2. 随机初始密码
-check("随机密码生成器", "func generateRandomPassword() string" in MANAGER)
+check("随机密码生成器", "func generateRandomPassword() (string, error)" in MANAGER)
 check("无歧义字符集", "ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789" in MANAGER)
-check("must_change 结构字段", "MustChange bool" in MANAGER and "must_change" in MANAGER)
+check("must_change 结构字段", "MustChange" in MANAGER and 'json:"must_change,omitempty"' in MANAGER)
+check("一次性消费持久化字段", "BootstrapConsumed bool" in MANAGER and "bootstrap_consumed" in MANAGER)
 check("首启公布密码到日志", 'log.Printf("  login password: %s", randomPw)' in MANAGER)
 check("首启持久化随机密码", "m.mustChange = mustChange" in MANAGER and "m.saveAuthFile()" in MANAGER)
+check("初始状态持久化失败即退出", 'log.Fatalf("v0.9.58: could not persist initial auth state' in MANAGER)
+check("损坏 auth 状态拒绝重生", "exists but is invalid; refusing to generate a replacement password" in MANAGER)
+check("admin123 环境值视为不安全", 'strings.EqualFold(strings.TrimSpace(password), "admin123")' in MANAGER)
+check("随机源失败不使用可预测回退", "时间+进程号派生串" not in MANAGER)
 check("空密码不再进入开放模式", "m.open = false" in MANAGER and "不再进入开放模式" in MANAGER)
 
 # ---------------------------------------------------------------- 3. 强制改密（受限会话）

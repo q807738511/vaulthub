@@ -43,7 +43,7 @@ def main():
     # ---------- T2 密码验证鉴权 ----------
     mgr = read("manager/main.go")
     check("T2 passwordOK 不再因 open 短路", "if m.hash == \"\"" in mgr and "m.open || m.hash" not in mgr)
-    check("T2 account 存在凭据即校验旧密码", 'if m.hash != "" && !m.passwordOK(x.OldPassword)' in mgr)
+    check("T2 account 存在凭据即校验旧密码", 'if m.hash != "" && !restrictedSession && !m.passwordOK(x.OldPassword)' in mgr)
     check("T2 切开放不再清空凭据", "m.salt, m.hash = \"\", \"\"" not in mgr)
     check("T2 open 切回必须设新密码(纯开放)", "curOpen && m.hash == \"\" && x.Password == \"\"" in mgr)
     check("T2 authMode 暴露 has_password", '"has_password": hashed' in mgr)

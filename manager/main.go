@@ -35,17 +35,18 @@ type sessionEntry struct {
 }
 
 type manager struct {
-	mu                 sync.RWMutex
-	configMu           sync.Mutex
-	sessions           map[string]sessionEntry
-	failures           map[string]loginFailure
-	username           string
-	open               bool          // v0.9.56 开放模式（无密码）：true 时不校验登录
-	mustChange         bool          // v0.9.58：一次性初始随机密码，登录后强制改密
-	salt, hash         string        // 凭据哈希（sha256(salt+password)），auth.json 持久化
-	authFile           string        // /data/auth.json：账户与鉴权模式的持久化文件
-	caddyConfig        []byte
-	children           []*exec.Cmd
+	mu                sync.RWMutex
+	configMu          sync.Mutex
+	sessions          map[string]sessionEntry
+	failures          map[string]loginFailure
+	username          string
+	open              bool   // v0.9.56 开放模式（无密码）：true 时不校验登录
+	mustChange        bool   // v0.9.58：一次性初始随机密码，登录后强制改密
+	bootstrapConsumed bool   // 一次性初始密码是否已完成首次登录（持久化，禁止再次登录）
+	salt, hash        string // 凭据哈希（sha256(salt+password)），auth.json 持久化
+	authFile          string // /data/auth.json：账户与鉴权模式的持久化文件
+	caddyConfig       []byte
+	children          []*exec.Cmd
 }
 
 const sessionIdleTimeout = 30 * time.Minute
@@ -58,16 +59,18 @@ const sessionIdleTimeout = 30 * time.Minute
 //     以便从开放模式切回密码模式/修改密码时仍能验证原密码。
 //   - must_change（v0.9.58）：true 表示当前凭据是「一次性初始随机密码」，
 //     首次登录后必须改密（受限会话只能改密），改密成功即清除。
+//
 // 持久化文件优先于环境变量（ADMIN_USERNAME/ADMIN_PASSWORD）；文件不存在时
 // 按环境变量推导 —— v0.9.58 起 ADMIN_PASSWORD 为空不再进入开放模式，
 // 而是生成一次性随机初始密码并标记 must_change。
 type storedAuth struct {
-	Mode       string `json:"mode,omitempty"`        // "password" | "open"
-	Username   string `json:"username"`
-	Salt       string `json:"salt,omitempty"`
-	Hash       string `json:"hash,omitempty"`
-	MustChange bool   `json:"must_change,omitempty"` // v0.9.58：一次性初始随机密码待改密
-	Updated    int64  `json:"updated,omitempty"`
+	Mode              string `json:"mode,omitempty"` // "password" | "open"
+	Username          string `json:"username"`
+	Salt              string `json:"salt,omitempty"`
+	Hash              string `json:"hash,omitempty"`
+	MustChange        bool   `json:"must_change,omitempty"` // v0.9.58：一次性初始随机密码待改密
+	BootstrapConsumed bool   `json:"bootstrap_consumed,omitempty"`
+	Updated           int64  `json:"updated,omitempty"`
 }
 
 func sha256Hex(s string) string {
@@ -75,46 +78,62 @@ func sha256Hex(s string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func newAuthSalt() string {
+func newAuthSalt() (string, error) {
 	raw := make([]byte, 16)
 	if _, e := rand.Read(raw); e != nil {
-		return sha256Hex(fmt.Sprintf("%d", time.Now().UnixNano()))[:32]
+		return "", fmt.Errorf("secure random salt: %w", e)
 	}
-	return hex.EncodeToString(raw)
+	return hex.EncodeToString(raw), nil
 }
 
 // generateRandomPassword 生成一次性初始管理员密码（16 位，来自无歧义字符集，
 // 不含 0/O、1/l/I 等易混淆字符）。只用于「未配置 ADMIN_PASSWORD 时的首次启动」。
-func generateRandomPassword() string {
+func generateRandomPassword() (string, error) {
 	const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789"
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		// crypto/rand 不可用（几乎不可能）：退回时间+进程号派生串。
-		return hex.EncodeToString([]byte(sha256Hex(fmt.Sprintf("%d-%d", time.Now().UnixNano(), os.Getpid()))))[:16]
+	limit := 256 - (256 % len(alphabet))
+	out := make([]byte, 0, 16)
+	buf := make([]byte, 32)
+	for len(out) < 16 {
+		if _, err := rand.Read(buf); err != nil {
+			return "", fmt.Errorf("secure random password: %w", err)
+		}
+		for _, v := range buf {
+			if int(v) >= limit {
+				continue
+			}
+			out = append(out, alphabet[int(v)%len(alphabet)])
+			if len(out) == 16 {
+				break
+			}
+		}
 	}
-	for i := range b {
-		b[i] = alphabet[int(b[i])%len(alphabet)]
-	}
-	return string(b)
+	return string(out), nil
 }
 
 // deriveStoredAuth 把环境变量凭据整理成 storedAuth。
 // v0.9.58：ADMIN_PASSWORD 为空不再意味着「开放模式」—— 而是生成一次性随机初始
 // 密码并标记 MustChange（首次登录后强制改密）；开放模式只能通过「账户与登录」页
 // 显式切换并持久化到 auth.json。
-func deriveStoredAuth(usernameEnv, passwordEnv string) storedAuth {
+func deriveStoredAuth(usernameEnv, passwordEnv string) (storedAuth, error) {
 	u := strings.TrimSpace(usernameEnv)
 	if u == "" {
 		u = "ADMIN"
 	}
 	pw := passwordEnv
 	mustChange := false
-	if pw == "" {
-		pw = generateRandomPassword()
+	if pw == "" || strings.EqualFold(strings.TrimSpace(pw), "admin123") {
+		var err error
+		pw, err = generateRandomPassword()
+		if err != nil {
+			return storedAuth{}, err
+		}
 		mustChange = true
 	}
-	salt := newAuthSalt()
-	return storedAuth{Mode: "password", Username: u, Salt: salt, Hash: sha256Hex(salt + "\x00" + pw), MustChange: mustChange}
+	salt, err := newAuthSalt()
+	if err != nil {
+		return storedAuth{}, err
+	}
+	return storedAuth{Mode: "password", Username: u, Salt: salt, Hash: sha256Hex(salt + "\x00" + pw), MustChange: mustChange}, nil
 }
 
 // loadAuthFile 读取持久化账户文件；文件不存在或解析失败返回 false（保持现状）。
@@ -140,6 +159,13 @@ func (m *manager) loadAuthFile(file string) bool {
 	m.salt, m.hash = s.Salt, s.Hash
 	m.open = s.Mode == "open"
 	m.mustChange = s.MustChange
+	m.bootstrapConsumed = s.BootstrapConsumed
+	if m.bootstrapConsumed && !m.mustChange {
+		return false
+	}
+	if m.open && (m.mustChange || m.bootstrapConsumed) {
+		return false
+	}
 	return true
 }
 
@@ -152,7 +178,7 @@ func (m *manager) saveAuthFile() error {
 	if err := os.MkdirAll(filepath.Dir(m.authFile), 0755); err != nil {
 		return err
 	}
-	s := storedAuth{Username: m.username, Updated: time.Now().Unix(), MustChange: m.mustChange}
+	s := storedAuth{Username: m.username, Updated: time.Now().Unix(), MustChange: m.mustChange, BootstrapConsumed: m.bootstrapConsumed}
 	if m.open {
 		s.Mode = "open"
 	} else {
@@ -324,9 +350,8 @@ func (m *manager) loginAllowed(r *http.Request) bool {
 	m.mu.RUnlock()
 	return !time.Now().Before(f.until)
 }
-func (m *manager) loginFailed(r *http.Request) {
+func (m *manager) loginFailedLocked(r *http.Request) {
 	key := clientKey(r)
-	m.mu.Lock()
 	f := m.failures[key]
 	f.count++
 	if f.count >= 5 {
@@ -334,13 +359,10 @@ func (m *manager) loginFailed(r *http.Request) {
 		f.until = time.Now().Add(5 * time.Minute)
 	}
 	m.failures[key] = f
-	m.mu.Unlock()
 }
-func (m *manager) loginSucceeded(r *http.Request) {
+func (m *manager) loginSucceededLocked(r *http.Request) {
 	key := clientKey(r)
-	m.mu.Lock()
 	delete(m.failures, key)
-	m.mu.Unlock()
 }
 
 func (m *manager) login(w http.ResponseWriter, r *http.Request) {
@@ -361,27 +383,40 @@ func (m *manager) login(w http.ResponseWriter, r *http.Request) {
 		m.reply(w, 400, map[string]any{"ok": false, "error": "invalid json"})
 		return
 	}
-	userOK := m.open // 开放模式：任意凭据（含空）都放行，只为下发会话 Cookie
-	if !m.open {
-		userOK = len(x.Username) == len(m.username) && subtle.ConstantTimeCompare([]byte(x.Username), []byte(m.username)) == 1 && m.passwordOK(x.Password)
-	}
-	if !userOK {
-		m.loginFailed(r)
-		m.reply(w, 401, map[string]any{"ok": false, "error": "invalid credentials"})
-		return
-	}
-	m.loginSucceeded(r)
 	raw := make([]byte, 24)
 	if _, e := rand.Read(raw); e != nil {
 		m.reply(w, 500, map[string]any{"ok": false})
 		return
 	}
 	sid := hex.EncodeToString(raw)
+	m.mu.Lock()
+	userOK := m.open
+	if !m.open {
+		userOK = len(x.Username) == len(m.username) && subtle.ConstantTimeCompare([]byte(x.Username), []byte(m.username)) == 1 && m.passwordOK(x.Password)
+		if userOK && m.mustChange && m.bootstrapConsumed {
+			userOK = false
+		}
+	}
+	if !userOK {
+		m.loginFailedLocked(r)
+		m.mu.Unlock()
+		m.reply(w, 401, map[string]any{"ok": false, "error": "invalid credentials"})
+		return
+	}
 	// v0.9.58：一次性初始随机密码登录建立受限会话（mustChange=true），
 	// 前端据此强制弹改密框，服务端据此拦截除改密外的所有受保护操作。
-	m.mu.Lock()
-	m.sessions[sid] = sessionEntry{expires: time.Now().Add(sessionIdleTimeout), mustChange: m.mustChange}
 	forceChange := m.mustChange
+	if forceChange {
+		m.bootstrapConsumed = true
+		if err := m.saveAuthFile(); err != nil {
+			m.bootstrapConsumed = false
+			m.mu.Unlock()
+			m.reply(w, 500, map[string]any{"ok": false, "error": "无法持久化一次性密码状态"})
+			return
+		}
+	}
+	m.sessions[sid] = sessionEntry{expires: time.Now().Add(sessionIdleTimeout), mustChange: forceChange}
+	m.loginSucceededLocked(r)
 	m.mu.Unlock()
 	secure := r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 	http.SetCookie(w, &http.Cookie{Name: "vh_session", Value: sid, Path: "/", HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode, MaxAge: 1800})
@@ -443,7 +478,15 @@ func (m *manager) account(w http.ResponseWriter, r *http.Request) {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	restrictedSession := false
+	if c, e := r.Cookie("vh_session"); e == nil {
+		if ent, ok := m.sessions[c.Value]; ok {
+			restrictedSession = ent.mustChange
+		}
+	}
 	curOpen := m.open
+	oldUser, oldSalt, oldHash := m.username, m.salt, m.hash
+	oldMustChange, oldConsumed := m.mustChange, m.bootstrapConsumed
 	newUser := strings.TrimSpace(x.Username)
 	if newUser == "" {
 		newUser = m.username
@@ -464,7 +507,7 @@ func (m *manager) account(w http.ResponseWriter, r *http.Request) {
 	}
 	// v0.9.56 凭据校验：存在密码凭据时（曾设置过密码），任何变更必须验证原密码。
 	// 纯开放模式（从未设置密码，hash 为空）首次设置密码不需要旧密码。
-	if m.hash != "" && !m.passwordOK(x.OldPassword) {
+	if m.hash != "" && !restrictedSession && !m.passwordOK(x.OldPassword) {
 		m.reply(w, 403, map[string]any{"ok": false, "error": "当前密码不正确"})
 		return
 	}
@@ -474,7 +517,10 @@ func (m *manager) account(w http.ResponseWriter, r *http.Request) {
 		m.open = true
 		m.username = newUser
 		m.mustChange = false // v0.9.58：显式切开放模式即视为「已处理」初始随机密码
+		m.bootstrapConsumed = false
 		if err := m.saveAuthFile(); err != nil {
+			m.open, m.username, m.salt, m.hash = curOpen, oldUser, oldSalt, oldHash
+			m.mustChange, m.bootstrapConsumed = oldMustChange, oldConsumed
 			m.reply(w, 500, map[string]any{"ok": false, "error": "持久化失败：" + err.Error()})
 			return
 		}
@@ -493,13 +539,21 @@ func (m *manager) account(w http.ResponseWriter, r *http.Request) {
 			m.reply(w, 400, map[string]any{"ok": false, "error": msg})
 			return
 		}
-		m.salt = newAuthSalt()
+		newSalt, err := newAuthSalt()
+		if err != nil {
+			m.reply(w, 500, map[string]any{"ok": false, "error": "无法生成安全密码盐"})
+			return
+		}
+		m.salt = newSalt
 		m.hash = sha256Hex(m.salt + "\x00" + x.Password)
 	}
 	m.open = false
 	m.username = newUser
 	m.mustChange = false // v0.9.58：任何成功的账户变更（含改密）都清除强制改密态
+	m.bootstrapConsumed = false
 	if err := m.saveAuthFile(); err != nil {
+		m.open, m.username, m.salt, m.hash = curOpen, oldUser, oldSalt, oldHash
+		m.mustChange, m.bootstrapConsumed = oldMustChange, oldConsumed
 		m.reply(w, 500, map[string]any{"ok": false, "error": "持久化失败：" + err.Error()})
 		return
 	}
@@ -902,24 +956,35 @@ func main() {
 		authFile = "/data/auth.json"
 	}
 	if !m.loadAuthFile(authFile) {
+		if _, statErr := os.Stat(authFile); statErr == nil {
+			log.Fatalf("authentication state %s exists but is invalid; refusing to generate a replacement password", authFile)
+		} else if !os.IsNotExist(statErr) {
+			log.Fatalf("cannot inspect authentication state %s: %v", authFile, statErr)
+		}
 		m.authFile = authFile
 		username := os.Getenv("ADMIN_USERNAME")
 		password := os.Getenv("ADMIN_PASSWORD")
 		mustChange := false
-		if password == "" {
-			randomPw := generateRandomPassword()
+		if password == "" || strings.EqualFold(strings.TrimSpace(password), "admin123") {
+			randomPw, randomErr := generateRandomPassword()
+			if randomErr != nil {
+				log.Fatal(randomErr)
+			}
 			u := strings.TrimSpace(username)
 			if u == "" {
 				u = "ADMIN"
 			}
-			log.Printf("v0.9.58: no ADMIN_PASSWORD configured — one-time initial password generated.")
+			log.Printf("v0.9.58: ADMIN_PASSWORD is empty or insecure — one-time initial password generated.")
 			log.Printf("  login username: %s", u)
 			log.Printf("  login password: %s", randomPw)
 			log.Printf("  (single-use: logging in forces you to set a new password)")
 			password = randomPw
 			mustChange = true
 		}
-		s := deriveStoredAuth(username, password)
+		s, deriveErr := deriveStoredAuth(username, password)
+		if deriveErr != nil {
+			log.Fatal(deriveErr)
+		}
 		m.username = s.Username
 		m.salt, m.hash = s.Salt, s.Hash
 		m.open = false // v0.9.58：deriveStoredAuth 不再产出 open 模式
@@ -929,7 +994,7 @@ func main() {
 		// 为权威（与 v0.9.56 一致，改密码走系统设置 UI）。
 		if mustChange {
 			if err := m.saveAuthFile(); err != nil {
-				log.Printf("v0.9.58: could not persist initial auth state: %v", err)
+				log.Fatalf("v0.9.58: could not persist initial auth state: %v", err)
 			}
 		}
 	}

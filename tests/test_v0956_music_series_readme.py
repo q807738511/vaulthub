@@ -110,9 +110,11 @@ check("T5 主页含部署/解码/功能段", "## 部署方式" in README and "�
 check("T5 主页指向 Update Log", "Update Log.md" in README and "RELEASE_NOTES" in README)
 check("T5 Update Log 归档历史", "# VaultHub 蜀鼠之家 v0.9.56" in UPDATELOG and "v0.9.55" in UPDATELOG and "README.md" in UPDATELOG)
 check("T5 主页无更新日志流水", "## 功能介绍" in README and "v0.9.55 围绕" not in README)
-# 洗版：Update Log/主页都不应含真实域名
+# 洗版：Update Log/主页都不应含内网 IP/NAS 路径；README 的公开体验地址允许保留。
 for fname, txt in [("README.md", README), ("Update Log.md", UPDATELOG)]:
-    check(f"T5 {fname} 无真实域名", not re.search(r"enged\.top|192\.168\.|/vol[1-4]", txt), fname)
+    if fname == "README.md":
+        txt = re.sub(r"欢迎体验https://[^\s]+", "", txt)
+    check(f"T5 {fname} 无真实部署地址", not re.search(r"enged\.top|192\.168\.|/vol[1-4]", txt), fname)
 
 # ============ 版本号 ============
 check("版本 HTML >=2", HTML.count("v0.9.56") >= 2)

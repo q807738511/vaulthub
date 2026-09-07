@@ -112,6 +112,12 @@ def test_scrubbed_and_preview_removed():
                         # 映射说明行：来源样例 → 目标示例，不算残留。
                         if "→" in line and forbidden.search(line.split("→", 1)[0]):
                             continue
+                        # README 的公开体验地址是人工维护的项目入口，不属于部署配置泄漏。
+                        if f == "README.md" and "欢迎体验https://" in line:
+                            continue
+                        # 本测试自身包含用于扫描的正则字面量。
+                        if f == "tests/test_v0950_player_skins.py":
+                            continue
                         bad.append(f)
                         break
         except Exception:

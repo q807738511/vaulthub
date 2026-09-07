@@ -1,6 +1,10 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,7 +19,10 @@ import (
 //  5. 随机密码生成器（长度/字符集/两次不重复）。
 //  6. 受限会话（must_change）只放行改密等白名单路径（v0.9.58）。
 func TestV0958DeriveStoredAuthRandomWhenNoPassword(t *testing.T) {
-	s := deriveStoredAuth("", "")
+	s, err := deriveStoredAuth("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if s.Mode != "password" {
 		t.Fatalf("v0.9.58: empty ADMIN_PASSWORD must yield password mode with a random password, got %q", s.Mode)
 	}
@@ -28,14 +35,20 @@ func TestV0958DeriveStoredAuthRandomWhenNoPassword(t *testing.T) {
 	if len(s.Hash) != 64 || len(s.Salt) < 16 {
 		t.Fatalf("random password must produce a valid credential (salt=%d hash=%d)", len(s.Salt), len(s.Hash))
 	}
-	s2 := deriveStoredAuth("admin", "")
+	s2, err := deriveStoredAuth("admin", "")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if s2.Username != "admin" || s2.Mode != "password" || !s2.MustChange {
 		t.Fatalf("v0.9.58 empty-password record must keep username + must_change, got %+v", s2)
 	}
 }
 
 func TestV0954DeriveStoredAuthPasswordHashes(t *testing.T) {
-	s := deriveStoredAuth("ADMIN", "s3cret-!pw")
+	s, err := deriveStoredAuth("ADMIN", "s3cret-!pw")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if s.Mode != "password" {
 		t.Fatalf("non-empty password must yield password mode, got %q", s.Mode)
 	}
@@ -143,8 +156,14 @@ func TestV0954ManagerRoutesIncludeAuth(t *testing.T) {
 // v0.9.58：随机密码生成器 —— 长度固定、无歧义字符集、两次生成不重复。
 func TestV0958GenerateRandomPassword(t *testing.T) {
 	const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789"
-	p1 := generateRandomPassword()
-	p2 := generateRandomPassword()
+	p1, err := generateRandomPassword()
+	if err != nil {
+		t.Fatal(err)
+	}
+	p2, err := generateRandomPassword()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(p1) != 16 || len(p2) != 16 {
 		t.Fatalf("random password must be 16 chars, got %d/%d", len(p1), len(p2))
 	}
@@ -223,5 +242,77 @@ func TestV0958RestrictedSessionAllowlist(t *testing.T) {
 		if restrictedAllowed(p) {
 			t.Fatalf("restricted session must NOT allow %s", p)
 		}
+	}
+}
+
+func TestV0958RejectsLegacyAdmin123AsBootstrap(t *testing.T) {
+	s, err := deriveStoredAuth("ADMIN", "AdMiN123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !s.MustChange || s.Hash == sha256Hex(s.Salt+"\x00"+"AdMiN123") {
+		t.Fatal("legacy admin123 must be replaced by a random bootstrap credential")
+	}
+}
+
+// 第一次成功登录必须原子消费初始密码；同一密码第二次登录立即失败，但第一次登录
+// 得到的受限会话仍可提交新密码。
+func TestV0958BootstrapPasswordIsConsumedOnFirstLogin(t *testing.T) {
+	dir := t.TempDir()
+	salt := "0123456789abcdef0123456789abcdef"
+	m := &manager{
+		sessions: map[string]sessionEntry{}, failures: map[string]loginFailure{},
+		username: "ADMIN", salt: salt, hash: sha256Hex(salt + "\x00" + "Bootstrap9X"),
+		mustChange: true, authFile: filepath.Join(dir, "auth.json"),
+	}
+	if err := m.saveAuthFile(); err != nil {
+		t.Fatal(err)
+	}
+	h := routes(m)
+	loginBody, _ := json.Marshal(map[string]string{"username": "ADMIN", "password": "Bootstrap9X"})
+	first := httptest.NewRecorder()
+	h.ServeHTTP(first, httptest.NewRequest(http.MethodPost, "/api/login", bytes.NewReader(loginBody)))
+	if first.Code != http.StatusOK {
+		t.Fatalf("first login = %d: %s", first.Code, first.Body.String())
+	}
+	var sessionCookie *http.Cookie
+	for _, c := range first.Result().Cookies() {
+		if c.Name == "vh_session" {
+			sessionCookie = c
+		}
+	}
+	if sessionCookie == nil {
+		t.Fatal("first login did not issue session cookie")
+	}
+	second := httptest.NewRecorder()
+	h.ServeHTTP(second, httptest.NewRequest(http.MethodPost, "/api/login", bytes.NewReader(loginBody)))
+	if second.Code != http.StatusUnauthorized {
+		t.Fatalf("second login = %d, want 401", second.Code)
+	}
+	// 已消费状态写入磁盘后，即使服务重启也不能再次使用初始密码登录。
+	restarted := &manager{sessions: map[string]sessionEntry{}, failures: map[string]loginFailure{}}
+	if !restarted.loadAuthFile(m.authFile) || !restarted.bootstrapConsumed {
+		t.Fatal("consumed bootstrap state must load after restart")
+	}
+	restartLogin := httptest.NewRecorder()
+	routes(restarted).ServeHTTP(restartLogin, httptest.NewRequest(http.MethodPost, "/api/login", bytes.NewReader(loginBody)))
+	if restartLogin.Code != http.StatusUnauthorized {
+		t.Fatalf("bootstrap login after restart = %d, want 401", restartLogin.Code)
+	}
+
+	accountBody, _ := json.Marshal(map[string]string{"old_password": "Bootstrap9X", "username": "ADMIN", "password": "SecurePass9X", "mode": "password"})
+	req := httptest.NewRequest(http.MethodPost, "/api/account", bytes.NewReader(accountBody))
+	req.AddCookie(sessionCookie)
+	changed := httptest.NewRecorder()
+	h.ServeHTTP(changed, req)
+	if changed.Code != http.StatusOK {
+		t.Fatalf("forced password change = %d: %s", changed.Code, changed.Body.String())
+	}
+	if m.mustChange || m.bootstrapConsumed || !m.passwordOK("SecurePass9X") || m.passwordOK("Bootstrap9X") {
+		t.Fatal("password change must clear bootstrap state and invalidate old password")
+	}
+	m2 := &manager{}
+	if !m2.loadAuthFile(m.authFile) || m2.mustChange || m2.bootstrapConsumed || !m2.passwordOK("SecurePass9X") {
+		t.Fatal("completed bootstrap state must persist")
 	}
 }
