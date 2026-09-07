@@ -13,7 +13,8 @@ compose = (ROOT / "docker-compose.yml").read_text() + "\n" + (ROOT / "vaulthub.e
 dockerfile = (ROOT / "Dockerfile").read_text()
 
 assert "sessionIdleTimeout = 30 * time.Minute" in manager
-assert "m.sessions[c.Value] = time.Now().Add(sessionIdleTimeout)" in manager
+# v0.9.58：会话从 map[string]time.Time 改为 map[string]sessionEntry（含 mustChange 受限会话标记）
+assert "m.sessions[sid] = sessionEntry{expires: time.Now().Add(sessionIdleTimeout)" in manager
 assert "MaxAge: 1800" in manager
 assert "handle /api/logout" in manager
 assert "handle /api/logout" in (ROOT / "Caddyfile").read_text()

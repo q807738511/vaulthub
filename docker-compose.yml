@@ -30,7 +30,9 @@ services:
 
     environment:
       - ADMIN_USERNAME=admin
-      - ADMIN_PASSWORD=admin123
+      # v0.9.58：不再内置 admin123 默认密码。留空 = 首次启动生成一次性随机
+      # 初始密码并公布到容器日志，登录后强制改密；需要固定密码时在此填写。
+      - ADMIN_PASSWORD=
       - TMDB_API_KEY=
       - MEDIA_SCRAPER_MODE=auto
       # 系统监控的卷名列表（逗号分隔），与下方 /host/<卷名> 只读挂载一一对应；

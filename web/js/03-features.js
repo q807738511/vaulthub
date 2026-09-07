@@ -836,7 +836,7 @@ function closeModal(id) {
   modal.classList.remove("show");
   if (typeof modal.close === "function" && modal.open) modal.close();
 }
-document.querySelectorAll(".modal-mask").forEach(m => m.addEventListener("click", e => { if (e.target === m) closeModal(m.id); }));
+document.querySelectorAll(".modal-mask").forEach(m => m.addEventListener("click", e => { if (e.target === m && m.id !== "forcedPasswordModal") closeModal(m.id); }));
 
 let toastTimer;
 function toast(msg) {

@@ -61,7 +61,7 @@ check("本地封面失败清缓存重刮", "delete cache[key]" in MEDIA and "boo
 
 # ---------------------------------------------------------------- 3. 鉴权模式
 check("manager 存储结构与开放模式推导", "type storedAuth struct" in MANAGER
-      and "deriveStoredAuth" in MANAGER and 'Mode: "open"' in MANAGER and "passwordOK" in MANAGER)
+      and "deriveStoredAuth" in MANAGER and 's.Mode = "open"' in MANAGER and "passwordOK" in MANAGER)
 check("auth.json 持久化路径", "MANAGER_AUTH_FILE" in MANAGER and "saveAuthFile" in MANAGER
       and "loadAuthFile" in MANAGER and "0600" in MANAGER)
 check("登录/会话/写操作开放模式放行", 'userOK := m.open' in MANAGER and 'if m.open {' in MANAGER)
@@ -98,8 +98,8 @@ check("关闭详情复位语境", "seriesEpisodeReturn=null" in MEDIA)
 
 # ---------------------------------------------------------------- 版本与发布
 check("release notes", (ROOT / ".github" / "RELEASE_NOTES_0.9.56.md").exists(), "缺少 v0.9.56 release notes")
-check("版本串", HTML.count("v0.9.57") >= 2 and 'VAULTHUB_SCRIPT_VERSION = "0.9.57"' in STATE)
-check("资产缓存版本", 'v=0.9.57' in HTML)
+check("版本串", HTML.count("v0.9.58") >= 2 and 'VAULTHUB_SCRIPT_VERSION = "0.9.58"' in STATE)
+check("资产缓存版本", 'v=0.9.58' in HTML)
 check("compose 跟随 latest", (ROOT / "docker-compose.yml").read_text(encoding="utf-8").find("ghcr.io/q807738511/vaulthub:latest") >= 0)
 check("无旧版本残留", "0.9.53" not in HTML and "0.9.53" not in STATE and "0.9.53" not in MEDIA
       and "0.9.53" not in COVERGO)

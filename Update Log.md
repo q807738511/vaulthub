@@ -2,6 +2,20 @@
 
 > 主页项目介绍见 [README.md](README.md)；本文件为历史版本更新日志归档。
 
+# VaultHub 蜀鼠之家 v0.9.58：安全修复 · 随机初始密码与强制改密 · 增强密码校验
+
+v0.9.58 围绕登录安全做了一轮加固 —— 移除 admin123 默认密码，首次启动改为一次性随机初始密码并在登录后强制改密，同时增强密码复杂度校验：
+
+- **移除 admin123 默认密码**：`docker-compose.yml` 与镜像内置 `ENV` 不再携带 `ADMIN_PASSWORD=admin123`（此前任何人用默认密码即可登录，是最大的安全隐患）。
+- **一次性随机初始密码**：首次启动未配置 `ADMIN_PASSWORD` 时，不再进入开放模式，而是生成一个 16 位（无歧义字符集）随机初始密码并公布到容器日志；该密码只生成一次并持久化到 `/data/auth.json`，容器升级（重建容器但保留 /data 卷）不会重新生成/重新校验，不影响现有部署。
+- **登录后强制改密**：用随机初始密码登录即建立「受限会话」—— 前端强制弹出改密框，服务端同时拦截除改密外的所有受保护操作与媒体写操作（返回 403），改密成功后才放行；初始密码随改密失效。
+- **增强密码校验**：新密码至少 8 位、需同时包含字母和数字、命中弱口令黑名单（admin123 / password 等）或包含用户名时拒绝，前后端一致校验。
+
+详见 [RELEASE_NOTES_0.9.58.md](.github/RELEASE_NOTES_0.9.58.md)
+
+<details>
+<summary>v0.9.57：影视详情返回按钮药丸化 · 音乐专辑/歌手一键播放 · 安全审查修复随版发布（上一版）</summary>
+
 # VaultHub 蜀鼠之家 v0.9.57：影视详情返回按钮药丸化 · 音乐专辑/歌手一键播放 · 安全审查修复随版发布
 
 v0.9.57 修复影视详情页右上角返回按钮穿模，补齐音乐专辑/歌手操作逻辑，并随版带上 v0.9.56 安全审查的全部修复：
@@ -15,6 +29,7 @@ v0.9.57 修复影视详情页右上角返回按钮穿模，补齐音乐专辑/�
 - **歌手刮削串行链（审查 #5）**：`scrapeAudioArtists` 并入 `audioScrapeChain`，杜绝视图切换/翻页并发交错写歌手缓存。
 
 详见 [RELEASE_NOTES_0.9.57.md](.github/RELEASE_NOTES_0.9.57.md)
+</details>
 
 <details>
 <summary>v0.9.56：TXT 阅读编码修复 · 音频刮削修正与歌手刮削 · 专辑/歌手可编辑与喜欢栏目 · 播放器喜欢按钮与居中 · 移动端顶栏滑动 · 剧集图示卡片（上一版）</summary>
@@ -613,6 +628,8 @@ v0.9.42 起部署只需 **`docker-compose.yml` 一个文件**（镜像默认 `:l
 
 环境变量分三层：镜像内 Dockerfile `ENV` 默认值（与 `vaulthub.env` 模板逐键对齐）→ 可选 `vaulthub.env`（compose ≥ v2.24 用 `required: false` 加载，缺失不报错）→ 可选同目录 `.env` 覆盖（compose 会对其内容插值）。compose 的 `environment:` 只放经常调的那几项：`ADMIN_USERNAME`、`ADMIN_PASSWORD`、`TMDB_API_KEY`、`MEDIA_SCRAPER_MODE`、`SYSTEM_MONITOR_FILESYSTEMS`。硬件转码选择 `FFMPEG_HWACCEL` 默认 `auto`，无需配置。
 
+> 关于登录密码（v0.9.58）：不再内置 `ADMIN_PASSWORD=admin123` 默认密码。`ADMIN_PASSWORD` 留空时，容器**首次启动**会生成一个 16 位一次性随机初始密码并打印到日志（`docker logs VaultHub`），用该密码登录后会被强制改密；随机密码持久化在 `/data/auth.json`，容器升级（重建容器但保留 `/data`）不会重新生成，改密后即失效。需要固定初始密码时再填 `ADMIN_PASSWORD`。
+
 > 关于代理：TMDB 客户端使用自带 SSRF 防护的自定义 `http.Transport`，没有设置 `Proxy`，所以 `PROXY_HOST` 和标准的 `HTTPS_PROXY` 都不会生效。若你的网络必须走代理才能访问 `api.themoviedb.org`，请在网关或 Clash 侧做透明代理/分流。
 
 两个文件的环境变量都必须写成 `KEY=value`：
@@ -624,7 +641,7 @@ v0.9.42 起部署只需 **`docker-compose.yml` 一个文件**（镜像默认 `:l
         required: false
     environment:
       - ADMIN_USERNAME=${ADMIN_USERNAME:-ADMIN}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-ADMIN123}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}   # 留空 = 首次启动生成一次性随机初始密码（见容器日志）
 ```
 
 在 `environment` 列表里写成 `- KEY: "value"` 会让 compose 报

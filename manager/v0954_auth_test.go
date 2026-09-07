@@ -7,22 +7,30 @@ import (
 	"testing"
 )
 
-// v0.9.56：鉴权模式与账户持久化单测。
-//  1. 环境变量推导：ADMIN_PASSWORD 为空 → open；非空 → password（hash 可验）。
-//  2. auth.json 读写往返 + 文件优先于环境变量。
+// v0.9.56 鉴权模式与账户持久化单测（v0.9.58 更新契约）：
+//  1. 环境变量推导：ADMIN_PASSWORD 为空 → 一次性随机密码 + must_change（不再是 open）；非空 → password（hash 可验）。
+//  2. auth.json 读写往返（含 must_change）+ 文件优先于环境变量。
 //  3. 密码校验（常数时间比较路径）与错误密码拒绝。
-//  4. 开放模式：密码校验恒 false（不应被调用），require 放行逻辑在 handler 层。
-func TestV0954DeriveStoredAuthOpenWhenNoPassword(t *testing.T) {
+//  4. 增强密码校验 validatePassword（v0.9.58）：长度/字母数字/弱口令黑名单/含用户名。
+//  5. 随机密码生成器（长度/字符集/两次不重复）。
+//  6. 受限会话（must_change）只放行改密等白名单路径（v0.9.58）。
+func TestV0958DeriveStoredAuthRandomWhenNoPassword(t *testing.T) {
 	s := deriveStoredAuth("", "")
-	if s.Mode != "open" {
-		t.Fatalf("empty ADMIN_PASSWORD must yield open mode, got %q", s.Mode)
+	if s.Mode != "password" {
+		t.Fatalf("v0.9.58: empty ADMIN_PASSWORD must yield password mode with a random password, got %q", s.Mode)
 	}
 	if s.Username != "ADMIN" {
 		t.Fatalf("default username should be ADMIN, got %q", s.Username)
 	}
+	if !s.MustChange {
+		t.Fatal("empty ADMIN_PASSWORD must mark must_change=true")
+	}
+	if len(s.Hash) != 64 || len(s.Salt) < 16 {
+		t.Fatalf("random password must produce a valid credential (salt=%d hash=%d)", len(s.Salt), len(s.Hash))
+	}
 	s2 := deriveStoredAuth("admin", "")
-	if s2.Username != "admin" || s2.Mode != "open" {
-		t.Fatalf("open mode must keep username, got %+v", s2)
+	if s2.Username != "admin" || s2.Mode != "password" || !s2.MustChange {
+		t.Fatalf("v0.9.58 empty-password record must keep username + must_change, got %+v", s2)
 	}
 }
 
@@ -129,5 +137,91 @@ func TestV0954ManagerRoutesIncludeAuth(t *testing.T) {
 	joined := strings.Join(managerRoutes, "\n")
 	if !strings.Contains(joined, "/api/auth/mode") || !strings.Contains(joined, "/api/account") {
 		t.Fatalf("managerRoutes missing auth endpoints:\n%s", joined)
+	}
+}
+
+// v0.9.58：随机密码生成器 —— 长度固定、无歧义字符集、两次生成不重复。
+func TestV0958GenerateRandomPassword(t *testing.T) {
+	const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789"
+	p1 := generateRandomPassword()
+	p2 := generateRandomPassword()
+	if len(p1) != 16 || len(p2) != 16 {
+		t.Fatalf("random password must be 16 chars, got %d/%d", len(p1), len(p2))
+	}
+	for _, r := range p1 {
+		if !strings.ContainsRune(alphabet, r) {
+			t.Fatalf("random password contains disallowed char %q", r)
+		}
+	}
+	if p1 == p2 {
+		t.Fatal("two generated passwords must not collide")
+	}
+}
+
+// v0.9.58：增强密码校验 —— 长度/字母数字组合/弱口令黑名单/包含用户名。
+func TestV0958ValidatePassword(t *testing.T) {
+	cases := []struct {
+		pw, user, want string
+	}{
+		{"short7!", "", "密码至少 8 位"},
+		{"abcdefgh", "", "密码需同时包含字母和数字"},
+		{"12345678", "", "密码需同时包含字母和数字"},
+		{"admin123", "", "密码过于常见，请更换更复杂的密码"},
+		{"ADMIN123", "", "密码过于常见，请更换更复杂的密码"},
+		{"password1", "", "密码过于常见，请更换更复杂的密码"},
+		{"myAdminXxx1", "admin", "密码不能包含用户名"},
+		{"A1b2c3d4", "", ""}, // 合法
+		{"S3cretPass9", "", ""},
+	}
+	for _, c := range cases {
+		if got := validatePassword(c.pw, c.user); got != c.want {
+			t.Fatalf("validatePassword(%q,%q) = %q, want %q", c.pw, c.user, got, c.want)
+		}
+	}
+}
+
+// v0.9.58：must_change 持久化往返 —— 首次启动写入，容器重建后读回，不再重新生成。
+func TestV0958AuthFileMustChangeRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "auth.json")
+	m := &manager{authFile: file, username: "ADMIN", open: false,
+		salt: "0123456789abcdef0123456789abcdef", hash: sha256Hex("0123456789abcdef0123456789abcdef\x00onetime-pw"), mustChange: true}
+	if err := m.saveAuthFile(); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	m2 := &manager{}
+	if !m2.loadAuthFile(file) {
+		t.Fatal("saved auth file must load")
+	}
+	if !m2.mustChange {
+		t.Fatal("must_change must survive round trip")
+	}
+	if m2.open {
+		t.Fatal("must_change record must be password mode")
+	}
+	// 改密后清除 must_change 再持久化
+	m2.mustChange = false
+	if err := m2.saveAuthFile(); err != nil {
+		t.Fatalf("save cleared: %v", err)
+	}
+	m3 := &manager{}
+	if !m3.loadAuthFile(file) || m3.mustChange {
+		t.Fatal("cleared must_change must persist")
+	}
+}
+
+// v0.9.58：受限会话（强制改密）白名单 —— 只有改密/鉴权模式/登出/会话探测放行。
+func TestV0958RestrictedSessionAllowlist(t *testing.T) {
+	allowed := []string{"/api/account", "/api/auth/mode", "/api/logout", "/api/system/runtime", "/api/health"}
+	for _, p := range allowed {
+		if !restrictedAllowed(p) {
+			t.Fatalf("restricted session must allow %s", p)
+		}
+	}
+	blocked := []string{"/api/admin/caddyfile", "/api/admin/docker/scan", "/api/session/check", "/api/whatever"}
+	for _, p := range blocked {
+		if restrictedAllowed(p) {
+			t.Fatalf("restricted session must NOT allow %s", p)
+		}
 	}
 }

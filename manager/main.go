@@ -26,13 +26,22 @@ type loginFailure struct {
 	count int
 	until time.Time
 }
+
+// sessionEntry 是一条已登录会话。mustChange 表示该会话是用「一次性初始随机密码」
+// 建立的受限会话 —— 只能用来修改密码（强制改密），其它受保护操作一律 403。
+type sessionEntry struct {
+	expires    time.Time
+	mustChange bool
+}
+
 type manager struct {
 	mu                 sync.RWMutex
 	configMu           sync.Mutex
-	sessions           map[string]time.Time
+	sessions           map[string]sessionEntry
 	failures           map[string]loginFailure
 	username           string
 	open               bool          // v0.9.56 开放模式（无密码）：true 时不校验登录
+	mustChange         bool          // v0.9.58：一次性初始随机密码，登录后强制改密
 	salt, hash         string        // 凭据哈希（sha256(salt+password)），auth.json 持久化
 	authFile           string        // /data/auth.json：账户与鉴权模式的持久化文件
 	caddyConfig        []byte
@@ -47,14 +56,18 @@ const sessionIdleTimeout = 30 * time.Minute
 //   - mode=password（默认）：必须登录；username/salt/hash 用于校验。
 //   - mode=open：开放模式（免登录进入）；v0.9.56 起**保留** salt/hash 凭据，
 //     以便从开放模式切回密码模式/修改密码时仍能验证原密码。
+//   - must_change（v0.9.58）：true 表示当前凭据是「一次性初始随机密码」，
+//     首次登录后必须改密（受限会话只能改密），改密成功即清除。
 // 持久化文件优先于环境变量（ADMIN_USERNAME/ADMIN_PASSWORD）；文件不存在时
-// 按环境变量推导 —— ADMIN_PASSWORD 为空则直接进入开放模式。
+// 按环境变量推导 —— v0.9.58 起 ADMIN_PASSWORD 为空不再进入开放模式，
+// 而是生成一次性随机初始密码并标记 must_change。
 type storedAuth struct {
-	Mode     string `json:"mode,omitempty"` // "password" | "open"
-	Username string `json:"username"`
-	Salt     string `json:"salt,omitempty"`
-	Hash     string `json:"hash,omitempty"`
-	Updated  int64  `json:"updated,omitempty"`
+	Mode       string `json:"mode,omitempty"`        // "password" | "open"
+	Username   string `json:"username"`
+	Salt       string `json:"salt,omitempty"`
+	Hash       string `json:"hash,omitempty"`
+	MustChange bool   `json:"must_change,omitempty"` // v0.9.58：一次性初始随机密码待改密
+	Updated    int64  `json:"updated,omitempty"`
 }
 
 func sha256Hex(s string) string {
@@ -70,19 +83,38 @@ func newAuthSalt() string {
 	return hex.EncodeToString(raw)
 }
 
-// deriveStoredAuth 把环境变量凭据整理成 storedAuth：ADMIN_PASSWORD 为空时
-// 表示“不设置登录密码”→ 开放模式。
+// generateRandomPassword 生成一次性初始管理员密码（16 位，来自无歧义字符集，
+// 不含 0/O、1/l/I 等易混淆字符）。只用于「未配置 ADMIN_PASSWORD 时的首次启动」。
+func generateRandomPassword() string {
+	const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789"
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		// crypto/rand 不可用（几乎不可能）：退回时间+进程号派生串。
+		return hex.EncodeToString([]byte(sha256Hex(fmt.Sprintf("%d-%d", time.Now().UnixNano(), os.Getpid()))))[:16]
+	}
+	for i := range b {
+		b[i] = alphabet[int(b[i])%len(alphabet)]
+	}
+	return string(b)
+}
+
+// deriveStoredAuth 把环境变量凭据整理成 storedAuth。
+// v0.9.58：ADMIN_PASSWORD 为空不再意味着「开放模式」—— 而是生成一次性随机初始
+// 密码并标记 MustChange（首次登录后强制改密）；开放模式只能通过「账户与登录」页
+// 显式切换并持久化到 auth.json。
 func deriveStoredAuth(usernameEnv, passwordEnv string) storedAuth {
 	u := strings.TrimSpace(usernameEnv)
 	if u == "" {
 		u = "ADMIN"
 	}
 	pw := passwordEnv
+	mustChange := false
 	if pw == "" {
-		return storedAuth{Mode: "open", Username: u}
+		pw = generateRandomPassword()
+		mustChange = true
 	}
 	salt := newAuthSalt()
-	return storedAuth{Mode: "password", Username: u, Salt: salt, Hash: sha256Hex(salt + "\x00" + pw)}
+	return storedAuth{Mode: "password", Username: u, Salt: salt, Hash: sha256Hex(salt + "\x00" + pw), MustChange: mustChange}
 }
 
 // loadAuthFile 读取持久化账户文件；文件不存在或解析失败返回 false（保持现状）。
@@ -107,6 +139,7 @@ func (m *manager) loadAuthFile(file string) bool {
 	// v0.9.56：开放模式也保留 salt/hash（切回密码模式/改密时验证原密码用）。
 	m.salt, m.hash = s.Salt, s.Hash
 	m.open = s.Mode == "open"
+	m.mustChange = s.MustChange
 	return true
 }
 
@@ -119,7 +152,7 @@ func (m *manager) saveAuthFile() error {
 	if err := os.MkdirAll(filepath.Dir(m.authFile), 0755); err != nil {
 		return err
 	}
-	s := storedAuth{Username: m.username, Updated: time.Now().Unix()}
+	s := storedAuth{Username: m.username, Updated: time.Now().Unix(), MustChange: m.mustChange}
 	if m.open {
 		s.Mode = "open"
 	} else {
@@ -159,44 +192,105 @@ func (m *manager) passwordOK(pw string) bool {
 	return len(want) == len(m.hash) && subtle.ConstantTimeCompare([]byte(want), []byte(m.hash)) == 1
 }
 
+// weakPasswords 是增强密码校验的弱口令黑名单（v0.9.58）：含此前默认 admin123 /
+// ADMIN123 及常见弱口令。命中即拒绝，即便满足长度与字符组合要求。
+var weakPasswords = []string{
+	"admin123", "admin1234", "password", "password1", "passw0rd",
+	"12345678", "123456789", "1234567890", "88888888", "00000000",
+	"qwerty123", "qwertyuiop", "abc123456", "iloveyou", "letmein",
+	"welcome1", "admin@123", "admin888", "vaulthub", "rootroot",
+}
+
+// validatePassword 增强密码校验（v0.9.58）：至少 8 位、同时含字母与数字、不在弱口令
+// 黑名单、且不包含用户名（大小写不敏感）。返回空串表示通过，否则返回中文错误提示。
+func validatePassword(pw, username string) string {
+	if len(pw) < 8 {
+		return "密码至少 8 位"
+	}
+	var hasLetter, hasDigit bool
+	for _, r := range pw {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z':
+			hasLetter = true
+		case r >= '0' && r <= '9':
+			hasDigit = true
+		}
+	}
+	if !hasLetter || !hasDigit {
+		return "密码需同时包含字母和数字"
+	}
+	low := strings.ToLower(pw)
+	for _, w := range weakPasswords {
+		if low == w {
+			return "密码过于常见，请更换更复杂的密码"
+		}
+	}
+	if username != "" && strings.Contains(low, strings.ToLower(username)) {
+		return "密码不能包含用户名"
+	}
+	return ""
+}
+
 func (m *manager) reply(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(v)
 }
-func (m *manager) logged(r *http.Request) bool {
+func (m *manager) session(r *http.Request) (sessionEntry, bool) {
 	c, e := r.Cookie("vh_session")
 	if e != nil {
-		return false
+		return sessionEntry{}, false
 	}
 	now := time.Now()
 	m.mu.Lock()
-	exp, ok := m.sessions[c.Value]
-	if ok && now.Before(exp) {
-		m.sessions[c.Value] = time.Now().Add(sessionIdleTimeout)
+	ent, ok := m.sessions[c.Value]
+	if ok && now.Before(ent.expires) {
+		ent.expires = now.Add(sessionIdleTimeout)
+		m.sessions[c.Value] = ent
 	} else if ok {
 		delete(m.sessions, c.Value)
 		ok = false
 	}
 	m.mu.Unlock()
+	return ent, ok
+}
+func (m *manager) logged(r *http.Request) bool {
+	_, ok := m.session(r)
 	return ok
 }
+
+// restrictedAllowed 列出「强制改密」受限会话仍可访问的路径：改密、查询鉴权模式、
+// 退出登录与会话活性探测。其余受保护端点一律 403 强制改密。
+func restrictedAllowed(path string) bool {
+	switch path {
+	case "/api/account", "/api/auth/mode", "/api/logout", "/api/system/runtime", "/api/health":
+		return true
+	}
+	return false
+}
+
 func (m *manager) require(w http.ResponseWriter, r *http.Request) bool {
 	// v0.9.56 开放模式：无密码屏障，所有管理端点直接放行。
 	if m.open {
 		return true
 	}
-	if m.logged(r) {
-		return true
+	ent, ok := m.session(r)
+	if !ok {
+		m.reply(w, 401, map[string]any{"ok": false, "error": "login required"})
+		return false
 	}
-	m.reply(w, 401, map[string]any{"ok": false, "error": "login required"})
-	return false
+	// v0.9.58：一次性初始随机密码登录后是受限会话，未改密前只能改密。
+	if ent.mustChange && !restrictedAllowed(r.URL.Path) {
+		m.reply(w, 403, map[string]any{"ok": false, "error": "必须修改初始密码后才能继续", "must_change": true})
+		return false
+	}
+	return true
 }
 func (m *manager) cleanupSessions() {
 	now := time.Now()
 	m.mu.Lock()
-	for sid, exp := range m.sessions {
-		if !now.Before(exp) {
+	for sid, ent := range m.sessions {
+		if !now.Before(ent.expires) {
 			delete(m.sessions, sid)
 		}
 	}
@@ -283,12 +377,15 @@ func (m *manager) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sid := hex.EncodeToString(raw)
+	// v0.9.58：一次性初始随机密码登录建立受限会话（mustChange=true），
+	// 前端据此强制弹改密框，服务端据此拦截除改密外的所有受保护操作。
 	m.mu.Lock()
-	m.sessions[sid] = time.Now().Add(sessionIdleTimeout)
+	m.sessions[sid] = sessionEntry{expires: time.Now().Add(sessionIdleTimeout), mustChange: m.mustChange}
+	forceChange := m.mustChange
 	m.mu.Unlock()
 	secure := r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 	http.SetCookie(w, &http.Cookie{Name: "vh_session", Value: sid, Path: "/", HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode, MaxAge: 1800})
-	m.reply(w, 200, map[string]any{"ok": true, "idle_timeout_seconds": 1800})
+	m.reply(w, 200, map[string]any{"ok": true, "idle_timeout_seconds": 1800, "must_change": forceChange})
 }
 func (m *manager) logout(w http.ResponseWriter, r *http.Request) {
 	if c, e := r.Cookie("vh_session"); e == nil {
@@ -306,14 +403,15 @@ func (m *manager) authMode(w http.ResponseWriter, r *http.Request) {
 	}
 	// 公共端点：登录遮罩/启动探测需要知道当前鉴权模式（开放模式直接自动登录）。
 	// v0.9.56：同时暴露 has_password —— 开放模式曾设置过密码时，账户变更仍需验证。
+	// v0.9.58：同时暴露 must_change —— 一次性初始随机密码待改密，前端据此强制改密。
 	m.mu.RLock()
-	open, user, hashed := m.open, m.username, m.hash != ""
+	open, user, hashed, mc := m.open, m.username, m.hash != "", m.mustChange
 	m.mu.RUnlock()
 	mode := "password"
 	if open {
 		mode = "open"
 	}
-	m.reply(w, 200, map[string]any{"ok": true, "mode": mode, "username": user, "has_password": hashed})
+	m.reply(w, 200, map[string]any{"ok": true, "mode": mode, "username": user, "has_password": hashed, "must_change": mc})
 }
 
 // account 修改登录用户名 / 登录密码 / 鉴权模式（v0.9.56+）。需要有效会话。
@@ -375,11 +473,13 @@ func (m *manager) account(w http.ResponseWriter, r *http.Request) {
 		// 切回密码模式/修改密码时仍需原密码验证，防止开放模式成为无验证改密的通道。
 		m.open = true
 		m.username = newUser
+		m.mustChange = false // v0.9.58：显式切开放模式即视为「已处理」初始随机密码
 		if err := m.saveAuthFile(); err != nil {
 			m.reply(w, 500, map[string]any{"ok": false, "error": "持久化失败：" + err.Error()})
 			return
 		}
 		m.dropOtherSessions(r)
+		m.unrestrictSession(r)
 		m.reply(w, 200, map[string]any{"ok": true, "mode": "open", "username": m.username, "message": "已切换为开放模式（无密码），任何人无需登录即可进入"})
 		return
 	}
@@ -389,12 +489,8 @@ func (m *manager) account(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if x.Password != "" {
-		if len(x.Password) < 6 {
-			m.reply(w, 400, map[string]any{"ok": false, "error": "密码至少 6 位"})
-			return
-		}
-		if strings.EqualFold(x.Password, newUser) {
-			m.reply(w, 400, map[string]any{"ok": false, "error": "密码不能与用户名相同"})
+		if msg := validatePassword(x.Password, newUser); msg != "" {
+			m.reply(w, 400, map[string]any{"ok": false, "error": msg})
 			return
 		}
 		m.salt = newAuthSalt()
@@ -402,11 +498,13 @@ func (m *manager) account(w http.ResponseWriter, r *http.Request) {
 	}
 	m.open = false
 	m.username = newUser
+	m.mustChange = false // v0.9.58：任何成功的账户变更（含改密）都清除强制改密态
 	if err := m.saveAuthFile(); err != nil {
 		m.reply(w, 500, map[string]any{"ok": false, "error": "持久化失败：" + err.Error()})
 		return
 	}
 	m.dropOtherSessions(r)
+	m.unrestrictSession(r) // v0.9.58：改密成功后把当前会话升级为完整会话
 	m.reply(w, 200, map[string]any{"ok": true, "mode": "password", "username": m.username, "message": "账户信息已保存"})
 }
 
@@ -419,6 +517,17 @@ func (m *manager) dropOtherSessions(r *http.Request) {
 	for sid := range m.sessions {
 		if sid != current {
 			delete(m.sessions, sid)
+		}
+	}
+}
+
+// unrestrictSession 把当前请求的会话从「受限」（强制改密）升级为完整会话。
+// 调用方需已持有 m.mu（account 全程持锁）。
+func (m *manager) unrestrictSession(r *http.Request) {
+	if c, e := r.Cookie("vh_session"); e == nil {
+		if ent, ok := m.sessions[c.Value]; ok {
+			ent.mustChange = false
+			m.sessions[c.Value] = ent
 		}
 	}
 }
@@ -444,8 +553,14 @@ func (m *manager) sessionCheck(w http.ResponseWriter, r *http.Request) {
 		m.reply(w, 200, map[string]any{"ok": true, "mode": "open", "idle_timeout_seconds": int(sessionIdleTimeout.Seconds())})
 		return
 	}
-	if !m.logged(r) {
+	ent, ok := m.session(r)
+	if !ok {
 		m.reply(w, 401, map[string]any{"ok": false, "error": "login required"})
+		return
+	}
+	// v0.9.58：受限会话（用一次性初始随机密码登录、尚未改密）禁止媒体写操作。
+	if ent.mustChange {
+		m.reply(w, 403, map[string]any{"ok": false, "error": "必须修改初始密码后才能继续", "must_change": true})
 		return
 	}
 	m.reply(w, 200, map[string]any{"ok": true, "idle_timeout_seconds": int(sessionIdleTimeout.Seconds())})
@@ -777,22 +892,45 @@ func main() {
 	if err := os.Rename(tmp, "/data/Caddyfile"); err != nil {
 		log.Fatal(err)
 	}
-	m := &manager{sessions: map[string]time.Time{}, failures: map[string]loginFailure{}, caddyConfig: b}
-	// v0.9.56：鉴权持久化文件优先；文件缺失时按环境变量推导
-	// （ADMIN_PASSWORD 为空 → 开放模式）。首次通过系统设置保存账户后才生成 auth.json。
+	m := &manager{sessions: map[string]sessionEntry{}, failures: map[string]loginFailure{}, caddyConfig: b}
+	// v0.9.56：鉴权持久化文件优先；文件缺失时按环境变量推导。
+	// v0.9.58：ADMIN_PASSWORD 为空不再进入开放模式 —— 而是生成一次性随机初始
+	// 密码并立即持久化到 auth.json（must_change=true），保证容器升级（重建容器但
+	// 保留 /data 卷）不会重新生成/重新校验随机密码。
 	authFile := os.Getenv("MANAGER_AUTH_FILE")
 	if authFile == "" {
 		authFile = "/data/auth.json"
 	}
 	if !m.loadAuthFile(authFile) {
-		s := deriveStoredAuth(os.Getenv("ADMIN_USERNAME"), os.Getenv("ADMIN_PASSWORD"))
 		m.authFile = authFile
+		username := os.Getenv("ADMIN_USERNAME")
+		password := os.Getenv("ADMIN_PASSWORD")
+		mustChange := false
+		if password == "" {
+			randomPw := generateRandomPassword()
+			u := strings.TrimSpace(username)
+			if u == "" {
+				u = "ADMIN"
+			}
+			log.Printf("v0.9.58: no ADMIN_PASSWORD configured — one-time initial password generated.")
+			log.Printf("  login username: %s", u)
+			log.Printf("  login password: %s", randomPw)
+			log.Printf("  (single-use: logging in forces you to set a new password)")
+			password = randomPw
+			mustChange = true
+		}
+		s := deriveStoredAuth(username, password)
 		m.username = s.Username
 		m.salt, m.hash = s.Salt, s.Hash
-		m.open = s.Mode == "open"
-		if m.open {
-			log.Printf("v0.9.56: no login password configured -> running in OPEN mode (no password). " +
-				"Log in via another instance to change it in 系统设置 → 账户与登录, or set ADMIN_PASSWORD.")
+		m.open = false // v0.9.58：deriveStoredAuth 不再产出 open 模式
+		m.mustChange = mustChange
+		// 仅「一次性随机初始密码」需要立即持久化 —— 保证容器升级（重建容器但保留
+		// /data 卷）不会重新生成/重新校验随机密码；显式 ADMIN_PASSWORD 仍以环境变量
+		// 为权威（与 v0.9.56 一致，改密码走系统设置 UI）。
+		if mustChange {
+			if err := m.saveAuthFile(); err != nil {
+				log.Printf("v0.9.58: could not persist initial auth state: %v", err)
+			}
 		}
 	}
 	for _, bin := range []string{"/usr/bin/media-api", "/usr/bin/subtitle-api"} {

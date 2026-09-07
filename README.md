@@ -69,7 +69,8 @@ services:
       - "8088:8088"
     environment:
       - ADMIN_USERNAME=admin
-      - ADMIN_PASSWORD=admin123
+      # 留空则首次启动生成一次性随机初始密码（见容器日志），登录后强制改密
+      - ADMIN_PASSWORD=
       - TMDB_API_KEY=
       - MEDIA_SCRAPER_MODE=auto
       # 系统监控的卷名列表（逗号分隔），与下方 /host/<卷名> 只读挂载一一对应；
