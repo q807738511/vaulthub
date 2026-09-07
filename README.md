@@ -7,6 +7,7 @@
 📌 完整更新日志见 [Update Log.md](Update Log.md) · 各版本发布说明见 `.github/RELEASE_NOTES_*.md`
 
 ---
+# 体验https://sszj.enged.top
 
 ## 功能介绍
 
@@ -38,7 +39,7 @@
 
 ### 📚 漫画和电子书
 
-1. 漫画 ZIP/CBZ 中央目录缓存提速，GBK/日文文件名正常解码；阅读进度**服务端持久化**，换设备接着读
+1. 漫画 ZIP/CBZ 中央目录缓存提速，GBK/日文文件名正常解码；阅读进度**服务端持久化**，换设备接着读(设备登陆后第一次读取需要些时间,后续会很快)
 2. TXT 编码自动识别：BOM → 无 BOM UTF-16 → UTF-8 严格 → 多候选打分（GBK/GB18030、Big5、Shift-JIS、EUC-KR）；超长文本按 Range 分块读取合并，不会乱码/截断
 3. 封面多源刮削：AniList / Bangumi 竞速优先，Google Books / OpenLibrary 兜底，单源失败不影响其它
 
