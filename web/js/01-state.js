@@ -8,7 +8,7 @@ const VAULTHUB_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
    历史故障：v0.8.3→v0.8.5 的前端修改在服务端已生效，但浏览器仍执行缓存里的
    旧 02-media.js，用户看到「没有更新」。现在入口页 no-store、静态资源带 ?v=，
    并在启动时做一次一致性自查，不一致就绕过缓存强制重载一次。 */
-const VAULTHUB_SCRIPT_VERSION = "0.9.57";
+const VAULTHUB_SCRIPT_VERSION = "0.9.58";
 function ensureFreshAssets() {
   /* expected 为空 = 浏览器执行的 index.html 早于 v0.8.6（旧版本入口页没有声明
      版本号），同样属于"页面是旧的"，也需要换 URL 重新取一次。 */
@@ -73,6 +73,8 @@ async function vaultHubLogin() {
     handleVaultHubAuthResult(true);
     renderSessionStatus(true, t('sessionOkHint'));
     document.getElementById('vaultHubPassword').value='';
+    /* v0.9.58：用一次性初始随机密码登录 → 强制改密（服务端会话同时受限）。 */
+    if (data.must_change) { vaultHubMustChange = true; showForcedPasswordChange(password); }
   } catch (_) { error.textContent='登录服务不可用'; }
 }
 async function requireVaultHubLogin() {
@@ -95,7 +97,10 @@ async function requireVaultHubLogin() {
     return false;
   }
 }
-async function handleProtectedResponse(res) { if (res.status === 401) { if (vaultHubAuthMode === "open") { await vaultHubAutoLogin(); handleVaultHubAuthResult(true); markVaultHubActivity(); return true; } handleVaultHubAuthResult(false); renderSessionStatus(false); return false; } markVaultHubActivity(); renderSessionStatus(true); return true; }
+async function handleProtectedResponse(res) {
+  /* v0.9.58：受限会话（未改密）访问受保护端点被服务端 403 → 重新弹强制改密框。 */
+  if (res.status === 403 && vaultHubMustChange) { showForcedPasswordChange(); return false; }
+  if (res.status === 401) { if (vaultHubAuthMode === "open") { await vaultHubAutoLogin(); handleVaultHubAuthResult(true); markVaultHubActivity(); return true; } handleVaultHubAuthResult(false); renderSessionStatus(false); return false; } markVaultHubActivity(); renderSessionStatus(true); return true; }
 function guardProtectedAction(fn) { return async (...args)=>{if(vaultHubAuthenticated || await requireVaultHubLogin()) return fn(...args);}; }
 
 /* ---------- v0.9.56 鉴权模式（开放模式 / 密码模式） ---------- */
@@ -106,6 +111,9 @@ let vaultHubAuthMode = "password";
 /* v0.9.56：系统是否曾设置过密码（auth.json 里有 hash 凭据）。开放模式若曾设置过
    密码，账户变更（改密/切回密码模式）仍需验证原密码；纯开放模式则不需要。 */
 let vaultHubHasPassword = false;
+/* v0.9.58：系统是否处于「一次性初始随机密码待改密」状态。用该密码登录后
+   强制弹出改密框，服务端会话同时受限（除改密外一律 403）。 */
+let vaultHubMustChange = false;
 async function vaultHubFetchAuthMode() {
   try {
     const res = await fetch("/api/auth/mode", { cache: "no-store" });
@@ -113,6 +121,7 @@ async function vaultHubFetchAuthMode() {
       const data = await res.json();
       vaultHubAuthMode = data.mode === "open" ? "open" : "password";
       vaultHubHasPassword = !!data.has_password;
+      vaultHubMustChange = !!data.must_change;
       if (typeof loadAccountCredentialsUI === "function") loadAccountCredentialsUI();
     }
   } catch (e) { /* 服务未就绪时保持默认密码模式，稍后探测会重试 */ }
@@ -127,7 +136,12 @@ async function vaultHubAutoLogin() {
 }
 async function initVaultHubAuth() {
   await vaultHubFetchAuthMode();
-  if (vaultHubAuthMode !== "open") return requireVaultHubLogin();
+  if (vaultHubAuthMode !== "open") {
+    const logged = await requireVaultHubLogin();
+    /* v0.9.58：受限会话（用初始随机密码登录、尚未改密）在页面重载后仍要强制改密。 */
+    if (logged && vaultHubMustChange) showForcedPasswordChange();
+    return logged;
+  }
   const ok = await vaultHubAutoLogin();
   handleVaultHubAuthResult(true); // 开放模式永不显示登录遮罩
   renderSessionStatus(ok, ok ? t('sessionOkHint') : '开放模式自动登录失败，将自动重试');
@@ -1389,7 +1403,7 @@ async function saveAccountCredentials() {
      修改用户名/密码必须验证当前密码；纯开放模式（从未设密码）首次设置除外。 */
   const needOld = vaultHubHasPassword || vaultHubAuthMode !== "open";
   if (needOld && !curPw) { toast("⚠️ 请输入当前密码后再保存账户信息"); return; }
-  if (pw && pw.length < 6) { toast("⚠️ 新密码至少 6 位"); return; }
+  if (pw) { const v = validateClientPassword(pw, username); if (v) { toast("⚠️ " + v); return; } }
   if (pw !== pw2) { toast("⚠️ 两次输入的新密码不一致"); return; }
   try {
     const res = await fetch("/api/account", { method: "POST", headers: sessionWriteHeaders(true), credentials: "same-origin", body: JSON.stringify({ old_password: curPw, username, password: pw }) });
@@ -1425,8 +1439,9 @@ async function switchAccountPasswordMode() {
      从未设置过密码的纯开放模式则直接设置新密码即可。 */
   const needOld = vaultHubHasPassword || vaultHubAuthMode !== "open";
   if (needOld && !curPw) { toast("⚠️ 请输入当前密码后再切回密码模式"); return; }
-  if (!pw) { toast("⚠️ 请设置新登录密码（至少 6 位）"); return; }
-  if (pw.length < 6) { toast("⚠️ 新密码至少 6 位"); return; }
+  if (!pw) { toast("⚠️ 请设置新登录密码（至少 8 位，含字母和数字）"); return; }
+  const v = validateClientPassword(pw, username);
+  if (v) { toast("⚠️ " + v); return; }
   if (pw !== pw2) { toast("⚠️ 两次输入的新密码不一致"); return; }
   try {
     const res = await fetch("/api/account", { method: "POST", headers: sessionWriteHeaders(true), credentials: "same-origin", body: JSON.stringify({ old_password: curPw, username, password: pw, mode: "password" }) });
@@ -1437,6 +1452,53 @@ async function switchAccountPasswordMode() {
     loadAccountCredentialsUI();
     if (f.n) f.n.value = ""; if (f.n2) f.n2.value = ""; if (f.u) f.u.value = ""; if (f.c) f.c.value = "";
   } catch (e) { toast("⚠️ 切换失败：" + e.message); }
+}
+
+/* ================= v0.9.58 一次性初始随机密码 → 强制改密 ================= */
+/* 客户端镜像服务端增强密码校验（至少 8 位、含字母和数字、非弱口令、不含用户名）。
+   返回空串表示通过，否则返回中文错误提示。 */
+function validateClientPassword(pw, username) {
+  if (!pw || pw.length < 8) return "密码至少 8 位";
+  if (!/[a-zA-Z]/.test(pw) || !/[0-9]/.test(pw)) return "密码需同时包含字母和数字";
+  const weak = ["admin123","admin1234","password","password1","passw0rd","12345678","123456789","1234567890","88888888","00000000","qwerty123","qwertyuiop","abc123456","iloveyou","letmein","welcome1","admin@123","admin888","vaulthub","rootroot"];
+  const low = String(pw).toLowerCase();
+  if (weak.includes(low)) return "密码过于常见，请更换更复杂的密码";
+  if (username && low.includes(String(username).toLowerCase())) return "密码不能包含用户名";
+  return "";
+}
+
+/* 用一次性初始随机密码登录成功后弹出的强制改密框（不可通过点遮罩关闭）。 */
+function showForcedPasswordChange(oldPw) {
+  const cur = document.getElementById("forcedCurrentPassword");
+  if (cur && oldPw) cur.value = oldPw;
+  const err = document.getElementById("forcedPasswordError");
+  if (err) err.textContent = "";
+  const n = document.getElementById("forcedNewPassword");
+  const n2 = document.getElementById("forcedNewPassword2");
+  if (n) n.value = ""; if (n2) n2.value = "";
+  openModal("forcedPasswordModal");
+}
+
+async function submitForcedPasswordChange() {
+  const err = document.getElementById("forcedPasswordError");
+  const cur = (document.getElementById("forcedCurrentPassword") || {}).value || "";
+  const pw = (document.getElementById("forcedNewPassword") || {}).value || "";
+  const pw2 = (document.getElementById("forcedNewPassword2") || {}).value || "";
+  if (err) err.textContent = "";
+  if (!cur) { if (err) err.textContent = "请输入当前（初始随机）密码"; return; }
+  const v = validateClientPassword(pw, "");
+  if (v) { if (err) err.textContent = v; return; }
+  if (pw !== pw2) { if (err) err.textContent = "两次输入的新密码不一致"; return; }
+  try {
+    const res = await fetch("/api/account", { method: "POST", headers: sessionWriteHeaders(true), credentials: "same-origin", body: JSON.stringify({ old_password: cur, password: pw }) });
+    const data = await res.json();
+    if (!res.ok || !data.ok) { if (err) err.textContent = data.error || ("HTTP " + res.status); return; }
+    vaultHubMustChange = false;
+    vaultHubHasPassword = true;
+    closeModal("forcedPasswordModal");
+    toast("✅ 初始密码已更新，请使用新密码登录");
+    if (typeof loadAccountCredentialsUI === "function") loadAccountCredentialsUI();
+  } catch (e) { if (err) err.textContent = "改密失败：" + e.message; }
 }
 
 /* ================= 系统设置配置页内的标签页（含 Caddy 配置入口） ================= */
