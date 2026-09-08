@@ -42,8 +42,8 @@ for ref in asset_refs:
         f"资源引用版本号与 v{VERSION} 不一致：{ref}",
     )
 
-# 五个脚本 + 一个样式都必须在列
-for name in ("01-state.js", "02-media.js", "03-features.js", "05-home.js", "04-boot.js", "main.css"):
+# 六个脚本 + 一个样式都必须在列
+for name in ("01-state.js", "02-media.js", "03-features.js", "05-home.js", "03-audio-zoom.js", "04-boot.js", "main.css"):
     check(
         any(name in ref for ref in asset_refs),
         f"index.html 缺少 {name} 的带版本引用",
@@ -56,6 +56,7 @@ expected_order = [
     "/web/js/02-media.js",
     "/web/js/03-features.js",
     "/web/js/05-home.js",
+    "/web/js/03-audio-zoom.js",
     "/web/js/04-boot.js",
 ]
 check(

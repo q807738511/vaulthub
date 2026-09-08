@@ -314,6 +314,15 @@ window.VAULTHUB_ASSET_VERSION = "0.9.59";
 
     <section class="view" id="view-audio">
       <div class="media-wide-host" id="media-wide-audio"></div>
+      <div class="audio-fullscreen-overlay" id="audioFullscreenOverlay">
+        <button class="audio-fullscreen-back" onclick="toggleAudioCoverZoom()" title="返回" aria-label="返回">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        </button>
+        <div class="audio-fullscreen-poster">
+          <img id="audioFullscreenImg" alt="专辑海报">
+          <span class="audio-fullscreen-fallback" id="audioFullscreenFallback"></span>
+        </div>
+      </div>
     </section>
 
     <!-- ============ 媒体搜索：直接查询已索引的媒体库内容 ============ -->
@@ -712,7 +721,12 @@ window.VAULTHUB_ASSET_VERSION = "0.9.59";
 </div>
 
 <div class="audio-player" id="audio-bottom-player">
-  <img class="audio-player-cover" id="audioCover" alt="当前歌曲海报">
+  <div class="audio-player-cover-wrap">
+    <img class="audio-player-cover" id="audioCover" alt="当前歌曲海报">
+    <button class="audio-cover-zoom-btn" onclick="toggleAudioCoverZoom()" title="放大专辑海报" aria-label="放大海报">
+      <svg class="vc-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.6V4h5.6"/><path d="M20 9.6V4h-5.6"/><path d="M4 14.4V20h5.6"/><path d="M20 14.4V20h-5.6"/></svg>
+    </button>
+  </div>
   <div class="audio-player-main">
     <div class="audio-player-title" id="audioPlayerTitle">未播放</div>
     <div class="audio-player-meta" id="audioPlayerMeta">选择歌曲开始播放</div>
@@ -811,6 +825,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.59";
 <script src="/web/js/02-media.js?v=0.9.59"></script>
 <script src="/web/js/03-features.js?v=0.9.59"></script>
 <script src="/web/js/05-home.js?v=0.9.59"></script>
+<script src="/web/js/03-audio-zoom.js?v=0.9.59"></script>
 <script src="/web/js/04-boot.js?v=0.9.59"></script>
 </body>
 </html>
