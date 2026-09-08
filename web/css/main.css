@@ -820,14 +820,14 @@
   .reader-theme-light .audio-player-lyrics .lyric-line.active { color:#0a84ff; text-shadow:0 0 12px rgba(10,132,255,.35); }
   .reader-theme-light .audio-lyric-empty { color:#243a5c; }
   .audio-player-cover { width:52px; height:52px; flex:0 0 52px; border-radius:6px; object-fit:cover; background:linear-gradient(145deg,#284b63,#1b2838); }
-  /* v0.9.59：封面容器包装 & hover 显示放大按钮 */
+  /* v0.9.60：封面容器包装 & hover 显示放大按钮 */
   .audio-player-cover-wrap { position:relative; width:52px; height:52px; flex:0 0 52px; }
   .audio-cover-zoom-btn { position:absolute; top:4px; left:4px; width:24px; height:24px; padding:0; border:0; border-radius:4px; color:#fff; background:rgba(0,0,0,.65); backdrop-filter:blur(6px); cursor:pointer; display:none; align-items:center; justify-content:center; opacity:0; transition:opacity .2s,background .14s,transform .1s; }
   .audio-cover-zoom-btn svg { width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
   .audio-player-cover-wrap:hover .audio-cover-zoom-btn { display:flex; opacity:1; }
   .audio-cover-zoom-btn:hover { background:rgba(0,0,0,.85); transform:scale(1.1); }
   .audio-cover-zoom-btn:active { transform:scale(.92); }
-  /* v0.9.59：全屏海报叠加层 —— 播放器不变，叠加层占据整个 #view-audio */
+  /* v0.9.60：全屏海报叠加层 —— 播放器不变，叠加层占据整个 #view-audio */
   .audio-fullscreen-overlay { position:fixed; z-index:280; inset:0; left:var(--sidebar-w); display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.94); backdrop-filter:blur(20px) saturate(110%); animation:fadeIn .3s; }
   .audio-fullscreen-overlay.show { display:flex; }
   .audio-fullscreen-back { position:absolute; top:20px; right:24px; width:48px; height:48px; padding:0; border:1px solid rgba(255,255,255,.35); border-radius:50%; color:#fff; background:rgba(255,255,255,.16); backdrop-filter:blur(8px); cursor:pointer; display:flex; align-items:center; justify-content:center; transition:background .14s,transform .1s,border .14s; box-shadow:0 4px 18px rgba(0,0,0,.55); }
