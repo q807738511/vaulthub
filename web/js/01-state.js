@@ -8,7 +8,7 @@ const VAULTHUB_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
    历史故障：v0.8.3→v0.8.5 的前端修改在服务端已生效，但浏览器仍执行缓存里的
    旧 02-media.js，用户看到「没有更新」。现在入口页 no-store、静态资源带 ?v=，
    并在启动时做一次一致性自查，不一致就绕过缓存强制重载一次。 */
-const VAULTHUB_SCRIPT_VERSION = "0.9.59";
+const VAULTHUB_SCRIPT_VERSION = "0.9.60";
 function ensureFreshAssets() {
   /* expected 为空 = 浏览器执行的 index.html 早于 v0.8.6（旧版本入口页没有声明
      版本号），同样属于"页面是旧的"，也需要换 URL 重新取一次。 */
@@ -57,7 +57,7 @@ function markVaultHubActivity() {
 }
 ['click','keydown','pointerdown','touchstart','scroll'].forEach(type=>document.addEventListener(type,markVaultHubActivity,{passive:true}));
 
-/* v0.9.59：媒体播放期间会话保活。
+/* v0.9.60：媒体播放期间会话保活。
    问题：markVaultHubActivity 只监听用户交互事件，长时间被动听歌/看片无操作时，
    30 分钟 idle 计时器到期会主动 fetch('/api/logout') 杀掉自己的会话，随后文件列表
    等接口返回 401。这里在媒体持续播放时每 5 分钟刷新一次前端 idle 计时器，并请求
