@@ -4,10 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VaultHub 蜀鼠之家</title>
-<link rel="stylesheet" href="/web/css/main.css?v=0.9.58">
+<link rel="stylesheet" href="/web/css/main.css?v=0.9.59">
 <script>
 /* 资源版本号：index.html 用它给所有静态资源打查询串。 */
-window.VAULTHUB_ASSET_VERSION = "0.9.58";
+window.VAULTHUB_ASSET_VERSION = "0.9.59";
 </script>
 </head>
 <body data-theme="dark">
@@ -26,7 +26,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.58";
   </div>
 </div>
 
-<!-- ===== 强制改密弹窗（v0.9.58：一次性初始随机密码登录后必须改密） ===== -->
+<!-- ===== 强制改密弹窗（v0.9.59：一次性初始随机密码登录后必须改密） ===== -->
 <div class="modal-mask" id="forcedPasswordModal" style="z-index:2100;">
   <div class="modal">
     <h3>🔐 设置新密码</h3>
@@ -89,7 +89,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.58";
   <div class="sidebar-foot">
     <button class="rail-btn rail-settings" id="sidebarSettingsButton" type="button" onclick="openSettingsModalFromSidebar()" title="系统设置" aria-label="系统设置"><span class="ic">⚙</span><span class="txt" data-i18n="settingsTitle">系统设置</span></button>
     <div class="sidebar-foot-row">
-      <span class="ver">v0.9.58 · Secure First Boot</span>
+      <span class="ver">v0.9.59 · Secure First Boot</span>
       <button class="rail-btn rail-collapse" id="sidebarCollapseButton" type="button" onclick="toggleBars()" title="折叠 / 展开侧栏" aria-label="折叠或展开侧栏">⇤</button>
     </div>
   </div>
@@ -557,7 +557,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.58";
             <button class="btn" type="button" id="accountOpenModeButton" onclick="switchAccountOpenMode()">🈳 切换为开放模式（无密码）</button>
             <button class="btn" type="button" id="accountPasswordModeButton" style="display:none" onclick="switchAccountPasswordMode()">🔐 切回密码模式（需设置新密码）</button>
           </div>
-          <div class="hint">开放模式 = 无密码登录，任何人打开页面即可进入；从密码模式切到开放模式需要先输入当前密码。建议仅在可信内网使用。v0.9.58 起，首次启动不设置 ADMIN_PASSWORD 时不再进入开放模式，而是生成一次性随机初始密码（公布在容器日志）并在登录后强制改密。</div>
+          <div class="hint">开放模式 = 无密码登录，任何人打开页面即可进入；从密码模式切到开放模式需要先输入当前密码。建议仅在可信内网使用。v0.9.59 起，首次启动不设置 ADMIN_PASSWORD 时不再进入开放模式，而是生成一次性随机初始密码（公布在容器日志）并在登录后强制改密。</div>
         </div>
         <div class="setblock">
           <h4>🔀 <span data-i18n="caddyRoutes">反向代理服务域名</span></h4>
@@ -700,7 +700,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.58";
   <div class="modal">
     <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
     <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
-    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.9.58 · Secure First Boot</b></div>
+    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.9.59 · Secure First Boot</b></div>
     <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>Go (media/manager/subtitle) · Caddy · FFmpeg · SQLite · HTML/CSS/JS</b></div>
     <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>VaultHub 内置系统监控</b></div>
     <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>
@@ -807,10 +807,10 @@ window.VAULTHUB_ASSET_VERSION = "0.9.58";
 
 <div class="toast" id="toast"></div>
 
-<script src="/web/js/01-state.js?v=0.9.58"></script>
-<script src="/web/js/02-media.js?v=0.9.58"></script>
-<script src="/web/js/03-features.js?v=0.9.58"></script>
-<script src="/web/js/05-home.js?v=0.9.58"></script>
-<script src="/web/js/04-boot.js?v=0.9.58"></script>
+<script src="/web/js/01-state.js?v=0.9.59"></script>
+<script src="/web/js/02-media.js?v=0.9.59"></script>
+<script src="/web/js/03-features.js?v=0.9.59"></script>
+<script src="/web/js/05-home.js?v=0.9.59"></script>
+<script src="/web/js/04-boot.js?v=0.9.59"></script>
 </body>
 </html>
