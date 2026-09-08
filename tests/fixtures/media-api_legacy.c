@@ -16,6 +16,7 @@
 #include <pthread.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -388,6 +389,49 @@ static int browser_container_likely_ok(const char *rel) {
   const char *e=strrchr(rel,'.'); if(!e)return 0; e++;
   return !strcasecmp(e,"mp4")||!strcasecmp(e,"m4v")||!strcasecmp(e,"webm")||!strcasecmp(e,"ogv")||!strcasecmp(e,"ogg");
 }
+static int valid_hardware_accel(const char *value) {
+  return value && (!strcmp(value,"auto")||!strcmp(value,"cpu")||!strcmp(value,"vaapi")||!strcmp(value,"qsv")||!strcmp(value,"cuda"));
+}
+static int ffmpeg_has_encoder(const char *encoder) {
+  char cmd[512];
+  if(!encoder || (strcmp(encoder,"h264_nvenc") && strcmp(encoder,"h264_qsv") && strcmp(encoder,"h264_vaapi")))return 0;
+  if(snprintf(cmd,sizeof(cmd),"ffmpeg -hide_banner -encoders 2>/dev/null | grep -Eq '[[:space:]]%s([[:space:]]|$)'",encoder)<0)return 0;
+  int rc=system(cmd); return rc!=-1&&WIFEXITED(rc)&&WEXITSTATUS(rc)==0;
+}
+static int dri_available(void) {
+  const char *device=getenv("VAAPI_DEVICE"); if(!device||!*device)device="/dev/dri/renderD128";
+  return access(device,R_OK|W_OK)==0;
+}
+static int cuda_available(void) {
+   const char *visible=getenv("NVIDIA_VISIBLE_DEVICES");
+   return access("/dev/nvidia0",R_OK)==0 || access("/dev/nvidiactl",R_OK)==0 ||
+          access("/dev/nvidia-uvm",R_OK)==0 ||
+          (visible&&*visible&&!strcmp(visible,"all")&&access("/proc/driver/nvidia/version",R_OK)==0);
+}
+static const char *query_component(const char *query,const char *key,char *out,size_t cap) {
+  const char *raw=query_value(query,key); if(!raw)return NULL; size_t n=strcspn(raw,"&"); if(!n||n>=cap)return NULL; memcpy(out,raw,n);out[n]=0;return out;
+}
+static const char *hardware_accel_config(const char *query,char *requested,size_t requested_cap) {
+  const char *configured=getenv("FFMPEG_HWACCEL");
+  if(!configured||!*configured)configured="auto";
+  char from_query[32]; const char *raw=query_component(query,"hw",from_query,sizeof(from_query));
+  const char *choice=raw?raw:configured;
+  if(!valid_hardware_accel(choice))choice="cpu";
+  snprintf(requested,requested_cap,"%s",choice);
+  if(!strcmp(choice,"cpu"))return "cpu";
+  if(!strcmp(choice,"cuda"))return cuda_available()&&ffmpeg_has_encoder("h264_nvenc")?"cuda":"cpu";
+  if(!strcmp(choice,"qsv"))return dri_available()&&ffmpeg_has_encoder("h264_qsv")?"qsv":"cpu";
+  if(!strcmp(choice,"vaapi"))return dri_available()&&ffmpeg_has_encoder("h264_vaapi")?"vaapi":"cpu";
+  if(cuda_available()&&ffmpeg_has_encoder("h264_nvenc"))return "cuda";
+  if(dri_available()&&ffmpeg_has_encoder("h264_vaapi"))return "vaapi";
+  return "cpu";
+}
+static void hardware_status(int fd) {
+  char requested[32]; const char *selected=hardware_accel_config(NULL,requested,sizeof(requested));
+  struct buffer b={0};
+  appendf(&b,"{\"configured\":\"%s\",\"selected\":\"%s\",\"available\":{\"cpu\":true,\"vaapi\":%s,\"qsv\":%s,\"cuda\":%s},\"vaapi_device\":\"%s\"}\n",requested,selected,dri_available()&&ffmpeg_has_encoder("h264_vaapi")?"true":"false",dri_available()&&ffmpeg_has_encoder("h264_qsv")?"true":"false",cuda_available()&&ffmpeg_has_encoder("h264_nvenc")?"true":"false",getenv("VAAPI_DEVICE")&&*getenv("VAAPI_DEVICE")?getenv("VAAPI_DEVICE"):"/dev/dri/renderD128");
+  send_headers(fd,200,"application/json",(off_t)b.len,NULL);write(fd,b.data,b.len);free(b.data);
+}
 static void probe_media(int fd, const char *query) {
   char canonical[MAX_PATH_LEN], rel[MAX_PATH_LEN]; int rc=resolve_query_media_file(query,canonical,sizeof(canonical),rel,sizeof(rel)); if(rc){json_error(fd,rc==-3?404:400,"invalid media path");return;}
   char acodec[64]="", vcodec[64]=""; (void)ffprobe_value(canonical,"a:0",acodec,sizeof(acodec)); (void)ffprobe_value(canonical,"v:0",vcodec,sizeof(vcodec));
@@ -398,11 +442,17 @@ static void probe_media(int fd, const char *query) {
 }
 static void compat_media(int fd, const char *method, const char *query) {
   char canonical[MAX_PATH_LEN]; int rc=resolve_query_media_file(query,canonical,sizeof(canonical),NULL,0); if(rc){json_error(fd,rc==-3?404:400,"invalid media path");return;}
-  if(!strcmp(method,"HEAD")){send_stream_headers(fd,200,"video/mp4","Accept-Ranges: none\r\nX-VaultHub-Compat: audio-aac\r\n");return;}
-  char q_file[8192], cmd[12000]; if(shell_quote(canonical,q_file,sizeof(q_file))){json_error(fd,400,"path too long");return;}
-  snprintf(cmd,sizeof(cmd),"ffmpeg -hide_banner -loglevel error -i %s -map 0:v:0 -map 0:a:0? -c:v libx264 -preset veryfast -crf 23 -pix_fmt yuv420p -c:a aac -b:a 160k -ac 2 -movflags frag_keyframe+empty_moov+default_base_moof -f mp4 pipe:1 2>/dev/null",q_file);
+  char requested[32]; const char *hardware=hardware_accel_config(query,requested,sizeof(requested));
+  int audio_track=0; const char *raw_audio=query_value(query,"audio_track"); if(raw_audio) audio_track=atoi(raw_audio); if(audio_track<0||audio_track>32) audio_track=0;
+  char extra[256]; snprintf(extra,sizeof(extra),"Accept-Ranges: none\r\nX-VaultHub-Compat: audio-aac\r\nX-VaultHub-Hardware: %s\r\n",hardware);
+  if(!strcmp(method,"HEAD")){send_stream_headers(fd,200,"video/mp4",extra);return;}
+  char q_file[8192], cmd[16000]; if(shell_quote(canonical,q_file,sizeof(q_file))){json_error(fd,400,"path too long");return;}
+  if(!strcmp(hardware,"cuda")) snprintf(cmd,sizeof(cmd),"ffmpeg -hide_banner -loglevel error -i %s -map 0:v:0 -map 0:a:%d? -c:v h264_nvenc -preset p4 -cq 23 -pix_fmt yuv420p -c:a aac -b:a 160k -ac 2 -movflags frag_keyframe+empty_moov+default_base_moof -f mp4 pipe:1 2>/dev/null",q_file,audio_track);
+  else if(!strcmp(hardware,"qsv")) snprintf(cmd,sizeof(cmd),"ffmpeg -hide_banner -loglevel error -hwaccel qsv -qsv_device '%s' -i %s -map 0:v:0 -map 0:a:%d? -vf 'scale_qsv=format=nv12' -c:v h264_qsv -global_quality 23 -c:a aac -b:a 160k -ac 2 -movflags frag_keyframe+empty_moov+default_base_moof -f mp4 pipe:1 2>/dev/null",getenv("VAAPI_DEVICE")&&*getenv("VAAPI_DEVICE")?getenv("VAAPI_DEVICE"):"/dev/dri/renderD128",q_file,audio_track);
+  else if(!strcmp(hardware,"vaapi")) snprintf(cmd,sizeof(cmd),"ffmpeg -hide_banner -loglevel error -hwaccel vaapi -hwaccel_device '%s' -hwaccel_output_format vaapi -i %s -map 0:v:0 -map 0:a:%d? -vf 'scale_vaapi=format=nv12' -c:v h264_vaapi -qp 23 -c:a aac -b:a 160k -ac 2 -movflags frag_keyframe+empty_moov+default_base_moof -f mp4 pipe:1 2>/dev/null",getenv("VAAPI_DEVICE")&&*getenv("VAAPI_DEVICE")?getenv("VAAPI_DEVICE"):"/dev/dri/renderD128",q_file,audio_track);
+  else snprintf(cmd,sizeof(cmd),"ffmpeg -hide_banner -loglevel error -i %s -map 0:v:0 -map 0:a:%d? -c:v libx264 -preset veryfast -crf 23 -pix_fmt yuv420p -c:a aac -b:a 160k -ac 2 -movflags frag_keyframe+empty_moov+default_base_moof -f mp4 pipe:1 2>/dev/null",q_file,audio_track);
   FILE *pipe=popen(cmd,"r"); if(!pipe){json_error(fd,500,"compat playback unavailable");return;}
-  send_stream_headers(fd,200,"video/mp4","Accept-Ranges: none\r\nX-VaultHub-Compat: audio-aac\r\n"); char buf[65536]; size_t n;
+  send_stream_headers(fd,200,"video/mp4",extra); char buf[65536]; size_t n;
   while((n=fread(buf,1,sizeof(buf),pipe))>0){size_t sent=0;while(sent<n){ssize_t w=write(fd,buf+sent,n-sent);if(w<=0){pclose(pipe);return;}sent+=(size_t)w;}}
   pclose(pipe);
 }
@@ -512,6 +562,25 @@ static void system_metrics(int fd) {
   free(out.data);
 }
 
+static int probe_media_streams(int fd, const char *query) {
+  char canonical[MAX_PATH_LEN]; int rc=resolve_query_media_file(query,canonical,sizeof(canonical),NULL,0); if(rc){json_error(fd,rc==-3?404:400,"invalid media path");return -1;}
+  char q_file[8192], cmd[12000]; if(shell_quote(canonical,q_file,sizeof(q_file))) { json_error(fd,400,"path too long"); return -1; }
+  snprintf(cmd,sizeof(cmd),"ffprobe -v error -select_streams a -show_entries stream=index:stream_tags=language,title -of csv=p=0 %s 2>/dev/null",q_file);
+  FILE *pipe=popen(cmd,"r"); struct buffer b={0}; appendf(&b,"{\"audio_tracks\":["); char line[512]; int first=1;
+  if(pipe){ int ordinal=0; while(fgets(line,sizeof(line),pipe)){ char *save=NULL; char *idx=strtok_r(line,",\r\n",&save); char *lang=strtok_r(NULL,",\r\n",&save); char *title=strtok_r(NULL,",\r\n",&save); if(!idx)continue; appendf(&b,"%s{\"index\":%d,\"label\":\"%s%s%s\"}",first?"":",",ordinal++,title&&*title?title:"音源 ",lang&&*lang?" · ":"",lang&&*lang?lang:""); first=0; } pclose(pipe); }
+  appendf(&b,"]}\n"); send_headers(fd,200,"application/json",(off_t)b.len,NULL); write(fd,b.data,b.len); free(b.data); return 0;
+}
+static void subtitle_search(int fd, const char *query) {
+  char canonical[MAX_PATH_LEN], rel[MAX_PATH_LEN]; int rc=resolve_query_media_file(query,canonical,sizeof(canonical),rel,sizeof(rel)); if(rc){json_error(fd,rc==-3?404:400,"invalid media path");return;}
+  char dir[MAX_PATH_LEN], base[MAX_PATH_LEN], relbase[MAX_PATH_LEN]; snprintf(dir,sizeof(dir),"%s",canonical); snprintf(relbase,sizeof(relbase),"%s",rel); char *slash=strrchr(dir,'/'); if(!slash){json_error(fd,500,"invalid media path");return;} *slash=0; snprintf(base,sizeof(base),"%s",slash+1); char *dot=strrchr(base,'.'); if(dot)*dot=0;
+  char *rslash=strrchr(relbase,'/'); if(rslash) *rslash=0; else relbase[0]=0;
+  DIR *d=opendir(dir); struct buffer b={0}; appendf(&b,"{\"items\":["); int first=1; struct dirent *ent;
+  if(d){while((ent=readdir(d))){char *e=strrchr(ent->d_name,'.'); if(!e || (strcasecmp(e+1,"srt") && strcasecmp(e+1,"vtt") && strcasecmp(e+1,"ass") && strcasecmp(e+1,"ssa"))) continue; char stem[512];snprintf(stem,sizeof(stem),"%s",ent->d_name);char *se=strrchr(stem,'.');if(se)*se=0;if(strncasecmp(stem,base,strlen(base)))continue;char relsub[MAX_PATH_LEN]; if(relbase[0]) snprintf(relsub,sizeof(relsub),"%s/%s",relbase,ent->d_name); else snprintf(relsub,sizeof(relsub),"%s",ent->d_name); char *encoded=relsub;for(char *p=encoded;*p;p++)if(*p==' ') *p='+'; appendf(&b,"%s{\"label\":\"本地 · %s\",\"url\":\"/api/media/subtitles/proxy?id=%s&path=%s\"}",first?"":",",ent->d_name,query_value(query,"id")?query_value(query,"id"):"",encoded);first=0;}closedir(d);}
+  appendf(&b,"]}\n");send_headers(fd,200,"application/json",(off_t)b.len,NULL);write(fd,b.data,b.len);free(b.data);
+}
+static void subtitle_proxy(int fd, const char *query) {
+  char canonical[MAX_PATH_LEN]; int rc=resolve_query_media_file(query,canonical,sizeof(canonical),NULL,0); if(rc){json_error(fd,rc==-3?404:400,"invalid subtitle path");return;} serve_file_query(fd,"GET",query,NULL);
+}
 static void handle_client(int fd) {
   char *req=calloc(MAX_REQ+1,1);if(!req){close(fd);return;}size_t n=0,header_len=0,content_len=0;
   while(n<MAX_REQ){ssize_t got=read(fd,req+n,MAX_REQ-n);if(got<=0)break;n+=(size_t)got;req[n]=0;char *end=strstr(req,"\r\n\r\n");if(end){header_len=(size_t)(end+4-req);const char *cl=header_value(req,"Content-Length");if(cl)content_len=(size_t)strtoull(cl,NULL,10);if(content_len>MAX_REQ-header_len){json_error(fd,413,"request too large");free(req);close(fd);return;}if(n>=header_len+content_len)break;}}
@@ -521,8 +590,12 @@ static void handle_client(int fd) {
   else if(!strcmp(url,"/api/media/libraries")&&!strcmp(method,"GET"))list_libraries(fd);
   else if(!strcmp(url,"/api/media/files")&&!strcmp(method,"GET"))list_files(fd,query);
   else if(!strcmp(url,"/api/media/scrapers")&&!strcmp(method,"GET"))scraper_status(fd);
+  else if(!strcmp(url,"/api/media/hardware")&&!strcmp(method,"GET"))hardware_status(fd);
   else if(!strcmp(url,"/api/media/tmdb")&&!strcmp(method,"GET"))tmdb_search(fd,query);
   else if(!strcmp(url,"/api/media/probe")&&query&&!strcmp(method,"GET"))probe_media(fd,query);
+  else if(!strcmp(url,"/api/media/streams")&&query&&!strcmp(method,"GET"))probe_media_streams(fd,query);
+  else if(!strcmp(url,"/api/media/subtitles/search")&&query&&!strcmp(method,"GET"))subtitle_search(fd,query);
+  else if(!strcmp(url,"/api/media/subtitles/proxy")&&query&&!strcmp(method,"GET"))subtitle_proxy(fd,query);
   else if(!strcmp(url,"/api/media/compat")&&query&&(!strcmp(method,"GET")||!strcmp(method,"HEAD")))compat_media(fd,method,query);
   else if(!strcmp(url,"/api/media/libraries")&&!strcmp(method,"POST"))add_library(fd,req+header_len,req);
   else if(!strcmp(url,"/api/media/libraries")&&!strcmp(method,"DELETE")) {

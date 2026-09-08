@@ -2,8 +2,11 @@
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
-html = (root / "index.html").read_text()
-source = (root / "media-api.c").read_text()
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.dirname(__file__))
+from _frontend import frontend_source as _fs
+html = _fs()
+source = (root / "tests" / "fixtures" / "media-api_legacy.c").read_text()
 
 comic_required = ["epub", "mobi", "zip", "cbz", "pdf", "rar", "cbr", "7z", "cb7", "jpg", "jpeg", "png", "cpg", "lzh", "cbl", "tar", "cbt"]
 book_required = ["epub", "pdf", "mobi", "azw", "azw3", "chm", "exe", "umd", "jar", "jad", "caj", "pdg", "djvu", "ceb", "doc", "docx", "xps"]
@@ -17,8 +20,18 @@ for ext in book_required:
 for ext in movie_required:
     assert f'"{ext}"' in html, f"movie format missing from frontend list: {ext}"
 
-assert '<option value="movie">影视</option>' in html, "local media config does not offer movie libraries"
-assert 'group === "movie" ? lib.type === "movie"' in html, "movie local libraries are not selectable"
+# v0.7.0 moved library management into 系统设置 → 媒体库 and now builds the subtype
+# <select> from mediaTypesForGroup()/mediaTypeName() instead of hardcoding options,
+# so assert the data contract that produces 电影 / 电视剧集 rather than the old markup.
+assert 'mediaTypesForGroup(group)' in html, "subtype options must be derived from the group"
+assert 'group === "movie" ? ["movie","series"]' in html, "movie group must offer movie+series subtypes"
+assert 'typeMovie: "电影"' in html, "movie subtype label missing from the zh-CN dictionary"
+assert 'typeSeries: "电视剧集"' in html, "series subtype label missing from the zh-CN dictionary"
+# v0.9.30: 子类型下拉随路径/库名称/添加按钮搬进各自的大类卡片，
+# 每个大类都有独立的 id（homeLibType-comic / -movie / -audio）。
+for g in ("comic", "movie", "audio"):
+    assert f'id="homeLibType-{g}"' in html, f"the {g} library card must expose its own subtype select"
+assert 'mediaTypesForGroup(group).includes(lib.type)' in html, "movie local libraries are not selectable"
 assert 'setMediaMode(\'${esc(group)}\',\'local\')' in html or "本地媒体库" in html, "media source mode bar missing"
 assert 'if (group === "movie") return "external"' not in html, "movie mode is still forced to external"
 assert 'renderMovieLibrary' in html, "movie local library renderer missing"

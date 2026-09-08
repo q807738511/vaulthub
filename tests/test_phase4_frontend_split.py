@@ -1,0 +1,54 @@
+#!/usr/bin/env python3
+"""Phase 4 contract: frontend split into web/css and web/js with load-order
+integrity, plus phase-5 service-split decision doc presence."""
+import re
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+index = (ROOT / "index.html").read_text(encoding="utf-8")
+
+# index.html no longer inlines the whole app.
+# v0.8.6: every asset URL carries a ?v=<version> cache-busting query string, so
+# match the path prefix instead of the exact bare URL.
+assert re.search(r'<link rel="stylesheet" href="/web/css/main\.css\?v=[0-9.]+">', index), \
+    "main.css must be referenced with a ?v= cache-busting query"
+for f in ["01-state.js", "02-media.js", "03-features.js", "04-boot.js"]:
+    assert re.search(rf'<script src="/web/js/{re.escape(f)}\?v=[0-9.]+"></script>', index), \
+        f"missing versioned script tag {f}"
+
+# The split assets must exist.
+css = ROOT / "web" / "css" / "main.css"
+assert css.exists() and css.stat().st_size > 0
+js_files = ["01-state.js", "02-media.js", "03-features.js", "04-boot.js"]
+for f in js_files:
+    p = ROOT / "web" / "js" / f
+    assert p.exists() and p.stat().st_size > 0, f"missing {f}"
+
+# Load order in index.html must be numerically ascending with boot (04) LAST, so
+# every function and global is defined before the init calls run.
+# v0.6.30.Branch-update inserted 05-home.js (home page renderers) before
+# 04-boot.js: it only defines functions, and boot must stay the final script.
+order = re.findall(r'/web/js/(0\d-[a-z]+\.js)', index)
+assert order[-1] == "04-boot.js", f"boot script must load last: {order}"
+assert order[: len(js_files) - 1] == js_files[:-1], f"script load order wrong: {order}"
+assert sorted(order) == sorted(set(order)), f"duplicate script tags: {order}"
+
+# Boot statements (init calls) must live in the LAST file so all functions and
+# globals from earlier files are defined before they run.
+boot = (ROOT / "web" / "js" / "04-boot.js").read_text(encoding="utf-8")
+for call in ["loadSettings();", "initVaultHubAuth();", "setInterval(tickMetrics, 5000);"]:
+    assert call in boot, f"boot file missing init call: {call}"
+assert "initVaultHubAuth" in boot, "boot 必须优先探测鉴权模式（开放模式自动登录 / 密码模式登录遮罩）"
+
+# Classic (non-module) scripts: inline on*= handlers need global functions.
+assert "type=\"module\"" not in index and "type='module'" not in index, \
+    "must stay classic scripts so inline handlers keep global scope"
+
+# Phase 5 decision doc exists and records the 'do not split yet' decision.
+doc = ROOT / "docs" / "architecture-phase5-service-split.md"
+assert doc.exists(), "missing phase 5 decision doc"
+dtext = doc.read_text(encoding="utf-8")
+for kw in ["vaulthub-web", "vaulthub-media", "vaulthub-worker", "vaulthub-indexer"]:
+    assert kw in dtext, f"decision doc missing service name {kw}"
+
+print("PASS: phase 4 frontend split + phase 5 decision doc present and ordered")

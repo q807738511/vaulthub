@@ -1513,7 +1513,10 @@ function audioSetPauseIcon(paused) {
     : '<svg class="vc-svg audio-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.2 5.6v12.8a.9.9 0 0 0 1.37.77l10.2-6.4a.9.9 0 0 0 0-1.54L9.57 4.83A.9.9 0 0 0 8.2 5.6Z" fill="currentColor"/></svg>';
 }
 function audioTogglePause() { const player=document.getElementById("audioPlayerElement"); if(!player?.src) return; if(player.paused) { player.play().catch(() => {}); audioSetPauseIcon(true); } else { player.pause(); audioSetPauseIcon(false); } }
-function audioStop() { const player=document.getElementById("audioPlayerElement"); if(!player) return; player.pause(); player.currentTime=0; player.removeAttribute("src"); player.load(); activeAudio=null; document.getElementById("audio-bottom-player")?.classList.remove("show"); audioSetPauseIcon(false); }
+function audioStop() { const player=document.getElementById("audioPlayerElement"); if(!player) return; player.pause(); player.currentTime=0; player.removeAttribute("src"); player.load(); activeAudio=null; document.getElementById("audio-bottom-player")?.classList.remove("show"); audioSetPauseIcon(false); stopAudioSessionKeepAlive(); }
+/* v0.9.59：音频播放会话保活别名（实现见 01-state.js 的 mediaKeepAlive*）。 */
+function startAudioSessionKeepAlive() { mediaKeepAliveStart("audio"); }
+function stopAudioSessionKeepAlive() { mediaKeepAliveStop("audio"); }
 function audioPrevious() { if(!activeAudio || !audioFiles.length) return; const index=(activeAudio.index-1+audioFiles.length)%audioFiles.length; playAudioFile(activeAudio.libId,audioFiles[index].path); }
 function audioNext() {
   if(!activeAudio || !audioFiles.length) return;
@@ -1525,7 +1528,9 @@ function audioNext() {
   playAudioFile(activeAudio.libId, audioFiles[nextIndex % audioFiles.length].path);
 }
 function showAudioDetails() { if(!activeAudio) return; const meta=audioMetadataFor(activeAudio.path); document.getElementById("audioDetailsContent").innerHTML=`<h4>${esc(meta.title)}</h4><p>${esc(meta.artist)} · ${esc(meta.album)}</p>${meta.lyrics ? `<pre class="audio-lyrics">${esc(meta.lyrics)}</pre>` : '<div class="empty-tip">暂无歌词，可通过“文件”视图的手动适配填写。</div>'}`; openModal("audioDetailsModal"); }
+document.getElementById("audioPlayerElement")?.addEventListener("play", startAudioSessionKeepAlive);
 document.getElementById("audioPlayerElement")?.addEventListener("ended", audioNext);
+document.getElementById("audioPlayerElement")?.addEventListener("error", stopAudioSessionKeepAlive);
 document.getElementById("audioPlayerElement")?.addEventListener("timeupdate", updateLyricHighlight);
 
 function renderLocalFileRow(group, lib, file) {
@@ -2260,11 +2265,17 @@ function reportVideoPlaybackSession(root, video, state) {
   fetch(`/api/media/playback/sessions/${encodeURIComponent(id)}/progress`,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({position_ms:Math.round((video.currentTime||0)*1000),duration_ms:Math.round((video.duration||0)*1000),state:state||(!video.paused?'playing':'paused')}),keepalive:true}).catch(()=>{});
 }
 function stopVideoPlaybackSession(root) {
+  mediaKeepAliveStop("video");
   const id=root?.dataset.playbackSession; if(!id)return;
   fetch(`/api/media/playback/sessions/${encodeURIComponent(id)}/stop`,{method:'POST',credentials:'same-origin',keepalive:true}).catch(()=>{}); root.dataset.playbackSession='';
 }
 function bindVideoStatus(root, video) {
   [["loadstart","正在连接"],["waiting","正在缓冲"],["playing","正在播放"],["pause","已暂停"],["ended","播放完成"],["stalled","网络等待"],["error","播放错误"]].forEach(([ev,label])=>video.addEventListener(ev,()=>{updateVideoStatus(root,video,label);if(['pause','ended'].includes(ev))reportVideoPlaybackSession(root,video,ev);}));
+  /* v0.9.59：视频实际开始播放时启用会话保活；暂停仍保留播放上下文，只有结束、
+     报错或关闭播放器才停止。具名 source 让切流时重复 play 保持幂等。 */
+  video.addEventListener("playing", () => mediaKeepAliveStart("video"));
+  video.addEventListener("ended", () => mediaKeepAliveStop("video"));
+  video.addEventListener("error", () => mediaKeepAliveStop("video"));
   video.addEventListener("timeupdate",()=>{ updateVideoStatus(root,video,video.paused?"已暂停":"正在播放"); updateVideoTimeline(video); saveVideoPlaybackState(video); if(!root.__sessionReportAt||Date.now()-root.__sessionReportAt>10000){root.__sessionReportAt=Date.now();reportVideoPlaybackSession(root,video);} });
   ["progress","loadedmetadata","durationchange","canplay"].forEach(ev=>video.addEventListener(ev,()=>{ updateVideoTimeline(video); if(ev==='loadedmetadata')restoreVideoPlaybackState(video); }));
   video.addEventListener('keydown',e=>handleVideoKeyboard(e,video));

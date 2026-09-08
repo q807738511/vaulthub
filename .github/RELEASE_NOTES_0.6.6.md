@@ -15,7 +15,7 @@
 
 ## Compose 升级提示
 
-- `SYSTEM_MONITOR_FILESYSTEMS` 只读取显式列出的容器内卷路径；挂载了 `/host/vol4` 等路径时，需要同步加入该环境变量。
+- `SYSTEM_MONITOR_FILESYSTEMS` 只读取显式列出的容器内卷路径；挂载了 `/host/srv` 等路径时，需要同步加入该环境变量。
 - 公网部署建议为 `ADMIN_TOKEN` 设置长随机值，避免未授权用户通过页面修改 Caddy 配置。
 - 本地媒体目录建议使用只读挂载（`:ro`）；未使用的 `/media:/media:ro` 可删除。
 - 修改环境变量或卷映射后需要重建容器，单纯重启不会更新 Compose 配置。

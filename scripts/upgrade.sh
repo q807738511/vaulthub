@@ -1,8 +1,8 @@
 #!/usr/bin/env sh
 set -eu
 
-TARGET_DIR="${1:-/vol1/1000/Docker/vaulthub}"
-LEGACY_DIR="/vol1/1000/Docker/hermes/data/docker-webui-container"
+TARGET_DIR="${1:-/srv/vaulthub}"
+LEGACY_DIR="/srv/Docker/hermes/data/docker-webui-container"
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PROJECT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 FILES_DIR="$PROJECT_DIR"
@@ -40,25 +40,33 @@ fi
 
 echo "Creating backup: $BACKUP_DIR"
 mkdir -p "$BACKUP_DIR"
-for name in Dockerfile docker-compose.yml .env .dockerignore Caddyfile index.html caddy vaulthub-manager README.md SHA256SUMS data; do
+# v0.9.56: README.md 拆分出 Update Log.md，两者都随版本分发
+for name in Dockerfile docker-compose.yml .env vaulthub.env .dockerignore Caddyfile index.html caddy vaulthub-manager README.md "Update Log.md" SHA256SUMS data; do
   if [ -e "$TARGET_DIR/$name" ]; then
     cp -a "$TARGET_DIR/$name" "$BACKUP_DIR/"
   fi
 done
 
 echo "Installing VaultHub $VERSION files ..."
-for name in Dockerfile docker-compose.yml .dockerignore Caddyfile index.html caddy vaulthub-manager README.md; do
+for name in Dockerfile docker-compose.yml .dockerignore Caddyfile index.html caddy vaulthub-manager README.md "Update Log.md"; do
   cp -a "$FILES_DIR/$name" "$TARGET_DIR/$name"
 done
+
+# v0.8.7: compose loads vaulthub.env via env_file. A missing file makes
+# `docker compose` abort with "env file ... not found", so ship it on upgrade
+# too, while keeping any values the user already customised.
+if [ ! -f "$TARGET_DIR/vaulthub.env" ]; then
+  cp -a "$FILES_DIR/vaulthub.env" "$TARGET_DIR/vaulthub.env"
+  echo "Created default vaulthub.env"
+else
+  echo "Keeping existing vaulthub.env"
+fi
 chmod +x "$TARGET_DIR/caddy" "$TARGET_DIR/vaulthub-manager"
 
 if [ ! -f "$TARGET_DIR/.env" ]; then
   cp -a "$FILES_DIR/.env.example" "$TARGET_DIR/.env"
   echo "Created default .env"
 else
-  if ! grep -q '^ADMIN_TOKEN=' "$TARGET_DIR/.env"; then
-    printf '\nADMIN_TOKEN=\n' >> "$TARGET_DIR/.env"
-  fi
   echo "Keeping existing .env"
 fi
 
@@ -69,7 +77,7 @@ fi
 
 (
   cd "$TARGET_DIR"
-  sha256sum Dockerfile docker-compose.yml .env .dockerignore caddy vaulthub-manager Caddyfile index.html README.md > SHA256SUMS
+  sha256sum Dockerfile docker-compose.yml .env vaulthub.env .dockerignore caddy vaulthub-manager Caddyfile index.html README.md > SHA256SUMS
 )
 
 echo "Building and starting VaultHub ..."

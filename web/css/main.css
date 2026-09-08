@@ -820,6 +820,29 @@
   .reader-theme-light .audio-player-lyrics .lyric-line.active { color:#0a84ff; text-shadow:0 0 12px rgba(10,132,255,.35); }
   .reader-theme-light .audio-lyric-empty { color:#243a5c; }
   .audio-player-cover { width:52px; height:52px; flex:0 0 52px; border-radius:6px; object-fit:cover; background:linear-gradient(145deg,#284b63,#1b2838); }
+  /* v0.9.59：封面容器包装 & hover 显示放大按钮 */
+  .audio-player-cover-wrap { position:relative; width:52px; height:52px; flex:0 0 52px; }
+  .audio-cover-zoom-btn { position:absolute; top:4px; left:4px; width:24px; height:24px; padding:0; border:0; border-radius:4px; color:#fff; background:rgba(0,0,0,.65); backdrop-filter:blur(6px); cursor:pointer; display:none; align-items:center; justify-content:center; opacity:0; transition:opacity .2s,background .14s,transform .1s; }
+  .audio-cover-zoom-btn svg { width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+  .audio-player-cover-wrap:hover .audio-cover-zoom-btn { display:flex; opacity:1; }
+  .audio-cover-zoom-btn:hover { background:rgba(0,0,0,.85); transform:scale(1.1); }
+  .audio-cover-zoom-btn:active { transform:scale(.92); }
+  /* v0.9.59：全屏海报叠加层 —— 播放器不变，叠加层占据整个 #view-audio */
+  .audio-fullscreen-overlay { position:fixed; z-index:280; inset:0; left:var(--sidebar-w); display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.94); backdrop-filter:blur(20px) saturate(110%); animation:fadeIn .3s; }
+  .audio-fullscreen-overlay.show { display:flex; }
+  .audio-fullscreen-back { position:absolute; top:20px; right:24px; width:48px; height:48px; padding:0; border:1px solid rgba(255,255,255,.35); border-radius:50%; color:#fff; background:rgba(255,255,255,.16); backdrop-filter:blur(8px); cursor:pointer; display:flex; align-items:center; justify-content:center; transition:background .14s,transform .1s,border .14s; box-shadow:0 4px 18px rgba(0,0,0,.55); }
+  .audio-fullscreen-back svg { width:22px; height:22px; fill:none; stroke:currentColor; stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round; }
+  .audio-fullscreen-back:hover { border-color:rgba(255,255,255,.7); background:rgba(255,255,255,.28); transform:scale(1.08); }
+  .audio-fullscreen-back:active { transform:scale(.92); }
+  .audio-fullscreen-poster { position:relative; width:min(520px,80vw); aspect-ratio:1/1; border-radius:24px; overflow:hidden; display:flex; align-items:center; justify-content:center; background:linear-gradient(145deg,#284b63,#1b2838); box-shadow:0 28px 80px rgba(0,0,0,.7); }
+  .audio-fullscreen-poster img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+  .audio-fullscreen-fallback { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:28px; color:#fff; font-weight:800; font-size:28px; line-height:1.5; text-align:center; word-break:break-all; }
+  .reader-theme-light .audio-fullscreen-overlay { background:rgba(255,255,255,.96); }
+  .reader-theme-light .audio-fullscreen-back { border-color:rgba(0,0,0,.2); color:#1d1d1f; background:rgba(255,255,255,.94); box-shadow:0 4px 18px rgba(0,0,0,.35); }
+  .reader-theme-light .audio-fullscreen-back:hover { border-color:rgba(0,0,0,.4); background:#fff; }
+  .reader-theme-light .audio-fullscreen-fallback { color:#284b63; }
+  @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+  @media (max-width:768px) { .audio-fullscreen-overlay { left:0; } .audio-fullscreen-back { top:16px; right:16px; width:42px; height:42px; } .audio-fullscreen-back svg { width:20px; height:20px; } .audio-fullscreen-poster { width:min(420px,90vw); } }
   .audio-player-main { min-width:0; flex:1; }
   .audio-player-title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
   .audio-player-meta { color:var(--text2); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:4px; }

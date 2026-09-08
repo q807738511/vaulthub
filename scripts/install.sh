@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 
-TARGET_DIR="${1:-/vol1/1000/Docker/vaulthub}"
+TARGET_DIR="${1:-/srv/vaulthub}"
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PROJECT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 FILES_DIR="$PROJECT_DIR"
@@ -50,18 +50,25 @@ done
 echo ""
 echo "[3/5] 安装文件到 $TARGET_DIR ..."
 mkdir -p "$TARGET_DIR"
-for name in Dockerfile docker-compose.yml .dockerignore Caddyfile index.html caddy vaulthub-manager README.md; do
+# v0.9.56: README.md 拆分出 Update Log.md，两者都随版本分发
+for name in Dockerfile docker-compose.yml .dockerignore Caddyfile index.html caddy vaulthub-manager README.md "Update Log.md"; do
   cp -a "$FILES_DIR/$name" "$TARGET_DIR/$name"
 done
+
+# v0.8.7：compose 用 env_file 加载 vaulthub.env，缺文件时 docker compose 会直接报
+# "env file ... not found" 拒绝启动，因此必须一起安装；已存在则保留用户的修改。
+if [ ! -f "$TARGET_DIR/vaulthub.env" ]; then
+  cp -a "$FILES_DIR/vaulthub.env" "$TARGET_DIR/vaulthub.env"
+  echo "      创建默认 vaulthub.env"
+else
+  echo "      保留现有 vaulthub.env"
+fi
 chmod +x "$TARGET_DIR/caddy" "$TARGET_DIR/vaulthub-manager"
 
 if [ ! -f "$TARGET_DIR/.env" ]; then
   cp -a "$FILES_DIR/.env.example" "$TARGET_DIR/.env"
   echo "      创建默认 .env"
 else
-  if ! grep -q '^ADMIN_TOKEN=' "$TARGET_DIR/.env"; then
-    printf '\nADMIN_TOKEN=\n' >> "$TARGET_DIR/.env"
-  fi
   echo "      保留现有 .env"
 fi
 
@@ -86,7 +93,7 @@ if curl -s http://127.0.0.1:8088/healthz 2>/dev/null | grep -q ok; then
   echo "      当前容器："
   docker ps --filter name=VaultHub --format '        {{.Names}}  {{.Image}}  {{.Ports}}'
   echo ""
-  echo "      访问：http://192.168.112.3:8088"
+  echo "      访问：http://192.0.2.10:8088"
 else
   echo "      ⚠️ 健康检查未通过，最近日志："
   docker logs VaultHub 2>&1 | tail -20 || true

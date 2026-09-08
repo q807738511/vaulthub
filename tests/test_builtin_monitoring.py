@@ -3,9 +3,14 @@ import pathlib
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-source = (ROOT / "media-api.c").read_text()
-html = (ROOT / "index.html").read_text()
-compose = (ROOT / "docker-compose.yml").read_text()
+source = (ROOT / "tests" / "fixtures" / "media-api_legacy.c").read_text()
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.dirname(__file__))
+from _frontend import frontend_source as _fs
+html = _fs()
+# v0.8.7：固定环境变量搬到 vaulthub.env，compose 只留常用项。
+# 部署配置按「两个文件合起来」校验，写法统一为 KEY=value。
+compose = (ROOT / "docker-compose.yml").read_text() + "\n" + (ROOT / "vaulthub.env").read_text()
 
 required_source = [
     '"/api/system/metrics"',
@@ -24,9 +29,9 @@ manager = (ROOT / "vaulthub-manager.c").read_text()
 caddyfile = (ROOT / "Caddyfile").read_text()
 
 required_compose = [
-    'SYSTEM_MONITOR_ENABLED:',
-    'SYSTEM_MONITOR_INTERFACE:',
-    'SYSTEM_MONITOR_FILESYSTEMS:',
+    'SYSTEM_MONITOR_ENABLED=',
+    'SYSTEM_MONITOR_INTERFACE=',
+    'SYSTEM_MONITOR_FILESYSTEMS=',
     '/proc:/host/proc:ro',
     '/sys:/host/sys:ro',
 ]
@@ -38,7 +43,7 @@ for item in required_compose:
     assert item in compose, f"missing compose monitoring example: {item}"
 assert 'handle /api/system/*' in caddyfile, "default Caddyfile misses system route"
 assert 'handle /api/system/*' in manager, "persisted Caddyfile migration misses system route"
-assert 'FROM alpine' in dockerfile and 'gcc' in dockerfile and 'media-api.c' in dockerfile, "Dockerfile does not compile media API from source"
+assert ('AS go-build' in dockerfile and 'GO_IMAGE=golang:1.23-alpine' in dockerfile) and 'media-go/*.go' in dockerfile and 'out-media-api' in dockerfile, "Dockerfile does not compile Go media API"
 dockerignore = (ROOT / ".dockerignore").read_text()
 assert 'vaulthub-manager.c' not in dockerignore, "Docker build context excludes manager source"
 
