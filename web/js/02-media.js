@@ -26,6 +26,35 @@ function clearPlaybackBg() {
   setTimeout(() => { if (!bg.classList.contains("show")) bg.style.backgroundImage = ""; }, 800);
 }
 
+/* v0.9.64：详情背景严格绑定当前查看条目，不复用正在播放媒体的 playbackBg。
+   URL 经 cssUrlValue 清洗后才进入 style，避免 CSS 注入。 */
+function detailArtworkUrl(meta) {
+  return cssUrlValue(meta?.fanart || meta?.backdrop || meta?.poster || meta?.cover || "");
+}
+function detailBackdropStyle(meta) {
+  const art = detailArtworkUrl(meta);
+  return art ? `--detail-backdrop:url('${art}')` : "";
+}
+
+/* v0.9.64：音频与视频共享唯一播放权；切换类型前同步暂停另一方并释放保活。 */
+function claimExclusivePlayback(kind, exceptVideo = null) {
+  if (kind === "audio") {
+    document.querySelectorAll("video[data-movie-player]").forEach(video => {
+      if (video === exceptVideo) return;
+      video.pause();
+      const root = video.closest(".media-video-body");
+      if (root) { mediaKeepAliveStop("video"); clearTimeout(root.__videoProgressTimer); }
+    });
+    return;
+  }
+  const audio = document.getElementById("audioPlayerElement");
+  if (audio && !audio.paused) {
+    audio.pause();
+    audioSetPauseIcon(false);
+    stopAudioSessionKeepAlive();
+  }
+}
+
 /* ================= 外连服务（v0.7.0：从「资料库」页迁入系统设置） =================
    过去每个大类页面里都内嵌一份 Komga/Emby/Navidrome 的表单，导致侧边栏和顶栏
    反复出现同样的大类入口。现在外连服务和本地媒体库一样，只是「媒体库」的一种
@@ -517,7 +546,7 @@ function openSeriesDetails(libId, showKey) { enterMovieDetailSidebarMode(); cons
      这样播放器的「上一个 / 下一个 / 播放列表」走的是同一部剧而不是整库。 */
   setVideoPlaylist(libId, (show.seasonList||[]).flatMap(season=>(season.episodes||[]).map(ep=>({path:ep.path}))));
   const episodeArt = show.poster || show.fanart || show.backdrop || "";
-  const seasons=(show.seasonList||[]).map(season=>`<section class="series-season-block"><h3>Season ${String(season.season).padStart(2,"0")}</h3><div class="series-episode-list">${season.episodes.map(ep=>renderSeriesEpisodeRow(lib,ep,episodeArt)).join("")}</div></section>`).join(""); viewer.innerHTML=`<div class="media-reader-overlay movie-detail-page series-detail-page"><div class="movie-detail-scroll">${movieDetailCloseButton()}${renderMovieHero(lib,show.files?.[0]?.path||"",hero)}<section><h3>剧集列表</h3><div class="hint">按标准命名规则聚合：根目录剧名 / Season 01 / 剧名 S01E01 标题；刮削先锁定主剧集，再将本地多季多集挂载到同一条目。点击剧集卡片直接播放，点击「详情」查看单集信息。</div></section>${seasons}</div></div>`; scrollViewerIntoView(viewer); }
+  const seasons=(show.seasonList||[]).map(season=>`<section class="series-season-block"><h3>Season ${String(season.season).padStart(2,"0")}</h3><div class="series-episode-list">${season.episodes.map(ep=>renderSeriesEpisodeRow(lib,ep,episodeArt)).join("")}</div></section>`).join(""); viewer.innerHTML=`<div class="media-reader-overlay movie-detail-page series-detail-page media-detail-backdrop" style="${esc(detailBackdropStyle(hero))}"><div class="movie-detail-scroll">${movieDetailCloseButton()}${renderMovieHero(lib,show.files?.[0]?.path||"",hero)}<section><h3>剧集列表</h3><div class="hint">按标准命名规则聚合：根目录剧名 / Season 01 / 剧名 S01E01 标题；刮削先锁定主剧集，再将本地多季多集挂载到同一条目。点击剧集卡片直接播放，点击「详情」查看单集信息。</div></section>${seasons}</div></div>`; scrollViewerIntoView(viewer); }
 function renderSeriesEpisodeRow(lib, ep, artUrl) { const path=String(ep.path), meta=ep.meta||movieMetadataFor(path), parsed=ep.parsed||parseSeriesEpisode(path); const safeArt=cssUrlValue(artUrl||meta.poster||""); const style=safeArt?`style="background-image:url('${esc(safeArt)}')"`:""; const label=parsed.label||`S${String(parsed.season||1).padStart(2,"0")}E${String(parsed.episode||0).padStart(2,"0")}`; return `<article class="series-episode-row series-episode-card" data-series-episode="${esc(path)}" onclick="openLocalMedia('movie',${jsAttrArg(lib.id)},${jsAttrArg(path)})"><div class="series-episode-thumb" ${style}><span class="series-episode-label">${esc(label)}</span></div><div class="series-episode-body"><div class="series-episode-title" title="${esc(path)}"><b>${esc(meta.title||parsed.title||label)}</b><small>${esc([meta.year,meta.provider].filter(Boolean).join(" · "))}</small></div><span class="media-file-meta">${esc(fileExt(path).toUpperCase())} · ${formatFileSize(ep.size)}</span><div class="media-actions"><button class="btn" onclick="event.stopPropagation();openLocalMedia('movie',${jsAttrArg(lib.id)},${jsAttrArg(path)})">▶ 播放</button><button class="btn" onclick="event.stopPropagation();openEpisodeDetails(${jsAttrArg(lib.id)},${jsAttrArg(path)})">详情</button></div></div></article>`; }
 function renderMovieLibrary(lib, files) { const host = document.createElement("div"); renderMovieLibraryContent(host, lib, files); return host.innerHTML; }
 function renderMovieRow(lib, file) { const path=String(file.path), meta=movieMetadataFor(path); return `<div class="media-file-row"><div class="media-file-name" title="${esc(path)}"><b>${esc(meta.title)}</b><small>${esc([meta.year, meta.provider].filter(Boolean).join(" · "))}</small></div><span class="media-file-meta">${esc(fileExt(path).toUpperCase())} · ${formatFileSize(file.size)}</span><div class="media-actions"><button class="btn" data-media-group="movie" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openLocalMediaButton(this)">▶ 播放</button></div></div>`; }
@@ -540,7 +569,7 @@ function closeMovieDetails(){seriesEpisodeReturn=null;const viewer=document.getE
 function cssUrlValue(url) { return String(url || "").replace(/[\u0000-\u001f"'()\\]/g, "").trim(); }
 function movieHeroArt(meta) { if (meta?.fanart) return { kind:"fanart-art", url:meta.fanart }; if (meta?.backdrop) return { kind:"backdrop-art", url:meta.backdrop }; if (meta?.poster) return { kind:"poster-art", url:meta.poster }; return { kind:"no-art", url:"" }; }
 function renderMovieHero(lib,path,meta) { const heroArt = movieHeroArt(meta); const safeArt = cssUrlValue(heroArt.url); const style = safeArt ? `--movie-hero-art:url('${esc(safeArt)}')` : ""; const logo=meta.logo?`<img class="movie-detail-logo" src="${esc(meta.logo)}" alt="${esc(meta.title)} Logo">`:`<h1>${esc(meta.title)}</h1>`; return `<header class="movie-detail-hero ${heroArt.kind}" style="${style}">${logo}<p>${esc(meta.overview||"暂无电影介绍；可在系统设置中配置 TMDB API 进行刮削。")}</p><div class="movie-detail-actions"><button class="btn btn-primary" onclick="openLocalMedia('movie',${jsAttrArg(lib.id)},${jsAttrArg(path)})">▶ 播放</button><button class="btn" onclick="shareMovie(${jsAttrArg(meta.title)})">↗ 分享</button><button class="btn" onclick="toggleMovieFavorite(${jsAttrArg(lib.id)},${jsAttrArg(path)},this)">${movieFlag("favorite",lib.id,path)?"♥ 已收藏":"♡ 收藏"}</button><button class="btn" onclick="rateMovie(${jsAttrArg(lib.id)},${jsAttrArg(path)})">★ <span data-user-rating>评分</span></button><button class="btn" onclick="toggleMovieWatched(${jsAttrArg(lib.id)},${jsAttrArg(path)},this)">${meta.watched||movieFlag("watched",lib.id,path)?"✓ 已观看":"○ 未观看"}</button><button class="btn" onclick="openMediaMetadataEditor(${jsAttrArg(lib.id)},${jsAttrArg(path)})">✎ 编辑</button></div></header>`; }
-function renderMovieDetails(lib,path,meta){const cast=(meta.cast||[]).map(x=>`<article><b>${esc(x.name||"")}</b><small>${esc(x.character||"")}</small></article>`).join("")||'<div class="empty-tip">暂无演职人员信息</div>';const rec=(meta.recommendations||[]).map(x=>`<article><b>${esc(x.title||x.name||"")}</b><small>${esc(String(x.release_date||x.first_air_date||"").slice(0,4))}</small></article>`).join("")||'<div class="empty-tip">暂无视频推荐</div>';return `<div class="media-reader-overlay movie-detail-page"><div class="movie-detail-scroll">${movieDetailCloseButton()}${renderMovieHero(lib,path,meta)}<section><h3>演职人员</h3><div class="movie-detail-strip">${cast}</div></section><section><h3>视频推荐</h3><div class="movie-detail-strip">${rec}</div></section><section><h3>视频元数据</h3><dl class="movie-meta-list"><dt>文件</dt><dd>${esc(path)}</dd><dt>年份</dt><dd>${esc(meta.year||"--")}</dd><dt>类型</dt><dd>${esc((meta.genres||[]).join(" / ")||"--")}</dd><dt>时长</dt><dd>${meta.runtime?esc(meta.runtime+" 分钟"):"--"}</dd><dt>TMDB 评分</dt><dd>${meta.rating?esc(meta.rating.toFixed(1)):"--"}</dd><dt>来源</dt><dd>${esc(meta.provider||"文件名")}</dd></dl></section></div></div>`;}
+function renderMovieDetails(lib,path,meta){const cast=(meta.cast||[]).map(x=>`<article><b>${esc(x.name||"")}</b><small>${esc(x.character||"")}</small></article>`).join("")||'<div class="empty-tip">暂无演职人员信息</div>';const rec=(meta.recommendations||[]).map(x=>`<article><b>${esc(x.title||x.name||"")}</b><small>${esc(String(x.release_date||x.first_air_date||"").slice(0,4))}</small></article>`).join("")||'<div class="empty-tip">暂无视频推荐</div>';return `<div class="media-reader-overlay movie-detail-page media-detail-backdrop" style="${esc(detailBackdropStyle(meta))}"><div class="movie-detail-scroll">${movieDetailCloseButton()}${renderMovieHero(lib,path,meta)}<section><h3>演职人员</h3><div class="movie-detail-strip">${cast}</div></section><section><h3>视频推荐</h3><div class="movie-detail-strip">${rec}</div></section><section><h3>视频元数据</h3><dl class="movie-meta-list"><dt>文件</dt><dd>${esc(path)}</dd><dt>年份</dt><dd>${esc(meta.year||"--")}</dd><dt>类型</dt><dd>${esc((meta.genres||[]).join(" / ")||"--")}</dd><dt>时长</dt><dd>${meta.runtime?esc(meta.runtime+" 分钟"):"--"}</dd><dt>TMDB 评分</dt><dd>${meta.rating?esc(meta.rating.toFixed(1)):"--"}</dd><dt>来源</dt><dd>${esc(meta.provider||"文件名")}</dd></dl></section></div></div>`;}
 function renderMoviePoster(lib, file) { const path=String(file.path), meta=movieMetadataFor(path), watched=!!meta.watched||movieFlag("watched",lib.id,path), art=meta.poster ? `<img src="${esc(meta.poster)}" alt="${esc(meta.title)}" loading="lazy">` : `<span>${esc(meta.title)}</span>`; return `<article class="media-poster-card ${watched?"is-read":""}" data-media-group="movie" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openMovieDetails(${jsAttrArg(lib.id)},${jsAttrArg(path)})"><div class="media-poster-art" style="${meta.poster ? "" : `background:${coverGradient(meta.title)}`}" >${art}<button class="movie-poster-settings" data-movie-settings title="观看状态" onclick="event.stopPropagation();toggleMovieWatched(${jsAttrArg(lib.id)},${jsAttrArg(path)},this)">${watched?"✓ 已观看":"○ 未观看"}</button></div><div class="media-poster-info"><strong>${esc(meta.title)}</strong><small>${esc([meta.year,meta.provider].filter(Boolean).join(" · ") || fileExt(path).toUpperCase())}</small></div></article>`; }
 function scrapeSeriesMetadata(host, lib, files) { return scrapeMovieMetadata(host, lib, files); }
 function toggleMediaResourceView(group) { mediaResourceView = mediaResourceView === "poster" ? "list" : "poster"; try { localStorage.setItem("vaulthub_media_resource_view",mediaResourceView); } catch(e) {} const lib=findMediaLibrary(localMediaSelection[group]); if(lib) loadLocalFiles(group,lib,group === "audio" ? audioCursor : 0); }
@@ -1426,9 +1455,9 @@ function updateAudioExpandArt(meta) {
   if (src) { big.src = src; if (bg) bg.src = src; }
   else { big.removeAttribute("src"); if (bg) bg.removeAttribute("src"); }
   if (fb) { fb.textContent = title; fb.style.display = src ? "none" : "flex"; }
-  /* v0.9.63：音乐海报容器用虚化封面填充黑边区域（通过 CSS 变量驱动 ::before） */
-  document.querySelectorAll(".audio-poster-frame, .audio-fullscreen-poster").forEach(el => {
-    el.style.setProperty("--poster-blur-bg", src ? `url('${src}')` : "none");
+  /* v0.9.64：音乐海报容器用虚化封面填充黑边区域（通过 CSS 变量驱动 ::before） */
+  document.querySelectorAll(".audio-poster-frame, .audio-fullscreen-poster, .audio-fullscreen-overlay").forEach(el => {
+    el.style.setProperty("--poster-blur-bg", src ? `url('${cssUrlValue(src)}')` : "none");
   });
 }
 const AUDIO_LOOP_ORDER = ["sequence", "list", "single", "random"];
@@ -1495,6 +1524,7 @@ function updateLyricHighlight() {
 }
 function playAudioFile(libId, path) {
   const lib = findMediaLibrary(libId), player = document.getElementById("audioPlayerElement"); if (!lib || !player) return;
+  claimExclusivePlayback("audio");
   const index = audioFiles.findIndex(file => String(file.path) === String(path));
   activeAudio = { libId, path, index: index < 0 ? 0 : index };
   const meta = audioMetadataFor(path);
@@ -1522,7 +1552,7 @@ function audioSetPauseIcon(paused) {
     ? '<svg class="vc-svg audio-svg" viewBox="0 0 24 24" aria-hidden="true"><rect x="6.6" y="5" width="4.1" height="14" rx="1.5" fill="currentColor"/><rect x="13.3" y="5" width="4.1" height="14" rx="1.5" fill="currentColor"/></svg>'
     : '<svg class="vc-svg audio-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.2 5.6v12.8a.9.9 0 0 0 1.37.77l10.2-6.4a.9.9 0 0 0 0-1.54L9.57 4.83A.9.9 0 0 0 8.2 5.6Z" fill="currentColor"/></svg>';
 }
-function audioTogglePause() { const player=document.getElementById("audioPlayerElement"); if(!player?.src) return; if(player.paused) { player.play().catch(() => {}); audioSetPauseIcon(true); } else { player.pause(); audioSetPauseIcon(false); } }
+function audioTogglePause() { const player=document.getElementById("audioPlayerElement"); if(!player?.src) return; if(player.paused) { claimExclusivePlayback("audio"); player.play().catch(() => {}); audioSetPauseIcon(true); } else { player.pause(); audioSetPauseIcon(false); } }
 function audioStop() { const player=document.getElementById("audioPlayerElement"); if(!player) return; player.pause(); player.currentTime=0; player.removeAttribute("src"); player.load(); activeAudio=null; document.getElementById("audio-bottom-player")?.classList.remove("show"); audioSetPauseIcon(false); stopAudioSessionKeepAlive(); clearPlaybackBg(); }
 /* v0.9.61：音频播放会话保活别名（实现见 01-state.js 的 mediaKeepAlive*）。 */
 function startAudioSessionKeepAlive() { mediaKeepAliveStart("audio"); }
@@ -1537,7 +1567,7 @@ function audioNext() {
   if (audioLoopMode === "sequence" && nextIndex >= audioFiles.length) { audioStop(); return; }
   playAudioFile(activeAudio.libId, audioFiles[nextIndex % audioFiles.length].path);
 }
-function showAudioDetails() { if(!activeAudio) return; const meta=audioMetadataFor(activeAudio.path); document.getElementById("audioDetailsContent").innerHTML=`<h4>${esc(meta.title)}</h4><p>${esc(meta.artist)} · ${esc(meta.album)}</p>${meta.lyrics ? `<pre class="audio-lyrics">${esc(meta.lyrics)}</pre>` : '<div class="empty-tip">暂无歌词，可通过“文件”视图的手动适配填写。</div>'}`; openModal("audioDetailsModal"); }
+function showAudioDetails() { if(!activeAudio) return; const meta=audioMetadataFor(activeAudio.path); const modal=document.getElementById("audioDetailsModal"); if(modal){modal.classList.add("audio-detail-backdrop","media-detail-backdrop");modal.setAttribute("style", detailBackdropStyle(meta));} document.getElementById("audioDetailsContent").innerHTML=`<h4>${esc(meta.title)}</h4><p>${esc(meta.artist)} · ${esc(meta.album)}</p>${meta.lyrics ? `<pre class="audio-lyrics">${esc(meta.lyrics)}</pre>` : '<div class="empty-tip">暂无歌词，可通过“文件”视图的手动适配填写。</div>'}`; openModal("audioDetailsModal"); }
 document.getElementById("audioPlayerElement")?.addEventListener("play", startAudioSessionKeepAlive);
 document.getElementById("audioPlayerElement")?.addEventListener("ended", audioNext);
 document.getElementById("audioPlayerElement")?.addEventListener("error", stopAudioSessionKeepAlive);
@@ -1991,9 +2021,8 @@ function scheduleVideoChromeHide(root) {
 }
 function videoRootOf(el) { return el?.closest(".media-video-body") || null; }
 function videoElementOf(el) { return videoRootOf(el)?.querySelector("video[data-movie-player]") || null; }
-/* 左上角 ⌄：将整个播放器最小化为小窗（v0.9.51）。v0.9.51 只折叠控制栏，
-   用户期望的是最小化整个播放器 —— 现在折叠态把播放器缩成右下角小窗，
-   左下角 ⌃ 用于还原整屏播放器。 */
+/* v0.9.64 左上角 ⌄：播放器停靠到控制器最下面一排，控制器持续显示，
+   视频画面缩到控制器左下角；⌃ 恢复完整播放器。 */
 function minimizeVideoPlayer(el) {
   const root = videoRootOf(el);
   if (!root) return;
@@ -2001,17 +2030,19 @@ function minimizeVideoPlayer(el) {
      小窗被全屏容器约束会错位。先退出全屏再缩成小窗。 */
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   const overlay = root.closest(".media-reader-overlay.movie-player");
-  if (overlay) overlay.classList.add("video-minimized");
+  if (overlay) overlay.classList.add("video-minimized", "video-controller-docked");
   clearTimeout(root.__videoChromeTimer);
-  root.dataset.videoChromeCollapsed = "true";
-  hideVideoChrome(root);
+  root.dataset.videoChromeCollapsed = "false";
+  root.classList.add("video-controls-visible");
+  root.dataset.videoControlsVisible = "true";
+  closeVideoPanels(root);
   root.querySelector(".video-chrome")?.classList.add("video-chrome-minimized");
 }
 function expandVideoPlayer(el) {
   const root = videoRootOf(el);
   if (!root) return;
   const overlay = root.closest(".media-reader-overlay.movie-player");
-  if (overlay) overlay.classList.remove("video-minimized");
+  if (overlay) overlay.classList.remove("video-minimized", "video-controller-docked");
   root.querySelector(".video-chrome")?.classList.remove("video-chrome-minimized");
   root.dataset.videoChromeCollapsed = "false";
   scheduleVideoChromeHide(root);
@@ -2036,7 +2067,7 @@ async function toggleVideoFullscreen(el) {
 function videoTogglePlay(el) {
   const video = videoElementOf(el);
   if (!video) return;
-  if (video.paused) video.play().catch(() => {}); else video.pause();
+  if (video.paused) { claimExclusivePlayback("video", video); video.play().catch(() => {}); } else video.pause();
   syncVideoChromeState(videoRootOf(el), video);
   scheduleVideoChromeHide(videoRootOf(el));
 }
@@ -2301,7 +2332,7 @@ function bindVideoStatus(root, video) {
   });
   /* 暂停时控制栏常驻（videoChromeLocked 保证不会被定时器收走）。 */
   video.addEventListener("pause", () => { syncVideoChromeState(root, video); if (!videoChromeCollapsed(root)) { root.classList.add("video-controls-visible"); root.dataset.videoControlsVisible = "true"; } });
-  video.addEventListener("play", () => { syncVideoChromeState(root, video); scheduleVideoChromeHide(root); });
+  video.addEventListener("play", () => { claimExclusivePlayback("video", video); syncVideoChromeState(root, video); scheduleVideoChromeHide(root); });
   video.addEventListener("volumechange", () => syncVideoVolumeUI(root, video));
   video.addEventListener("ended", () => videoPlaybackEnded(root, video));
   video.addEventListener("loadedmetadata", () => syncVideoChromeState(root, video));
@@ -2398,6 +2429,7 @@ function populateVideoTracks(root, video, info) {
 }
 function switchMovieSource(video, url, { autoplay = true } = {}) {
   if (!video || video.dataset.currentSrc === url) return;
+  claimExclusivePlayback("video", video);
   const first = !video.dataset.currentSrc;
   const wasPaused = video.paused;
   const time = Number.isFinite(video.currentTime) ? video.currentTime : 0;

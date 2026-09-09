@@ -1,4 +1,4 @@
-/* v0.9.61：全屏海报放大按钮（toggleAudioCoverZoom）—— 在音乐界面显示专辑海报全屏遮罩。
+/* v0.9.64：全屏海报放大按钮（toggleAudioCoverZoom）—— 在音乐界面显示专辑海报全屏遮罩。
  * 点击封面左上角放大按钮 / 点击全屏遮罩右上角返回按钮均可切换。
  * 播放器位置不变，遮罩独立叠加在整个音乐界面上。 */
 let audioCoverZoomed = false;

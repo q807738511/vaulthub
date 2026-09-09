@@ -70,10 +70,10 @@ check("登录后触发强制改密", "if (data.must_change) { vaultHubMustChange
 check("遮罩点击不可关闭", 'm.id !== "forcedPasswordModal"' in (ROOT / "web" / "js" / "03-features.js").read_text(encoding="utf-8"))
 
 # ---------------------------------------------------------------- 版本与发布
-check("版本资源", 'VAULTHUB_ASSET_VERSION = "0.9.61"' in HTML)
-check("脚本版本", 'VAULTHUB_SCRIPT_VERSION = "0.9.61"' in STATE)
-check("缓存串", HTML.count("?v=0.9.61") >= 6)
-check("UI 当前版本角标", "v0.9.61 · Secure First Boot" in HTML)
+check("版本资源", 'VAULTHUB_ASSET_VERSION = "0.9.64"' in HTML)
+check("脚本版本", 'VAULTHUB_SCRIPT_VERSION = "0.9.64"' in STATE)
+check("缓存串", HTML.count("?v=0.9.64") >= 6)
+check("UI 当前版本角标", "v0.9.64 · Media Player Overhaul" in HTML)
 check("v0.9.58 release notes 保留", NOTES != "" and "VaultHub v0.9.58" in NOTES and "强制改密" in NOTES)
 check("无旧版本缓存串残留", "?v=0.9.57" not in HTML)
 

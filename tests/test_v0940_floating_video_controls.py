@@ -85,14 +85,17 @@ check('if (root.dataset.videoPlaylistEligible !== "true") return;' in MEDIA,
       "非剧集播放播完必须停在结尾（不能自动连播下一部电影）")
 check("videoRoot.dataset.videoPlaylistEligible" in MEDIA, "缺少播放列表门控写入点")
 
-# ---------------------------------------------------------------- 4. ⌄ 最小化整个播放器
+# ---------------------------------------------------------------- 4. ⌄ 停靠到控制器底排
 check("function minimizeVideoPlayer(" in MEDIA, "缺少最小化整个播放器函数")
 check("function expandVideoPlayer(" in MEDIA, "缺少还原播放器函数")
-check('overlay.classList.add("video-minimized")' in MEDIA, "最小化必须标记 overlay 小窗态")
-check("video-minimized" in CSS and "right:" in CSS.split("video-minimized", 1)[1][:400],
-      "CSS 必须有右下角小窗样式")
-check('onclick="minimizeVideoPlayer(this)"' in SHELL, "左上角 ⌄ 必须触发最小化整个播放器")
-check('onclick="expandVideoPlayer(this)"' in SHELL, "左下角 ⌃ 必须触发还原播放器")
+check('overlay.classList.add("video-minimized", "video-controller-docked")' in MEDIA,
+      "最小化必须标记控制器底排停靠态")
+check("video-controller-docked" in CSS and ".video-controller-docked video" in CSS,
+      "CSS 必须将视频缩到持续显示控制器的左下角")
+check(".video-controller-docked .video-chrome" in CSS and "opacity:1" in CSS,
+      "停靠态控制器必须持续显示")
+check('onclick="minimizeVideoPlayer(this)"' in SHELL, "左上角 ⌄ 必须触发底排停靠")
+check('onclick="expandVideoPlayer(this)"' in SHELL, "还原按钮必须恢复完整播放器")
 
 # ---------------------------------------------------------------- 5. 外层头删除 + 标题移入左上角
 check('.media-reader-overlay movie-player' not in SHELL and 'class="movie-player"' not in HTML,
@@ -154,15 +157,15 @@ for key in ("vpCollapse", "vpExpand", "vpPreparing", "vpFullscreen", "vpPrev", "
             "vpRewind", "vpForward", "vpPlayPause", "vpClose", "vpMore", "vpInfo",
             "vpRepeat", "vpShuffle", "vpSettings", "vpQuality", "vpPlaylist", "vpVolume", "vpProgress"):
     check(STATE.count(f"{key}:") >= 3, f"播放器文案 {key} 必须三语齐备")
-check(HTML.count("v0.9.61") >= 2, "关于与侧栏版本必须是 v0.9.61")
-check('VAULTHUB_ASSET_VERSION = "0.9.61"' in HTML, "资源版本必须是 0.9.61")
-check('VAULTHUB_SCRIPT_VERSION = "0.9.61"' in STATE, "脚本版本必须是 0.9.61")
+check(HTML.count("v0.9.64") >= 2, "关于与侧栏版本必须是 v0.9.64")
+check('VAULTHUB_ASSET_VERSION = "0.9.64"' in HTML, "资源版本必须是 0.9.64")
+check('VAULTHUB_SCRIPT_VERSION = "0.9.64"' in STATE, "脚本版本必须是 0.9.64")
 check("ghcr.io/q807738511/vaulthub:latest" in COMPOSE, "v0.9.56 起 Compose 跟随 latest")
 check((ROOT / ".github/RELEASE_NOTES_0.9.56.md").exists(), "缺少 v0.9.56 release notes")
 
 if failures:
-    print(f"FAIL: {len(failures)} 项 v0.9.61 契约未满足")
+    print(f"FAIL: {len(failures)} 项 v0.9.64 契约未满足")
     for item in failures:
         print("  -", item)
     sys.exit(1)
-print("PASS: v0.9.61 点击即播、计划超时、引擎隐藏、>256MB 不软解、静音删除、剧集播放列表门控与自动连播、最小化小窗、标题移入左上角、异常兜底")
+print("PASS: v0.9.64 点击即播、计划超时、引擎隐藏、>256MB 不软解、静音删除、剧集播放列表门控与自动连播、最小化小窗、标题移入左上角、异常兜底")
