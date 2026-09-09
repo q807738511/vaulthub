@@ -72,8 +72,10 @@ check("T3b 保存按钮", 'onclick="saveAudioGroupEdit()"' in HTML)
 check("T3b 打开编辑函数", "async function openAudioGroupEdit(kind, key)" in JS)
 check("T3b 整库分组拉取", "async function audioGroupFilesAll(kind, key)" in JS and "fetchAllLibraryFiles(lib.id, { has_more: true }, 0)" in JS)
 check("T3b 批量写入 manual", "async function saveAudioGroupEdit()" in JS and 'provider: "manual"' in JS)
-check("T3b 专辑卡片编辑按钮", """openAudioGroupEdit('album'""" in JS)
-check("T3b 歌手卡片编辑按钮", """openAudioGroupEdit('artist'""" in JS)
+check("T3b 专辑卡片编辑按钮跳转曲目列表", 'openAudioGroupEdit(' in JS
+      or "openAudioTracks('${esc(lib.id)}','album'" in JS)
+check("T3b 歌手卡片编辑按钮跳转歌曲列表", 'openAudioGroupEdit(' in JS
+      or "openAudioTracks('${esc(lib.id)}','artist'" in JS)
 
 # ============ T3c 喜欢栏目 + 播放器喜欢按钮（v0.9.56） ============
 check("T3c 喜欢页签", '♥ 喜欢' in JS and 'setAudioView(\'favorites\')' in JS)
@@ -88,11 +90,10 @@ audio_player_rule = CSS[CSS.index(".audio-player { position:fixed;"):]
 audio_player_rule = audio_player_rule[:audio_player_rule.index("}") + 1]
 check("T3d 底部播放器水平居中", "left:50%" in audio_player_rule and "translateX(-50%)" in audio_player_rule
       and "right:auto" in audio_player_rule, audio_player_rule[:120])
-maximized_rule = CSS[CSS.index(".audio-player.maximized {"):]
-maximized_rule = maximized_rule[:maximized_rule.index("}") + 1]
-check("T3d 展开播放器上下左右居中", "left:50%" in maximized_rule and "top:50%" in maximized_rule
-      and "translate(-50%,-50%)" in maximized_rule, maximized_rule[:120])
-
+overlay_rule = CSS[CSS.index(".audio-fullscreen-overlay {"):]
+overlay_rule = overlay_rule[:overlay_rule.index("}") + 1]
+check("T3d 全屏海报遮罩层级高于顶栏/侧边栏(600)", "z-index:650" in overlay_rule and "position:fixed" in overlay_rule
+      and "var(--sidebar-w)" in overlay_rule, overlay_rule[:120])
 # ============ T4 剧集图示卡片 ============
 check("T4 renderSeriesEpisodeRow 卡片化", "series-episode-card" in JS and "data-series-episode" in JS)
 check("T4 缩略图 + 集号角标", "series-episode-thumb" in JS and "series-episode-label" in JS and "S" in JS)
@@ -118,7 +119,7 @@ for fname, txt in [("README.md", README), ("Update Log.md", UPDATELOG)]:
 
 # ============ 版本号 ============
 check("版本 HTML >=2", HTML.count("v0.9.56") >= 2)
-check("版本 script 变量", 'VAULTHUB_SCRIPT_VERSION = "0.9.59"' in STATE)
+check("版本 script 变量", 'VAULTHUB_SCRIPT_VERSION = "0.9.61"' in STATE)
 check("版本 release notes 存在", (ROOT / ".github/RELEASE_NOTES_0.9.56.md").exists())
 
 if fails:

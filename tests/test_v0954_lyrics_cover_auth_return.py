@@ -36,8 +36,9 @@ check("切页函数", "function setAudioExpandPage(page)" in MEDIA
       and "function updateAudioExpandArt(meta)" in MEDIA)
 check("海报/歌词 tab 切换绑定", "onclick=\"setAudioExpandPage('poster')\"" in HTML
       and "onclick=\"setAudioExpandPage('lyrics')\"" in HTML)
-check("展开区只在最大化显示", ".audio-player .audio-expand { display:none; }" in CSS
-      and ".audio-player.maximized .audio-expand { display:flex" in CSS)
+check("展开区默认隐藏且旧 maximized 规则已移除", ".audio-player .audio-expand { display:none; }" in CSS
+      and ".audio-player.maximized .audio-expand { display:flex" not in CSS
+      and "toggleAudioMaximize" not in MEDIA and "audioMaximizeButton" not in HTML)
 check("歌词覆盖海报磨砂", ".audio-lyrics-page img" in CSS and "blur(26px)" in CSS
       and ".audio-lyrics-scrim" in CSS and ".audio-player-lyrics .lyric-line.active" in CSS)
 check("歌词随播放时间高亮滚动", "function updateLyricHighlight()" in MEDIA
@@ -98,8 +99,8 @@ check("关闭详情复位语境", "seriesEpisodeReturn=null" in MEDIA)
 
 # ---------------------------------------------------------------- 版本与发布
 check("release notes", (ROOT / ".github" / "RELEASE_NOTES_0.9.56.md").exists(), "缺少 v0.9.56 release notes")
-check("版本串", HTML.count("v0.9.59") >= 2 and 'VAULTHUB_SCRIPT_VERSION = "0.9.59"' in STATE)
-check("资产缓存版本", 'v=0.9.59' in HTML)
+check("版本串", HTML.count("v0.9.61") >= 2 and 'VAULTHUB_SCRIPT_VERSION = "0.9.61"' in STATE)
+check("资产缓存版本", 'v=0.9.61' in HTML)
 check("compose 跟随 latest", (ROOT / "docker-compose.yml").read_text(encoding="utf-8").find("ghcr.io/q807738511/vaulthub:latest") >= 0)
 check("无旧版本残留", "0.9.53" not in HTML and "0.9.53" not in STATE and "0.9.53" not in MEDIA
       and "0.9.53" not in COVERGO)
