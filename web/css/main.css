@@ -538,7 +538,11 @@
   .movie-poster-settings { position:absolute; right:8px; bottom:8px; z-index:2; border:1px solid rgba(255,255,255,.55); border-radius:999px; padding:6px 9px; color:#fff; background:rgba(0,0,0,.72); cursor:pointer; }
   .media-poster-card.is-read .media-poster-art { filter:saturate(.68); }
   .movie-detail-page { overflow:hidden; }
-  .movie-detail-scroll { width:100%; height:100%; overflow:auto; background:var(--bg); }
+  .movie-detail-scroll { position:relative; z-index:1; width:100%; height:100%; overflow:auto; background:color-mix(in srgb,var(--bg) 82%,transparent); }
+  /* v0.9.64：详情页背景只取当前查看条目，95% 清晰保留并加轻磨砂提升文字可读性。 */
+  .media-detail-backdrop { isolation:isolate; overflow:hidden; }
+  .media-detail-backdrop::before { content:""; position:absolute; inset:-18px; z-index:0; pointer-events:none; background-image:var(--detail-backdrop,none); background-size:cover; background-position:center; filter:blur(10px) saturate(1.08) brightness(.72); opacity:.95; transform:scale(1.03); }
+  .audio-detail-backdrop .modal { position:relative; z-index:1; background:color-mix(in srgb,var(--card) 82%,transparent); backdrop-filter:blur(8px); }
   /* 详情页关闭按钮是 position:fixed，必须相对顶栏下方定位，
      否则它会浮在顶栏的统计信息上面（overlay 下移后尤为明显）。 */
   .movie-detail-scroll>.media-reader-close, .movie-detail-scroll>.movie-return-pill { position:fixed; top:calc(var(--topbar-h) + 14px); right:18px; z-index:4; }
@@ -739,17 +743,20 @@
   .vc-volume-row { display:flex; align-items:center; gap:10px; }
   .vc-volume-row .vc-volume-range { flex:1 1 auto; width:auto; min-width:0; accent-color:var(--accent); cursor:pointer; }
   .vc-volume-row .vc-volume-label { flex:0 0 auto; min-width:44px; font:12px/1 ui-monospace,Consolas,monospace; text-align:right; }
-  /* v0.9.51：左上角 ⌄ 最小化整个播放器 —— 外层 .media-reader-overlay 缩小成
-     右下角小窗继续播放，只剩左下角 ⌃ 用于还原整屏播放器。 */
-  .media-reader-overlay.movie-player.video-minimized { position:fixed; left:auto; right:clamp(8px,2vw,20px); top:auto; bottom:clamp(8px,2vh,16px); width:min(380px,calc(100vw - 24px)); height:auto; z-index:400; border:1px solid rgba(255,255,255,.22); border-radius:14px; overflow:hidden; box-shadow:0 18px 44px rgba(0,0,0,.55); }
-  .media-reader-overlay.movie-player.video-minimized .media-reader-body,
-  .media-reader-overlay.movie-player.video-minimized .media-reader-wrap { height:100%; min-height:0; }
-  .media-reader-overlay.movie-player.video-minimized .media-video-body { min-height:0; height:calc(min(380px, 100vw - 24px) * 9 / 16); padding:0; }
-  .media-reader-overlay.movie-player.video-minimized .video-chrome { opacity:0; pointer-events:none; }
-  .media-reader-overlay.movie-player.video-minimized .vc-restore { display:flex; }
-  .media-reader-overlay.movie-player.video-minimized .vc-restore:hover { border-color:var(--accent); color:var(--accent); background:rgba(0,0,0,.78); }
-  .media-reader-overlay.movie-player.video-minimized video { cursor:pointer; }
-  /* 折叠后整条控制栏隐藏，只在左下角留一个向上的 V 形尖角用于展开。 */
+  /* v0.9.64：向下缩放后停靠在内容区底排；控制器持续显示，视频缩到左下角。 */
+  .media-reader-overlay.movie-player.video-minimized.video-controller-docked { position:fixed; left:var(--sidebar-w); right:0; top:auto; bottom:0; width:auto; height:138px; z-index:650; border:1px solid rgba(255,255,255,.22); border-radius:16px 16px 0 0; overflow:hidden; box-shadow:0 -16px 44px rgba(0,0,0,.48); background:rgba(10,12,16,.9); backdrop-filter:blur(22px) saturate(135%); }
+  body.sidebar-hidden .media-reader-overlay.movie-player.video-controller-docked { left:60px; }
+  .media-reader-overlay.movie-player.video-controller-docked .media-reader-body,
+  .media-reader-overlay.movie-player.video-controller-docked .media-reader-wrap,
+  .media-reader-overlay.movie-player.video-controller-docked .media-video-body { height:138px; min-height:0; padding:0; }
+  .media-reader-overlay.movie-player.video-controller-docked video { position:absolute; left:12px; bottom:12px; z-index:3; width:170px; height:96px; object-fit:cover; border-radius:10px; box-shadow:0 6px 22px rgba(0,0,0,.55); cursor:pointer; }
+  .media-reader-overlay.movie-player.video-controller-docked .video-chrome { opacity:1; pointer-events:auto; }
+  .media-reader-overlay.movie-player.video-controller-docked .vc-top { padding-left:194px; }
+  .media-reader-overlay.movie-player.video-controller-docked .vc-bottom { margin-left:194px; }
+  .media-reader-overlay.movie-player.video-controller-docked .vc-restore { display:flex; left:136px; top:8px; bottom:auto; z-index:10; transform:none; }
+  .media-reader-overlay.movie-player.video-controller-docked .vc-collapse { display:none; }
+  .media-reader-overlay.movie-player.video-controller-docked .vc-restore:hover { border-color:var(--accent); color:var(--accent); background:rgba(0,0,0,.78); }
+  /* 停靠后保留一个向上的 V 形尖角用于还原完整播放器。 */
   .vc-restore { position:absolute; left:clamp(12px,2vw,24px); bottom:14px; z-index:7; display:none; width:36px; height:36px; align-items:center; justify-content:center; border:1px solid rgba(255,255,255,.42); border-radius:50%; color:#fff; background:rgba(0,0,0,.6); cursor:pointer; font:700 16px/1 sans-serif; }
   .vc-restore:hover { border-color:var(--accent); color:var(--accent); }
   .media-video-body[data-video-chrome-collapsed="true"] .vc-restore { display:flex; }
@@ -817,7 +824,7 @@
   .audio-expand[data-page="poster"] .audio-poster-page { display:flex; align-items:center; justify-content:center; }
   .audio-expand[data-page="lyrics"] .audio-lyrics-page { display:block; position:relative; }
   .audio-poster-frame { position:relative; width:min(300px,60%); aspect-ratio:1/1; border-radius:16px; overflow:hidden; display:flex; align-items:center; justify-content:center; background:linear-gradient(145deg,#284b63,#1b2838); box-shadow:0 18px 44px rgba(0,0,0,.4); }
-  /* v0.9.63：海报容器背景用虚化封面填充黑边 */
+  /* v0.9.64：海报容器背景用虚化封面填充黑边 */
   .audio-poster-frame::before { content:""; position:absolute; inset:-20px; z-index:0; background-image:var(--poster-blur-bg, none); background-size:cover; background-position:center; filter:blur(28px) brightness(.5); }
   .audio-poster-frame img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; z-index:1; }
   .audio-poster-fallback { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:18px; color:#fff; font-weight:800; font-size:21px; line-height:1.45; text-align:center; word-break:break-all; z-index:1; }
@@ -843,23 +850,25 @@
   .audio-cover-zoom-btn:hover { background:rgba(0,0,0,.85); transform:scale(1.1); }
   .audio-cover-zoom-btn:active { transform:scale(.92); }
   /* v0.9.61：全屏海报叠加层 —— 播放器不变，叠加层占据整个 #view-audio */
-  .audio-fullscreen-overlay { position:fixed; z-index:650; inset:0; left:var(--sidebar-w); display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.94); backdrop-filter:blur(20px) saturate(110%); animation:fadeIn .3s; }
+  .audio-fullscreen-overlay { position:fixed; z-index:650; inset:0; left:var(--sidebar-w); display:none; align-items:center; justify-content:center; isolation:isolate; overflow:hidden; background:rgba(0,0,0,.68); backdrop-filter:blur(20px) saturate(110%); animation:fadeIn .3s; }
+  /* 画外区域采用当前专辑图的 90% 磨砂遮罩；中间海报保持清晰画中画。 */
+  .audio-fullscreen-overlay::before { content:""; position:absolute; inset:-48px; z-index:-1; background-image:var(--poster-blur-bg,none); background-size:cover; background-position:center; filter:blur(42px) saturate(1.2) brightness(.58); opacity:.9; transform:scale(1.08); }
   .audio-fullscreen-overlay.show { display:flex; }
   .audio-fullscreen-back { position:absolute; top:20px; right:24px; width:48px; height:48px; padding:0; border:1px solid rgba(255,255,255,.35); border-radius:50%; color:#fff; background:rgba(255,255,255,.16); backdrop-filter:blur(8px); cursor:pointer; display:flex; align-items:center; justify-content:center; transition:background .14s,transform .1s,border .14s; box-shadow:0 4px 18px rgba(0,0,0,.55); }
   .audio-fullscreen-back svg { width:22px; height:22px; fill:none; stroke:currentColor; stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round; }
   .audio-fullscreen-back:hover { border-color:rgba(255,255,255,.7); background:rgba(255,255,255,.28); transform:scale(1.08); }
   .audio-fullscreen-back:active { transform:scale(.92); }
   .audio-fullscreen-poster { position:relative; width:min(520px,80vw); aspect-ratio:1/1; border-radius:24px; overflow:hidden; display:flex; align-items:center; justify-content:center; background:linear-gradient(145deg,#284b63,#1b2838); box-shadow:0 28px 80px rgba(0,0,0,.7); }
-  /* v0.9.63：全屏海报背景用虚化封面填充黑边 */
+  /* v0.9.64：全屏海报背景用虚化封面填充黑边 */
   .audio-fullscreen-poster::before { content:""; position:absolute; inset:-30px; z-index:0; background-image:var(--poster-blur-bg, none); background-size:cover; background-position:center; filter:blur(36px) brightness(.5); }
-  .audio-fullscreen-poster img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; z-index:1; }
+  .audio-fullscreen-poster img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; image-rendering:auto; opacity:.95; z-index:1; }
   .audio-fullscreen-fallback { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:28px; color:#fff; font-weight:800; font-size:28px; line-height:1.5; text-align:center; word-break:break-all; z-index:1; }
   .reader-theme-light .audio-fullscreen-overlay { background:rgba(255,255,255,.96); }
   .reader-theme-light .audio-fullscreen-back { border-color:rgba(0,0,0,.2); color:#1d1d1f; background:rgba(255,255,255,.94); box-shadow:0 4px 18px rgba(0,0,0,.35); }
   .reader-theme-light .audio-fullscreen-back:hover { border-color:rgba(0,0,0,.4); background:#fff; }
   .reader-theme-light .audio-fullscreen-fallback { color:#284b63; }
   @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
-  @media (max-width:768px) { .audio-fullscreen-overlay { left:0; } .audio-fullscreen-back { top:16px; right:16px; width:42px; height:42px; } .audio-fullscreen-back svg { width:20px; height:20px; } .audio-fullscreen-poster { width:min(420px,90vw); } }
+  @media (max-width:768px) { .audio-fullscreen-overlay { left:0; } .audio-fullscreen-back { top:16px; right:16px; width:42px; height:42px; } .audio-fullscreen-back svg { width:20px; height:20px; } .audio-fullscreen-poster { width:min(420px,90vw); } .media-reader-overlay.movie-player.video-controller-docked, body.sidebar-hidden .media-reader-overlay.movie-player.video-controller-docked { left:0; height:180px; overflow:auto; } .media-reader-overlay.movie-player.video-controller-docked .media-reader-body, .media-reader-overlay.movie-player.video-controller-docked .media-reader-wrap, .media-reader-overlay.movie-player.video-controller-docked .media-video-body { height:180px; } .media-reader-overlay.movie-player.video-controller-docked video { width:132px; height:74px; left:8px; bottom:10px; } .media-reader-overlay.movie-player.video-controller-docked .vc-top { padding-left:150px; } .media-reader-overlay.movie-player.video-controller-docked .vc-bottom { margin-left:150px; } }
   .audio-player-main { min-width:0; flex:1; }
   .audio-player-title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
   .audio-player-meta { color:var(--text2); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:4px; }

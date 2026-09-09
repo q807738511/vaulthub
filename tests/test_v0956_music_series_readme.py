@@ -119,7 +119,7 @@ for fname, txt in [("README.md", README), ("Update Log.md", UPDATELOG)]:
 
 # ============ 版本号 ============
 check("版本 HTML >=2", HTML.count("v0.9.56") >= 2)
-check("版本 script 变量", 'VAULTHUB_SCRIPT_VERSION = "0.9.61"' in STATE)
+check("版本 script 变量", 'VAULTHUB_SCRIPT_VERSION = "0.9.64"' in STATE)
 check("版本 release notes 存在", (ROOT / ".github/RELEASE_NOTES_0.9.56.md").exists())
 
 if fails:

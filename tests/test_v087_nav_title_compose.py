@@ -260,9 +260,9 @@ check("rollback.sh 还原 vaulthub.env",
       "备份与还原不对称")
 
 # 版本号
-check("index.html 当前版本号为 v0.9.61",
-      read("index.html").count("v0.9.61") >= 2,
-      f"出现 {read('index.html').count('v0.9.61')} 次")
+check("index.html 当前版本号为 v0.9.64",
+      read("index.html").count("v0.9.64") >= 2,
+      f"出现 {read('index.html').count('v0.9.64')} 次")
 
 # ---------------------------------------------------------------- 输出
 if FAILS:

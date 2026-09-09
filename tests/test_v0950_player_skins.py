@@ -65,7 +65,8 @@ def test_title_and_corner_button_fixes():
     # 角标加大：collapse 42px 级、restore 44px 级；小窗态左缘垂直居中
     assert ".vc-collapse," in css and "width:42px; height:42px" in css
     assert re.search(r"\.vc-restore \{[^}]*width:44px; height:44px", css)
-    assert ".video-minimized .vc-restore" in css and "top:50%" in css and "translateY(-50%)" in css
+    assert ".video-controller-docked .vc-restore" in css and "top:8px" in css
+    assert ".video-controller-docked .video-chrome" in css and "opacity:1" in css
 
 
 def test_playback_resilience():
