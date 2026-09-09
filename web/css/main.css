@@ -213,8 +213,26 @@
   /* ===== 主区域 ===== */
   .main {
     margin-left: var(--sidebar-w); min-height: 100vh; display: flex; flex-direction: column;
-    padding-top: var(--topbar-h); transition: margin-left .15s ease;
+    padding-top: var(--topbar-h); transition: margin-left .15s ease; position: relative;
   }
+  /* v0.9.62：播放影视/音乐时，海报或封面图作为主区域背景虚化，增强沉浸感。
+     背景层仅覆盖 .main 内容区，不侵入侧栏（z-index:600）和顶栏（z-index:600）。
+     无可用图片时不渲染此层。 */
+  .playback-bg {
+    position: absolute; inset: 0; z-index: 0; pointer-events: none;
+    background-size: cover; background-position: center; background-repeat: no-repeat;
+    filter: blur(40px) brightness(.45) saturate(1.2);
+    opacity: 0; transition: opacity .8s ease;
+  }
+  .playback-bg.show { opacity: 1; }
+  .playback-bg::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(180deg, rgba(30,30,30,.3), rgba(30,30,30,.7));
+  }
+  body[data-theme="light"] .playback-bg::after {
+    background: linear-gradient(180deg, rgba(244,245,247,.4), rgba(244,245,247,.7));
+  }
+  .content { position: relative; z-index: 1; }
   /* 侧栏折叠为图标轨（原 sidebar-hidden 行为，顶栏保持常显） */
   body.sidebar-hidden .sidebar { width: 62px !important; }
   body.sidebar-hidden .main { margin-left: 62px; }

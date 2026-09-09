@@ -8,6 +8,8 @@ function closeLocalViewer(group) {
   if (el) el.querySelectorAll(".media-video-body").forEach(root => { stopVideoPlaybackSession(root); terminateWasmVideo(root); });
   if (el) el.innerHTML = "";
   activeReader = null;
+  /* v0.9.62：关闭视频/媒体播放器时清除背景虚化 */
+  if (typeof clearPlaybackBg === "function") clearPlaybackBg();
   /* v0.9.30：关闭前把待写的阅读进度立刻落盘，避免 800ms 合并窗口内关闭丢进度。 */
   if (typeof flushReadingProgressNow === "function") flushReadingProgressNow();
   if (group === "comic") {

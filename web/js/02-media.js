@@ -4,6 +4,28 @@
    <script> tags in index.html and MUST be preserved. */
 const MEDIA_VIEWS = ["comic", "movie", "audio"];
 
+/* v0.9.62：播放影视/音乐时，海报/封面作为主区域背景虚化。
+   背景层仅在 .main 内容区渲染，不影响侧栏与顶栏。 */
+function setPlaybackBg(imageUrl) {
+  const main = document.querySelector(".main");
+  if (!main) return;
+  let bg = document.getElementById("playbackBg");
+  if (!bg) { bg = document.createElement("div"); bg.id = "playbackBg"; bg.className = "playback-bg"; main.prepend(bg); }
+  if (!imageUrl) { clearPlaybackBg(); return; }
+  bg.style.backgroundImage = `url('${imageUrl}')`;
+  /* 图片加载成功后再显示，避免闪烁 */
+  const img = new Image();
+  img.onload = () => bg.classList.add("show");
+  img.onerror = () => { bg.classList.remove("show"); bg.style.backgroundImage = ""; };
+  img.src = imageUrl;
+}
+function clearPlaybackBg() {
+  const bg = document.getElementById("playbackBg");
+  if (!bg) return;
+  bg.classList.remove("show");
+  setTimeout(() => { if (!bg.classList.contains("show")) bg.style.backgroundImage = ""; }, 800);
+}
+
 /* ================= 外连服务（v0.7.0：从「资料库」页迁入系统设置） =================
    过去每个大类页面里都内嵌一份 Komga/Emby/Navidrome 的表单，导致侧边栏和顶栏
    反复出现同样的大类入口。现在外连服务和本地媒体库一样，只是「媒体库」的一种
@@ -1048,6 +1070,8 @@ function syncActiveAudioCover(path) {
   const coverEl = document.getElementById("audioCover");
   if (coverEl && meta.cover) { coverEl.src = meta.cover; coverEl.style.background = ""; }
   updateAudioExpandArt(meta);
+  /* v0.9.62：封面更新后同步更新背景虚化 */
+  if (meta.cover) setPlaybackBg(meta.cover);
 }
 function audioBaseMetadata(path) {
   /* 先用原始文件名解析「歌手 - 歌名」，displayBookTitle 会把连字符换成空格，
@@ -1480,6 +1504,8 @@ function playAudioFile(libId, path) {
   document.getElementById("audioPlayerMeta").textContent = `${meta.artist} · ${meta.album}`;
   const cover = document.getElementById("audioCover");
   cover.src = meta.cover || ""; cover.alt = `${meta.title} 海报`; cover.style.background = meta.cover ? "" : coverGradient(meta.title);
+  /* v0.9.62：播放音乐时用专辑封面作为主区域背景虚化 */
+  setPlaybackBg(meta.cover || "");
   audioSetPauseIcon(true);
   renderPlayerLyrics(meta);
   updateAudioExpandArt(meta);
@@ -1493,7 +1519,7 @@ function audioSetPauseIcon(paused) {
     : '<svg class="vc-svg audio-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.2 5.6v12.8a.9.9 0 0 0 1.37.77l10.2-6.4a.9.9 0 0 0 0-1.54L9.57 4.83A.9.9 0 0 0 8.2 5.6Z" fill="currentColor"/></svg>';
 }
 function audioTogglePause() { const player=document.getElementById("audioPlayerElement"); if(!player?.src) return; if(player.paused) { player.play().catch(() => {}); audioSetPauseIcon(true); } else { player.pause(); audioSetPauseIcon(false); } }
-function audioStop() { const player=document.getElementById("audioPlayerElement"); if(!player) return; player.pause(); player.currentTime=0; player.removeAttribute("src"); player.load(); activeAudio=null; document.getElementById("audio-bottom-player")?.classList.remove("show"); audioSetPauseIcon(false); stopAudioSessionKeepAlive(); }
+function audioStop() { const player=document.getElementById("audioPlayerElement"); if(!player) return; player.pause(); player.currentTime=0; player.removeAttribute("src"); player.load(); activeAudio=null; document.getElementById("audio-bottom-player")?.classList.remove("show"); audioSetPauseIcon(false); stopAudioSessionKeepAlive(); clearPlaybackBg(); }
 /* v0.9.61：音频播放会话保活别名（实现见 01-state.js 的 mediaKeepAlive*）。 */
 function startAudioSessionKeepAlive() { mediaKeepAliveStart("audio"); }
 function stopAudioSessionKeepAlive() { mediaKeepAliveStop("audio"); }
@@ -2404,7 +2430,10 @@ async function initMovieCompatPlayer(root, lib, path) {
   applyVideoChromeTitle(videoRoot, lib, path);
   renderVideoPlaylist(videoRoot);
   bindVideoTimelineDrag(videoRoot);
-  fetch(`/api/media/metadata?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}`,{cache:'no-store'}).then(r=>r.ok?r.json():null).then(meta=>{if(meta&&(meta.title||meta.year||meta.show_title)){const all=readMovieMetadata();all[path]={...movieMetadataFor(path),...meta};writeMovieMetadata(all);applyVideoChromeTitle(videoRoot,lib,path);}if(meta?.subtitles?.length){const box=videoRoot.querySelector('[data-video-subtitle-options]');if(box)box.innerHTML=meta.subtitles.map((s,i)=>`<button type="button" onclick="attachVideoSubtitle(this.closest('.media-video-body').querySelector('video'),${jsAttrArg(s.url)},${jsAttrArg(s.label||`本地字幕 ${i+1}`)})">${esc(s.label||`本地字幕 ${i+1}`)}</button>`).join('');}}).catch(()=>{});
+  /* v0.9.62：播放视频时立即用当前已知的最佳海报作为背景虚化 */
+  { const _initMeta = movieMetadataFor(path); const _heroArt = movieHeroArt(_initMeta); if (_heroArt.url) setPlaybackBg(_heroArt.url); }
+  fetch(`/api/media/metadata?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}`,{cache:'no-store'}).then(r=>r.ok?r.json():null).then(meta=>{if(meta&&(meta.title||meta.year||meta.show_title)){const all=readMovieMetadata();all[path]={...movieMetadataFor(path),...meta};writeMovieMetadata(all);applyVideoChromeTitle(videoRoot,lib,path);}if(meta?.subtitles?.length){const box=videoRoot.querySelector('[data-video-subtitle-options]');if(box)box.innerHTML=meta.subtitles.map((s,i)=>`<button type="button" onclick="attachVideoSubtitle(this.closest('.media-video-body').querySelector('video'),${jsAttrArg(s.url)},${jsAttrArg(s.label||`本地字幕 ${i+1}`)})">${esc(s.label||`本地字幕 ${i+1}`)}</button>`).join('');}/* v0.9.62：API 元数据返回后，用更丰富的海报（fanart/backdrop）更新背景 */
+if(meta){const _merged=movieMetadataFor(path);const _hero=movieHeroArt(_merged);if(_hero.url)setPlaybackBg(_hero.url);}}).catch(()=>{});
   const direct = mediaFileUrl(lib, path);
   const compat = mediaCompatUrl(lib, path);
   /* v0.9.51 修复：以前这里传的是外层 viewer，于是 .video-controls-visible
