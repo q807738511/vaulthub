@@ -1383,7 +1383,6 @@ function openAudioMetadata(path) { const meta = audioMetadataFor(path); document
 function manualAudioMetadata(path) { openAudioMetadata(path); }
 function saveManualAudioMetadata() { const path=document.getElementById("audioMetadataPath").value, all=readAudioMetadata(); all[path]={title:document.getElementById("audioMetadataTitle").value.trim()||audioBaseMetadata(path).title,artist:document.getElementById("audioMetadataArtist").value.trim()||"未知歌手",album:document.getElementById("audioMetadataAlbum").value.trim()||"未知专辑",cover:document.getElementById("audioMetadataCover").value.trim(),lyrics:document.getElementById("audioMetadataLyrics").value,provider:"manual",checkedAt:Date.now()}; writeAudioMetadata(all); closeModal("audioMetadataModal"); const lib=findMediaLibrary(localMediaSelection.audio); if(lib) loadLocalFiles("audio",lib,audioCursor); if(lib) localizeAudioCover(lib.id, path); syncActiveAudioCover(path); }
 let audioLoopMode = "sequence";
-let audioMaximized = false;
 let audioExpandPage = "poster"; // 展开播放器当前页：poster | lyrics（v0.9.56）
 let lastLyricActiveIndex = -1;  // 歌词高亮切换检测（避免重复滚动）
 function setAudioExpandPage(page) {
@@ -1417,25 +1416,6 @@ function setAudioLoop(mode) {
   if (lib && audioView === "tracks") loadLocalFiles("audio", lib, audioCursor);
 }
 function cycleAudioLoop() { setAudioLoop(AUDIO_LOOP_ORDER[(AUDIO_LOOP_ORDER.indexOf(audioLoopMode) + 1) % AUDIO_LOOP_ORDER.length]); toast("🔁 " + AUDIO_LOOP_LABEL[audioLoopMode]); }
-function toggleAudioMaximize() {
-  const player = document.getElementById("audio-bottom-player"); if (!player) return;
-  audioMaximized = !audioMaximized;
-  player.classList.toggle("maximized", audioMaximized);
-  if (audioMaximized) {
-    const meta = activeAudio ? audioMetadataFor(activeAudio.path) : null;
-    if (meta) updateAudioExpandArt(meta);
-    setAudioExpandPage(audioExpandPage === "lyrics" ? "lyrics" : "poster");
-    const lib = activeAudio ? findMediaLibrary(activeAudio.libId) : null;
-    if (lib && activeAudio) localizeAudioCover(lib.id, activeAudio.path);
-    if (audioExpandPage === "lyrics") scrollActiveLyricIntoView();
-  }
-  const button = document.getElementById("audioMaximizeButton");
-  if (button) {
-    button.innerHTML = audioIcon(audioMaximized ? "restore" : "expand");
-    button.title = audioMaximized ? "还原" : "最大化";
-    button.classList.toggle("audio-max-on", audioMaximized);
-  }
-}
 function parseLyrics(lrc) {
   const lines = [];
   String(lrc || "").split(/\r?\n/).forEach(line => {
@@ -1514,7 +1494,7 @@ function audioSetPauseIcon(paused) {
 }
 function audioTogglePause() { const player=document.getElementById("audioPlayerElement"); if(!player?.src) return; if(player.paused) { player.play().catch(() => {}); audioSetPauseIcon(true); } else { player.pause(); audioSetPauseIcon(false); } }
 function audioStop() { const player=document.getElementById("audioPlayerElement"); if(!player) return; player.pause(); player.currentTime=0; player.removeAttribute("src"); player.load(); activeAudio=null; document.getElementById("audio-bottom-player")?.classList.remove("show"); audioSetPauseIcon(false); stopAudioSessionKeepAlive(); }
-/* v0.9.60：音频播放会话保活别名（实现见 01-state.js 的 mediaKeepAlive*）。 */
+/* v0.9.61：音频播放会话保活别名（实现见 01-state.js 的 mediaKeepAlive*）。 */
 function startAudioSessionKeepAlive() { mediaKeepAliveStart("audio"); }
 function stopAudioSessionKeepAlive() { mediaKeepAliveStop("audio"); }
 function audioPrevious() { if(!activeAudio || !audioFiles.length) return; const index=(activeAudio.index-1+audioFiles.length)%audioFiles.length; playAudioFile(activeAudio.libId,audioFiles[index].path); }
@@ -2271,7 +2251,7 @@ function stopVideoPlaybackSession(root) {
 }
 function bindVideoStatus(root, video) {
   [["loadstart","正在连接"],["waiting","正在缓冲"],["playing","正在播放"],["pause","已暂停"],["ended","播放完成"],["stalled","网络等待"],["error","播放错误"]].forEach(([ev,label])=>video.addEventListener(ev,()=>{updateVideoStatus(root,video,label);if(['pause','ended'].includes(ev))reportVideoPlaybackSession(root,video,ev);}));
-  /* v0.9.60：视频实际开始播放时启用会话保活；暂停仍保留播放上下文，只有结束、
+  /* v0.9.61：视频实际开始播放时启用会话保活；暂停仍保留播放上下文，只有结束、
      报错或关闭播放器才停止。具名 source 让切流时重复 play 保持幂等。 */
   video.addEventListener("playing", () => mediaKeepAliveStart("video"));
   video.addEventListener("ended", () => mediaKeepAliveStop("video"));

@@ -790,12 +790,7 @@
   .audio-album-info small { display:block; margin-top:4px; color:var(--text2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .audio-player { position:fixed; z-index:250; left:50%; top:auto; right:auto; bottom:18px; transform:translateX(-50%); width:min(700px,calc(100vw - var(--sidebar-w) - 28px)); display:none; align-items:center; gap:12px; min-height:86px; padding:14px 16px; border:1px solid var(--border); border-radius:12px; background:color-mix(in srgb,var(--bg2) 94%,var(--text)); box-shadow:0 14px 40px color-mix(in srgb,var(--text) 24%,transparent), 0 2px 0 color-mix(in srgb,var(--bg) 70%,transparent) inset; backdrop-filter:blur(14px); }
   .audio-player.show { display:flex; }
-  .audio-player.maximized { left:50%; top:50%; bottom:auto; transform:translate(-50%,-50%); width:min(820px,calc(100vw - var(--sidebar-w) - 40px)); height:min(76vh,640px); min-height:430px; flex-direction:column; align-items:stretch; padding:16px 18px 18px; }
-  .audio-player.maximized .audio-player-cover { width:58px; height:58px; flex-basis:58px; align-self:center; }
-  .audio-player.maximized .audio-player-main { display:flex; flex-direction:column; justify-content:center; min-width:0; }
-  .audio-player.maximized .audio-player-controls { flex-wrap:wrap; justify-content:flex-end; }
   .audio-player .audio-expand { display:none; }
-  .audio-player.maximized .audio-expand { display:flex; flex:1 1 auto; min-height:0; flex-direction:column; gap:10px; margin-top:12px; }
   /* v0.9.56：展开双页 —— 海报页 / 歌词页（歌词覆盖海报磨砂蒙版）。 */
   .audio-expand-tabs { display:inline-flex; gap:4px; align-self:center; padding:3px; border:1px solid var(--border); border-radius:999px; background:var(--card2); }
   .audio-expand-tabs button { border:0; border-radius:999px; padding:6px 18px; color:var(--text2); background:transparent; cursor:pointer; font-size:13px; }
@@ -820,15 +815,15 @@
   .reader-theme-light .audio-player-lyrics .lyric-line.active { color:#0a84ff; text-shadow:0 0 12px rgba(10,132,255,.35); }
   .reader-theme-light .audio-lyric-empty { color:#243a5c; }
   .audio-player-cover { width:52px; height:52px; flex:0 0 52px; border-radius:6px; object-fit:cover; background:linear-gradient(145deg,#284b63,#1b2838); }
-  /* v0.9.60：封面容器包装 & hover 显示放大按钮 */
+  /* v0.9.61：封面容器包装 & hover 显示放大按钮 */
   .audio-player-cover-wrap { position:relative; width:52px; height:52px; flex:0 0 52px; }
   .audio-cover-zoom-btn { position:absolute; top:4px; left:4px; width:24px; height:24px; padding:0; border:0; border-radius:4px; color:#fff; background:rgba(0,0,0,.65); backdrop-filter:blur(6px); cursor:pointer; display:none; align-items:center; justify-content:center; opacity:0; transition:opacity .2s,background .14s,transform .1s; }
   .audio-cover-zoom-btn svg { width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
   .audio-player-cover-wrap:hover .audio-cover-zoom-btn { display:flex; opacity:1; }
   .audio-cover-zoom-btn:hover { background:rgba(0,0,0,.85); transform:scale(1.1); }
   .audio-cover-zoom-btn:active { transform:scale(.92); }
-  /* v0.9.60：全屏海报叠加层 —— 播放器不变，叠加层占据整个 #view-audio */
-  .audio-fullscreen-overlay { position:fixed; z-index:280; inset:0; left:var(--sidebar-w); display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.94); backdrop-filter:blur(20px) saturate(110%); animation:fadeIn .3s; }
+  /* v0.9.61：全屏海报叠加层 —— 播放器不变，叠加层占据整个 #view-audio */
+  .audio-fullscreen-overlay { position:fixed; z-index:650; inset:0; left:var(--sidebar-w); display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.94); backdrop-filter:blur(20px) saturate(110%); animation:fadeIn .3s; }
   .audio-fullscreen-overlay.show { display:flex; }
   .audio-fullscreen-back { position:absolute; top:20px; right:24px; width:48px; height:48px; padding:0; border:1px solid rgba(255,255,255,.35); border-radius:50%; color:#fff; background:rgba(255,255,255,.16); backdrop-filter:blur(8px); cursor:pointer; display:flex; align-items:center; justify-content:center; transition:background .14s,transform .1s,border .14s; box-shadow:0 4px 18px rgba(0,0,0,.55); }
   .audio-fullscreen-back svg { width:22px; height:22px; fill:none; stroke:currentColor; stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round; }
@@ -872,7 +867,7 @@
   .lyric-line.active { color:var(--accent); font-weight:600; }
   .audio-track-head { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:14px; padding:10px 12px; border:1px solid var(--border); border-radius:10px; background:var(--card); }
   .audio-track-head strong { font-size:15px; }
-  @media (max-width:768px) { .audio-player,.audio-player.maximized { left:50%; bottom:12px; transform:translateX(-50%); width:calc(100vw - 24px); min-height:82px; } .audio-player.maximized { top:50%; bottom:auto; transform:translate(-50%,-50%); height:min(86vh,600px); width:calc(100vw - 16px); padding:12px; } .audio-player.maximized .audio-player-cover { width:46px; height:46px; flex-basis:46px; } .audio-player { padding:12px 10px; } .audio-player-cover { width:42px; height:42px; flex-basis:42px; } .audio-player-controls button { min-width:30px; padding:0 6px; } .audio-expand-tabs button { padding:6px 12px; } .audio-player-lyrics { padding:10px 14px 30px; } }
+  @media (max-width:768px) { .audio-player { left:50%; bottom:12px; transform:translateX(-50%); width:calc(100vw - 24px); min-height:82px; } .audio-player { padding:12px 10px; } .audio-player-cover { width:42px; height:42px; flex-basis:42px; } .audio-player-controls button { min-width:30px; padding:0 6px; } .audio-expand-tabs button { padding:6px 12px; } .audio-player-lyrics { padding:10px 14px 30px; } }
   @media (max-width: 768px) {
     body:not(.sidebar-hidden) .sidebar { width:min(86vw,280px); transform:none; box-shadow:12px 0 30px rgba(0,0,0,.35); }
     body:not(.sidebar-hidden) .main { margin-left:0; }

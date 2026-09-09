@@ -29,7 +29,7 @@ required = [
     'audioLoopButton',
     'cycleAudioLoop',
     'setAudioLoop',
-    'toggleAudioMaximize',
+    'toggleAudioCoverZoom',
     'parseLyrics',
     'seekLyric',
     'audioFavoriteButton',
