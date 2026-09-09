@@ -221,16 +221,16 @@
   .playback-bg {
     position: absolute; inset: 0; z-index: 0; pointer-events: none;
     background-size: cover; background-position: center; background-repeat: no-repeat;
-    filter: blur(40px) brightness(.45) saturate(1.2);
+    filter: blur(48px) brightness(.68) saturate(1.3);
     opacity: 0; transition: opacity .8s ease;
   }
-  .playback-bg.show { opacity: 1; }
+  .playback-bg.show { opacity: .55; }
   .playback-bg::after {
     content: ""; position: absolute; inset: 0;
-    background: linear-gradient(180deg, rgba(30,30,30,.3), rgba(30,30,30,.7));
+    background: linear-gradient(180deg, rgba(30,30,30,.12), rgba(30,30,30,.32));
   }
   body[data-theme="light"] .playback-bg::after {
-    background: linear-gradient(180deg, rgba(244,245,247,.4), rgba(244,245,247,.7));
+    background: linear-gradient(180deg, rgba(244,245,247,.12), rgba(244,245,247,.32));
   }
   .content { position: relative; z-index: 1; }
   /* 侧栏折叠为图标轨（原 sidebar-hidden 行为，顶栏保持常显） */
@@ -817,8 +817,10 @@
   .audio-expand[data-page="poster"] .audio-poster-page { display:flex; align-items:center; justify-content:center; }
   .audio-expand[data-page="lyrics"] .audio-lyrics-page { display:block; position:relative; }
   .audio-poster-frame { position:relative; width:min(300px,60%); aspect-ratio:1/1; border-radius:16px; overflow:hidden; display:flex; align-items:center; justify-content:center; background:linear-gradient(145deg,#284b63,#1b2838); box-shadow:0 18px 44px rgba(0,0,0,.4); }
-  .audio-poster-frame img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
-  .audio-poster-fallback { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:18px; color:#fff; font-weight:800; font-size:21px; line-height:1.45; text-align:center; word-break:break-all; }
+  /* v0.9.63：海报容器背景用虚化封面填充黑边 */
+  .audio-poster-frame::before { content:""; position:absolute; inset:-20px; z-index:0; background-image:var(--poster-blur-bg, none); background-size:cover; background-position:center; filter:blur(28px) brightness(.5); }
+  .audio-poster-frame img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; z-index:1; }
+  .audio-poster-fallback { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:18px; color:#fff; font-weight:800; font-size:21px; line-height:1.45; text-align:center; word-break:break-all; z-index:1; }
   .audio-lyrics-page img { position:absolute; inset:-24px; width:calc(100% + 48px); height:calc(100% + 48px); object-fit:cover; filter:blur(26px) saturate(1.15) brightness(.82); transform:scale(1.02); }
   .audio-lyrics-scrim { position:absolute; inset:0; background:linear-gradient(180deg, rgba(8,10,14,.5), rgba(8,10,14,.8)); }
   .audio-player-lyrics { position:relative; z-index:2; height:100%; max-height:100%; overflow:auto; margin:0; padding:16px 26px 40px; white-space:pre-wrap; line-height:1.95; color:#fff; text-shadow:0 1px 8px rgba(0,0,0,.6); font-size:15px; overscroll-behavior:contain; scrollbar-width:thin; }
@@ -835,8 +837,8 @@
   .audio-player-cover { width:52px; height:52px; flex:0 0 52px; border-radius:6px; object-fit:cover; background:linear-gradient(145deg,#284b63,#1b2838); }
   /* v0.9.61：封面容器包装 & hover 显示放大按钮 */
   .audio-player-cover-wrap { position:relative; width:52px; height:52px; flex:0 0 52px; }
-  .audio-cover-zoom-btn { position:absolute; top:4px; left:4px; width:24px; height:24px; padding:0; border:0; border-radius:4px; color:#fff; background:rgba(0,0,0,.65); backdrop-filter:blur(6px); cursor:pointer; display:none; align-items:center; justify-content:center; opacity:0; transition:opacity .2s,background .14s,transform .1s; line-height:0; font-size:0; }
-  .audio-cover-zoom-btn svg { width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+  .audio-cover-zoom-btn { position:absolute; top:4px; left:4px; width:24px; height:24px; padding:0; margin:0; border:0; border-radius:4px; color:#fff; background:rgba(0,0,0,.65); backdrop-filter:blur(6px); cursor:pointer; display:none; align-items:center; justify-content:center; opacity:0; transition:opacity .2s,background .14s,transform .1s; line-height:0; font-size:0; box-sizing:border-box; flex-shrink:0; }
+  .audio-cover-zoom-btn svg { width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; display:block; margin:auto; flex-shrink:0; }
   .audio-player-cover-wrap:hover .audio-cover-zoom-btn { display:flex; opacity:1; }
   .audio-cover-zoom-btn:hover { background:rgba(0,0,0,.85); transform:scale(1.1); }
   .audio-cover-zoom-btn:active { transform:scale(.92); }
@@ -848,8 +850,10 @@
   .audio-fullscreen-back:hover { border-color:rgba(255,255,255,.7); background:rgba(255,255,255,.28); transform:scale(1.08); }
   .audio-fullscreen-back:active { transform:scale(.92); }
   .audio-fullscreen-poster { position:relative; width:min(520px,80vw); aspect-ratio:1/1; border-radius:24px; overflow:hidden; display:flex; align-items:center; justify-content:center; background:linear-gradient(145deg,#284b63,#1b2838); box-shadow:0 28px 80px rgba(0,0,0,.7); }
-  .audio-fullscreen-poster img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
-  .audio-fullscreen-fallback { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:28px; color:#fff; font-weight:800; font-size:28px; line-height:1.5; text-align:center; word-break:break-all; }
+  /* v0.9.63：全屏海报背景用虚化封面填充黑边 */
+  .audio-fullscreen-poster::before { content:""; position:absolute; inset:-30px; z-index:0; background-image:var(--poster-blur-bg, none); background-size:cover; background-position:center; filter:blur(36px) brightness(.5); }
+  .audio-fullscreen-poster img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; z-index:1; }
+  .audio-fullscreen-fallback { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:28px; color:#fff; font-weight:800; font-size:28px; line-height:1.5; text-align:center; word-break:break-all; z-index:1; }
   .reader-theme-light .audio-fullscreen-overlay { background:rgba(255,255,255,.96); }
   .reader-theme-light .audio-fullscreen-back { border-color:rgba(0,0,0,.2); color:#1d1d1f; background:rgba(255,255,255,.94); box-shadow:0 4px 18px rgba(0,0,0,.35); }
   .reader-theme-light .audio-fullscreen-back:hover { border-color:rgba(0,0,0,.4); background:#fff; }
