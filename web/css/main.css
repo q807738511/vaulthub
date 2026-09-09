@@ -516,7 +516,7 @@
   .media-poster-card { min-width:0; border:1px solid var(--border); border-radius:12px; overflow:hidden; background:var(--card); cursor:pointer; transition:transform .16s,border-color .16s; }
   .media-poster-card:hover { transform:translateY(-3px); border-color:var(--accent); }
   .media-poster-art { position:relative; aspect-ratio:2/3; display:flex; align-items:center; justify-content:center; padding:15px; color:#fff; text-align:center; background:linear-gradient(145deg,#30363d,#161b22); overflow:hidden; }
-  .media-poster-art img { width:100%; height:100%; object-fit:cover; margin:0; }
+  .media-poster-art img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; margin:0; }
   .movie-poster-settings { position:absolute; right:8px; bottom:8px; z-index:2; border:1px solid rgba(255,255,255,.55); border-radius:999px; padding:6px 9px; color:#fff; background:rgba(0,0,0,.72); cursor:pointer; }
   .media-poster-card.is-read .media-poster-art { filter:saturate(.68); }
   .movie-detail-page { overflow:hidden; }
@@ -817,7 +817,7 @@
   .audio-player-cover { width:52px; height:52px; flex:0 0 52px; border-radius:6px; object-fit:cover; background:linear-gradient(145deg,#284b63,#1b2838); }
   /* v0.9.61：封面容器包装 & hover 显示放大按钮 */
   .audio-player-cover-wrap { position:relative; width:52px; height:52px; flex:0 0 52px; }
-  .audio-cover-zoom-btn { position:absolute; top:4px; left:4px; width:24px; height:24px; padding:0; border:0; border-radius:4px; color:#fff; background:rgba(0,0,0,.65); backdrop-filter:blur(6px); cursor:pointer; display:none; align-items:center; justify-content:center; opacity:0; transition:opacity .2s,background .14s,transform .1s; }
+  .audio-cover-zoom-btn { position:absolute; top:4px; left:4px; width:24px; height:24px; padding:0; border:0; border-radius:4px; color:#fff; background:rgba(0,0,0,.65); backdrop-filter:blur(6px); cursor:pointer; display:none; align-items:center; justify-content:center; opacity:0; transition:opacity .2s,background .14s,transform .1s; line-height:0; font-size:0; }
   .audio-cover-zoom-btn svg { width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
   .audio-player-cover-wrap:hover .audio-cover-zoom-btn { display:flex; opacity:1; }
   .audio-cover-zoom-btn:hover { background:rgba(0,0,0,.85); transform:scale(1.1); }
