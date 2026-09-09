@@ -1426,6 +1426,10 @@ function updateAudioExpandArt(meta) {
   if (src) { big.src = src; if (bg) bg.src = src; }
   else { big.removeAttribute("src"); if (bg) bg.removeAttribute("src"); }
   if (fb) { fb.textContent = title; fb.style.display = src ? "none" : "flex"; }
+  /* v0.9.63：音乐海报容器用虚化封面填充黑边区域（通过 CSS 变量驱动 ::before） */
+  document.querySelectorAll(".audio-poster-frame, .audio-fullscreen-poster").forEach(el => {
+    el.style.setProperty("--poster-blur-bg", src ? `url('${src}')` : "none");
+  });
 }
 const AUDIO_LOOP_ORDER = ["sequence", "list", "single", "random"];
 const AUDIO_LOOP_LABEL = { sequence: "顺序", list: "列表循环", single: "单曲循环", random: "随机播放" };
