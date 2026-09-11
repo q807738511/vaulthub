@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""v0.9.64 媒体播放器整体修复契约测试。"""
+"""v0.9.65 媒体播放器整体修复契约测试。"""
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -9,12 +9,13 @@ STATE = (ROOT / "web/js/01-state.js").read_text(encoding="utf-8")
 MEDIA = (ROOT / "web/js/02-media.js").read_text(encoding="utf-8")
 ZOOM = (ROOT / "web/js/03-audio-zoom.js").read_text(encoding="utf-8")
 CSS = (ROOT / "web/css/main.css").read_text(encoding="utf-8")
-NOTES = ROOT / ".github/RELEASE_NOTES_0.9.64.md"
+NOTES = ROOT / ".github/RELEASE_NOTES_0.9.65.md"
 
 checks = {
     # 1. 音乐播放器封面 hover 放大 + 清晰画中画/外部磨砂
-    "封面左上 hover 按钮": ".audio-player-cover-wrap:hover .audio-cover-zoom-btn" in CSS
-        and "top:4px; left:4px" in CSS,
+    # v0.9.65：放大按钮由左上角改为封面内自适应居中。
+    "封面 hover 居中按钮": ".audio-player-cover-wrap:hover .audio-cover-zoom-btn" in CSS
+        and "top:50%; left:50%" in CSS and "translate(-50%,-50%)" in CSS,
     "播放器原位且独立遮罩": 'id="audioFullscreenOverlay"' in HTML
         and 'onclick="toggleAudioCoverZoom()"' in HTML
         and 'overlay.classList.toggle("show", audioCoverZoomed)' in ZOOM,
@@ -24,8 +25,9 @@ checks = {
     "画外九成磨砂": ".audio-fullscreen-overlay::before" in CSS
         and "opacity:.9" in CSS
         and "backdrop-filter:blur(" in CSS,
-    "右上角返回": "audio-fullscreen-back" in HTML
-        and "top:20px; right:24px" in CSS,
+    # v0.9.65：右上角返回按钮移除，取消全屏改为点击遮罩或 Esc。
+    "无返回按钮且可点击退出": "audio-fullscreen-back" not in HTML
+        and "cursor:zoom-out" in CSS and "closeAudioCoverZoom" in ZOOM,
 
     # 2. 详情页背景必须取当前查看项，不复用当前播放媒体背景
     "详情背景独立函数": "function detailArtworkUrl(" in MEDIA
@@ -64,8 +66,8 @@ checks = {
     "还原清理新状态": 'overlay.classList.remove("video-minimized", "video-controller-docked")' in MEDIA,
 
     # 版本与发布资料
-    "HTML版本": 'VAULTHUB_ASSET_VERSION = "0.9.64"' in HTML and HTML.count("?v=0.9.64") >= 7,
-    "脚本版本": 'VAULTHUB_SCRIPT_VERSION = "0.9.64"' in STATE,
+    "HTML版本": 'VAULTHUB_ASSET_VERSION = "0.9.65"' in HTML and HTML.count("?v=0.9.65") >= 7,
+    "脚本版本": 'VAULTHUB_SCRIPT_VERSION = "0.9.65"' in STATE,
     "发布说明": NOTES.exists(),
 }
 
@@ -73,5 +75,5 @@ failed = [name for name, ok in checks.items() if not ok]
 for name, ok in checks.items():
     print(("PASS" if ok else "FAIL") + ": " + name)
 if failed:
-    raise SystemExit(f"FAIL: v0.9.64 契约 {len(failed)} 项未通过")
-print("PASS: v0.9.64 音乐海报、详情背景、音视频互斥、视频控制器停靠契约通过")
+    raise SystemExit(f"FAIL: v0.9.65 契约 {len(failed)} 项未通过")
+print("PASS: v0.9.65 音乐海报、详情背景、音视频互斥、视频控制器停靠契约通过")
