@@ -92,7 +92,8 @@ check("T3d 底部播放器水平居中", "left:50%" in audio_player_rule and "tr
       and "right:auto" in audio_player_rule, audio_player_rule[:120])
 overlay_rule = CSS[CSS.index(".audio-fullscreen-overlay {"):]
 overlay_rule = overlay_rule[:overlay_rule.index("}") + 1]
-check("T3d 全屏海报遮罩层级高于顶栏/侧边栏(600)", "z-index:650" in overlay_rule and "position:fixed" in overlay_rule
+# v0.9.66：遮罩层级改为独立 660（仍高于顶栏/侧边栏 600，且不再与视频停靠栏 650 同值）。
+check("T3d 全屏海报遮罩层级高于顶栏/侧边栏(600)", "z-index:660" in overlay_rule and "position:fixed" in overlay_rule
       and "var(--sidebar-w)" in overlay_rule, overlay_rule[:120])
 # ============ T4 剧集图示卡片 ============
 check("T4 renderSeriesEpisodeRow 卡片化", "series-episode-card" in JS and "data-series-episode" in JS)
@@ -119,7 +120,7 @@ for fname, txt in [("README.md", README), ("Update Log.md", UPDATELOG)]:
 
 # ============ 版本号 ============
 check("版本 HTML >=2", HTML.count("v0.9.56") >= 2)
-check("版本 script 变量", 'VAULTHUB_SCRIPT_VERSION = "0.9.65"' in STATE)
+check("版本 script 变量", 'VAULTHUB_SCRIPT_VERSION = "0.9.66"' in STATE)
 check("版本 release notes 存在", (ROOT / ".github/RELEASE_NOTES_0.9.56.md").exists())
 
 if fails:
