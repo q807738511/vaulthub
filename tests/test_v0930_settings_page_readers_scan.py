@@ -115,9 +115,9 @@ assert ".media-reader-overlay.reader-theme-custom .media-reader-body" in CSS, "�
 assert "readerThemeClass()" in JS, "阅读器必须应用主题类"
 
 # ---------------------------------------------------------------- 版本与发布引用
-assert HTML.count("v0.9.65") >= 2, "关于与侧栏版本必须是 v0.9.65"
-assert 'VAULTHUB_ASSET_VERSION = "0.9.65"' in HTML, "资源版本必须是 0.9.65"
-assert 'VAULTHUB_SCRIPT_VERSION = "0.9.65"' in STATE, "脚本版本必须是 0.9.65"
+assert HTML.count("v0.9.66") >= 2, "关于与侧栏版本必须是 v0.9.66"
+assert 'VAULTHUB_ASSET_VERSION = "0.9.66"' in HTML, "资源版本必须是 0.9.66"
+assert 'VAULTHUB_SCRIPT_VERSION = "0.9.66"' in STATE, "脚本版本必须是 0.9.66"
 assert "ghcr.io/q807738511/vaulthub:latest" in COMPOSE, "v0.9.56 起 Compose 跟随 latest"
 assert (ROOT / ".github/RELEASE_NOTES_0.9.56.md").exists(), "缺少 v0.9.56 release notes"
 

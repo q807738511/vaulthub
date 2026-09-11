@@ -26,7 +26,7 @@ function clearPlaybackBg() {
   setTimeout(() => { if (!bg.classList.contains("show")) bg.style.backgroundImage = ""; }, 800);
 }
 
-/* v0.9.65：详情背景严格绑定当前查看条目，不复用正在播放媒体的 playbackBg。
+/* v0.9.66：详情背景严格绑定当前查看条目，不复用正在播放媒体的 playbackBg。
    URL 经 cssUrlValue 清洗后才进入 style，避免 CSS 注入。 */
 function detailArtworkUrl(meta) {
   return cssUrlValue(meta?.fanart || meta?.backdrop || meta?.poster || meta?.cover || "");
@@ -36,7 +36,7 @@ function detailBackdropStyle(meta) {
   return art ? `--detail-backdrop:url('${art}')` : "";
 }
 
-/* v0.9.65：音频与视频共享唯一播放权；切换类型前同步暂停另一方并释放保活。 */
+/* v0.9.66：音频与视频共享唯一播放权；切换类型前同步暂停另一方并释放保活。 */
 function claimExclusivePlayback(kind, exceptVideo = null) {
   if (kind === "audio") {
     document.querySelectorAll("video[data-movie-player]").forEach(video => {
@@ -1343,7 +1343,7 @@ function renderAudioAlbums(lib, files) {
   files.forEach(file => { const meta = audioMetadataFor(String(file.path)); const key = meta.album || "未知专辑"; if (!groups.has(key)) groups.set(key, { meta, files: [] }); groups.get(key).files.push(file); });
   /* v0.9.56：卡片整卡点击 → 该专辑全部曲目。
      v0.9.57：新增「▶ 播放」—— 不进入列表，直接播放该专辑全部歌曲（队列即专辑）。
-     v0.9.65：移除卡片上的 ✎ 编辑按钮 —— 它与「点击海报进入曲目列表」功能重复，
+     v0.9.66：移除卡片上的 ✎ 编辑按钮 —— 它与「点击海报进入曲目列表」功能重复，
      专辑/歌手信息编辑统一放在曲目列表头部（openAudioGroupEdit）。 */
   return `<div class="audio-album-grid">${[...groups.entries()].map(([album, group]) => `<article class="audio-album-card" onclick="openAudioTracks('${esc(lib.id)}','album',${esc(JSON.stringify(album))})"><div class="audio-album-cover" style="background:${coverGradient(album)}">${audioCoverData(group.meta, album)}</div><div class="audio-album-info"><strong>${esc(album)}</strong><small>${esc(group.meta.artist)} · ${group.files.length} 首</small><div class="media-actions"><button class="btn" title="直接播放该专辑全部歌曲" onclick="event.stopPropagation();playAudioGroup('${esc(lib.id)}','album',${esc(JSON.stringify(album))})">▶ 播放</button><button class="btn" title="喜欢专辑" onclick="event.stopPropagation();toggleAudioFavorite(${jsAttrArg(lib.id)},${jsAttrArg(group.files[0].path)})">${isAudioFavorite(lib.id, group.files[0].path) ? "♥" : "♡"}</button></div></div></article>`).join("")}</div>`;
 }
@@ -1353,7 +1353,7 @@ function renderAudioArtists(lib, files) {
   /* v0.9.56：歌手卡片封面优先用歌手刮削头像（localStorage 缓存），
      未刮削/失败时回落渐变首字。
      v0.9.57：新增「▶ 播放」—— 直接播放该歌手全部歌曲（队列即歌手）。
-     v0.9.65：同专辑卡片，移除重复的 ✎ 编辑按钮。 */
+     v0.9.66：同专辑卡片，移除重复的 ✎ 编辑按钮。 */
   return `<div class="audio-album-grid audio-artist-grid">${[...groups.entries()].map(([artist, songs]) => { const artistMeta = audioArtistInfoFor(artist); const cover = artistMeta && artistMeta.cover ? `<img class="audio-artist-avatar" src="${esc(artistMeta.cover)}" alt="${esc(artist)}" loading="lazy" onerror="this.parentElement.classList.add('audio-artist-avatar-fallback');this.remove()">` : ""; return `<article class="audio-album-card audio-artist-card" onclick="openAudioTracks('${esc(lib.id)}','artist',${esc(JSON.stringify(artist))})"><div class="audio-album-cover audio-artist-cover" style="${cover ? "" : `background:${coverGradient(artist)}`}">${cover || esc(artist)}</div><div class="audio-album-info"><strong>${esc(artist)}</strong><small>${songs.length} 首歌曲${artistMeta && artistMeta.collaborators && artistMeta.collaborators.length > 1 ? " · 合作演唱" : ""}</small><div class="media-actions"><button class="btn" title="直接播放该歌手全部歌曲" onclick="event.stopPropagation();playAudioGroup('${esc(lib.id)}','artist',${esc(JSON.stringify(artist))})">▶ 播放</button><button class="btn" title="喜欢歌手" onclick="event.stopPropagation();toggleAudioFavorite(${jsAttrArg(lib.id)},${jsAttrArg(songs[0].path)})">${isAudioFavorite(lib.id, songs[0].path) ? "♥" : "♡"}</button></div></article>`; }).join("")}</div>`;
 }
 let audioArtistFilter = "";
@@ -1416,7 +1416,7 @@ function renderAudioTrackList(lib, files) {
   const groupPlay = (back === "artists" || back === "albums")
     ? `<button class="btn audio-play-all" title="直接播放当前${back === "artists" ? "歌手" : "专辑"}全部歌曲" onclick="playAudioGroup('${esc(lib.id)}','${back === "artists" ? "artist" : "album"}',${esc(JSON.stringify(audioTrackTitle))})">▶ 播放全部</button>`
     : "";
-  /* v0.9.65：编辑入口从海报卡片移到曲目列表头部 —— 海报卡片本身点击即可进入本列表，
+  /* v0.9.66：编辑入口从海报卡片移到曲目列表头部 —— 海报卡片本身点击即可进入本列表，
      编辑按钮放这里既保留 v0.9.56「可编辑专辑/歌手」能力，又消除功能重复。 */
   const groupEdit = (back === "artists" || back === "albums")
     ? `<button class="btn" title="编辑当前${back === "artists" ? "歌手" : "专辑"}名称与封面" onclick="openAudioGroupEdit('${back === "artists" ? "artist" : "album"}',${jsAttrArg(audioTrackTitle)})">✎ 编辑</button>`
@@ -1463,7 +1463,7 @@ function updateAudioExpandArt(meta) {
   if (src) { big.src = src; if (bg) bg.src = src; }
   else { big.removeAttribute("src"); if (bg) bg.removeAttribute("src"); }
   if (fb) { fb.textContent = title; fb.style.display = src ? "none" : "flex"; }
-  /* v0.9.65：音乐海报容器用虚化封面填充黑边区域（通过 CSS 变量驱动 ::before） */
+  /* v0.9.66：音乐海报容器用虚化封面填充黑边区域（通过 CSS 变量驱动 ::before） */
   document.querySelectorAll(".audio-poster-frame, .audio-fullscreen-poster, .audio-fullscreen-overlay").forEach(el => {
     el.style.setProperty("--poster-blur-bg", src ? `url('${cssUrlValue(src)}')` : "none");
   });
@@ -2029,7 +2029,7 @@ function scheduleVideoChromeHide(root) {
 }
 function videoRootOf(el) { return el?.closest(".media-video-body") || null; }
 function videoElementOf(el) { return videoRootOf(el)?.querySelector("video[data-movie-player]") || null; }
-/* v0.9.65 左上角 ⌄：播放器停靠到控制器最下面一排，控制器持续显示，
+/* v0.9.66 左上角 ⌄：播放器停靠到控制器最下面一排，控制器持续显示，
    视频画面缩到控制器左下角；⌃ 恢复完整播放器。 */
 function minimizeVideoPlayer(el) {
   const root = videoRootOf(el);
