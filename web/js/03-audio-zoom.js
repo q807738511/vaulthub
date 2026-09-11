@@ -1,7 +1,19 @@
-/* v0.9.64：全屏海报放大按钮（toggleAudioCoverZoom）—— 在音乐界面显示专辑海报全屏遮罩。
- * 点击封面左上角放大按钮 / 点击全屏遮罩右上角返回按钮均可切换。
- * 播放器位置不变，遮罩独立叠加在整个音乐界面上。 */
+/* v0.9.65：播放器海报放大（toggleAudioCoverZoom）—— 点击左侧封面自适应居中的放大按钮，
+ * 海报放大到占据整个音乐界面；播放器位置不变，遮罩独立叠加在音乐界面上。
+ * v0.9.65 变更：移除右上角返回按钮 —— 点击遮罩任意位置或按 Esc 返回，
+ * 放大按钮本身仍是开关。 */
 let audioCoverZoomed = false;
+function closeAudioCoverZoom() {
+  if (!audioCoverZoomed) return;
+  audioCoverZoomed = false;
+  document.getElementById("audioFullscreenOverlay")?.classList.remove("show");
+  const zoomBtn = document.querySelector(".audio-cover-zoom-btn");
+  if (zoomBtn) {
+    zoomBtn.title = "放大专辑海报";
+    zoomBtn.setAttribute("aria-label", "放大海报");
+    zoomBtn.setAttribute("aria-expanded", "false");
+  }
+}
 function toggleAudioCoverZoom() {
   audioCoverZoomed = !audioCoverZoomed;
   const overlay = document.getElementById("audioFullscreenOverlay");
@@ -24,5 +36,13 @@ function toggleAudioCoverZoom() {
       if (poster) poster.style.background = coverGradient(meta.title);
     }
   }
-  if (zoomBtn) zoomBtn.title = audioCoverZoomed ? "返回" : "放大专辑海报";
+  if (zoomBtn) {
+    zoomBtn.title = audioCoverZoomed ? "返回音乐界面" : "放大专辑海报";
+    zoomBtn.setAttribute("aria-label", audioCoverZoomed ? "返回音乐界面" : "放大海报");
+    zoomBtn.setAttribute("aria-expanded", String(audioCoverZoomed));
+  }
 }
+/* v0.9.65：点遮罩任意位置返回（旧版是右上角返回按钮）。 */
+document.getElementById("audioFullscreenOverlay")?.addEventListener("click", () => closeAudioCoverZoom());
+/* v0.9.65：Esc 返回音乐界面。 */
+document.addEventListener("keydown", event => { if (event.key === "Escape" && audioCoverZoomed) closeAudioCoverZoom(); });

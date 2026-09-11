@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""v0.9.64 音乐播放会话保活 + 海报放大按钮契约测试。"""
+"""v0.9.65 音乐播放会话保活 + 海报放大按钮契约测试。"""
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -10,13 +10,13 @@ MEDIA = (ROOT / "web/js/02-media.js").read_text(encoding="utf-8")
 FEATURES = (ROOT / "web/js/03-features.js").read_text(encoding="utf-8")
 ZOOM = (ROOT / "web/js/03-audio-zoom.js").read_text(encoding="utf-8")
 CSS = (ROOT / "web/css/main.css").read_text(encoding="utf-8")
-NOTES = (ROOT / ".github/RELEASE_NOTES_0.9.64.md").read_text(encoding="utf-8")
+NOTES = (ROOT / ".github/RELEASE_NOTES_0.9.65.md").read_text(encoding="utf-8")
 LOG = (ROOT / "Update Log.md").read_text(encoding="utf-8")
 
 checks = {
-    "版本资源": 'VAULTHUB_ASSET_VERSION = "0.9.64"' in HTML,
-    "脚本版本": 'VAULTHUB_SCRIPT_VERSION = "0.9.64"' in STATE,
-    "静态缓存串": HTML.count("?v=0.9.64") >= 7,
+    "版本资源": 'VAULTHUB_ASSET_VERSION = "0.9.65"' in HTML,
+    "脚本版本": 'VAULTHUB_SCRIPT_VERSION = "0.9.65"' in STATE,
+    "静态缓存串": HTML.count("?v=0.9.65") >= 7,
     "五分钟保活周期": "MEDIA_KEEPALIVE_MS = 5 * 60 * 1000" in STATE,
     "具名幂等 source": "const mediaKeepAliveSources = new Set()" in STATE,
     "保活刷新前端 idle": "markVaultHubActivity();" in STATE,
@@ -35,18 +35,22 @@ checks = {
     "封面放大按钮 HTML": 'class="audio-cover-zoom-btn"' in HTML and 'onclick="toggleAudioCoverZoom()"' in HTML,
     "全屏海报叠加层": ".audio-fullscreen-overlay" in CSS and "position:fixed" in CSS and "z-index:650" in CSS,
     "全屏海报元素": 'id="audioFullscreenOverlay"' in HTML and 'class="audio-fullscreen-overlay"' in HTML,
-    "全屏返回按钮": 'class="audio-fullscreen-back"' in HTML and 'onclick="toggleAudioCoverZoom()"' in HTML,
+    # v0.9.65：右上角返回按钮已移除，改为点击遮罩任意位置或 Esc 返回。
+    "遮罩点击返回与 Esc": 'audio-fullscreen-back' not in HTML
+        and 'audioFullscreenOverlay")?.addEventListener("click"' in ZOOM
+        and "function closeAudioCoverZoom()" in ZOOM and '"Escape"' in ZOOM
+        and 'onclick="toggleAudioCoverZoom()"' in HTML,
     "全屏海报图片": 'id="audioFullscreenImg"' in HTML and 'id="audioFullscreenFallback"' in HTML,
     "toggleAudioCoverZoom 函数": "function toggleAudioCoverZoom()" in ZOOM and "audioCoverZoomed" in ZOOM,
     "切换遮罩显示": 'overlay.classList.toggle("show", audioCoverZoomed)' in ZOOM,
     "更新海报与回退": "audioFullscreenImg" in ZOOM and "audioFullscreenFallback" in ZOOM,
-    "加载 zoom 脚本": '<script src="/web/js/03-audio-zoom.js?v=0.9.64"></script>' in HTML,
-    "发布说明": "VaultHub 蜀鼠之家 v0.9.64" in NOTES and "音乐海报放大交互统一" in NOTES,
-    "更新日志": "VaultHub 蜀鼠之家 v0.9.64" in LOG and "90% 磨砂遮罩" in LOG,
+    "加载 zoom 脚本": '<script src="/web/js/03-audio-zoom.js?v=0.9.65"></script>' in HTML,
+    "发布说明": "VaultHub 蜀鼠之家 v0.9.65" in NOTES and "磨砂清晰度 85%" in NOTES,
+    "更新日志": "VaultHub 蜀鼠之家 v0.9.65" in LOG and "磨砂清晰度 85%" in LOG,
 }
 failed = [name for name, ok in checks.items() if not ok]
 for name, ok in checks.items():
     print(("PASS" if ok else "FAIL") + ": " + name)
 if failed:
-    raise SystemExit(f"FAIL: v0.9.64 契约 {len(failed)} 项未通过")
-print("PASS: v0.9.64 音频/视频媒体播放会话保活 + 海报放大按钮契约通过")
+    raise SystemExit(f"FAIL: v0.9.65 契约 {len(failed)} 项未通过")
+print("PASS: v0.9.65 音频/视频媒体播放会话保活 + 海报放大按钮契约通过")

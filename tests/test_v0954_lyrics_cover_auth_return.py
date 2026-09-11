@@ -99,8 +99,8 @@ check("关闭详情复位语境", "seriesEpisodeReturn=null" in MEDIA)
 
 # ---------------------------------------------------------------- 版本与发布
 check("release notes", (ROOT / ".github" / "RELEASE_NOTES_0.9.56.md").exists(), "缺少 v0.9.56 release notes")
-check("版本串", HTML.count("v0.9.64") >= 2 and 'VAULTHUB_SCRIPT_VERSION = "0.9.64"' in STATE)
-check("资产缓存版本", 'v=0.9.64' in HTML)
+check("版本串", HTML.count("v0.9.65") >= 2 and 'VAULTHUB_SCRIPT_VERSION = "0.9.65"' in STATE)
+check("资产缓存版本", 'v=0.9.65' in HTML)
 check("compose 跟随 latest", (ROOT / "docker-compose.yml").read_text(encoding="utf-8").find("ghcr.io/q807738511/vaulthub:latest") >= 0)
 check("无旧版本残留", "0.9.53" not in HTML and "0.9.53" not in STATE and "0.9.53" not in MEDIA
       and "0.9.53" not in COVERGO)
