@@ -261,7 +261,7 @@ check("rollback.sh 还原 vaulthub.env",
 
 # 版本号
 check("index.html 当前版本号为 v0.9.66",
-      read("index.html").count("v0.9.67") >= 2,
+      read("index.html").count("v0.9.68") >= 2,
       f"出现 {read('index.html').count('v0.9.66')} 次")
 
 # ---------------------------------------------------------------- 输出

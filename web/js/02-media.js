@@ -12,7 +12,9 @@ function setPlaybackBg(imageUrl) {
   let bg = document.getElementById("playbackBg");
   if (!bg) { bg = document.createElement("div"); bg.id = "playbackBg"; bg.className = "playback-bg"; main.prepend(bg); }
   if (!imageUrl) { clearPlaybackBg(); return; }
-  bg.style.backgroundImage = `url('${imageUrl}')`;
+  /* v0.9.68：封面 URL 一律经 cssUrlValue 清洗后再拼进 style（与 v0.9.66 的详情背景一致）。
+     数据来源含服务端元数据缓存（可由已登录用户写入），未清洗时等于把 CSS 值注入面留给它。 */
+  bg.style.backgroundImage = `url('${cssUrlValue(imageUrl)}')`;
   /* 图片加载成功后再显示，避免闪烁 */
   const img = new Image();
   img.onload = () => bg.classList.add("show");

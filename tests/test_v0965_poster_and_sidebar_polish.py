@@ -9,7 +9,7 @@ STATE = (ROOT / "web/js/01-state.js").read_text(encoding="utf-8")
 MEDIA = (ROOT / "web/js/02-media.js").read_text(encoding="utf-8")
 ZOOM = (ROOT / "web/js/03-audio-zoom.js").read_text(encoding="utf-8")
 CSS = (ROOT / "web/css/main.css").read_text(encoding="utf-8")
-NOTES = ROOT / ".github/RELEASE_NOTES_0.9.67.md"
+NOTES = ROOT / ".github/RELEASE_NOTES_0.9.68.md"
 
 checks = {
     # 1. 专辑 / 歌手海报标签上的编辑按钮移除，编辑入口合并到曲目列表
@@ -47,8 +47,8 @@ checks = {
     "磨砂模糊半径降低": "blur(14px) saturate(1.1) brightness(.66)" in CSS,
 
     # 版本与发布资料
-    "HTML版本": 'VAULTHUB_ASSET_VERSION = "0.9.67"' in HTML and HTML.count("?v=0.9.67") >= 7,
-    "脚本版本": 'VAULTHUB_SCRIPT_VERSION = "0.9.67"' in STATE,
+    "HTML版本": 'VAULTHUB_ASSET_VERSION = "0.9.68"' in HTML and HTML.count("?v=0.9.68") >= 7,
+    "脚本版本": 'VAULTHUB_SCRIPT_VERSION = "0.9.68"' in STATE,
     "发布说明": NOTES.exists(),
 }
 

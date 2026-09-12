@@ -8,7 +8,7 @@ HTML = (ROOT / "index.html").read_text(encoding="utf-8")
 STATE = (ROOT / "web/js/01-state.js").read_text(encoding="utf-8")
 ZOOM = (ROOT / "web/js/03-audio-zoom.js").read_text(encoding="utf-8")
 CSS = (ROOT / "web/css/main.css").read_text(encoding="utf-8")
-NOTES = (ROOT / ".github/RELEASE_NOTES_0.9.67.md").read_text(encoding="utf-8")
+NOTES = (ROOT / ".github/RELEASE_NOTES_0.9.68.md").read_text(encoding="utf-8")
 LOG = (ROOT / "Update Log.md").read_text(encoding="utf-8")
 # v0.9.66 的返回路径文案属于该版本的历史说明（当前 notes 已前移到 v0.9.67）。
 NOTES_0966 = (ROOT / ".github/RELEASE_NOTES_0.9.66.md").read_text(encoding="utf-8")
@@ -50,11 +50,11 @@ checks = {
     "发布说明文案澄清": "点击遮罩任意位置或按 Esc" in NOTES_0966
         and "遮罩 z-index 高于播放器" in NOTES_0966
         and "放大按钮此时被遮住不可点" in NOTES_0966,
-    "更新日志记载": "v0.9.67" in LOG,
+    "更新日志记载": "v0.9.68" in LOG,
 
     # 版本
-    "HTML版本": 'VAULTHUB_ASSET_VERSION = "0.9.67"' in HTML and HTML.count("?v=0.9.67") >= 7,
-    "脚本版本": 'VAULTHUB_SCRIPT_VERSION = "0.9.67"' in STATE,
+    "HTML版本": 'VAULTHUB_ASSET_VERSION = "0.9.68"' in HTML and HTML.count("?v=0.9.68") >= 7,
+    "脚本版本": 'VAULTHUB_SCRIPT_VERSION = "0.9.68"' in STATE,
 }
 
 failed = [name for name, ok in checks.items() if not ok]

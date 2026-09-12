@@ -135,10 +135,14 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
 			errJSON(w, 401, "login required")
 			return
 		}
+		/* 审查建议：不带 path 即清空整库过于隐晦，要求显式 ?all=1 防误删。 */
 		if path := r.URL.Query().Get("path"); path != "" {
 			_, _ = a.db.Exec(`DELETE FROM audio_metadata WHERE lib=? AND path=?`, l.ID, path)
-		} else {
+		} else if r.URL.Query().Get("all") == "1" {
 			_, _ = a.db.Exec(`DELETE FROM audio_metadata WHERE lib=?`, l.ID)
+		} else {
+			errJSON(w, 400, "path or all=1 required")
+			return
 		}
 		writeJSON(w, 200, map[string]any{"ok": true})
 	default:
