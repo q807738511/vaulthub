@@ -22,7 +22,7 @@ dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
 wf = (ROOT / ".github/workflows/publish-image.yml").read_text(encoding="utf-8")
 index = (ROOT / "index.html").read_text(encoding="utf-8")
 state = (ROOT / "web/js/01-state.js").read_text(encoding="utf-8")
-release = (ROOT / ".github/RELEASE_NOTES_0.9.66.md").read_text(encoding="utf-8")
+release = (ROOT / ".github/RELEASE_NOTES_0.9.67.md").read_text(encoding="utf-8")
 
 
 def test_compose_tracks_ghcr_latest():
@@ -74,9 +74,9 @@ def test_dockerfile_bakes_template_defaults():
 
 
 def test_version_strings():
-    assert "0.9.66" in index
-    assert 'VAULTHUB_SCRIPT_VERSION = "0.9.66"' in state
-    assert "VaultHub 蜀鼠之家 v0.9.66" in release
+    assert "0.9.67" in index
+    assert 'VAULTHUB_SCRIPT_VERSION = "0.9.67"' in state
+    assert "VaultHub 蜀鼠之家 v0.9.67" in release
 
 
 if __name__ == "__main__":

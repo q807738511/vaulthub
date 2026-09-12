@@ -580,14 +580,24 @@ function mediaStateKey(libId, path) { return `vaulthub_reading_${libId}_${path}`
    localStorage 仍然写一份，用于换页/离线时的即时渲染，但真正的权威值来自
    服务端；否则换浏览器或清缓存后进度全丢，表现为「关闭后回到第一页」。
    渲染路径（renderBookCard 等）是同步的，所以服务端值先拉进内存缓存。 */
-const readingProgressCache = {};   // libId -> { path: progress }
+const readingProgressCache = {};   // v0.9.67: libId -> { path: {progress, page, total} }
 const readingProgressLoaded = {};  // libId -> Promise
 let readingProgressFlushTimer = null;
 const readingProgressPending = new Map(); // `${libId}\n${path}` -> progress
 function readingState(libId, path) {
+  /* v0.9.67：进度同时保留百分比与页码。页码是漫画阅读器的权威值
+     （百分比在页数变化、不同设备字号下会漂移）；旧数据没有 page 时由调用方按
+     total 换算，详见 comicResumePage()。 */
+  let local = {};
+  try { local = JSON.parse(localStorage.getItem(mediaStateKey(libId, path))) || {}; } catch (e) { local = {}; }
   const remote = readingProgressCache[libId];
-  if (remote && Object.prototype.hasOwnProperty.call(remote, path)) return { progress: Number(remote[path]) || 0 };
-  try { return JSON.parse(localStorage.getItem(mediaStateKey(libId, path))) || { progress: 0 }; } catch (e) { return { progress: 0 }; }
+  const item = remote && Object.prototype.hasOwnProperty.call(remote, path) ? remote[path] : null;
+  const src = item && typeof item === "object" ? item : local;
+  return {
+    progress: Number(src.progress) || 0,
+    page: Number(src.page) || 0,
+    total: Number(src.total) || 0
+  };
 }
 async function loadReadingProgress(libId, force = false) {
   if (!libId) return {};
@@ -598,7 +608,13 @@ async function loadReadingProgress(libId, force = false) {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const map = {};
-      for (const [path, item] of Object.entries(data.items || {})) map[path] = Number(item?.progress) || 0;
+      for (const [path, item] of Object.entries(data.items || {})) {
+        map[path] = {
+          progress: Number(item && item.progress) || 0,
+          page: Number(item && item.page) || 0,
+          total: Number(item && item.total) || 0
+        };
+      }
       readingProgressCache[libId] = map;
       return map;
     } catch (e) {
@@ -612,23 +628,29 @@ function flushReadingProgress() {
   readingProgressFlushTimer = null;
   const items = [...readingProgressPending.entries()];
   readingProgressPending.clear();
-  for (const [key, progress] of items) {
+  for (const [key, entry] of items) {
     const [libId, path] = key.split("\n");
     fetch(`/api/media/reading/progress?id=${encodeURIComponent(libId)}&path=${encodeURIComponent(path)}`, {
       method: "PUT",
       headers: sessionWriteHeaders(true),
       credentials: "same-origin",
-      body: JSON.stringify({ progress })
+      body: JSON.stringify(entry)
     }).catch(() => {});
   }
 }
-function saveReadingProgress(libId, path, progress) {
+function saveReadingProgress(libId, path, progress, page, total) {
   const value = Math.max(0, Math.min(100, Number(progress) || 0));
-  try { localStorage.setItem(mediaStateKey(libId, path), JSON.stringify({ progress: value, updatedAt: Date.now() })); } catch (e) {}
+  const prev = readingState(libId, path);
+  const entry = {
+    progress: value,
+    page: Number(page) > 0 ? Number(page) : prev.page,
+    total: Number(total) > 0 ? Number(total) : prev.total
+  };
+  try { localStorage.setItem(mediaStateKey(libId, path), JSON.stringify(Object.assign({}, entry, { updatedAt: Date.now() }))); } catch (e) {}
   if (!readingProgressCache[libId]) readingProgressCache[libId] = {};
-  readingProgressCache[libId][path] = value;
+  readingProgressCache[libId][path] = entry;
   /* 滚动会高频触发，合并 800ms 内的写入，避免刷爆后端。 */
-  readingProgressPending.set(`${libId}\n${path}`, value);
+  readingProgressPending.set(`${libId}\n${path}`, entry);
   if (!readingProgressFlushTimer) readingProgressFlushTimer = setTimeout(flushReadingProgress, 800);
   return value;
 }
@@ -1219,6 +1241,9 @@ function scrapeAudioMetadata(host, lib, files) {
   return run;
 }
 async function scrapeAudioMetadataInner(host, lib, files) {
+  /* v0.9.67：先吃服务端缓存（sqlite，绑定 size+mtime 失效）——
+     换浏览器/清缓存后无需重新联网刮削，上千首也是毫秒级。 */
+  await loadAudioServerCache(lib.id);
   const all = readAudioMetadata();
   const pending = files.filter(file => {
     const path = String(file.path);
@@ -1236,6 +1261,11 @@ async function scrapeAudioMetadataInner(host, lib, files) {
       const response = await fetch(`/api/media/audio/metadata?title=${encodeURIComponent(fallback.title)}&artist=${encodeURIComponent(known?fallback.artist:"")}`, { cache: "force-cache" });
       const item = response.ok ? await response.json() : null;
       if (item) {
+        /* v0.9.67：成功结果写入服务端缓存，供下次直接读取（不重复联网）。 */
+        saveAudioServerCache(lib.id, path, {
+          title: item.title, artist: item.artist, album: item.album,
+          cover: item.cover, provider: item.provider || "MusicBrainz"
+        });
         /* v0.9.56：单路径合并写，不再基于旧快照整表覆写 —— 音乐库视图与首页「最近入库」
            可能并发触发多次刮削，整表写会把另一路刚本地化的封面冲回远端。 */
         const cur = readAudioMetadata();
@@ -1551,6 +1581,8 @@ function playAudioFile(libId, path) {
   audioSetPauseIcon(true);
   renderPlayerLyrics(meta);
   updateAudioExpandArt(meta);
+  /* v0.9.67：播放时若本曲没有歌词，自动按「本地识别 → 在线源链」补一次并落盘 .lrc。 */
+  ensureAudioLyrics(lib.id, path, meta);
   localizeAudioCover(lib.id, path); // v0.9.56：远端封面顺带落盘持久化（只读媒体库自动回退）
   updateAudioFavoriteButton();
 }
@@ -1723,7 +1755,12 @@ function scrapeVisibleBookCovers(host) {
 function renderBookCard(group, lib, file) {
   const path = String(file.path), title = displayBookTitle(path), ext = fileExt(path).toUpperCase() || "BOOK";
   const progress = Number(readingState(lib.id, path).progress || 0);
-  return `<article class="book-card" data-media-group="${esc(group)}" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openLocalMediaButton(this)"><div class="book-cover" style="background:${coverGradient(title)}"><span class="book-cover-title">${esc(title)}</span><img class="book-cover-image" data-cover-title="${esc(title)}" alt="${esc(title)} 封面" hidden onload="this.hidden=false;this.classList.add('loaded')" onerror="bookCoverFallback(this)"></div><div class="book-card-title" title="${esc(path)}">${esc(title)}</div><div class="book-card-meta"><span>${esc(ext)}</span><span>${progress ? progress.toFixed(1)+"%" : "新入书架"}</span></div><div class="book-progress"><span style="width:${Math.min(100,progress)}%"></span></div></article>`;
+  /* v0.9.67：漫画归档（zip/cbz）直接用「第一页缩略图」当封面（服务端 w=320，
+     命中磁盘缓存；省掉此前外网刮削既慢又常失败的问题）。刮削仍可选覆盖。 */
+  const archiveCover = group === "comic" && ["ZIP", "CBZ"].includes(ext) ? comicCoverUrl(lib, path, 320) : "";
+  return `<article class="book-card" data-media-group="${esc(group)}" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openLocalMediaButton(this)"><div class="book-cover" style="background:${coverGradient(title)}"><span class="book-cover-title">${esc(title)}</span>${archiveCover
+      ? `<img class="book-cover-image" src="${esc(archiveCover)}" alt="${esc(title)} 封面" loading="lazy" onload="this.classList.add('loaded')" onerror="bookCoverFallback(this)">`
+      : `<img class="book-cover-image" data-cover-title="${esc(title)}" alt="${esc(title)} 封面" hidden onload="this.hidden=false;this.classList.add('loaded')" onerror="bookCoverFallback(this)">`}</div><div class="book-card-title" title="${esc(path)}">${esc(title)}</div><div class="book-card-meta"><span>${esc(ext)}</span><span>${progress ? progress.toFixed(1)+"%" : "新入书架"}</span></div><div class="book-progress"><span style="width:${Math.min(100,progress)}%"></span></div></article>`;
 }
 function openLocalMediaButton(button) {
   openLocalMedia(button.dataset.mediaGroup, button.dataset.mediaLibrary, button.dataset.mediaPath);
@@ -1816,6 +1853,565 @@ function markReaderCompleted() {
   saveReadingProgress(activeReader.libId, activeReader.path, 100);
   toast("✅ 已归档到已读收藏");
 }
+
+
+/* ==================== v0.9.67 音乐歌词与元数据缓存 ====================
+   用户诉求：① 增加刮削源提高命中率 ② 歌词能刮削并自动填充
+             ③ 「独立做媒体库写入来缓存，预备下次读取」。
+
+   实测结论（从生产容器直连）：
+     LRCLIB /api/get 200/0.85s（含时间轴）← 主源；/api/search 偶发 503 需退避
+     lyrics.ovh 英文可用、中文 404；NetEase 未公开接口最快但默认关闭
+     （api.synclrc.com 实测不可达、Deezer 从 NAS 超时 —— 均未采纳）
+   歌词落盘策略：写媒体库同目录 <名>.lrc（原子写、可回滚、行业通用），
+   不改音频文件内嵌标签（重写原文件风险高）。 */
+const AUDIO_SERVER_CACHE = {};        // libId -> { path: entry }
+const AUDIO_SERVER_CACHE_LOADED = {}; // libId -> Promise
+const audioLyricsAttempted = new Set(); // 本次会话已尝试过的曲目（含失败）
+
+async function loadAudioServerCache(libId, force = false) {
+  if (!libId) return {};
+  if (!force && AUDIO_SERVER_CACHE_LOADED[libId]) return AUDIO_SERVER_CACHE_LOADED[libId];
+  AUDIO_SERVER_CACHE_LOADED[libId] = (async () => {
+    try {
+      const res = await fetch(`/api/media/audio/cache?id=${encodeURIComponent(libId)}`, { cache: "no-store", credentials: "same-origin" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const items = data.items || {};
+      AUDIO_SERVER_CACHE[libId] = items;
+      applyAudioServerCache(libId, items);
+      return items;
+    } catch (e) {
+      AUDIO_SERVER_CACHE[libId] = AUDIO_SERVER_CACHE[libId] || {};
+      return AUDIO_SERVER_CACHE[libId];
+    }
+  })();
+  return AUDIO_SERVER_CACHE_LOADED[libId];
+}
+/* 服务端缓存 → 本地元数据层：仅在本地没有「手动/已刮削」记录时补齐，
+   避免覆盖用户手动适配的内容。 */
+function applyAudioServerCache(libId, items) {
+  const all = readAudioMetadata();
+  let changed = false;
+  for (const [path, entry] of Object.entries(items || {})) {
+    const cur = all[path];
+    if (cur && (cur.provider === "manual")) continue;
+    if (cur && cur.provider && String(cur.lyrics || "").trim()) continue;
+    const merged = Object.assign({}, cur || audioBaseMetadata(path), {
+      title: entry.title || (cur && cur.title) || audioBaseMetadata(path).title,
+      artist: entry.artist || (cur && cur.artist) || "未知歌手",
+      album: entry.album || (cur && cur.album) || "未知专辑",
+      cover: (cur && cur.cover) || entry.cover || "",
+      lyrics: (cur && cur.lyrics) || entry.lyrics || "",
+      lyrics_source: (cur && cur.lyrics_source) || entry.lyrics_source || "",
+      provider: (cur && cur.provider) || entry.provider || "",
+      checkedAt: entry.checked_at ? entry.checked_at * 1000 : Date.now()
+    });
+    all[path] = merged;
+    changed = true;
+  }
+  if (changed) writeAudioMetadata(all);
+}
+function saveAudioServerCache(libId, path, patch) {
+  if (!libId || !path) return;
+  try {
+    const body = Object.assign({ path }, patch || {});
+    fetch(`/api/media/audio/cache?id=${encodeURIComponent(libId)}`, {
+      method: "POST",
+      headers: sessionWriteHeaders(true),
+      credentials: "same-origin",
+      body: JSON.stringify(body)
+    }).catch(() => { /* 缓存写入失败不影响当前会话展示 */ });
+    const store = AUDIO_SERVER_CACHE[libId] || (AUDIO_SERVER_CACHE[libId] = {});
+    store[path] = Object.assign({ path }, store[path] || {}, patch || {});
+  } catch (e) {}
+}
+/* 歌词刮削：本地识别优先（服务端会先读同名 .lrc 与内嵌标签），命中后落盘 sidecar。 */
+async function fetchAudioLyrics(libId, path, opts = {}) {
+  const meta = audioMetadataFor(path);
+  const q = new URLSearchParams();
+  q.set("id", libId);
+  q.set("path", path);
+  q.set("title", opts.title || meta.title || "");
+  q.set("artist", opts.artist || (meta.artist && meta.artist !== "未知歌手" ? meta.artist : ""));
+  if (opts.save !== false) q.set("save", "1");
+  if (opts.force) q.set("force", "1");
+  const res = await fetch(`/api/media/audio/lyrics?${q.toString()}`, { cache: "no-store", credentials: "same-origin" });
+  if (!res.ok) return null;
+  const data = await res.json();
+  if (!data || !data.found || !data.lyrics) return null;
+  const all = readAudioMetadata();
+  const base = all[path] || audioBaseMetadata(path);
+  all[path] = Object.assign({}, base, {
+    lyrics: data.lyrics,
+    lyrics_source: data.lyrics_source || "online",
+    checkedAt: Date.now()
+  });
+  writeAudioMetadata(all);
+  saveAudioServerCache(libId, path, {
+    title: all[path].title, artist: all[path].artist, album: all[path].album,
+    cover: all[path].cover, lyrics: data.lyrics,
+    lyrics_source: data.lyrics_source || "online", provider: all[path].provider
+  });
+  return data;
+}
+function audioLyricsSourceLabel(path) {
+  const meta = audioMetadataFor(path) || {};
+  const src = String(meta.lyrics_source || "");
+  if (!src) return String(meta.lyrics || "").trim() ? "手动" : "";
+  return ({
+    "local-lrc": "本地 .lrc",
+    "local-id3": "内嵌标签",
+    "local-vorbis": "内嵌标签",
+    "local-mp4": "内嵌标签",
+    "LRCLIB": "LRCLIB",
+    "lyrics.ovh": "lyrics.ovh",
+    "NetEase": "网易云",
+    "manual": "手动"
+  })[src] || src;
+}
+/* 播放时自动补歌词（本次会话每曲只尝试一次；失败静默，不打扰阅读）。 */
+async function ensureAudioLyrics(libId, path, meta) {
+  if (!libId || !path) return;
+  const current = meta || audioMetadataFor(path);
+  if (current && String(current.lyrics || "").trim()) return;
+  if (audioLyricsAttempted.has(path)) return;
+  audioLyricsAttempted.add(path);
+  try {
+    const data = await fetchAudioLyrics(libId, path, {});
+    if (!data) return;
+    const active = activeAudio && String(active.path) === String(path);
+    if (active) {
+      renderPlayerLyrics(audioMetadataFor(path));
+      updateAudioExpandArt(audioMetadataFor(path));
+    }
+    toast(`🎵 已自动填充歌词（${audioLyricsSourceLabel(path) || "在线"}）`);
+    const lib = findMediaLibrary(libId);
+    if (lib && audioView) loadLocalFiles("audio", lib, audioCursor);
+  } catch (e) { /* 取歌词失败不影响播放 */ }
+}
+/* 弹窗内「在线刮削歌词」按钮：把结果回填到文本框，用户确认后再保存。 */
+async function scrapeLyricsForOpenEditor() {
+  const path = document.getElementById("audioMetadataPath")?.value || "";
+  const lib = findMediaLibrary(localMediaSelection.audio);
+  if (!path || !lib) return;
+  const box = document.getElementById("audioMetadataLyrics");
+  toast("🎵 正在刮削歌词…");
+  try {
+    const data = await fetchAudioLyrics(lib.id, path, {
+      title: document.getElementById("audioMetadataTitle")?.value || "",
+      artist: document.getElementById("audioMetadataArtist")?.value || "",
+      force: true
+    });
+    if (!data) { toast("⚠️ 未找到歌词（可换关键字后重试）"); return; }
+    if (box) box.value = data.lyrics;
+    toast(`🎵 已获取歌词（${audioLyricsSourceLabel(path) || data.lyrics_source}），点「保存适配」写入`);
+  } catch (e) { toast("⚠️ 歌词刮削失败：" + (e.message || e)); }
+}
+/* 批量：当前库里还没有歌词的曲目，每批最多 50 首（服务端串行节流，避免触发限流）。 */
+async function scrapeAllAudioLyrics() {
+  const lib = findMediaLibrary(localMediaSelection.audio);
+  if (!lib) { toast("⚠️ 请先选择音乐库"); return; }
+  let pool = audioFiles || [];
+  try {
+    const all = await fetchAllLibraryFiles(lib.id, { has_more: true }, 0);
+    const audioOnly = all.filter(file => supportedLocalMediaFile("audio", lib, String(file.path)));
+    if (audioOnly.length) pool = audioOnly;
+  } catch (e) { /* 整库拉取失败就用当前页 */ }
+  const targets = pool.filter(file => !String((audioMetadataFor(String(file.path)) || {}).lyrics || "").trim()).slice(0, 50);
+  if (!targets.length) { toast("✅ 当前曲目都已有歌词"); return; }
+  toast(`🎵 正在刮削 ${targets.length} 首曲目的歌词…`);
+  try {
+    const res = await fetch(`/api/media/audio/lyrics/batch?id=${encodeURIComponent(lib.id)}`, {
+      method: "POST",
+      headers: sessionWriteHeaders(true),
+      credentials: "same-origin",
+      body: JSON.stringify({
+        save: true,
+        items: targets.map(file => {
+          const meta = audioMetadataFor(String(file.path)) || {};
+          return { path: String(file.path), title: meta.title || "", artist: (meta.artist && meta.artist !== "未知歌手") ? meta.artist : "" };
+        })
+      })
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    await loadAudioServerCache(lib.id, true);
+    const l = findMediaLibrary(lib.id);
+    if (l) loadLocalFiles("audio", l, audioCursor);
+    toast(`🎵 歌词刮削完成：命中 ${data.hits || 0} / ${data.total || 0} 首`);
+  } catch (e) { toast("⚠️ 批量歌词刮削失败：" + (e.message || e)); }
+}
+
+/* ==================== v0.9.67 漫画阅读器 ====================
+   用户诉求（2026-09）：阅读太慢（像在用浏览器自带 PDF 阅读器）、希望有单页/双页/条漫与
+   阅读方向、按页码记进度、书架有封面。
+
+   实测定位（真实 4K 掃圖組 归档）：服务端解压 33ms/页并不是瓶颈，瓶颈是
+   「每页 1.5–3.8MB 原图 + 零预取 + 缓存仅 1 小时」。且归档内 95% 是 PNG 无损存档。
+   因此本模块做两件事：
+     ① 预取窗口（默认前后各 3 页）—— 翻页不再等网络，纯前端收益、零成本；
+     ② 可选「省流模式」—— 走服务端按页转码 /page?w=1600（JPEG，体积约 39%–56%，
+        内容寻址磁盘缓存 + immutable，只付一次成本）。LAN/4g 下默认关闭（原图直出更快），
+        仅在 saveData / 2g-3g 或用户显式开启时启用。
+   不引入任何第三方阅读器组件：StPageFlip 之类只提供翻页动画，解决不了单页 3.5MB 的传输问题。 */
+const COMIC_PREFS_KEY = "vaulthub_comic_prefs";
+const COMIC_PREFETCH_AHEAD = 3;
+const COMIC_DEFAULT_WIDTH = 1600;
+let comicState = null;
+let comicToolbarTimer = null;
+
+function comicPrefs() {
+  const def = { saveData: "auto", mode: "single", rtl: true, fit: "width", width: COMIC_DEFAULT_WIDTH };
+  try { return Object.assign(def, JSON.parse(localStorage.getItem(COMIC_PREFS_KEY) || "{}") || {}); } catch (e) { return def; }
+}
+function saveComicPrefs(patch) {
+  const next = Object.assign(comicPrefs(), patch || {});
+  try { localStorage.setItem(COMIC_PREFS_KEY, JSON.stringify(next)); } catch (e) {}
+  return next;
+}
+function comicSaveDataActive() {
+  const mode = String(comicPrefs().saveData || "auto");
+  if (mode === "on") return true;
+  if (mode === "off") return false;
+  const c = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  if (!c) return false;
+  if (c.saveData) return true;
+  return /^(slow-)?2g$|^3g$/.test(String(c.effectiveType || ""));
+}
+function comicTranscodeWidth() {
+  return comicSaveDataActive() ? (Number(comicPrefs().width) || COMIC_DEFAULT_WIDTH) : 0;
+}
+function comicPageUrl(lib, path, entry, width) {
+  const raw = String((entry && (entry.raw || entry.name)) || entry || "");
+  let u = "/api/media/archive/zip/page?id=" + encodeURIComponent(lib.id) + "&path=" + encodeURIComponent(path) + "&entry=" + encodeURIComponent(raw);
+  if (Number(width) > 0) u += "&w=" + encodeURIComponent(width);
+  return u;
+}
+function comicCoverUrl(lib, path, width) {
+  return "/api/media/archive/zip/cover?id=" + encodeURIComponent(lib.id) + "&path=" + encodeURIComponent(path) + "&w=" + (Number(width) || 320);
+}
+function comicPageUrlAt(state, page) {
+  const entry = state.entries[page - 1];
+  return entry ? comicPageUrl(state.lib, state.path, entry, comicTranscodeWidth()) : "";
+}
+function comicFitLabel(fit) { return fit === "height" ? "适高" : fit === "native" ? "原始" : "适宽"; }
+function comicModeLabel(mode) { return mode === "double" ? "双页" : mode === "scroll" ? "条漫" : "单页"; }
+function comicSaveLabel() {
+  const m = String(comicPrefs().saveData || "auto");
+  return m === "on" ? "省流·开" : m === "off" ? "省流·关" : "省流·自动";
+}
+function comicReaderHtml(state) {
+  return `<div class="comic-reader fit-${esc(state.fit)}" data-mode="${esc(state.mode)}" data-rtl="${state.rtl ? "1" : "0"}">
+<div class="comic-toolbar" data-comic-toolbar>
+<button class="comic-tool" type="button" data-act="prev" title="上一页（←）">‹</button>
+<span class="comic-page-box"><input class="comic-page-input" data-comic-page-input value="${state.page}" inputmode="numeric" aria-label="页码"> / <span data-comic-page-total>${state.total}</span></span>
+<button class="comic-tool" type="button" data-act="next" title="下一页（→）">›</button>
+<span class="comic-sep"></span>
+<button class="comic-tool" type="button" data-act="mode" data-value="single" title="单页模式">单页</button>
+<button class="comic-tool" type="button" data-act="mode" data-value="double" title="双页模式">双页</button>
+<button class="comic-tool" type="button" data-act="mode" data-value="scroll" title="条漫模式（连续滚动）">条漫</button>
+<span class="comic-sep"></span>
+<button class="comic-tool" type="button" data-act="rtl" title="切换阅读方向：右起（日漫）/ 左起">${state.rtl ? "右起" : "左起"}</button>
+<button class="comic-tool" type="button" data-act="fit" title="切换适应方式">${comicFitLabel(state.fit)}</button>
+<button class="comic-tool comic-tool-save" type="button" data-act="save" title="省流模式：远程网络下按页转码，单页体积降到约一半">${comicSaveLabel()}</button>
+<span class="comic-hint">${esc(comicModeLabel(state.mode))} · 左右半屏点击翻页 · Esc 关闭</span>
+</div>
+<div class="comic-stage" data-comic-stage>
+<div class="comic-slot"><img class="comic-img" data-slot="0" alt=""></div>
+<div class="comic-slot"><img class="comic-img" data-slot="1" alt=""></div>
+</div>
+</div>`;
+}
+/* 页码进度：新值优先；旧数据只有百分比时按 total 换算。 */
+function comicResumePage(state, saved) {
+  const total = state.total || 1;
+  const page = Number(saved && saved.page) || 0;
+  if (page > 0 && (!saved.total || Number(saved.total) === total)) return Math.max(1, Math.min(total, page));
+  const pct = Number(saved && saved.progress) || 0;
+  /* 先乘后除：pct/100*total 在 28.5% 这类取值上会得到 28.499…，四舍五入后差一页。 */
+  if (pct > 0) return Math.max(1, Math.min(total, Math.round(pct * total / 100) || 1));
+  return 1;
+}
+function mountComicReader(viewer, lib, path, entries, url) {
+  const prefs = comicPrefs();
+  const state = {
+    viewer, lib, path, entries, total: entries.length,
+    mode: ["single", "double", "scroll"].includes(prefs.mode) ? prefs.mode : "single",
+    rtl: !!prefs.rtl,
+    fit: ["width", "height", "native"].includes(prefs.fit) ? prefs.fit : "width",
+    page: 1, prefetched: new Set(), observer: null, keyHandler: null
+  };
+  state.page = comicResumePage(state, readingState(lib.id, path));
+  comicState = state;
+  viewer.innerHTML = viewerShell("comic", lib, path, comicReaderHtml(state), url, { doc: true });
+  comicBind(state);
+  comicRenderStage(state, true);
+  comicRecordProgress(state);
+}
+function comicScroller(state) {
+  return state.viewer.querySelector(".media-reader-body") || null;
+}
+function comicShowToolbar(root) {
+  if (!root) return;
+  const bar = root.querySelector("[data-comic-toolbar]");
+  if (!bar) return;
+  bar.classList.remove("toolbar-hidden");
+  if (comicToolbarTimer) clearTimeout(comicToolbarTimer);
+  comicToolbarTimer = setTimeout(() => { bar.classList.add("toolbar-hidden"); }, 3000);
+}
+function comicUpdateIndicator(state) {
+  const root = state.viewer.querySelector(".comic-reader");
+  if (!root) return;
+  const input = root.querySelector("[data-comic-page-input]");
+  if (input && document.activeElement !== input) input.value = String(state.page);
+  const total = root.querySelector("[data-comic-page-total]");
+  if (total) total.textContent = String(state.total);
+  root.querySelectorAll("[data-act='mode']").forEach(b => b.classList.toggle("active", b.dataset.value === state.mode));
+  const rtlBtn = root.querySelector("[data-act='rtl']");
+  if (rtlBtn) rtlBtn.textContent = state.rtl ? "右起" : "左起";
+  const fitBtn = root.querySelector("[data-act='fit']");
+  if (fitBtn) fitBtn.textContent = comicFitLabel(state.fit);
+  const saveBtn = root.querySelector("[data-act='save']");
+  if (saveBtn) {
+    saveBtn.textContent = comicSaveLabel();
+    saveBtn.classList.toggle("saving", comicSaveDataActive());
+  }
+  const hint = root.querySelector(".comic-hint");
+  if (hint) hint.textContent = `${comicModeLabel(state.mode)} · 左右半屏点击翻页 · Esc 关闭`;
+}
+function comicRenderStage(state, rebuild) {
+  const root = state.viewer.querySelector(".comic-reader");
+  if (!root) return;
+  const stage = root.querySelector("[data-comic-stage]");
+  if (!stage) return;
+  root.dataset.mode = state.mode;
+  root.dataset.rtl = state.rtl ? "1" : "0";
+  root.dataset.fit = state.fit;
+  stage.classList.toggle("comic-rtl", !!state.rtl);
+  stage.classList.toggle("is-scroll", state.mode === "scroll");
+  if (state.observer) { try { state.observer.disconnect(); } catch (e) {} state.observer = null; }
+  if (state.mode === "scroll") {
+    const wrap = stage.querySelector(".comic-archive-pages");
+    if (rebuild || !wrap) {
+      const html = state.entries.map((entry, i) => `<img class="comic-img" loading="lazy" decoding="async" data-page="${i + 1}" src="${esc(comicPageUrl(state.lib, state.path, entry, comicTranscodeWidth()))}" alt="第 ${i + 1} 页">`).join("");
+      stage.innerHTML = `<div class="comic-archive-pages">${html}</div>`;
+    } else {
+      wrap.querySelectorAll(".comic-img[data-page]").forEach(img => {
+        const page = Number(img.dataset.page) || 1;
+        const next = comicPageUrlAt(state, page);
+        if (next && img.getAttribute("src") !== next) img.setAttribute("src", next);
+      });
+    }
+    comicObserveScroll(state, stage);
+    comicUpdateIndicator(state);
+    return;
+  }
+  const slots = stage.querySelectorAll(".comic-slot");
+  if (!slots.length) return;
+  const pages = state.mode === "double" ? [state.page, state.page + 1].filter(p => p <= state.total) : [state.page];
+  slots.forEach((slot, idx) => {
+    const img = slot.querySelector(".comic-img");
+    const page = pages[idx];
+    if (!page) {
+      slot.hidden = true;
+      if (img) { img.removeAttribute("src"); img.alt = ""; delete img.dataset.page; }
+      return;
+    }
+    slot.hidden = false;
+    if (!img) return;
+    const next = comicPageUrlAt(state, page);
+    if (next && img.getAttribute("src") !== next) img.setAttribute("src", next);
+    img.alt = `第 ${page} 页`;
+    img.dataset.page = String(page);
+  });
+  if (state.mode === "single" && slots[1]) slots[1].hidden = true;
+  comicPrefetch(state);
+  comicUpdateIndicator(state);
+}
+function comicObserveScroll(state, stage) {
+  if (typeof IntersectionObserver !== "function") return;
+  const images = stage.querySelectorAll(".comic-img[data-page]");
+  if (!images.length) return;
+  state.observer = new IntersectionObserver(entries => {
+    let best = 0;
+    entries.forEach(en => {
+      if (!en.isIntersecting) return;
+      const p = Number(en.target.dataset.page) || 1;
+      if (p > best) best = p;
+    });
+    if (!best || best === state.page) return;
+    state.page = Math.min(state.total, best);
+    comicRecordProgress(state);
+    comicUpdateIndicator(state);
+  }, { root: comicScroller(state), rootMargin: "-40% 0px -40% 0px", threshold: 0 });
+  images.forEach(img => state.observer.observe(img));
+}
+function comicPrefetch(state) {
+  if (state.mode === "scroll" || !state.total) return;
+  const ahead = state.mode === "double" ? COMIC_PREFETCH_AHEAD * 2 : COMIC_PREFETCH_AHEAD;
+  const list = [state.page - 1];
+  for (let d = 1; d <= ahead; d++) list.push(state.page + d);
+  list.forEach(page => {
+    if (page < 1 || page > state.total) return;
+    const url = comicPageUrlAt(state, page);
+    if (!url || state.prefetched.has(url)) return;
+    state.prefetched.add(url);
+    try {
+      const img = new Image();
+      img.decoding = "async";
+      img.fetchPriority = "low";
+      img.src = url;
+    } catch (e) { /* 预取失败不影响当前页阅读 */ }
+  });
+}
+function comicRecordProgress(state) {
+  if (!state) return;
+  const total = state.total || 1;
+  const percent = total > 1 ? (state.page - 1) / (total - 1) * 100 : 100;
+  saveReadingProgress(state.lib.id, state.path, percent, state.page, total);
+}
+function comicSetPage(state, page, opts) {
+  if (!state) return;
+  const o = opts || {};
+  const next = Math.max(1, Math.min(state.total || 1, Number(page) || 1));
+  state.page = next;
+  comicRenderStage(state, !!o.rebuild);
+  if (state.mode === "scroll" && o.scroll) {
+    /* 用相对位移设置 scrollTop，而不用浏览器的滚动定位 API：后者会连带滚动外层文档，
+       在读者视图里表现为「翻页把整页顶走」（既有契约只允许 scrollViewerIntoView 调用它）。 */
+    const scroller = comicScroller(state);
+    const target = state.viewer.querySelector(`.comic-img[data-page="${next}"]`);
+    if (scroller && target) {
+      const delta = target.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+      if (Number.isFinite(delta)) scroller.scrollTop = Math.max(0, scroller.scrollTop + delta);
+    }
+  }
+  comicRecordProgress(state);
+  comicShowToolbar(state.viewer.querySelector(".comic-reader"));
+}
+function comicStep(state, delta) {
+  if (!state) return;
+  comicSetPage(state, state.page + Number(delta || 0), { rebuild: false, scroll: state.mode === "scroll" });
+}
+function comicGoto(state, value) {
+  if (!state) return;
+  comicSetPage(state, Number(value), { rebuild: false, scroll: state.mode === "scroll" });
+}
+function comicSetMode(state, mode) {
+  if (!state || !["single", "double", "scroll"].includes(mode)) return;
+  state.mode = mode;
+  saveComicPrefs({ mode });
+  comicRenderStage(state, true);
+  toast(`📖 已切换${comicModeLabel(mode)}模式`);
+}
+function comicBind(state) {
+  const root = state.viewer.querySelector(".comic-reader");
+  if (!root) return;
+  const bar = root.querySelector("[data-comic-toolbar]");
+  if (bar) {
+    bar.addEventListener("click", ev => {
+      const btn = ev.target.closest("button[data-act]");
+      if (!btn) return;
+      ev.preventDefault();
+      const act = btn.dataset.act;
+      const stepSize = state.mode === "double" ? 2 : 1;
+      if (act === "prev") comicStep(state, -stepSize);
+      else if (act === "next") comicStep(state, stepSize);
+      else if (act === "mode") comicSetMode(state, btn.dataset.value);
+      else if (act === "rtl") {
+        state.rtl = !state.rtl;
+        saveComicPrefs({ rtl: state.rtl });
+        comicRenderStage(state, true);
+        toast(state.rtl ? "📕 右起（日漫）" : "📗 左起");
+      } else if (act === "fit") {
+        const order = ["width", "height", "native"];
+        state.fit = order[(order.indexOf(state.fit) + 1) % order.length];
+        saveComicPrefs({ fit: state.fit });
+        comicRenderStage(state, false);
+      } else if (act === "save") {
+        const order = ["auto", "on", "off"];
+        const next = order[(order.indexOf(String(comicPrefs().saveData || "auto")) + 1) % order.length];
+        saveComicPrefs({ saveData: next });
+        state.prefetched = new Set();
+        comicRenderStage(state, true);
+        toast(next === "on" ? "🪶 省流模式：开（按页转码，单页体积约降到一半）" : next === "off" ? "🖼️ 省流模式：关（原图直出）" : "🪶 省流模式：自动（弱网才开）");
+      }
+    });
+  }
+  const input = root.querySelector("[data-comic-page-input]");
+  if (input) {
+    input.addEventListener("change", () => comicGoto(state, input.value));
+    input.addEventListener("keydown", ev => {
+      if (ev.key === "Enter") { ev.preventDefault(); comicGoto(state, input.value); input.blur(); }
+    });
+  }
+  const stage = root.querySelector("[data-comic-stage]");
+  if (stage) {
+    stage.addEventListener("click", ev => {
+      if (ev.target.closest("input,button,a")) return;
+      if (state.mode === "scroll") return;
+      const rect = stage.getBoundingClientRect();
+      if (!rect.width) return;
+      const leftHalf = ev.clientX - rect.left < rect.width / 2;
+      /* 右起（日漫）时左半屏才是「下一页」。 */
+      const forward = state.rtl ? leftHalf : !leftHalf;
+      comicStep(state, (state.mode === "double" ? 2 : 1) * (forward ? 1 : -1));
+    });
+  }
+  state.keyHandler = ev => {
+    /* 自愈条件必须包含「阅读器 DOM 仍在」：closeLocalViewer() 只清空 innerHTML，
+       视图容器本身仍 isConnected —— 只判 isConnected 会让监听在阅读器关闭后继续
+       响应方向键，静默改动「已关闭」这本书的进度。
+       清理时**只动自己**：不能调用 closeComicReader()（它清的是模块级当前状态），
+       否则旧阅读器的残留 handler 会把「刚打开的新阅读器」一起废掉（错位清理）。 */
+    const alive = state.viewer.isConnected && state.viewer.querySelector(".comic-reader");
+    if (comicState !== state || !alive) {
+      document.removeEventListener("keydown", state.keyHandler);
+      state.keyHandler = null;
+      if (state.observer) { try { state.observer.disconnect(); } catch (e) {} state.observer = null; }
+      if (comicState === state) comicState = null;
+      return;
+    }
+    const t = ev.target;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+    const stepSize = state.mode === "double" ? 2 : 1;
+    /* 工具栏提示写了「Esc 关闭」，就必须真的能关：此前只有音乐海报遮罩绑定了 Esc，
+       漫画阅读器只能点右上角 ✕，文案与实际不符。 */
+    if (ev.key === "Escape") {
+      ev.preventDefault();
+      closeLocalViewer("comic");
+      return;
+    }
+    if (ev.key === "ArrowRight" || ev.key === "PageDown" || (ev.key === " " && state.mode !== "scroll")) {
+      ev.preventDefault();
+      comicStep(state, state.rtl ? -stepSize : stepSize);
+    } else if (ev.key === "ArrowLeft" || ev.key === "PageUp") {
+      ev.preventDefault();
+      comicStep(state, state.rtl ? stepSize : -stepSize);
+    } else if (ev.key === "Home") {
+      ev.preventDefault();
+      comicSetPage(state, 1, { rebuild: false, scroll: true });
+    } else if (ev.key === "End") {
+      ev.preventDefault();
+      comicSetPage(state, state.total, { rebuild: false, scroll: true });
+    }
+  };
+  document.addEventListener("keydown", state.keyHandler);
+  root.addEventListener("mousemove", () => comicShowToolbar(root));
+  root.addEventListener("touchstart", () => comicShowToolbar(root), { passive: true });
+  comicShowToolbar(root);
+}
+/* 关闭/切走时释放 IntersectionObserver 与全局键盘监听，避免切书后重复响应。 */
+function closeComicReader() {
+  const state = comicState;
+  if (comicToolbarTimer) { clearTimeout(comicToolbarTimer); comicToolbarTimer = null; }
+  comicState = null;
+  if (!state) return;
+  if (state.observer) { try { state.observer.disconnect(); } catch (e) {} state.observer = null; }
+  if (state.keyHandler) { document.removeEventListener("keydown", state.keyHandler); state.keyHandler = null; }
+}
+
 const VIDEO_ENGINE_NATIVE = "native";
 const VIDEO_ENGINE_COMPAT = "compat";
 const VIDEO_ENGINE_WASM = "wasm";
@@ -2789,6 +3385,7 @@ async function openLocalMedia(group, libId, path) {
      viewer.innerHTML —— 旧 video 元素被移除前先停掉转码会话与 WASM 解码，
      否则服务端转码任务泄漏空转，且旧 blob/会话 URL 挂在已删除的 video 上。 */
   viewer.querySelectorAll(".media-video-body").forEach(root => { stopVideoPlaybackSession(root); terminateWasmVideo(root); });
+  closeComicReader();
   const ext = fileExt(path);
   const url = mediaFileUrl(lib, path);
   activeReader = { group, libId, path };
@@ -2800,10 +3397,13 @@ async function openLocalMedia(group, libId, path) {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const entries = data.entries || data.items || [];
-      body = entries.length ? `<div class="comic-archive-pages">${entries.map((entry,index)=>`<img loading="lazy" src="${esc(entry.url || `/api/media/archive/zip/register?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}&entry=${encodeURIComponent(entry.raw || entry.name)}`)}" alt="${esc(entry.name || ("第 " + (index+1) + " 页"))}">`).join("")}</div>` : '<div class="media-error">压缩包中没有可读取的图片</div>';
-      viewer.innerHTML = viewerShell(group, lib, path, body, url, { doc: true });
-      /* v0.9.30：漫画重新打开必须回到上次页，否则每次都从第一页开始。 */
-      if (entries.length) restoreReaderProgress(viewer, lib.id, path);
+      if (!entries.length) {
+        viewer.innerHTML = viewerShell(group, lib, path, '<div class="media-error">压缩包中没有可读取的图片</div>', url, { doc: true });
+        return;
+      }
+      /* v0.9.67：改用漫画阅读器（单页/双页/条漫 + 右起/左起 + 省流转码 + 预取 + 页码进度）。
+         旧的「一次性铺 261 个 lazy <img>」既无预取也无模式切换，只保留为条漫模式的内部实现。 */
+      mountComicReader(viewer, lib, path, entries, url);
       return;
     } catch (err) { viewer.innerHTML = viewerShell(group, lib, path, `<div class="media-error">ZIP 漫画读取失败：${esc(err.message)}</div>`, url, { doc: true }); return; }
   }

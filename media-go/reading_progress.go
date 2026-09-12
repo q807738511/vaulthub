@@ -20,7 +20,11 @@ import (
 // other write, so the same guard applies here.
 type readingProgressEntry struct {
 	Progress  float64 `json:"progress"`
-	UpdatedAt int64   `json:"updated_at,omitempty"`
+	/* v0.9.67：漫画阅读器改为「按页码」记录（百分比在页数变化/不同字号下会漂移）。
+	   Page/Total 为首选，Progress 仍保留写入以便书架卡片沿用百分比展示。 */
+	Page      int   `json:"page,omitempty"`
+	Total     int   `json:"total,omitempty"`
+	UpdatedAt int64 `json:"updated_at,omitempty"`
 }
 
 func (a *App) readingProgressPath() string {
@@ -133,6 +137,14 @@ func (a *App) readingProgress(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		in.Progress = math.Max(0, math.Min(100, in.Progress))
+		/* v0.9.67：页码同样做边界钳制与合法性校验，避免脏值写进进度库。 */
+		if in.Total < 0 || in.Total > 100000 || in.Page < 0 || in.Page > 100000 {
+			errJSON(w, 400, "invalid reading progress")
+			return
+		}
+		if in.Total > 0 && in.Page > in.Total {
+			in.Page = in.Total
+		}
 		in.UpdatedAt = time.Now().Unix()
 		a.configMu.Lock()
 		defer a.configMu.Unlock()

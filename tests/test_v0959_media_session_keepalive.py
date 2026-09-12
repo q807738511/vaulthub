@@ -10,13 +10,13 @@ MEDIA = (ROOT / "web/js/02-media.js").read_text(encoding="utf-8")
 FEATURES = (ROOT / "web/js/03-features.js").read_text(encoding="utf-8")
 ZOOM = (ROOT / "web/js/03-audio-zoom.js").read_text(encoding="utf-8")
 CSS = (ROOT / "web/css/main.css").read_text(encoding="utf-8")
-NOTES = (ROOT / ".github/RELEASE_NOTES_0.9.66.md").read_text(encoding="utf-8")
+NOTES = (ROOT / ".github/RELEASE_NOTES_0.9.67.md").read_text(encoding="utf-8")
 LOG = (ROOT / "Update Log.md").read_text(encoding="utf-8")
 
 checks = {
-    "版本资源": 'VAULTHUB_ASSET_VERSION = "0.9.66"' in HTML,
-    "脚本版本": 'VAULTHUB_SCRIPT_VERSION = "0.9.66"' in STATE,
-    "静态缓存串": HTML.count("?v=0.9.66") >= 7,
+    "版本资源": 'VAULTHUB_ASSET_VERSION = "0.9.67"' in HTML,
+    "脚本版本": 'VAULTHUB_SCRIPT_VERSION = "0.9.67"' in STATE,
+    "静态缓存串": HTML.count("?v=0.9.67") >= 7,
     "五分钟保活周期": "MEDIA_KEEPALIVE_MS = 5 * 60 * 1000" in STATE,
     "具名幂等 source": "const mediaKeepAliveSources = new Set()" in STATE,
     "保活刷新前端 idle": "markVaultHubActivity();" in STATE,
@@ -44,9 +44,9 @@ checks = {
     "toggleAudioCoverZoom 函数": "function toggleAudioCoverZoom()" in ZOOM and "audioCoverZoomed" in ZOOM,
     "切换遮罩显示": 'overlay.classList.toggle("show", audioCoverZoomed)' in ZOOM,
     "更新海报与回退": "audioFullscreenImg" in ZOOM and "audioFullscreenFallback" in ZOOM,
-    "加载 zoom 脚本": '<script src="/web/js/03-audio-zoom.js?v=0.9.66"></script>' in HTML,
-    "发布说明": "VaultHub 蜀鼠之家 v0.9.66" in NOTES and "遮罩左缘" in NOTES,
-    "更新日志": "VaultHub 蜀鼠之家 v0.9.66" in LOG and "遮罩左缘" in LOG,
+    "加载 zoom 脚本": '<script src="/web/js/03-audio-zoom.js?v=0.9.67"></script>' in HTML,
+    "发布说明": "VaultHub 蜀鼠之家 v0.9.67" in NOTES and "漫画阅读器" in NOTES,
+    "更新日志": "VaultHub 蜀鼠之家 v0.9.67" in LOG and "遮罩左缘" in LOG,
 }
 failed = [name for name, ok in checks.items() if not ok]
 for name, ok in checks.items():

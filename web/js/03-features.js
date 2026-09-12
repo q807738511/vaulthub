@@ -7,6 +7,9 @@ function closeLocalViewer(group) {
   const el = document.getElementById("local-media-viewer-" + group);
   if (el) el.querySelectorAll(".media-video-body").forEach(root => { stopVideoPlaybackSession(root); terminateWasmVideo(root); });
   if (el) el.innerHTML = "";
+  /* v0.9.67：关闭读者时同步释放漫画阅读器的 IntersectionObserver 与全局键盘监听，
+     否则关闭后方向键仍会改写这本书的阅读进度（DOM 没了，监听还活着）。 */
+  if (typeof closeComicReader === "function") closeComicReader();
   activeReader = null;
   /* v0.9.62：关闭视频/媒体播放器时清除背景虚化 */
   if (typeof clearPlaybackBg === "function") clearPlaybackBg();

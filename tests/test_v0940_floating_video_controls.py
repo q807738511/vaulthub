@@ -157,14 +157,14 @@ for key in ("vpCollapse", "vpExpand", "vpPreparing", "vpFullscreen", "vpPrev", "
             "vpRewind", "vpForward", "vpPlayPause", "vpClose", "vpMore", "vpInfo",
             "vpRepeat", "vpShuffle", "vpSettings", "vpQuality", "vpPlaylist", "vpVolume", "vpProgress"):
     check(STATE.count(f"{key}:") >= 3, f"播放器文案 {key} 必须三语齐备")
-check(HTML.count("v0.9.66") >= 2, "关于与侧栏版本必须是 v0.9.66")
-check('VAULTHUB_ASSET_VERSION = "0.9.66"' in HTML, "资源版本必须是 0.9.66")
-check('VAULTHUB_SCRIPT_VERSION = "0.9.66"' in STATE, "脚本版本必须是 0.9.66")
+check(HTML.count("v0.9.67") >= 2, "关于与侧栏版本必须是 v0.9.66")
+check('VAULTHUB_ASSET_VERSION = "0.9.67"' in HTML, "资源版本必须是 0.9.66")
+check('VAULTHUB_SCRIPT_VERSION = "0.9.67"' in STATE, "脚本版本必须是 0.9.66")
 check("ghcr.io/q807738511/vaulthub:latest" in COMPOSE, "v0.9.56 起 Compose 跟随 latest")
 check((ROOT / ".github/RELEASE_NOTES_0.9.56.md").exists(), "缺少 v0.9.56 release notes")
 
 if failures:
-    print(f"FAIL: {len(failures)} 项 v0.9.66 契约未满足")
+    print(f"FAIL: {len(failures)} 项 v0.9.67 契约未满足")
     for item in failures:
         print("  -", item)
     sys.exit(1)
