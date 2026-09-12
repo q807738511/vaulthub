@@ -1088,7 +1088,17 @@ function readAudioMetadata() {
   try { return JSON.parse(localStorage.getItem(audioMetadataCache) || "{}") || {}; } catch (e) { return {}; }
 }
 function writeAudioMetadata(data) {
-  try { localStorage.setItem(audioMetadataCache, JSON.stringify(data)); } catch (e) {}
+  try { localStorage.setItem(audioMetadataCache, JSON.stringify(data)); }
+  catch (e) {
+    /* v0.9.69：写入失败此前被静默吞掉（表现为「刮削过但下次打开又没了」）。
+       只提示一次；服务端 sqlite 缓存仍是权威来源，重开页面会自动回灌。 */
+    if (!writeAudioMetadata.warned) {
+      writeAudioMetadata.warned = true;
+      /* 措辞要准确：并非所有调用点都会写服务端缓存（专辑/歌手批量编辑只写本地），
+         且 Safari 隐私模式抛的是 SecurityError 而不一定是「已满」。 */
+      try { toast("⚠️ 浏览器本地缓存写入失败（可能已满或被隐私模式限制），本次修改可能仅在本会话有效"); } catch (err) {}
+    }
+  }
 }
 /* v0.9.56：封面写入媒体库持久化 —— 刮削/手动设置封面后自动 POST 到后端，
    存成媒体文件同目录 sidecar（<名>.cover.jpg/png/webp/gif），展示走同源本地 URL，
@@ -1876,10 +1886,14 @@ async function loadAudioServerCache(libId, force = false) {
   if (!force && AUDIO_SERVER_CACHE_LOADED[libId]) return AUDIO_SERVER_CACHE_LOADED[libId];
   AUDIO_SERVER_CACHE_LOADED[libId] = (async () => {
     try {
-      const res = await fetch(`/api/media/audio/cache?id=${encodeURIComponent(libId)}`, { cache: "no-store", credentials: "same-origin" });
+      /* v0.9.69：显式带上限；服务端会返回 truncated 标记（超过上限的尾部条目本次不加载）。 */
+      const res = await fetch(`/api/media/audio/cache?id=${encodeURIComponent(libId)}&limit=5000`, { cache: "no-store", credentials: "same-origin" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const items = data.items || {};
+      if (data.truncated) {
+        try { toast("ℹ️ 服务端元数据缓存较大，本次仅载入前 " + (data.limit || 5000) + " 条"); } catch (e) {}
+      }
       AUDIO_SERVER_CACHE[libId] = items;
       applyAudioServerCache(libId, items);
       return items;
@@ -2036,6 +2050,7 @@ async function scrapeAllAudioLyrics() {
         })
       })
     });
+    if (res.status === 429) throw new Error("已有歌词刮削任务在进行中，请稍后重试");
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     await loadAudioServerCache(lib.id, true);

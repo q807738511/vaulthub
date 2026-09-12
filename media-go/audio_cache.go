@@ -76,27 +76,45 @@ func (a *App) audioCache(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
+		/* v0.9.69：整库 GET 不分页，2k 曲目一次数 MB。在 **SQL 侧** 加 ORDER BY + LIMIT，
+		   而不是只裁剪响应体 —— 审查指出后者不会减少 DB 扫描与内存占用，且批次不确定。
+		   多取一行用于判定 truncated。 */
+		limit := 5000
+		if v := r.URL.Query().Get("limit"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 50000 {
+				limit = n
+			}
+		}
 		/* LEFT JOIN：仍在索引里且 size/mtime 一致的条目才算新鲜；
 		   索引里查不到的（如刚加入还没扫描完）也返回，交由前端决定是否重刮。 */
 		rows, err := a.db.Query(`
 SELECT m.path, m.title, m.artist, m.album, m.cover, m.lyrics, m.lyrics_source, m.provider, m.checked_at
 FROM audio_metadata m
 LEFT JOIN files f ON f.lib = m.lib AND f.path = m.path
-WHERE m.lib = ? AND (f.size IS NULL OR (f.size = m.size AND f.mtime = m.mtime))`, l.ID)
+WHERE m.lib = ? AND (f.size IS NULL OR (f.size = m.size AND f.mtime = m.mtime))
+ORDER BY m.path LIMIT ?`, l.ID, limit+1)
 		if err != nil {
 			errJSON(w, 500, "audio cache read failed")
 			return
 		}
 		defer rows.Close()
+		truncated := false
 		items := map[string]audioCacheEntry{}
+		scanned := 0
 		for rows.Next() {
 			var e audioCacheEntry
 			if err := rows.Scan(&e.Path, &e.Title, &e.Artist, &e.Album, &e.Cover, &e.Lyrics, &e.LyricsSource, &e.Provider, &e.CheckedAt); err != nil {
 				continue
 			}
+			if scanned >= limit {
+				/* 多取的那一行只用于判定截断，不入响应。 */
+				truncated = true
+				break
+			}
 			items[e.Path] = e
+			scanned++
 		}
-		writeJSON(w, 200, map[string]any{"id": l.ID, "items": items, "count": len(items)})
+		writeJSON(w, 200, map[string]any{"id": l.ID, "items": items, "count": len(items), "truncated": truncated, "limit": limit})
 	case http.MethodPut, http.MethodPost:
 		if !writeAuth(r) {
 			errJSON(w, 401, "login required")
