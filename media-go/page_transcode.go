@@ -34,8 +34,10 @@ const (
 	   16M 像素 ≈ 4000×4000，覆盖 4K 扫描页（约 8.3M px）仍有余量；
 	   单次峰值内存约 64MiB（源 RGBA）+ 64MiB（目标）+ 编码输出。 */
 	maxTranscodePixels = 16 << 20
-	// maxPageSourceBytes 超过该体积的条目不做转码，直接直出（避免一次读入过大内存）。
-	maxPageSourceBytes = 96 << 20
+	/* maxPageSourceBytes 超过该体积的条目不做转码，直接直出。
+	   审查指出 96MB 与 16M 像素上限不匹配（压缩源仍会整块读入内存，并发时叠加）；
+	   按 16M 像素与常见压缩比取 32MB，足以覆盖所有「可转码」的页。 */
+	maxPageSourceBytes = 32 << 20
 	// pageMaxHeight 长条图上限，避免极端长图产出畸形尺寸。
 	pageMaxHeight = 8192
 )

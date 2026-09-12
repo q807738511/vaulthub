@@ -46,6 +46,7 @@ type App struct {
 	itunesScrapeLast  time.Time
 	lyricsMu          sync.Mutex // v0.9.67: 歌词源全局节流（LRCLIB 突发会 503）
 	lyricsLast        time.Time
+	lyricsBatchSem    chan struct{} // v0.9.69: 批量歌词串行闸门（容量 1）
 	zipCacheMu        sync.Mutex
 	zipCache          *zipArchiveCache // v0.9.56: ZIP/CBZ 中央目录 LRU 缓存（漫画读取提速）
 	pageCacheMu       sync.Mutex
@@ -178,6 +179,9 @@ func (a *App) load() {
 	   与 FFmpeg 缓存同卷但不共享配额；上限设 0 即整体关闭转码（请求 w>0 也直出原图）。 */
 	a.pageCacheDir = env("MEDIA_PAGE_CACHE_DIR", filepath.Join(a.cacheDir, "page-cache"))
 	a.pageCacheMaxBytes = envInt64("MEDIA_PAGE_CACHE_MAX_BYTES", 4*1024*1024*1024)
+	/* v0.9.69：批量歌词串行闸门（容量 1）。必须在 load() 内初始化 —— 未初始化时闸门
+	   fail-closed，所有批量请求都会 429（测试里直接 new(App) 打端点的行为）。 */
+	a.lyricsBatchSem = make(chan struct{}, 1)
 	a.cacheMaxAge = time.Duration(envInt64("MEDIA_CACHE_MAX_AGE_HOURS", 168)) * time.Hour
 	a.cacheCleanup = time.Duration(envInt64("MEDIA_CACHE_CLEANUP_INTERVAL_HOURS", 24)) * time.Hour
 	a.cacheWake = make(chan struct{}, 1)

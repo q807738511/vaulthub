@@ -485,6 +485,14 @@ func (a *App) batchLyrics(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, 404, "library not found")
 		return
 	}
+	/* v0.9.69：单次批量已限 50 首 + 150s 预算，但并发多个请求仍会叠加外呼。
+	   这里用非阻塞闸门串行化：已有任务在跑时返回 429，前端稍后重试。 */
+	releaseBatch, allowed := a.beginLyricsBatch()
+	if !allowed {
+		errJSON(w, 429, "another lyrics batch is already running")
+		return
+	}
+	defer releaseBatch()
 	var in struct {
 		Items []struct {
 			Path   string `json:"path"`
@@ -558,6 +566,19 @@ func (a *App) batchLyrics(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, 200, map[string]any{"ok": true, "total": len(in.Items), "hits": hits, "items": out})
+}
+
+/* v0.9.69：批量歌词的进程内串行闸门（容量 1，非阻塞获取）。
+ * 返回 release 闭包而非独立的 end：审查指出「独立的 end + select/default」会被误调
+ * （一次非持有者的 end 就能清空持有者令牌，让两个批量同时跑）。闭包模式保证
+ * 只有取得令牌的那次调用能释放它，与 acquireTranscode 一致。 */
+func (a *App) beginLyricsBatch() (func(), bool) {
+	select {
+	case a.lyricsBatchSem <- struct{}{}:
+		return func() { <-a.lyricsBatchSem }, true
+	default:
+		return func() {}, false
+	}
 }
 
 var _ = bytes.MinRead

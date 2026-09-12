@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""v0.9.68 契约测试：漫画阅读器（按页转码/预取/模式/页码进度）+ 音乐歌词刮削与元数据缓存。"""
+"""v0.9.69 契约测试：漫画阅读器（按页转码/预取/模式/页码进度）+ 音乐歌词刮削与元数据缓存。"""
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -132,19 +132,18 @@ checks = {
     "播放自动补歌词": "ensureAudioLyrics(lib.id, path, meta)" in MEDIA,
     "歌词请求": "async function fetchAudioLyrics(" in MEDIA and "audio/lyrics?" in MEDIA,
     "来源标记": "function audioLyricsSourceLabel(" in MEDIA and "LRCLIB" in MEDIA,
-    "批量刮削入口": "async function scrapeAllAudioLyrics(" in MEDIA and "音频歌词" not in MEDIA
-        or "scrapeAllAudioLyrics" in MEDIA,
+    "批量刮削入口": "async function scrapeAllAudioLyrics(" in MEDIA and "scrapeAllAudioLyrics()" in HTML,
     "服务端缓存优先": "async function loadAudioServerCache(" in MEDIA
         and "saveAudioServerCache(lib.id, path" in MEDIA,
     "弹窗按钮": "scrapeLyricsForOpenEditor()" in HTML and "scrapeAllAudioLyrics()" in HTML,
 
     # ============ I. 版本与发布物 ============
-    "HTML版本": 'VAULTHUB_ASSET_VERSION = "0.9.68"' in HTML and HTML.count("?v=0.9.68") >= 7,
-    "脚本版本": 'VAULTHUB_SCRIPT_VERSION = "0.9.68"' in STATE,
-    "UI角标": "v0.9.68 · Review Hardening" in HTML,
+    "HTML版本": 'VAULTHUB_ASSET_VERSION = "0.9.69"' in HTML and HTML.count("?v=0.9.69") >= 7,
+    "脚本版本": 'VAULTHUB_SCRIPT_VERSION = "0.9.69"' in STATE,
+    "UI角标": "v0.9.69 · Hardening R2" in HTML,
     "发布说明": "VaultHub 蜀鼠之家 v0.9.67" in NOTES and "漫画阅读器" in NOTES  # 读的是本版（v0.9.67）历史说明
         and "歌词" in NOTES and "不新增任何容器" in NOTES,
-    "更新日志段": "# VaultHub 蜀鼠之家 v0.9.68" in LOG,
+    "更新日志段": "# VaultHub 蜀鼠之家 v0.9.69" in LOG,
     "历史说明未改": (ROOT / ".github/RELEASE_NOTES_0.9.66.md").read_text(encoding="utf-8").startswith(
         "# VaultHub 蜀鼠之家 v0.9.66"),
 }
@@ -156,5 +155,5 @@ failed = [name for name, ok in checks.items() if not ok]
 for name, ok in checks.items():
     print(("PASS" if ok else "FAIL") + ": " + name)
 if failed:
-    raise SystemExit(f"FAIL: v0.9.68 契约 {len(failed)} 项未通过: {failed}")
+    raise SystemExit(f"FAIL: v0.9.69 契约 {len(failed)} 项未通过: {failed}")
 print("PASS: v0.9.67 漫画阅读器（转码/预取/模式/页码）与音乐歌词刮削、刮削源扩展、服务端缓存契约通过")

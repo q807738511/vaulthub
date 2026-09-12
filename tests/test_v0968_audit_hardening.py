@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""v0.9.68 契约测试：第一轮独立安全审查「非阻塞项」的逐条修复守卫。
+"""v0.9.69 契约测试：第一轮独立安全审查「非阻塞项」的逐条修复守卫。
 
 每一条都对应审查报告里的一条建议，防止后续改动把它们改回去。
 """
@@ -15,7 +15,7 @@ GO_CACHE = (ROOT / "media-go/page_cache.go").read_text(encoding="utf-8")
 GO_HANDLER = (ROOT / "media-go/page_handler.go").read_text(encoding="utf-8")
 GO_LYRICS = (ROOT / "media-go/audio_lyrics.go").read_text(encoding="utf-8")
 GO_ACACHE = (ROOT / "media-go/audio_cache.go").read_text(encoding="utf-8")
-NOTES = (ROOT / ".github/RELEASE_NOTES_0.9.68.md").read_text(encoding="utf-8")
+NOTES = (ROOT / ".github/RELEASE_NOTES_0.9.69.md").read_text(encoding="utf-8")
 LOG = (ROOT / "Update Log.md").read_text(encoding="utf-8")
 NOTES_0967 = (ROOT / ".github/RELEASE_NOTES_0.9.67.md").read_text(encoding="utf-8")
 
@@ -63,11 +63,11 @@ checks = {
     "背景 URL 清洗": "bg.style.backgroundImage = `url('${cssUrlValue(imageUrl)}')`" in MEDIA,
 
     # 版本与发布物
-    "HTML版本": 'VAULTHUB_ASSET_VERSION = "0.9.68"' in HTML and HTML.count("?v=0.9.68") >= 7,
-    "脚本版本": 'VAULTHUB_SCRIPT_VERSION = "0.9.68"' in STATE,
-    "UI角标": "v0.9.68 · Review Hardening" in HTML,
-    "发布说明": "VaultHub 蜀鼠之家 v0.9.68" in NOTES and "非阻塞" in NOTES,
-    "更新日志段": "# VaultHub 蜀鼠之家 v0.9.68" in LOG,
+    "HTML版本": 'VAULTHUB_ASSET_VERSION = "0.9.69"' in HTML and HTML.count("?v=0.9.69") >= 7,
+    "脚本版本": 'VAULTHUB_SCRIPT_VERSION = "0.9.69"' in STATE,
+    "UI角标": "v0.9.69 · Hardening R2" in HTML,
+    "发布说明": "VaultHub 蜀鼠之家 v0.9.69" in NOTES and "非阻塞" in NOTES,
+    "更新日志段": "# VaultHub 蜀鼠之家 v0.9.69" in LOG,
     # 历史说明只增不改（v0.9.67 的说明文件必须仍以它自己的标题开头）
     "历史说明未改": NOTES_0967.startswith("# VaultHub 蜀鼠之家 v0.9.67"),
 }
@@ -76,5 +76,5 @@ failed = [name for name, ok in checks.items() if not ok]
 for name, ok in checks.items():
     print(("PASS" if ok else "FAIL") + ": " + name)
 if failed:
-    raise SystemExit(f"FAIL: v0.9.68 契约 {len(failed)} 项未通过: {failed}")
+    raise SystemExit(f"FAIL: v0.9.69 契约 {len(failed)} 项未通过: {failed}")
 print("PASS: v0.9.68 独立安全审查非阻塞项修复契约通过")

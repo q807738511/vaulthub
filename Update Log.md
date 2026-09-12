@@ -2,6 +2,22 @@
 
 > 主页项目介绍见 [README.md](README.md)；本文件为历史版本更新日志归档。
 
+# VaultHub 蜀鼠之家 v0.9.69：P3 加固补丁（v0.9.68 复审剩余项）
+
+v0.9.69 为收尾加固补丁，全部条目来自第二轮独立安全审查中尚未处理的低优先级项，无新功能：
+
+- 转码源体积上限 96MB → 32MB（与 16M 像素上限对齐，避免压缩源整块入内存）。
+- 元数据缓存 `GET /api/media/audio/cache` 改为 **SQL 侧** `ORDER BY … LIMIT`（默认 5000，上限 50000），返回 `truncated`/`limit`。
+- 批量歌词串行闸门改为**闭包释放**（`beginLyricsBatch() (release, ok)`）：并发批量返回 429，
+  且不可被非持有者误释放（原 `select/default` 的 end 模式脆弱）。
+- 前端：缓存请求带上限并处理 `truncated`；429 给出友好提示；localStorage 写入失败不再静默且文案准确。
+- 修掉一处因 `and/or` 优先级恒真的测试断言；新增 `tests/test_v0969_p3_hardening.py` 与
+  `media-go/v0969_batch_gate_test.go`，并以**突变验证**确认守卫有效（回退加固后该测试 6 项 FAIL）。
+
+详见 [RELEASE_NOTES_0.9.69.md](.github/RELEASE_NOTES_0.9.69.md)
+
+---
+
 # VaultHub 蜀鼠之家 v0.9.68：独立安全审查加固补丁
 
 v0.9.67 发布前经两轮独立安全审查（第一轮 `passed=false`：2 个阻塞项 + 13 条非阻塞建议）。
