@@ -354,11 +354,35 @@ func writeLyricsSidecar(absPath, text string) (string, bool) {
 	if strings.TrimSpace(text) == "" || len(text) > 64*1024 {
 		return "", false
 	}
+	/* 只对音频文件写 sidecar：safeFile 已保证目标在媒体库内，但原实现允许对库里
+	   任意 `<stem>.lrc`（含视频、含用户已有歌词）落盘。 */
+	if !isAudioMediaPath(absPath) {
+		return "", false
+	}
 	dir := filepath.Dir(absPath)
 	stem := strings.TrimSuffix(filepath.Base(absPath), filepath.Ext(absPath))
 	final := filepath.Join(dir, stem+".lrc")
-	tmp := final + ".tmp"
-	if err := os.WriteFile(tmp, []byte(text), 0o644); err != nil {
+	/* 目标若是指向别处的符号链接则跳过（避免被诱导写入链接目标）。 */
+	if fi, err := os.Lstat(final); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		return "", false
+	}
+	/* 临时名不可预测 + fsync + 显式权限，避免可预测 tmp 被预置链接利用。 */
+	f, err := os.CreateTemp(dir, "."+stem+".lrc-*.tmp")
+	if err != nil {
+		return "", false
+	}
+	tmp := f.Name()
+	if _, err := f.WriteString(text); err == nil {
+		err = f.Sync()
+	}
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	if err == nil {
+		err = os.Chmod(tmp, 0o644)
+	}
+	if err != nil {
+		_ = os.Remove(tmp)
 		return "", false
 	}
 	if err := os.Rename(tmp, final); err != nil {
@@ -382,6 +406,11 @@ func (a *App) audioLyrics(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, 404, "library not found")
 		return
 	}
+	/* 歌词只对音频库有意义：避免把影视库里的 GB 级文件拿来解析标签（审查 B2 建议）。 */
+	if l.Type != "audio" {
+		errJSON(w, 400, "lyrics require an audio library")
+		return
+	}
 	mediaPath := r.URL.Query().Get("path")
 	abs, _, e := safeFile(l, mediaPath)
 	if e != nil {
@@ -392,6 +421,10 @@ func (a *App) audioLyrics(w http.ResponseWriter, r *http.Request) {
 	force := r.URL.Query().Get("force") == "1"
 	if save && !writeAuth(r) {
 		errJSON(w, 401, "login required")
+		return
+	}
+	if !isAudioMediaPath(abs) {
+		errJSON(w, 400, "not an audio file")
 		return
 	}
 	var out lyricsResult
@@ -464,9 +497,14 @@ func (a *App) batchLyrics(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, 400, "invalid request body")
 		return
 	}
-	if len(in.Items) > 200 {
-		in.Items = in.Items[:200]
+	/* 审查建议：原上限 200 × 最多 3 个源 × 全局间隔 ≥900ms ≈ 单次 POST 可占用
+	   连接/goroutine 约 9 分钟，并让交互式单曲歌词请求全部排队。降到 50（与前端
+	   一次批量的规模一致）并加总时长预算，超时返回已完成的部分。 */
+	if len(in.Items) > 50 {
+		in.Items = in.Items[:50]
 	}
+	batchCtx, cancelBatch := context.WithTimeout(r.Context(), 150*time.Second)
+	defer cancelBatch()
 	type item struct {
 		Path    string `json:"path"`
 		Found   bool   `json:"found"`
@@ -487,6 +525,11 @@ func (a *App) batchLyrics(w http.ResponseWriter, r *http.Request) {
 		}
 		var res lyricsResult
 		found := false
+		if !isAudioMediaPath(abs) {
+			one.Error = "not an audio file"
+			out = append(out, one)
+			continue
+		}
 		if local, ok := localLyrics(abs); ok {
 			res, found = local, true
 		} else {
@@ -494,7 +537,7 @@ func (a *App) batchLyrics(w http.ResponseWriter, r *http.Request) {
 			if title == "" {
 				title = strings.TrimSuffix(filepath.Base(abs), filepath.Ext(abs))
 			}
-			if scraped, ok := a.scrapeAudioLyrics(r.Context(), title, it.Artist); ok {
+			if scraped, ok := a.scrapeAudioLyrics(batchCtx, title, it.Artist); ok {
 				res, found = scraped, true
 			}
 		}
@@ -510,7 +553,7 @@ func (a *App) batchLyrics(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		out = append(out, one)
-		if r.Context().Err() != nil {
+		if batchCtx.Err() != nil {
 			break
 		}
 	}
@@ -518,3 +561,15 @@ func (a *App) batchLyrics(w http.ResponseWriter, r *http.Request) {
 }
 
 var _ = bytes.MinRead
+
+/* isAudioMediaPath 限定歌词落盘只针对音频文件。
+   审查指出：sidecar 目标来自 safeFile，范围已在媒体库内，但原实现可对库里任意
+   `<stem>.lrc`（包括视频）写文件；同时歌词识别也应只对音频扩展名生效。 */
+var audioMediaExts = map[string]bool{
+	".mp3": true, ".flac": true, ".m4a": true, ".ogg": true, ".opus": true,
+	".wav": true, ".aac": true, ".ape": true, ".wma": true, ".aiff": true, ".alac": true,
+}
+
+func isAudioMediaPath(p string) bool {
+	return audioMediaExts[strings.ToLower(filepath.Ext(p))]
+}

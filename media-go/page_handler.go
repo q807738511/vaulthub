@@ -208,6 +208,12 @@ func (a *App) archiveCover(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, 400, "invalid w or q")
 		return
 	}
+	/* 封面必须真的缩略：w=0 会让书架每张卡片下整张原图（多 MB）。
+	   审查建议强制 w>=64，不可转码时返回 404 让前端回落到渐变占位。 */
+	if width == 0 {
+		errJSON(w, 400, "cover requires w>=64")
+		return
+	}
 	zc := a.zipCacheRef()
 	ze, e := zc.acquire(p)
 	if e != nil {
@@ -230,8 +236,8 @@ func (a *App) archiveCover(w http.ResponseWriter, r *http.Request) {
 	if a.serveTranscodedPage(w, r, l, p, ze, idx[0], width, quality) {
 		return
 	}
-	w.Header().Set("X-Vaulthub-Page-Cache", "off")
-	writeArchiveEntryRaw(w, ze.files[idx[0]], ze.display[idx[0]])
+	/* 不能缩略时不回整张原图（书架会变成几 MB 一页），404 → 前端用渐变占位兜底。 */
+	errJSON(w, 404, "cover unavailable")
 }
 
 // serveTranscodedPage 尝试「转码 + 磁盘缓存」并下发；返回 false 表示调用方应回落直出。
@@ -252,7 +258,13 @@ func (a *App) serveTranscodedPage(w http.ResponseWriter, r *http.Request, l Libr
 	if fi.Size() > maxPageSourceBytes {
 		return false
 	}
-	key := pageCacheKey(l.ID, archivePath, f.Name, fi.Size(), fi.ModTime().Unix(), width, quality)
+	/* 键里必须含**归档自身**的 size/mtime：条目 size/mtime 在「保留时间戳重打包」后可能不变，
+	   那样会下发陈旧页面。归档身份由 LRU 每请求校验，这里再多取一次 stat 并入键。 */
+	arcSize, arcMod := fi.Size(), fi.ModTime().Unix()
+	if st, err := os.Stat(archivePath); err == nil {
+		arcSize, arcMod = st.Size(), st.ModTime().Unix()
+	}
+	key := pageCacheKey(l.ID, archivePath, f.Name, arcSize, arcMod, width, quality)
 	if file, ok := pc.get(key); ok {
 		/* 注意顺序：响应头必须在写响应体之前设置（http.ServeContent 一写体就落头），
 		   否则 X-Vaulthub-Page-Cache 会被静默丢弃。若缓存文件此刻不可用，
@@ -281,15 +293,29 @@ func (a *App) serveTranscodedPage(w http.ResponseWriter, r *http.Request, l Libr
 		return false
 	}
 	file, cached := "", false
-	if release, allowed := a.acquireTranscode(r.Context()); allowed {
-		if raw, err := readZipEntry(f, maxPageSourceBytes); err == nil {
-			if out, ok := transcodePageImage(raw, width, quality); ok {
-				file, cached = pc.put(key, out, "jpg")
+	/* 用 defer 保证「任何退出路径」都会结束 job（含解码器 panic）：
+	   审查指出漏掉 endPageJob 会让 pageJobs[key] 永久残留，
+	   之后同键请求全部阻塞在永不关闭的 done 上。 */
+	func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				file, cached = "", false
 			}
+			a.endPageJob(key, job, file, cached)
+		}()
+		release, allowed := a.acquireTranscode(r.Context())
+		if !allowed {
+			return
 		}
-		release()
-	}
-	a.endPageJob(key, job, file, cached)
+		defer release()
+		raw, err := readZipEntry(f, maxPageSourceBytes)
+		if err != nil {
+			return
+		}
+		if out, ok := transcodePageImage(raw, width, quality); ok {
+			file, cached = pc.put(key, out, "jpg")
+		}
+	}()
 	if cached {
 		w.Header().Set("X-Vaulthub-Page-Cache", "miss")
 		if serveCachedPage(w, r, file, key) {
@@ -351,7 +377,9 @@ func serveCachedPage(w http.ResponseWriter, r *http.Request, path, key string) b
 	}
 	w.Header().Set("Content-Type", "image/jpeg")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	/* 审查指出：该端点受会话鉴权保护，用 public 会让中间缓存/前置反代把内容重放给未登录者
+	   （且未带 Vary: Cookie）。改 private 后浏览器端缓存收益完全不变。 */
+	w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
 	w.Header().Set("ETag", `"`+key+`"`)
 	if ifNoneMatchSatisfied(r.Header.Get("If-None-Match"), key) {
 		w.WriteHeader(http.StatusNotModified)

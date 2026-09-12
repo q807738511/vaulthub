@@ -164,8 +164,10 @@ func (c *pageCache) put(key string, data []byte, ext string) (string, bool) {
 	return "", false
 }
 
-// evictLocked 淘汰到配额之内。留下 10% 余量，避免每次写入都触发淘汰。
-// protect 指定的键（本次刚写入的条目）不会被淘汰。
+/* evictLocked 淘汰到配额之内。留下 10% 余量，避免每次写入都触发淘汰。
+   protect 指定的键（本次刚写入的条目）不会被淘汰。
+   审查建议：不要在持锁期间做文件 IO —— 先摘除映射并统计配额，锁外再 unlink，
+   否则批量淘汰会阻塞所有并发的 get/put。 */
 func (c *pageCache) evictLocked(protect string) {
 	if c.maxBytes <= 0 || c.total <= c.maxBytes {
 		return
@@ -180,6 +182,7 @@ func (c *pageCache) evictLocked(protect string) {
 		all = append(all, kv{k, v})
 	}
 	sort.Slice(all, func(i, j int) bool { return all[i].it.atime.Before(all[j].it.atime) })
+	victims := make([]string, 0, 8)
 	for _, x := range all {
 		if c.total <= target {
 			break
@@ -187,10 +190,16 @@ func (c *pageCache) evictLocked(protect string) {
 		if protect != "" && x.key == protect {
 			continue
 		}
-		// 删除失败（权限等）也摘除索引，避免反复尝试同一个文件。
-		_ = os.Remove(x.it.path)
 		delete(c.items, x.key)
 		c.total -= x.it.size
+		victims = append(victims, x.it.path)
+	}
+	if len(victims) > 0 {
+		go func(paths []string) {
+			for _, p := range paths {
+				_ = os.Remove(p)
+			}
+		}(victims)
 	}
 }
 

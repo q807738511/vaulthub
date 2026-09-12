@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""v0.9.67 契约测试：漫画阅读器（按页转码/预取/模式/页码进度）+ 音乐歌词刮削与元数据缓存。"""
+"""v0.9.68 契约测试：漫画阅读器（按页转码/预取/模式/页码进度）+ 音乐歌词刮削与元数据缓存。"""
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -8,6 +8,7 @@ HTML = (ROOT / "index.html").read_text(encoding="utf-8")
 STATE = (ROOT / "web/js/01-state.js").read_text(encoding="utf-8")
 MEDIA = (ROOT / "web/js/02-media.js").read_text(encoding="utf-8")
 CSS = (ROOT / "web/css/main.css").read_text(encoding="utf-8")
+# v0.9.67 的发布说明属于该版本历史（当前版本已前移到 0.9.68 的补丁说明）。
 NOTES = (ROOT / ".github/RELEASE_NOTES_0.9.67.md").read_text(encoding="utf-8")
 LOG = (ROOT / "Update Log.md").read_text(encoding="utf-8")
 GO_MAIN = (ROOT / "media-go/main.go").read_text(encoding="utf-8")
@@ -37,7 +38,10 @@ checks = {
     "首图封面端点": "func (a *App) archiveCover(" in GO_HANDLER and "naturalLess" in GO_HANDLER,
     "条目白名单校验": "ze.indexOf(entry)" in GO_HANDLER,
     "参数越界400": "invalid w or q" in GO_HANDLER and "pageParams(" in GO_HANDLER,
-    "不可变缓存头": "public, max-age=31536000, immutable" in GO_HANDLER and "ETag" in GO_HANDLER,
+    # v0.9.68：该端点受会话鉴权保护，缓存头由 public 改为 private（浏览器缓存收益不变，
+    # 避免中间缓存把受保护内容重放给未登录者）——契约随行为升级。
+    "不可变缓存头": "private, max-age=31536000, immutable" in GO_HANDLER
+        and "public, max-age=31536000, immutable" not in GO_HANDLER and "ETag" in GO_HANDLER,
     "并发合并": "beginPageJob" in GO_HANDLER and "pageJob{" in GO_HANDLER,
     "可观测响应头": "X-Vaulthub-Page-Cache" in GO_HANDLER,
     "路由注册": 'mux.HandleFunc("/api/media/archive/zip/page", a.archivePage)' in GO_MAIN
@@ -135,12 +139,12 @@ checks = {
     "弹窗按钮": "scrapeLyricsForOpenEditor()" in HTML and "scrapeAllAudioLyrics()" in HTML,
 
     # ============ I. 版本与发布物 ============
-    "HTML版本": 'VAULTHUB_ASSET_VERSION = "0.9.67"' in HTML and HTML.count("?v=0.9.67") >= 7,
-    "脚本版本": 'VAULTHUB_SCRIPT_VERSION = "0.9.67"' in STATE,
-    "UI角标": "v0.9.67 · Comic Reader & Lyrics" in HTML,
-    "发布说明": "VaultHub 蜀鼠之家 v0.9.67" in NOTES and "漫画阅读器" in NOTES
+    "HTML版本": 'VAULTHUB_ASSET_VERSION = "0.9.68"' in HTML and HTML.count("?v=0.9.68") >= 7,
+    "脚本版本": 'VAULTHUB_SCRIPT_VERSION = "0.9.68"' in STATE,
+    "UI角标": "v0.9.68 · Review Hardening" in HTML,
+    "发布说明": "VaultHub 蜀鼠之家 v0.9.67" in NOTES and "漫画阅读器" in NOTES  # 读的是本版（v0.9.67）历史说明
         and "歌词" in NOTES and "不新增任何容器" in NOTES,
-    "更新日志段": "# VaultHub 蜀鼠之家 v0.9.67" in LOG,
+    "更新日志段": "# VaultHub 蜀鼠之家 v0.9.68" in LOG,
     "历史说明未改": (ROOT / ".github/RELEASE_NOTES_0.9.66.md").read_text(encoding="utf-8").startswith(
         "# VaultHub 蜀鼠之家 v0.9.66"),
 }
@@ -152,5 +156,5 @@ failed = [name for name, ok in checks.items() if not ok]
 for name, ok in checks.items():
     print(("PASS" if ok else "FAIL") + ": " + name)
 if failed:
-    raise SystemExit(f"FAIL: v0.9.67 契约 {len(failed)} 项未通过: {failed}")
+    raise SystemExit(f"FAIL: v0.9.68 契约 {len(failed)} 项未通过: {failed}")
 print("PASS: v0.9.67 漫画阅读器（转码/预取/模式/页码）与音乐歌词刮削、刮削源扩展、服务端缓存契约通过")
