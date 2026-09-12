@@ -215,7 +215,21 @@ func (a *App) scrapeAudio(ctx context.Context, title, artist string) (audioScrap
 			return out, nil
 		}
 	}
-	return a.scrapeAudioMusicBrainz(ctx, title, artist)
+	out, err := a.scrapeAudioMusicBrainz(ctx, title, artist)
+	if err == nil {
+		/* v0.9.67：MusicBrainz 不带封面，但有 release MBID 时可按 Cover Art Archive 取图。 */
+		if out.Cover == "" {
+			if caa := coverArtArchiveURL(out.Release); caa != "" {
+				out.Cover = caa
+			}
+		}
+		return out, nil
+	}
+	/* v0.9.67：新增源（默认关闭）——华语/冷门曲目命中率更高。 */
+	if nc, ok := a.scrapeAudioNetease(ctx, title, artist); ok {
+		return nc, nil
+	}
+	return out, err
 }
 
 func (a *App) scrapeAudioItunes(ctx context.Context, title, artist string) (audioScrapeResult, bool) {

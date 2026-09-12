@@ -4,10 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VaultHub 蜀鼠之家</title>
-<link rel="stylesheet" href="/web/css/main.css?v=0.9.66">
+<link rel="stylesheet" href="/web/css/main.css?v=0.9.67">
 <script>
 /* 资源版本号：index.html 用它给所有静态资源打查询串。 */
-window.VAULTHUB_ASSET_VERSION = "0.9.66";
+window.VAULTHUB_ASSET_VERSION = "0.9.67";
 </script>
 </head>
 <body data-theme="dark">
@@ -89,7 +89,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.66";
   <div class="sidebar-foot">
     <button class="rail-btn rail-settings" id="sidebarSettingsButton" type="button" onclick="openSettingsModalFromSidebar()" title="系统设置" aria-label="系统设置"><span class="ic">⚙</span><span class="txt" data-i18n="settingsTitle">系统设置</span></button>
     <div class="sidebar-foot-row">
-      <span class="ver">v0.9.66 · Media Player Overhaul</span>
+      <span class="ver">v0.9.67 · Comic Reader & Lyrics</span>
       <button class="rail-btn rail-collapse" id="sidebarCollapseButton" type="button" onclick="toggleBars()" title="折叠 / 展开侧栏" aria-label="折叠或展开侧栏">⇤</button>
     </div>
   </div>
@@ -707,7 +707,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.66";
   <div class="modal">
     <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
     <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
-    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.9.66 · Immersive Playback R2</b></div>
+    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.9.67 · Comic Reader & Lyrics</b></div>
     <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>Go (media/manager/subtitle) · Caddy · FFmpeg · SQLite · HTML/CSS/JS</b></div>
     <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>VaultHub 内置系统监控</b></div>
     <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>
@@ -765,6 +765,10 @@ window.VAULTHUB_ASSET_VERSION = "0.9.66";
     <div class="cfg-field"><label>专辑</label><input id="audioMetadataAlbum" type="text"></div>
     <div class="cfg-field"><label>封面地址</label><input id="audioMetadataCover" type="url" placeholder="https://..."></div>
     <div class="cfg-field"><label>歌词</label><textarea id="audioMetadataLyrics" style="width:100%;min-height:160px"></textarea></div>
+    <div class="audio-lyrics-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 10px">
+      <button class="btn" type="button" onclick="scrapeLyricsForOpenEditor()" title="从本地 .lrc/内嵌标签或在线源（LRCLIB 等）获取歌词并填入上方文本框">🎵 在线刮削歌词</button>
+      <button class="btn" type="button" onclick="scrapeAllAudioLyrics()" title="对当前音乐库中还没有歌词的曲目批量刮削（每批最多 50 首），并写入同目录 .lrc">🎼 批量刮削本库歌词</button>
+    </div>
     <button class="btn btn-primary" onclick="saveManualAudioMetadata()">保存适配</button>
   </div>
 </div>
@@ -818,11 +822,11 @@ window.VAULTHUB_ASSET_VERSION = "0.9.66";
 
 <div class="toast" id="toast"></div>
 
-<script src="/web/js/01-state.js?v=0.9.66"></script>
-<script src="/web/js/02-media.js?v=0.9.66"></script>
-<script src="/web/js/03-features.js?v=0.9.66"></script>
-<script src="/web/js/05-home.js?v=0.9.66"></script>
-<script src="/web/js/03-audio-zoom.js?v=0.9.66"></script>
-<script src="/web/js/04-boot.js?v=0.9.66"></script>
+<script src="/web/js/01-state.js?v=0.9.67"></script>
+<script src="/web/js/02-media.js?v=0.9.67"></script>
+<script src="/web/js/03-features.js?v=0.9.67"></script>
+<script src="/web/js/05-home.js?v=0.9.67"></script>
+<script src="/web/js/03-audio-zoom.js?v=0.9.67"></script>
+<script src="/web/js/04-boot.js?v=0.9.67"></script>
 </body>
 </html>

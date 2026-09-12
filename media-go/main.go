@@ -44,8 +44,16 @@ type App struct {
 	audioScrapeLast   time.Time
 	itunesScrapeMu    sync.Mutex // iTunes Search API: ~200ms/request 节流
 	itunesScrapeLast  time.Time
+	lyricsMu          sync.Mutex // v0.9.67: 歌词源全局节流（LRCLIB 突发会 503）
+	lyricsLast        time.Time
 	zipCacheMu        sync.Mutex
 	zipCache          *zipArchiveCache // v0.9.56: ZIP/CBZ 中央目录 LRU 缓存（漫画读取提速）
+	pageCacheMu       sync.Mutex
+	pageCache         *pageCache // v0.9.67: 归档页转码结果磁盘缓存（省流模式）
+	pageJobsMu        sync.Mutex
+	pageJobs          map[string]*pageJob // v0.9.67: 同页并发转码合并
+	transcodeSemOnce  sync.Once
+	transcodeSem      chan struct{} // v0.9.67: 转码全局并发闸门（防内存打爆）
 	libs              []Library
 	jobs              map[string]uint64             // library id -> running generation
 	generations       map[string]uint64             // invalidates stale scans after delete/recreate
@@ -57,6 +65,8 @@ type App struct {
 	config, indexDir  string
 	cacheDir          string
 	cacheMaxBytes     int64
+	pageCacheDir      string
+	pageCacheMaxBytes int64
 	cacheMaxAge       time.Duration
 	cacheCleanup      time.Duration
 	cacheWake         chan struct{}
@@ -164,6 +174,10 @@ func (a *App) load() {
 	a.indexDir = env("MEDIA_INDEX_DIR", "/data/media-index")
 	a.cacheDir = env("MEDIA_CACHE_DIR", "/data/transcode-cache")
 	a.cacheMaxBytes = envInt64("MEDIA_CACHE_MAX_BYTES", 10*1024*1024*1024)
+	/* v0.9.67：归档页转码缓存独立成目录与配额（默认 4GB），默认放在转码缓存卷下，
+	   与 FFmpeg 缓存同卷但不共享配额；上限设 0 即整体关闭转码（请求 w>0 也直出原图）。 */
+	a.pageCacheDir = env("MEDIA_PAGE_CACHE_DIR", filepath.Join(a.cacheDir, "page-cache"))
+	a.pageCacheMaxBytes = envInt64("MEDIA_PAGE_CACHE_MAX_BYTES", 4*1024*1024*1024)
 	a.cacheMaxAge = time.Duration(envInt64("MEDIA_CACHE_MAX_AGE_HOURS", 168)) * time.Hour
 	a.cacheCleanup = time.Duration(envInt64("MEDIA_CACHE_CLEANUP_INTERVAL_HOURS", 24)) * time.Hour
 	a.cacheWake = make(chan struct{}, 1)
@@ -2301,6 +2315,15 @@ func main() {
 	mux.HandleFunc("/api/media/cover/", a.coverGet)
 	mux.HandleFunc("/api/media/archive/zip", a.archive)
 	mux.HandleFunc("/api/media/archive/zip/register", a.archive)
+	/* v0.9.67：按页转码端点（漫画「省流模式」）。w=0 时行为与 register 完全一致。 */
+	mux.HandleFunc("/api/media/archive/zip/page", a.archivePage)
+	/* v0.9.67：归档首页缩略图，供书架卡片当封面（替代慢且易失败的外网封面刮削）。 */
+	mux.HandleFunc("/api/media/archive/zip/cover", a.archiveCover)
+	/* v0.9.67：歌词刮削（本地识别 + 在线源链 + sidecar 落盘）与音乐元数据服务端缓存。 */
+	mux.HandleFunc("/api/media/audio/lyrics", a.audioLyrics)
+	mux.HandleFunc("/api/media/audio/lyrics/batch", a.batchLyrics)
+	mux.HandleFunc("/api/media/audio/cache", a.audioCache)
+	mux.HandleFunc("/api/media/audio/cache/stats", a.audioCacheStats)
 	mux.HandleFunc("/api/media/archive", a.archive)
 	mux.HandleFunc("/api/media/zip", a.archive)
 	mux.HandleFunc("/api/media/settings", a.runtimeSettings)
