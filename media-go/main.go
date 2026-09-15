@@ -2323,6 +2323,8 @@ func main() {
 	mux.HandleFunc("/api/media/archive/zip/page", a.archivePage)
 	/* v0.9.67：归档首页缩略图，供书架卡片当封面（替代慢且易失败的外网封面刮削）。 */
 	mux.HandleFunc("/api/media/archive/zip/cover", a.archiveCover)
+	/* v0.9.70：EPUB 电子书按阅读顺序解析为纯文本章节（零新依赖，ZIP 容器自解析）。 */
+	mux.HandleFunc("/api/media/document/epub", a.epubDocument)
 	/* v0.9.67：歌词刮削（本地识别 + 在线源链 + sidecar 落盘）与音乐元数据服务端缓存。 */
 	mux.HandleFunc("/api/media/audio/lyrics", a.audioLyrics)
 	mux.HandleFunc("/api/media/audio/lyrics/batch", a.batchLyrics)
