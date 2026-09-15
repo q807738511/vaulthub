@@ -101,6 +101,9 @@ func findZipEntry(zr *zip.Reader, name string) *zip.File {
 }
 
 // normalizeZipPath 规范化容器内相对路径；返回空串表示该路径不可用（逃逸/空）。
+// 注意：返回值只用于在 **ZIP 索引内查找条目**，不会被拼进宿主文件系统路径，
+// 因此即使调用方传入可疑字符串也不存在落盘或越界读取；仍然显式拒绝 `..`
+// 是为了 fail-closed：解析结果可预期，且不会把父目录段带进后续逻辑。
 func normalizeZipPath(p string) string {
 	p = strings.TrimSpace(strings.ReplaceAll(p, "\\", "/"))
 	if p == "" {
@@ -415,6 +418,50 @@ func epubChapterTitle(name string, raw []byte) string {
 	return strings.TrimSuffix(base, path.Ext(base))
 }
 
+// epubChapters 按 spine 顺序收集章节文本，并强制执行条目/正文/章节/扫描量上限。
+// 抽成纯函数是为了让这些上限可以被单元测试真实验证，而不只是写在注释里。
+func epubChapters(zr *zip.Reader, order []string) (chapters []epubChapter, total int, truncated bool) {
+	chapters = make([]epubChapter, 0, 32)
+	scanned := 0
+	for i, name := range order {
+		if i >= epubMaxSpineItems {
+			truncated = true
+			break
+		}
+		zf := findZipEntry(zr, name)
+		if zf == nil {
+			continue
+		}
+		/* 先用「声明大小」快速拒绝明显超量的归档，再用「实际读取字节」累计。
+		   只信任头部声明是不够的：条目可以声明很小却解压出数百 MB，
+		   因此上限必须按真实读入量计算，避免 CPU/IO 放大。 */
+		if scanned+int(zf.UncompressedSize64) > epubMaxScanBytes {
+			truncated = true
+			break
+		}
+		raw, ok := readZipEntryBounded(zf, epubMaxEntryBytes)
+		if !ok {
+			continue
+		}
+		scanned += len(raw)
+		if scanned > epubMaxScanBytes {
+			truncated = true
+			break
+		}
+		text := htmlToText(raw)
+		if strings.TrimSpace(text) == "" {
+			continue
+		}
+		if total+len(text) > epubMaxTextBytes {
+			truncated = true
+			break
+		}
+		total += len(text)
+		chapters = append(chapters, epubChapter{Title: epubChapterTitle(name, raw), Text: text})
+	}
+	return chapters, total, truncated
+}
+
 func (a *App) epubDocument(w http.ResponseWriter, r *http.Request) {
 	if !readAuth(r) {
 		errJSON(w, 401, "login required")
@@ -456,38 +503,7 @@ func (a *App) epubDocument(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, 422, "EPUB has no readable documents")
 		return
 	}
-	chapters := make([]epubChapter, 0, 32)
-	total, scanned := 0, 0
-	truncated := false
-	for i, name := range order {
-		if i >= epubMaxSpineItems {
-			truncated = true
-			break
-		}
-		zf := findZipEntry(&zr.Reader, name)
-		if zf == nil {
-			continue
-		}
-		scanned += int(zf.UncompressedSize64)
-		if scanned > epubMaxScanBytes {
-			truncated = true
-			break
-		}
-		raw, ok := readZipEntryBounded(zf, epubMaxEntryBytes)
-		if !ok {
-			continue
-		}
-		text := htmlToText(raw)
-		if strings.TrimSpace(text) == "" {
-			continue
-		}
-		if total+len(text) > epubMaxTextBytes {
-			truncated = true
-			break
-		}
-		total += len(text)
-		chapters = append(chapters, epubChapter{Title: epubChapterTitle(name, raw), Text: text})
-	}
+	chapters, total, truncated := epubChapters(&zr.Reader, order)
 	if len(chapters) == 0 {
 		errJSON(w, 422, "EPUB has no readable text")
 		return
