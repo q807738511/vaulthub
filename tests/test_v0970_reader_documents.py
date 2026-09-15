@@ -40,6 +40,11 @@ checks.update({
     "EPUB 收尾标签可解析": 'closing := strings.HasPrefix(s, "/")' in GO_EPUB,
     "EPUB 上限与截断标记": "epubMaxEntryBytes" in GO_EPUB and "epubMaxTextBytes" in GO_EPUB
         and "epubMaxSpineItems" in GO_EPUB and "epubMaxScanBytes" in GO_EPUB and '"truncated": truncated' in GO_EPUB,
+    "EPUB 上限抽成可测函数": "func epubChapters(zr *zip.Reader, order []string)" in GO_EPUB
+        and "chapters, total, truncated := epubChapters(" in GO_EPUB,
+    "EPUB 扫描量按实际字节": "scanned += len(raw)" in GO_EPUB
+        and "if scanned+int(zf.UncompressedSize64) > epubMaxScanBytes" in GO_EPUB,
+    "EPUB 上限有真实测试": "TestEpubCapsAreReal" in GO_EPUB_TEST and "TestEpubEntryAndSpineCaps" in GO_EPUB_TEST,
     "EPUB 只保留真实条目": "findZipEntry(zr, full) == nil" in GO_EPUB,
     "EPUB 无正文返回 422": 'errJSON(w, 422, "EPUB has no readable text")' in GO_EPUB,
     "前端 EPUB 阅读分支": 'ext === "epub"' in MEDIA and "/api/media/document/epub" in MEDIA

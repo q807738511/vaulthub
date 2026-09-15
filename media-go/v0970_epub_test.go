@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -134,5 +135,96 @@ func TestEpubEntityAndTagHandling(t *testing.T) {
 	}
 	if got := firstTagText("<h1x>不是标题</h1x>", "h1"); got != "" {
 		t.Errorf("prefix tag must not match: %q", got)
+	}
+}
+
+// TestEpubCapsAreReal 验证「上限」不是注释里的声明：正文上限、条目上限与
+// 扫描上限都必须真的截断，并且如实返回 truncated。
+func TestEpubCapsAreReal(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	add := func(name, body string) {
+		w, e := zw.Create(name)
+		if e != nil {
+			t.Fatalf("create %s: %v", name, e)
+		}
+		if _, e := w.Write([]byte(body)); e != nil {
+			t.Fatalf("write %s: %v", name, e)
+		}
+	}
+	add("mimetype", "application/epub+zip")
+	add("META-INF/container.xml", `<?xml version="1.0"?><container version="1.0"><rootfiles><rootfile full-path="OEBPS/content.opf"/></rootfiles></container>`)
+	// 12 章 × 2MB 正文（共 24MB）明显超过 epubMaxTextBytes(12MB)，必须截断。
+	const chunk = 2 << 20
+	body := "<html><body><h1>第X章</h1><p>" + strings.Repeat("正", chunk/3) + "</p></body></html>"
+	var manifest, spine strings.Builder
+	for i := 1; i <= 12; i++ {
+		name := "OEBPS/ch" + strconv.Itoa(i) + ".xhtml"
+		add(name, strings.Replace(body, "第X章", "第"+strconv.Itoa(i)+"章", 1))
+		manifest.WriteString(`<item id="c` + strconv.Itoa(i) + `" href="ch` + strconv.Itoa(i) + `.xhtml" media-type="application/xhtml+xml"/>`)
+		spine.WriteString(`<itemref idref="c` + strconv.Itoa(i) + `"/>`)
+	}
+	add("OEBPS/content.opf", `<package xmlns="http://www.idpf.org/2007/opf" version="3.0"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>大书</dc:title></metadata><manifest>`+manifest.String()+`</manifest><spine>`+spine.String()+`</spine></package>`)
+	if e := zw.Close(); e != nil {
+		t.Fatalf("close: %v", e)
+	}
+	path := filepath.Join(t.TempDir(), "big.epub")
+	if e := os.WriteFile(path, buf.Bytes(), 0o600); e != nil {
+		t.Fatalf("write: %v", e)
+	}
+	zr, e := zip.OpenReader(path)
+	if e != nil {
+		t.Fatalf("open: %v", e)
+	}
+	defer zr.Close()
+	opf, ok := epubRootFilePath(&zr.Reader)
+	if !ok {
+		t.Fatal("rootfile missing")
+	}
+	_, order, ok := epubSpinePaths(&zr.Reader, opf)
+	if !ok || len(order) != 12 {
+		t.Fatalf("spine order = %d ok=%v", len(order), ok)
+	}
+	chapters, total, truncated := epubChapters(&zr.Reader, order)
+	if !truncated {
+		t.Errorf("12×2MB 正文必须触发 truncated")
+	}
+	if total > epubMaxTextBytes {
+		t.Errorf("正文超上限未被拦截: %d > %d", total, epubMaxTextBytes)
+	}
+	if len(chapters) >= 12 {
+		t.Errorf("超限后仍返回全部章节: %d", len(chapters))
+	}
+	if len(chapters) == 0 {
+		t.Errorf("截断后应保留已解析的章节")
+	}
+}
+
+// TestEpubEntryAndSpineCaps 验证单条目上限与章节数上限。
+func TestEpubEntryAndSpineCaps(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	w, _ := zw.Create("big.xhtml")
+	_, _ = w.Write([]byte(strings.Repeat("a", 32)))
+	if e := zw.Close(); e != nil {
+		t.Fatalf("close: %v", e)
+	}
+	zr, e := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	if e != nil {
+		t.Fatalf("reader: %v", e)
+	}
+	if _, ok := readZipEntryBounded(findZipEntry(zr, "big.xhtml"), 16); ok {
+		t.Error("单条目超过上限必须拒绝（而不是截断后当作完整内容）")
+	}
+	many := make([]string, 0, epubMaxSpineItems+10)
+	for i := 0; i < epubMaxSpineItems+10; i++ {
+		many = append(many, "missing-"+strconv.Itoa(i)+".xhtml")
+	}
+	chapters, _, truncated := epubChapters(zr, many)
+	if !truncated {
+		t.Error("超出章节数上限必须返回 truncated")
+	}
+	if len(chapters) != 0 {
+		t.Errorf("不存在的条目不应产出章节: %d", len(chapters))
 	}
 }
