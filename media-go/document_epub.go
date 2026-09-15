@@ -71,7 +71,9 @@ type epubOPF struct {
 	} `xml:"spine"`
 }
 
-// readZipEntryBounded 读取 zip 条目，超过 limit 时返回 ok=false 而不是截断内容。
+// readZipEntryBounded 读取 zip 条目；声明大小超过 limit 时返回 ok=false。
+// 注意：Go archive/zip 会校验声明大小与实际数据是否一致，不一致即报错，
+// 因此「声明很小、实际解压很大」的条目在这里同样会被拒绝。
 func readZipEntryBounded(zf *zip.File, limit int64) ([]byte, bool) {
 	if zf == nil || limit <= 0 {
 		return nil, false
@@ -202,7 +204,7 @@ func epubSpinePaths(zr *zip.Reader, opfPath string) (string, []string, bool) {
 
 func isBlockTag(name string) bool {
 	switch name {
-	case "p", "/p", "div", "/div", "br", "br/", "li", "/li", "tr", "/tr",
+	case "p", "/p", "div", "/div", "br", "li", "/li", "tr", "/tr",
 		"h1", "/h1", "h2", "/h2", "h3", "/h3", "h4", "/h4", "h5", "/h5", "h6", "/h6",
 		"section", "/section", "article", "/article", "blockquote", "/blockquote",
 		"table", "/table", "ul", "/ul", "ol", "/ol":
@@ -211,24 +213,66 @@ func isBlockTag(name string) bool {
 	return false
 }
 
-func tagNameOf(raw string) string {
-	s := strings.TrimSpace(raw)
-	if s == "" {
-		return ""
+/* parseTagAt 解析 src[at] 处的标签（at 必须指向 '<'）。
+ *
+ * v0.9.70 复审修复：旧实现只按「下一个 '>'」切标签，导致正文/脚本里的裸 '<'
+ * （如 <script>if (a<b) {}</script>）会把紧随其后的 </script> 一起吞掉，
+ * skip 状态永不复位 → 整章余下正文静默丢失（极端情况对合法书误报 422）。
+ * 现在严格判定标签形状：'<' 后必须是 [/] 字母数字 名称，且名称后紧跟空白、'/' 或 '>'；
+ * 不满足就把 '<' 当普通字符输出。同时识别自闭合标签（<script src="x.js"/>），
+ * 自闭合元素没有子节点，不得进入跳过状态。
+ */
+func parseTagAt(src string, at int) (name string, end int, selfClosing bool, ok bool) {
+	if at >= len(src) || src[at] != '<' {
+		return "", at, false, false
 	}
-	/* 收尾标签以 "/" 开头；必须先剥离再取标签名，
-	   否则 "</head>" 会被解析成空名，skip 永远无法解除。 */
-	closing := strings.HasPrefix(s, "/")
-	s = strings.TrimPrefix(s, "/")
-	i := 0
-	for i < len(s) && s[i] != ' ' && s[i] != '\t' && s[i] != '\n' && s[i] != '\r' && s[i] != '/' {
+	i := at + 1
+	closing := false
+	if i < len(src) && src[i] == '/' {
+		closing = true
 		i++
 	}
-	name := strings.ToLower(s[:i])
-	if closing {
-		return "/" + name
+	startName := i
+	for i < len(src) && isTagNameByte(src[i]) {
+		i++
 	}
-	return name
+	if i == startName {
+		return "", at, false, false // "<" 后不是名字 → 不是标签（例如 "< 3" 或 "a<b"）
+	}
+	name = strings.ToLower(src[startName:i])
+	// 名字后必须是空白、'/' 或 '>'，否则是形如 <b> 的伪标签（如 "<brx..."）也接受，
+	// 但像 "a<b=c" 这种在 HTML 里也会被浏览器当标签，这里保持同样宽松度。
+	gt := strings.IndexByte(src[i:], '>')
+	if gt < 0 {
+		return "", at, false, false
+	}
+	end = i + gt + 1
+	inner := src[i : i+gt]
+	selfClosing = strings.HasSuffix(strings.TrimSpace(inner), "/")
+	if closing {
+		return "/" + name, end, false, true
+	}
+	return name, end, selfClosing, true
+}
+
+// skipElement 跳到 tag 元素的收尾标签之后；找不到收尾标签则返回 src 结束位置。
+func skipElement(src string, from int, tag string) int {
+	needle := "</" + strings.ToLower(tag)
+	lower := strings.ToLower(src)
+	idx := strings.Index(lower[from:], needle)
+	if idx < 0 {
+		return len(src)
+	}
+	pos := from + idx
+	gt := strings.IndexByte(src[pos:], '>')
+	if gt < 0 {
+		return len(src)
+	}
+	return pos + gt + 1
+}
+
+func isTagNameByte(c byte) bool {
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == ':' || c == '_'
 }
 
 var epubEntities = map[string]string{
@@ -311,21 +355,23 @@ func tidyText(s string) string {
 }
 
 // firstTagText 取第一个指定标签的文本（用于章节标题），找不到返回空串。
+//
+// v0.9.70 复审修复：旧实现用 strings.ToLower 后的下标去切原串，而 ToLower 可能
+// 缩短 UTF-8 字节（如 'İ' U+0130 由 2 字节变 1 字节），导致标题被切错。现在只在
+// 原串上定位（ASCII 大小写不敏感），切片始终作用于原串。
 func firstTagText(html string, tags ...string) string {
-	lower := strings.ToLower(html)
 	for _, tag := range tags {
 		open := "<" + tag
-		idx := strings.Index(lower, open)
+		idx := indexFold(html, open)
 		for idx >= 0 {
-			// 必须是真正的开始标签（后面跟 > 或空白），避免匹配 <h1x>
 			after := idx + len(open)
-			if after < len(lower) && (lower[after] == '>' || lower[after] == ' ' || lower[after] == '\t' || lower[after] == '\n' || lower[after] == '\r') {
-				gt := strings.IndexByte(lower[idx:], '>')
+			if after < len(html) && (html[after] == '>' || html[after] == ' ' || html[after] == '\t' || html[after] == '\n' || html[after] == '\r') {
+				gt := strings.IndexByte(html[idx:], '>')
 				if gt < 0 {
 					break
 				}
 				start := idx + gt + 1
-				closeIdx := strings.Index(lower[start:], "</"+tag)
+				closeIdx := indexFold(html[start:], "</"+tag)
 				if closeIdx < 0 {
 					break
 				}
@@ -335,74 +381,106 @@ func firstTagText(html string, tags ...string) string {
 					return strings.TrimSpace(txt)
 				}
 			}
-			next := strings.Index(lower[after:], open)
-			if next < 0 {
+			nxt := indexFold(html[after:], open)
+			if nxt < 0 {
 				break
 			}
-			idx = after + next
+			idx = after + nxt
 		}
 	}
 	return ""
 }
 
-// htmlToText 把 XHTML 转成可读纯文本：丢弃 script/style/head 内容，块级标签转换行。
+// indexFold 返回 needle 在 s 中首次出现的下标（仅 ASCII 大小写不敏感），
+// 不改变字节长度，因此下标可直接用于原串切片。
+func indexFold(s, needle string) int {
+	if needle == "" {
+		return 0
+	}
+	first := needle[0]
+	for i := 0; i+len(needle) <= len(s); i++ {
+		c := s[i]
+		if c != first && !(isASCIILetter(c) && isASCIILetter(first) && lowerASCII(c) == lowerASCII(first)) {
+			continue
+		}
+		match := true
+		for j := 1; j < len(needle); j++ {
+			a, b := s[i+j], needle[j]
+			if a == b || (isASCIILetter(a) && isASCIILetter(b) && lowerASCII(a) == lowerASCII(b)) {
+				continue
+			}
+			match = false
+			break
+		}
+		if match {
+			return i
+		}
+	}
+	return -1
+}
+
+func isASCIILetter(c byte) bool { return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' }
+func lowerASCII(c byte) byte {
+	if c >= 'A' && c <= 'Z' {
+		return c + 32
+	}
+	return c
+}
+
+// htmlToText 把 XHTML 转成可读纯文本：丢弃 script/style/head 元素内容，块级标签转换行。
 func htmlToText(raw []byte) string {
 	src := decodeTagText(raw, detectTextEncoding(raw))
 	var out strings.Builder
-	skip := ""
 	lastNL := false // 避免块级标签首尾各产生一个换行，形成空段
-	for i := 0; i < len(src); {
-		if src[i] == '<' {
-			rel := strings.IndexByte(src[i:], '>')
-			if rel < 0 {
-				break
-			}
-			name := tagNameOf(src[i+1 : i+rel])
-			i += rel + 1
-			if skip != "" {
-				if name == "/"+skip {
-					skip = ""
-				}
-				continue
-			}
-			switch name {
-			case "script", "style", "head":
-				skip = name
-				continue
-			}
-			if isBlockTag(name) {
-				/* <br> 强制断行；其余块级标签只在上一输出不是换行时补一个，
-				   这样 <div>一</div><div>二</div> 得到「一\n二」而不是空行分隔。 */
-				if name == "br" || name == "br/" || !lastNL {
-					out.WriteString("\n")
-					lastNL = true
-				}
-			}
-			continue
-		}
-		if skip != "" {
-			/* 正在跳过 script/style/head：连内容一起跳过，
-			   否则 CSS/JS 会被当成正文写进阅读器。 */
+	i := 0
+	for i < len(src) {
+		if src[i] != '<' {
 			next := strings.IndexByte(src[i:], '<')
+			var chunk string
 			if next < 0 {
-				break
+				chunk = src[i:]
+				i = len(src)
+			} else {
+				chunk = src[i : i+next]
+				i += next
 			}
-			i += next
+			if decoded := decodeEntities(chunk); decoded != "" {
+				out.WriteString(decoded)
+				lastNL = strings.HasSuffix(decoded, "\n")
+			}
 			continue
 		}
-		next := strings.IndexByte(src[i:], '<')
-		var chunk string
-		if next < 0 {
-			chunk = src[i:]
-			i = len(src)
-		} else {
-			chunk = src[i : i+next]
-			i += next
+		name, end, selfClosing, ok := parseTagAt(src, i)
+		if !ok {
+			/* 不是标签（正文里的裸 '<'，例如 "a < b" 或脚本比较式）：
+			   按普通字符输出，绝不吃掉后续内容。 */
+			out.WriteString("<")
+			lastNL = false
+			i++
+			continue
 		}
-		decoded := decodeEntities(chunk)
-		if decoded != "" {
-			out.WriteString(decoded)
-			lastNL = strings.HasSuffix(decoded, "\n")
+		i = end
+		base := strings.TrimPrefix(name, "/")
+		if (base == "script" || base == "style" || base == "head") && !selfClosing {
+			/* 跳过整个元素（含内容），直到它的收尾标签。
+			   用「收尾标签精确查找」而不是泛化切标签，避免元素内部出现
+			   '<'（JS 比较式、CSS 选择器）时把收尾标签一并吞掉。 */
+			if strings.HasPrefix(name, "/") {
+				continue // 孤立收尾标签
+			}
+			i = skipElement(src, i, base)
+			continue
+		}
+		if isBlockTag(name) {
+			/* <br> 强制断行；其余块级标签只在上一输出不是换行时补一个，
+			   这样 <div>一</div><div>二</div> 得到「一\n二」而不是空行分隔。 */
+			if base == "br" && strings.HasPrefix(name, "/") == false {
+				out.WriteString("\n")
+				lastNL = true
+			} else if !lastNL {
+				out.WriteString("\n")
+				lastNL = true
+			}
 		}
 	}
 	return tidyText(out.String())
@@ -432,9 +510,11 @@ func epubChapters(zr *zip.Reader, order []string) (chapters []epubChapter, total
 		if zf == nil {
 			continue
 		}
-		/* 先用「声明大小」快速拒绝明显超量的归档，再用「实际读取字节」累计。
-		   只信任头部声明是不够的：条目可以声明很小却解压出数百 MB，
-		   因此上限必须按真实读入量计算，避免 CPU/IO 放大。 */
+		/* 先用声明大小快速拒绝明显超量的归档，再按实际读取字节累计。
+		   说明：Go 的 archive/zip 在「声明大小与实际不符」时会直接报错
+		   （ErrFormat / ErrUnexpectedEOF），readZipEntryBounded 因此返回 false
+		   并拒绝该条目，所以这里不是唯一的放大防线；按实际字节记账属纵深防御，
+		   保证将来换成其它 zip 实现时预算依然成立。 */
 		if scanned+int(zf.UncompressedSize64) > epubMaxScanBytes {
 			truncated = true
 			break

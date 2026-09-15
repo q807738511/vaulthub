@@ -1855,8 +1855,21 @@ function jumpEbookChapter(index) {
   const chapter = chapters[index];
   if (!scroller || !chapter || !chapters.length) return;
   const max = scroller.scrollHeight - scroller.clientHeight;
-  const textLen = window.__ebookTextLength || 1;
-  scroller.scrollTop = Math.max(0, Math.min(max, chapter.offset / textLen * max));
+  /* v0.9.70 复审修复：EPUB 章节由服务端按 spine 生成，没有 TXT 那样的字符偏移，
+     旧实现用 undefined 偏移算出 NaN → 下拉选择后不跳转（或跳回顶部）。
+     现在优先按章节标题元素精确定位（EPUB 与任何分段渲染都适用），
+     只有拿不到标题元素（TXT 单块正文）时才退回字符偏移比例，且偏移必须是有限值。 */
+  const headings = scroller.querySelectorAll ? scroller.querySelectorAll(".ebook-chapter-title") : [];
+  if (headings && headings.length && headings[Math.min(index, headings.length - 1)]) {
+    const target = headings[Math.min(index, headings.length - 1)];
+    const base = Number(target.offsetTop) || 0;
+    scroller.scrollTop = Math.max(0, Math.min(max, base - 8));
+  } else if (Number.isFinite(Number(chapter.offset))) {
+    const textLen = window.__ebookTextLength || 1;
+    scroller.scrollTop = Math.max(0, Math.min(max, Number(chapter.offset) / textLen * max));
+  } else {
+    scroller.scrollTop = 0;
+  }
   scroller.querySelectorAll(".ebook-chapters button").forEach(b => b.classList.toggle("active", Number(b.dataset.chapter) === index));
 }
 function trackReaderProgress(scroller) {
@@ -3507,7 +3520,15 @@ async function openLocalMedia(group, libId, path) {
         throw new Error(detail || `HTTP ${res.status}`);
       }
       const data = await res.json();
-      const chapters = (data.chapters || []).map((c, i) => ({ title: c.title || ("第 " + (i + 1) + " 章"), text: c.text || "" })).filter(c => c.text.trim());
+      /* 除标题/正文外补一个累计字符偏移：EPUB 的章节位置由服务端给出，
+         这里按「前序章节正文长度」累计，供按比例定位的消费者使用
+         （阅读器跳转本身优先用章节标题元素精确定位，见 jumpEbookChapter）。 */
+      let ebookOffset = 0;
+      const chapters = (data.chapters || []).map((c, i) => {
+        const item = { title: c.title || ("第 " + (i + 1) + " 章"), text: c.text || "", offset: ebookOffset };
+        ebookOffset += (c.text || "").length + (c.title || "").length;
+        return item;
+      }).filter(c => c.text.trim());
       if (!chapters.length) throw new Error("这本 EPUB 没有可读正文");
       window.__ebookChapters = chapters;
       window.__ebookTextLength = chapters.reduce((n, c) => n + c.text.length, 0);

@@ -28,3 +28,6 @@ tmp/
 /media-go/media-go
 /manager/manager
 /subtitle-api/subtitle-api
+# Python 编译产物（v0.9.70：曾误随测试提交进仓库）
+__pycache__/
+*.pyc
