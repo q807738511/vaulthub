@@ -69,6 +69,25 @@ checks.update({
         and "TestEpubPathAndSizeGuards" in GO_EPUB_TEST and "TestEpubEntityAndTagHandling" in GO_EPUB_TEST,
 })
 
+# ============ 历史遗留项检查（需求 4：只做检查与记录，不谎报已修） ============
+FEATURES_ALL = "\n".join((ROOT / "web/js" / f).read_text(encoding="utf-8") for f in
+                         ["01-state.js", "02-media.js", "03-features.js", "03-audio-zoom.js"])
+WEB_ALL = "\n".join(p.read_text(encoding="utf-8") for p in (ROOT / "web").rglob("*.js"))
+
+checks.update({
+    # 遗留 1：遮罩/阅读器的焦点语义与焦点归还（WCAG 2.4.3 相关）
+    "遗留-遮罩对话框语义": 'role="dialog"' in HTML and 'aria-modal="true"' in HTML,
+    "遗留-关闭后归还焦点": "focus({ preventScroll: true })" in FEATURES_ALL,
+    "遗留-阅读器 Esc 关闭": 'ev.key === "Escape"' in MEDIA,
+    "遗留-关闭释放阅读器监听": "closeComicReader()" in (ROOT / "web/js/03-features.js").read_text(encoding="utf-8"),
+    # 遗留 2：不支持格式必须诚实回落，不得假装可读
+    "遗留-不支持格式诚实提示": "当前浏览器不能直接解析" in MEDIA and "当前浏览器不支持直接解析" in MEDIA,
+    "遗留-RAR 仍不解析": '"rar"' in MEDIA and "unrar" not in WEB_ALL and "rar.js" not in WEB_ALL,
+    # 遗留 3：未捆绑 PDF.js，PDF 走浏览器内置查看器 + 登录保护
+    "遗留-未捆绑 PDF.js": "pdfjs" not in WEB_ALL.lower() and "pdf.worker" not in WEB_ALL.lower(),
+    "遗留-PDF 走登录流": 'mediaFileUrl(lib, path)' in MEDIA and 'iframe src="${esc(url)}#view=FitH"' in MEDIA,
+})
+
 failed = [name for name, ok in checks.items() if not ok]
 for name, ok in checks.items():
     print(("PASS" if ok else "FAIL") + ": " + name)
