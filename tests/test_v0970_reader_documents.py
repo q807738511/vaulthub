@@ -27,6 +27,7 @@ checks = {
 GO_MAIN = (ROOT / "media-go/main.go").read_text(encoding="utf-8")
 GO_EPUB = (ROOT / "media-go/document_epub.go").read_text(encoding="utf-8")
 GO_EPUB_TEST = (ROOT / "media-go/v0970_epub_test.go").read_text(encoding="utf-8")
+NOTES = (ROOT / ".github/RELEASE_NOTES_0.9.70.md").read_text(encoding="utf-8")
 
 # ============ EPUB 文档支持（v0.9.70 新增） ============
 checks.update({
@@ -86,6 +87,15 @@ checks.update({
     # 遗留 3：未捆绑 PDF.js，PDF 走浏览器内置查看器 + 登录保护
     "遗留-未捆绑 PDF.js": "pdfjs" not in WEB_ALL.lower() and "pdf.worker" not in WEB_ALL.lower(),
     "遗留-PDF 走登录流": 'mediaFileUrl(lib, path)' in MEDIA and 'iframe src="${esc(url)}#view=FitH"' in MEDIA,
+})
+
+# ============ 声明的真实性（审查 P2-3/P3 相关，避免只写在文档里） ============
+checks.update({
+    "服务端 limit 夹取与说明一致": 'if lim <= 0 || lim > 500 {' in GO_MAIN and 'lim = 100' in GO_MAIN
+        and '静默' in NOTES and '截断分页' not in NOTES,
+    "zip 注释不再宣称被证伪论断": ('纵深' in GO_EPUB or 'defense in depth' in GO_EPUB.lower())
+        and ('ErrFormat' in GO_EPUB or 'ErrUnexpectedEOF' in GO_EPUB),
+    "去标签黄金值守卫存在": 'TestHtmlToTextGolden' in GO_EPUB_TEST,
 })
 
 failed = [name for name, ok in checks.items() if not ok]
