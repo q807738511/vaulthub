@@ -138,9 +138,32 @@ const chk = (name, cond, extra) => {
   chk("重复点击已读收藏仍可展开", countCards() === 20, "实际 " + countCards());
 
   chk("没有超大分页请求", !requests.some(u => /limit=(100000|10000[0-9])/.test(u)));
+  chk("游标分页不会跳过整段剩余（旧缺陷）", requests.filter(u => u.includes("/api/media/files")).every(u => /limit=(20|500)/.test(u))
+    && requests.every(u => !/offset=100000/.test(u)));
   const fileReqs = requests.filter(u => u.includes("/api/media/files"));
   chk("按游标分页拉取完整索引", fileReqs.length >= 4, "请求数 " + fileReqs.length);
   chk("分页请求均为常规上限", fileReqs.every(u => /limit=(20|500)/.test(u)), fileReqs.join(" "));
+  /* 复查补充（P3-5 N2）：>500 本的库必须也能完整展开 —— 旧实现用单页 limit=500
+     或超大 limit，都会漏掉第 501 本之后的书籍；这里用 1200 本真实校验数量与去重。 */
+  FILES.length = 0;
+  for (let i = 1; i <= 1200; i++) FILES.push({ path: "/MH/big-" + String(i).padStart(4, "0") + ".cbz", size: 512 });
+  READ.clear();
+  api.readingProgressCache["c1"] = {};
+  api.setComicShelfView("shelf");   // 回到未读视图，1200 本全部应可见
+  await wait();
+  requests.length = 0;
+  await api.loadLocalFiles("comic", lib, 0);
+  const bigCards = countCards();
+  const bigPaths = (target.innerHTML.match(/data-media-path="[^"]+"/g) || []);
+  chk("1200 本的库完整展开", bigCards === 1200, "实际 " + bigCards);
+  chk("1200 本无重复", new Set(bigPaths).size === bigPaths.length, new Set(bigPaths).size + " vs " + bigPaths.length);
+  /* 游标必须连续推进：0 → 20 → 520 → 1020（旧实现按超大 limit 计算偏移会直接跳过
+     501 本之后的整段内容，这里用精确的偏移序列证明没有跳段）。 */
+  const offsets = requests.filter(u => u.includes("/api/media/files"))
+    .map(u => Number(new URL("http://x" + u).searchParams.get("offset")));
+  chk("1200 本游标连续推进无跳段", JSON.stringify(offsets) === JSON.stringify([0, 20, 520, 1020]),
+    JSON.stringify(offsets));
+
   console.log("SUMMARY pass=" + pass + " fail=" + fail);
   process.exit(fail ? 1 : 0);
 })();

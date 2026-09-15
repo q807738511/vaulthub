@@ -36,8 +36,22 @@ checks.update({
     "EPUB 鉴权与路径校验": "readAuth(r)" in GO_EPUB and "safeFile(l, rel)" in GO_EPUB
         and 'filepath.Ext(rel), ".epub"' in GO_EPUB,
     "EPUB 拒绝父目录段": 'if seg == ".."' in GO_EPUB,
-    "EPUB 跳过脚本样式": 'case "script", "style", "head":' in GO_EPUB,
-    "EPUB 收尾标签可解析": 'closing := strings.HasPrefix(s, "/")' in GO_EPUB,
+    "EPUB 跳过脚本样式": 'base == "script" || base == "style" || base == "head"' in GO_EPUB,
+    "EPUB 严格标签解析": "func parseTagAt(src string, at int)" in GO_EPUB
+        and 'return "/" + name, end, false, true' in GO_EPUB,
+    "EPUB 元素跳过用收尾标签精确定位": "func skipElement(src string, from int, tag string) int" in GO_EPUB
+        and 'needle := "</" + strings.ToLower(tag)' in GO_EPUB,
+    "EPUB 自闭合不进跳过状态": '&& !selfClosing {' in GO_EPUB,
+    "EPUB 裸小于号当普通字符": 'out.WriteString("<")' in GO_EPUB,
+    "EPUB 标题定位不改字节": "func indexFold(s, needle string) int" in GO_EPUB
+        and "tagNameOf" not in GO_EPUB,
+    "EPUB 章节跳转守卫测试": (ROOT / "tests/test_v0970_epub_chapter_jump.py").exists()
+        and "jumpEbookChapter" in (ROOT / "tests/test_v0970_epub_chapter_jump.py").read_text(encoding="utf-8"),
+    "章节跳转按元素定位": 'scroller.querySelectorAll(".ebook-chapter-title")' in MEDIA.replace("scroller.querySelectorAll ? ", "")
+        or "headings[Math.min(index, headings.length - 1)]" in MEDIA,
+    "章节跳转不再产生 NaN": '} else if (Number.isFinite(Number(chapter.offset)))' in MEDIA,
+    "EPUB 章节带累计偏移": 'let ebookOffset = 0;' in MEDIA and 'offset: ebookOffset' in MEDIA,
+    "忽略 Python 编译产物": "__pycache__/" in (ROOT / ".gitignore").read_text(encoding="utf-8"),
     "EPUB 上限与截断标记": "epubMaxEntryBytes" in GO_EPUB and "epubMaxTextBytes" in GO_EPUB
         and "epubMaxSpineItems" in GO_EPUB and "epubMaxScanBytes" in GO_EPUB and '"truncated": truncated' in GO_EPUB,
     "EPUB 上限抽成可测函数": "func epubChapters(zr *zip.Reader, order []string)" in GO_EPUB

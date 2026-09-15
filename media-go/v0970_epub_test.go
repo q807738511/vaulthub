@@ -228,3 +228,132 @@ func TestEpubEntryAndSpineCaps(t *testing.T) {
 		t.Errorf("不存在的条目不应产出章节: %d", len(chapters))
 	}
 }
+
+// TestEpubSkipDoesNotSwallowBody 覆盖 v0.9.70 复审缺陷 P2-1：
+// 跳过 script/style 时若元素内部出现裸 '<'（JS 比较式）或自闭合标签，
+// 旧实现会把收尾标签一起吞掉，导致整章余下正文静默丢失。
+func TestEpubSkipDoesNotSwallowBody(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want []string
+		not  []string
+	}{
+		{
+			name: "脚本内含比较式",
+			in:   `<body><p>前段</p><script>if (a<b) { alert(1) }</script><p>后段必须保留</p></body>`,
+			want: []string{"前段", "后段必须保留"},
+			not:  []string{"alert"},
+		},
+		{
+			name: "自闭合 script",
+			in:   `<body><p>前段</p><script src="x.js"/><p>自闭合后仍要保留</p></body>`,
+			want: []string{"前段", "自闭合后仍要保留"},
+			not:  []string{"x.js"},
+		},
+		{
+			name: "样式含裸小于号",
+			in:   `<body><style>p:before{content:"<"}</style><p>样式后的正文</p></body>`,
+			want: []string{"样式后的正文"},
+			not:  []string{"content:"},
+		},
+		{
+			name: "正文裸小于号不当标签",
+			in:   `<body><p>1 < 2 且 3 > 1</p><p>下一段</p></body>`,
+			want: []string{"1 < 2", "下一段"},
+		},
+		{
+			name: "head 跳过不吞 body",
+			in:   `<html><head><title>T</title><script>var a=1<2;</script></head><body>正文在这里</body></html>`,
+			want: []string{"正文在这里"},
+			not:  []string{"var a"},
+		},
+	}
+	for _, c := range cases {
+		got := htmlToText([]byte(c.in))
+		for _, w := range c.want {
+			if !strings.Contains(got, w) {
+				t.Errorf("%s: 丢失内容 %q，实际 %q", c.name, w, got)
+			}
+		}
+		for _, n := range c.not {
+			if strings.Contains(got, n) {
+				t.Errorf("%s: 泄漏内容 %q，实际 %q", c.name, n, got)
+			}
+		}
+	}
+}
+
+// TestEpubTitleNoByteDrift 覆盖复审 P3-6：标题定位必须作用于原串字节，
+// 不能依赖 strings.ToLower 的下标（ToLower 可能缩短 UTF-8 字节）。
+func TestEpubTitleNoByteDrift(t *testing.T) {
+	cases := map[string]string{
+		"<p>İ</p><h1>Bölüm</h1>":      "Bölüm",
+		"<p>İİİİİİ</p><h2>第二章 İ</h2>": "第二章 İ",
+		"<H1>大写标签也要认</H1>":            "大写标签也要认",
+		"<h1x>伪标签</h1x><h1>真标题</h1>":  "真标题",
+	}
+	for in, want := range cases {
+		if got := firstTagText(in, "h1", "h2", "h3", "title"); got != want {
+			t.Errorf("firstTagText(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// TestEpubScanBudgetGuard 覆盖复审 P3-5（M8/M9）：扫描量上限必须真的生效。
+// 做法：2000 章、每章声明 50KB（合计 100MB > 64MB 上限），内容高度可压缩，
+// 因此临时文件很小但「声明大小」预算必然被触发。
+func TestEpubScanBudgetGuard(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	add := func(name, body string) {
+		w, e := zw.Create(name)
+		if e != nil {
+			t.Fatalf("create: %v", e)
+		}
+		if _, e := w.Write([]byte(body)); e != nil {
+			t.Fatalf("write: %v", e)
+		}
+	}
+	add("META-INF/container.xml", `<?xml version="1.0"?><container version="1.0"><rootfiles><rootfile full-path="c.opf"/></rootfiles></container>`)
+	payload := strings.Repeat("a", 50<<10) // 50KB 声明大小
+	var manifest, spine strings.Builder
+	const n = epubMaxSpineItems
+	for i := 0; i < n; i++ {
+		name := "c" + strconv.Itoa(i) + ".xhtml"
+		add(name, "<html><body><h1>章"+strconv.Itoa(i)+"</h1><p>"+payload+"</p></body></html>")
+		manifest.WriteString(`<item id="i` + strconv.Itoa(i) + `" href="` + name + `" media-type="application/xhtml+xml"/>`)
+		spine.WriteString(`<itemref idref="i` + strconv.Itoa(i) + `"/>`)
+	}
+	add("c.opf", `<package version="3.0"><metadata><title>大书</title></metadata><manifest>`+manifest.String()+`</manifest><spine>`+spine.String()+`</spine></package>`)
+	if e := zw.Close(); e != nil {
+		t.Fatalf("close: %v", e)
+	}
+	path := filepath.Join(t.TempDir(), "scan.epub")
+	if e := os.WriteFile(path, buf.Bytes(), 0o600); e != nil {
+		t.Fatalf("write: %v", e)
+	}
+	zr, e := zip.OpenReader(path)
+	if e != nil {
+		t.Fatalf("open: %v", e)
+	}
+	defer zr.Close()
+	opf, ok := epubRootFilePath(&zr.Reader)
+	if !ok {
+		t.Fatal("rootfile missing")
+	}
+	_, order, ok := epubSpinePaths(&zr.Reader, opf)
+	if !ok || len(order) != n {
+		t.Fatalf("spine=%d ok=%v", len(order), ok)
+	}
+	chapters, total, truncated := epubChapters(&zr.Reader, order)
+	if !truncated {
+		t.Errorf("声明总量 %dMB 必须触发扫描预算截断", (n*50)>>10)
+	}
+	if len(chapters) >= n {
+		t.Errorf("扫描预算未生效，仍返回全部 %d 章", len(chapters))
+	}
+	if total > epubMaxTextBytes {
+		t.Errorf("正文超过 12MB 上限: %d", total)
+	}
+}
