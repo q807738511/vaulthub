@@ -357,3 +357,27 @@ func TestEpubScanBudgetGuard(t *testing.T) {
 		t.Errorf("正文超过 12MB 上限: %d", total)
 	}
 }
+
+// TestHtmlToTextGolden 固化 htmlToText 对普通 HTML 的输出（已知与 v0.9.69 旧实现逐例一致，
+// 见本版「旧实现副本对比」验证）。未来任何去标签改动都必须显式更新这里。
+func TestHtmlToTextGolden(t *testing.T) {
+	golden := map[string]string{
+		`<b>粗体</b><i>斜体</i><span>行内</span>`:                                "粗体斜体行内",
+		`<blockquote>引用</blockquote><article>文章</article>`:                 "引用\n文章",
+		`<body><p>A&amp;B</p><p>&#65;&hellip;</p></body>`:                  "A&B\nA…",
+		`<div><div><p>嵌套</p></div></div>`:                                  "嵌套",
+		`<div>一</div><div>二</div>`:                                         "一\n二",
+		`<h1>标题</h1><p>正文</p>`:                                             "标题\n正文",
+		`<html><head><title>T</title></head><body><p>正文</p></body></html>`: "正文",
+		`<p>a</p><br><p>b</p>`:                                             "a\n\nb",
+		`<p>尾部实体&nbsp;结束</p>`:                                              "尾部实体 结束",
+		`<p>第一段</p><p>第二段</p>`:                                             "第一段\n第二段",
+		`<table><tr><td>1</td><td>2</td></tr></table>`:                     "12",
+		`<ul><li>甲</li><li>乙</li></ul>`:                                    "甲\n乙",
+	}
+	for in, want := range golden {
+		if got := htmlToText([]byte(in)); got != want {
+			t.Errorf("htmlToText(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
