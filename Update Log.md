@@ -8,6 +8,12 @@
 
 详见 [RELEASE_NOTES_0.9.70.md](.github/RELEASE_NOTES_0.9.70.md)
 
+### 发布流水线修复（v0.9.70 发布后发现）
+
+- 现象：tag 构建里 `Create GitHub Release for version tags` 步骤返回非 0 被判失败，但 Release 本身已正确创建并发布（标题、说明与 `.github/RELEASE_NOTES_0.9.70.md` 逐字节一致，`draft=false`、`prerelease=false`）。整条工作流红灯 → `workflow_run` 触发的 Docker Hub 同步按「构建失败不同步半成品」跳过，Docker Hub 的 `v0.9.70`/`latest` 一度停留在 v0.9.69 摘要。
+- 处置：发布步骤改为**幂等 + 3 次重试 + 发布后读回校验**（只认 Release 真实状态，不认 `gh` 退出码；说明字符数少于 500 或读回为空/非数字一律判失败），从根上避免「Release 已发布却红灯」导致同步被跳过；本次再通过只修改同步工作流触发一次全量同步，恢复 Docker Hub。
+- 守卫：新增 `tests/test_v0970_release_step_logic.py`，用 `gh`/`jq`/`sleep` 桩程序真实执行 YAML 里的脚本，覆盖 7 项静态检查与 8 个行为场景；5 个突变（改回旧写法、去掉空值拦截、阈值降为 0、去掉重试、保留重试字样但只试一次）全部被捕获。
+
 # VaultHub 蜀鼠之家 · 更新日志
 
 > 主页项目介绍见 [README.md](README.md)；本文件为历史版本更新日志归档。

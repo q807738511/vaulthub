@@ -61,15 +61,64 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release edit "$GITHUB_REF_NAME" \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "VaultHub $GITHUB_REF_NAME" \
-              --notes-file ".github/RELEASE_NOTES_${GITHUB_REF_NAME#v}.md" \
-              --draft=false
-          else
-            gh release create "$GITHUB_REF_NAME" \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "VaultHub $GITHUB_REF_NAME" \
-              --notes-file ".github/RELEASE_NOTES_${GITHUB_REF_NAME#v}.md"
+          set -euo pipefail
+          NOTES=".github/RELEASE_NOTES_${GITHUB_REF_NAME#v}.md"
+          if [ ! -f "$NOTES" ]; then
+            echo "::error title=缺少发布说明::找不到 $NOTES，拒绝创建没有说明的 Release"
+            exit 1
           fi
+          echo "发布说明文件：$NOTES ($(wc -c < "$NOTES") 字节)"
+
+          # v0.9.70 复盘：旧写法里 gh 偶发返回非 0 时，Release 其实已经创建并发布，
+          # 但步骤仍判失败 → 整个「Build and publish container」红灯 →
+          # workflow_run 触发的 Docker Hub 同步因「构建失败」被跳过，Docker Hub 停留旧版。
+          # 因此这里改为幂等 + 重试 + 发布后读回校验，最终以「Release 是否真的已发布」为准。
+          publish_release() {
+            if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              echo "Release 已存在，改为覆盖标题与说明并确保非草稿"
+              gh release edit "$GITHUB_REF_NAME" \
+                --repo "$GITHUB_REPOSITORY" \
+                --title "VaultHub $GITHUB_REF_NAME" \
+                --notes-file "$NOTES" \
+                --draft=false \
+                --prerelease=false
+            else
+              echo "Release 不存在，创建正式 Release"
+              gh release create "$GITHUB_REF_NAME" \
+                --repo "$GITHUB_REPOSITORY" \
+                --title "VaultHub $GITHUB_REF_NAME" \
+                --notes-file "$NOTES" \
+                --verify-tag
+            fi
+          }
+
+          for ATTEMPT in 1 2 3; do
+            if publish_release; then
+              echo "第 $ATTEMPT 次发布调用成功"
+              break
+            fi
+            echo "::warning title=Release 发布重试::第 $ATTEMPT 次调用返回非 0，10 秒后重试"
+            sleep 10
+          done
+
+          # 读回校验：不信任 gh 的退出码，只认仓库里真实存在的 Release 状态。
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+            --json isDraft,isPrerelease,name,tagName,body,url > /tmp/vaulthub-release.json
+          cat /tmp/vaulthub-release.json
+          DRAFT=$(jq -r '.isDraft' /tmp/vaulthub-release.json 2>/dev/null || echo "")
+          PRE=$(jq -r '.isPrerelease' /tmp/vaulthub-release.json 2>/dev/null || echo "")
+          BODY_LEN=$(jq -r '.body | length' /tmp/vaulthub-release.json 2>/dev/null || echo "")
+          echo "读回结果：draft=$DRAFT prerelease=$PRE 说明字符数=$BODY_LEN"
+          # 空值 / 非数字必须先拦住：否则 [ "" -lt 500 ] 只会打印报错而不改变判定，
+          # 校验会被静默跳过（本步骤在本地用桩程序模拟时正是这样漏掉的）。
+          case "$BODY_LEN" in
+            ''|*[!0-9]*)
+              echo "::error title=Release 校验失败::读回说明长度无效（$BODY_LEN），无法确认说明完整"
+              exit 1
+              ;;
+          esac
+          if [ "$DRAFT" != "false" ] || [ "$PRE" != "false" ] || [ "$BODY_LEN" -lt 500 ]; then
+            echo "::error title=Release 校验失败::draft=$DRAFT prerelease=$PRE body_len=$BODY_LEN"
+            exit 1
+          fi
+          echo "Release 已发布且说明完整：$(jq -r '.url' /tmp/vaulthub-release.json)"

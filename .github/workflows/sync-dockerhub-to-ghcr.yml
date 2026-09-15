@@ -1,4 +1,10 @@
 name: Sync All GHCR vaulthub Tags to Docker Hub
+# v0.9.70 复盘：本次 tag 构建里「Create GitHub Release for version tags」步骤返回非 0
+# （Release 本身已创建并发布，说明文件与仓库内的 RELEASE_NOTES_0.9.70.md 完全一致），
+# 但整条工作流被判为 failure → 本工作流因下方 if 条件「构建失败不同步半成品」被跳过，
+# 于是 Docker Hub 的 v0.9.70 / latest 停留在 v0.9.69 摘要。
+# 处置：① publish-image.yml 的发布步骤已改为幂等 + 重试 + 发布后读回校验，根治该红灯；
+#       ② 本次通过只修改本文件触发一次全量同步（下方 push.paths 的设计用途）恢复 Docker Hub。
 on:
   workflow_dispatch:
   # 镜像构建完成后再同步：直接用 push 触发会和「Build and publish container」并发，
