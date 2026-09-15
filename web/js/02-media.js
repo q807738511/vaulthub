@@ -930,11 +930,20 @@ async function loadLocalFiles(group, lib, offset = 0) {
   const target = document.getElementById("local-media-content-" + group);
   if (!target) return;
   try {
-    const pageSize = group === "comic" ? (comicShelfView === "completed" ? 100000 : mediaPageSize) : group === "audio" ? audioPageSize : group === "movie" ? 500 : 100;
+    /* v0.9.70：已读/未读筛选必须基于完整索引。
+       旧实现给已读视图发送 limit=100000，服务端会按安全上限截断，导致已读书籍
+       重新打开后偶尔显示空白且无法展开。先按正常分页游标拉完，再在本地筛选，
+       同时让两种视图共享同一份完整索引。 */
+    const pageSize = group === "comic" ? mediaPageSize : group === "audio" ? audioPageSize : group === "movie" ? 500 : 100;
     const res = await fetch(`/api/media/files?id=${encodeURIComponent(lib.id)}&offset=${offset}&limit=${pageSize}`, { cache: "no-store" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    let files = normalizeFilePayload(data).sort((a, b) => String(a.path).localeCompare(String(b.path), "zh-CN"));
+    let files = normalizeFilePayload(data);
+    if (group === "comic" && data.status !== "indexing") {
+      files = await fetchAllLibraryFiles(lib.id, data, offset);
+      data.has_more = false;
+    }
+    files = files.sort((a, b) => String(a.path).localeCompare(String(b.path), "zh-CN"));
     files = files.filter(file => supportedLocalMediaFile(group, lib, String(file.path)));
     if (data.status === "indexing") {
       /* 旧版本只显示一句「请稍后刷新」，用户无法判断卡住还是仍在扫描。
@@ -1090,7 +1099,7 @@ function readAudioMetadata() {
 function writeAudioMetadata(data) {
   try { localStorage.setItem(audioMetadataCache, JSON.stringify(data)); }
   catch (e) {
-    /* v0.9.69：写入失败此前被静默吞掉（表现为「刮削过但下次打开又没了」）。
+    /* v0.9.70：写入失败此前被静默吞掉（表现为「刮削过但下次打开又没了」）。
        只提示一次；服务端 sqlite 缓存仍是权威来源，重开页面会自动回灌。 */
     if (!writeAudioMetadata.warned) {
       writeAudioMetadata.warned = true;
@@ -1886,7 +1895,7 @@ async function loadAudioServerCache(libId, force = false) {
   if (!force && AUDIO_SERVER_CACHE_LOADED[libId]) return AUDIO_SERVER_CACHE_LOADED[libId];
   AUDIO_SERVER_CACHE_LOADED[libId] = (async () => {
     try {
-      /* v0.9.69：显式带上限；服务端会返回 truncated 标记（超过上限的尾部条目本次不加载）。 */
+      /* v0.9.70：显式带上限；服务端会返回 truncated 标记（超过上限的尾部条目本次不加载）。 */
       const res = await fetch(`/api/media/audio/cache?id=${encodeURIComponent(libId)}&limit=5000`, { cache: "no-store", credentials: "same-origin" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
@@ -3486,7 +3495,34 @@ async function openLocalMedia(group, libId, path) {
 </div>`;
   else if (["jpg","jpeg","png","webp","gif","bmp","avif"].includes(ext)) body = `<img src="${esc(url)}" alt="${esc(path)}">`;
   else if (ext === "pdf") body = `<iframe src="${esc(url)}#view=FitH" title="${esc(path)}"></iframe>`;
-  else if (ext === "txt") {
+  else if (ext === "epub") {
+    /* v0.9.70：EPUB 由服务端按 spine 解析成章节纯文本（容器内自解析，无第三方依赖），
+       复用 TXT 电子书阅读器的章节下拉与进度恢复；此前只显示「不支持直接解析」。 */
+    viewer.innerHTML = viewerShell(group, lib, path, '<div class="empty-tip">正在解析 EPUB 电子书...</div>', url, { doc: true });
+    try {
+      const res = await fetch(`/api/media/document/epub?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}`, { cache: "no-store", credentials: "same-origin" });
+      if (!res.ok) {
+        let detail = "";
+        try { detail = (await res.json()).error || ""; } catch (e) {}
+        throw new Error(detail || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      const chapters = (data.chapters || []).map((c, i) => ({ title: c.title || ("第 " + (i + 1) + " 章"), text: c.text || "" })).filter(c => c.text.trim());
+      if (!chapters.length) throw new Error("这本 EPUB 没有可读正文");
+      window.__ebookChapters = chapters;
+      window.__ebookTextLength = chapters.reduce((n, c) => n + c.text.length, 0);
+      body = chapters.map(c => `<h3 class="ebook-chapter-title">${esc(c.title)}</h3><pre class="media-text">${esc(c.text)}</pre>`).join("");
+      if (data.truncated) toast("ℹ️ 本书较长，本次已加载前 " + chapters.length + " 章");
+      viewer.innerHTML = viewerShell(group, lib, path, body, url, { chapters, ebook: true, doc: true });
+    } catch (err) {
+      body = `<div class="media-error">EPUB 解析失败：${esc(err.message)}</div>`;
+      viewer.innerHTML = viewerShell(group, lib, path, body, url, { doc: true });
+      return;
+    }
+    scrollViewerIntoView(viewer);
+    restoreReaderProgress(viewer, lib.id, path);
+    return;
+  } else if (ext === "txt") {
     viewer.innerHTML = viewerShell(group, lib, path, '<div class="empty-tip">正在读取文本...</div>', url, { doc: true });
     try {
       const bytes = await fetchCompleteTextFile(url);
