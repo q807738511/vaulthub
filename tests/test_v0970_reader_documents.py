@@ -44,6 +44,8 @@ checks.update({
         and "chapters, total, truncated := epubChapters(" in GO_EPUB,
     "EPUB 扫描量按实际字节": "scanned += len(raw)" in GO_EPUB
         and "if scanned+int(zf.UncompressedSize64) > epubMaxScanBytes" in GO_EPUB,
+    "EPUB 渲染前转义": "${esc(c.text)}" in MEDIA and "${esc(c.title)}" in MEDIA
+        and "${esc(err.message)}" in MEDIA,
     "EPUB 上限有真实测试": "TestEpubCapsAreReal" in GO_EPUB_TEST and "TestEpubEntryAndSpineCaps" in GO_EPUB_TEST,
     "EPUB 只保留真实条目": "findZipEntry(zr, full) == nil" in GO_EPUB,
     "EPUB 无正文返回 422": 'errJSON(w, 422, "EPUB has no readable text")' in GO_EPUB,
