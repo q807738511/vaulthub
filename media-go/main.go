@@ -49,6 +49,8 @@ type App struct {
 	lyricsBatchSem    chan struct{} // v0.9.69: 批量歌词串行闸门（容量 1）
 	artistAliasMu     sync.Mutex    // v0.9.71: 歌手别名表（MusicBrainz）缓存锁
 	artistAliasCache  map[string]artistAliasEntry
+	audioJobsMu       sync.Mutex // v0.9.71: 同键音频转码合并（singleflight）
+	audioJobs         map[string]*audioJob
 	zipCacheMu        sync.Mutex
 	zipCache          *zipArchiveCache // v0.9.56: ZIP/CBZ 中央目录 LRU 缓存（漫画读取提速）
 	pageCacheMu       sync.Mutex

@@ -875,7 +875,7 @@
   .audio-fullscreen-close-sr:focus-visible { top:16px; right:20px; left:auto; width:auto; height:auto; margin:0; padding:9px 14px; clip:auto; clip-path:none;
     border:1px solid rgba(255,255,255,.45); border-radius:999px; background:rgba(0,0,0,.72); font-size:13px; cursor:pointer; }
   .reader-theme-light .audio-fullscreen-close-sr:focus-visible { color:#1d1d1f; background:rgba(255,255,255,.94); border-color:rgba(0,0,0,.25); }
-  .audio-fullscreen-poster { position:relative; width:min(520px,80vw); aspect-ratio:1/1; border-radius:24px; overflow:hidden; display:flex; align-items:center; justify-content:center; background:linear-gradient(145deg,#284b63,#1b2838); box-shadow:0 28px 80px rgba(0,0,0,.7); }
+  .audio-fullscreen-poster { position:relative; width:var(--poster-size,min(520px,80vw)); aspect-ratio:1/1; border-radius:24px; overflow:hidden; display:flex; align-items:center; justify-content:center; background:linear-gradient(145deg,#284b63,#1b2838); box-shadow:0 28px 80px rgba(0,0,0,.7); }
   /* v0.9.66：全屏海报背景用虚化封面填充黑边 */
   .audio-fullscreen-poster::before { content:""; position:absolute; inset:-30px; z-index:0; background-image:var(--poster-blur-bg, none); background-size:cover; background-position:center; filter:blur(36px) brightness(.5); }
   .audio-fullscreen-poster img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; image-rendering:auto; opacity:.95; z-index:1; }
@@ -887,7 +887,10 @@
      主海报虚化 5%：CSS 的 filter:blur() 只接受长度，不接受百分比，
      因此把「海报宽度的 5%」折算成长度（min(520px,80vw) × 5% ≈ 26px），
      与同容器既有的 36px 背景虚化属同一量级、视觉一致。 */
-  .audio-fullscreen-overlay { --poster-lyrics-blur:calc(min(520px,80vw) * .05); }
+  /* --poster-size 与 .audio-fullscreen-poster 的宽度保持同一个表达式，
+     窄屏媒体查询里一起改，虚化才始终是「海报宽度的 5%」（独立审查指出旧写法在
+     ≤768px 时海报是 min(420px,90vw)，而虚化仍按 min(520px,80vw) 算成约 6.2%）。 */
+  .audio-fullscreen-overlay { --poster-size:min(520px,80vw); --poster-lyrics-blur:calc(var(--poster-size) * .05); }
   .audio-fullscreen-overlay[data-page="lyrics"] .audio-fullscreen-poster img { filter:blur(var(--poster-lyrics-blur,26px)) brightness(.6); opacity:.7; }
   .audio-fullscreen-overlay[data-page="lyrics"] .audio-fullscreen-fallback { filter:blur(calc(var(--poster-lyrics-blur,26px) * .5)); opacity:.45; }
   .audio-fs-pills { position:absolute; right:18px; top:50%; transform:translateY(-50%); z-index:3; display:flex; flex-direction:column; gap:10px; }
@@ -922,7 +925,7 @@
     .audio-fs-lyrics-hint { bottom:14px; font-size:11px; }
   }
   @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
-  @media (max-width:768px) { .audio-fullscreen-overlay, body.sidebar-hidden .audio-fullscreen-overlay { left:0; } .audio-fullscreen-poster { width:min(420px,90vw); } .media-reader-overlay.movie-player.video-controller-docked, body.sidebar-hidden .media-reader-overlay.movie-player.video-controller-docked { left:0; height:180px; overflow:auto; } .media-reader-overlay.movie-player.video-controller-docked .media-reader-body, .media-reader-overlay.movie-player.video-controller-docked .media-reader-wrap, .media-reader-overlay.movie-player.video-controller-docked .media-video-body { height:180px; } .media-reader-overlay.movie-player.video-controller-docked video { width:132px; height:74px; left:8px; bottom:10px; } .media-reader-overlay.movie-player.video-controller-docked .vc-top { padding-left:150px; } .media-reader-overlay.movie-player.video-controller-docked .vc-bottom { margin-left:150px; } }
+  @media (max-width:768px) { .audio-fullscreen-overlay, body.sidebar-hidden .audio-fullscreen-overlay { left:0; } .audio-fullscreen-overlay { --poster-size:min(420px,90vw); } .audio-fullscreen-poster { width:var(--poster-size,min(420px,90vw)); } .media-reader-overlay.movie-player.video-controller-docked, body.sidebar-hidden .media-reader-overlay.movie-player.video-controller-docked { left:0; height:180px; overflow:auto; } .media-reader-overlay.movie-player.video-controller-docked .media-reader-body, .media-reader-overlay.movie-player.video-controller-docked .media-reader-wrap, .media-reader-overlay.movie-player.video-controller-docked .media-video-body { height:180px; } .media-reader-overlay.movie-player.video-controller-docked video { width:132px; height:74px; left:8px; bottom:10px; } .media-reader-overlay.movie-player.video-controller-docked .vc-top { padding-left:150px; } .media-reader-overlay.movie-player.video-controller-docked .vc-bottom { margin-left:150px; } }
   .audio-player-main { min-width:0; flex:1; }
   .audio-player-title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
   .audio-player-meta { color:var(--text2); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:4px; }

@@ -166,15 +166,42 @@ func (a *App) audioStream(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	/* HEAD 且缓存未命中：只回「将来会转码」的头部，不真的跑 ffmpeg
+	   （独立审查 REV-8：旧实现会为 HEAD 完整跑一遍转码并写缓存）。 */
+	if r.Method == http.MethodHead {
+		w.Header().Set("Content-Type", "audio/mpeg")
+		w.Header().Set("X-Vaulthub-Audio-Bitrate", fmt.Sprintf("%dk", bitrate))
+		w.Header().Set("X-Vaulthub-Audio-Cache", "would-transcode")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	/* 同键并发合并（singleflight）：两个请求同时点同一首/同一档位时，只跑一次 ffmpeg，
+	   后到者等前者写完缓存再复用（独立审查 REV-5 实测旧实现会重复转码两次）。 */
+	job, leader := a.beginAudioJob(cachePath)
+	if !leader {
+		select {
+		case <-job.done:
+		case <-r.Context().Done():
+			return
+		}
+		if info, err := os.Stat(cachePath); err == nil && info.Size() > 0 {
+			a.serveAudioStreamFile(w, r, cachePath, info, bitrate, "hit")
+			return
+		}
+		errJSON(w, 500, "audio transcode failed")
+		return
+	}
 	release, allowed := a.acquireTranscode(r.Context())
 	if !allowed {
 		// 转码队列拥塞或客户端已断开：让前端回落原文件直出，别把播放卡死在这里。
+		a.finishAudioJob(cachePath, job)
 		w.Header().Set("Retry-After", "3")
 		errJSON(w, 503, "transcode busy")
 		return
 	}
 	defer release()
 	if err := a.transcodeAudioToMP3(r.Context(), abs, cachePath, bitrate); err != nil {
+		a.finishAudioJob(cachePath, job)
 		// 客户端取消（切歌/关闭）不算服务故障
 		if r.Context().Err() != nil {
 			return
@@ -182,12 +209,43 @@ func (a *App) audioStream(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, 500, "audio transcode failed")
 		return
 	}
+	a.finishAudioJob(cachePath, job)
 	info, err := os.Stat(cachePath)
 	if err != nil {
 		errJSON(w, 500, "audio cache unavailable")
 		return
 	}
 	a.serveAudioStreamFile(w, r, cachePath, info, bitrate, "miss")
+}
+
+/* beginAudioJob 登记一次「同键转码」：leader=true 表示由本请求真正执行 ffmpeg；
+   leader=false 时返回的 job 会在 leader 完成后关闭 done。 */
+func (a *App) beginAudioJob(key string) (*audioJob, bool) {
+	a.audioJobsMu.Lock()
+	defer a.audioJobsMu.Unlock()
+	if a.audioJobs == nil {
+		a.audioJobs = map[string]*audioJob{}
+	}
+	if existing, ok := a.audioJobs[key]; ok {
+		return existing, false
+	}
+	job := &audioJob{done: make(chan struct{})}
+	a.audioJobs[key] = job
+	return job, true
+}
+
+func (a *App) finishAudioJob(key string, job *audioJob) {
+	a.audioJobsMu.Lock()
+	if cur, ok := a.audioJobs[key]; ok && cur == job {
+		delete(a.audioJobs, key)
+	}
+	a.audioJobsMu.Unlock()
+	close(job.done)
+}
+
+// audioJob 是一次进行中的音频转码（见 beginAudioJob）。
+type audioJob struct {
+	done chan struct{}
 }
 
 // serveAudioStreamFile 用 ServeContent 输出缓存文件（自动支持 Range/If-Modified-Since）。
@@ -203,6 +261,9 @@ func (a *App) serveAudioStreamFile(w http.ResponseWriter, r *http.Request, path 
 	w.Header().Set("Cache-Control", "private, max-age=86400")
 	w.Header().Set("X-Vaulthub-Audio-Bitrate", fmt.Sprintf("%dk", bitrate))
 	w.Header().Set("X-Vaulthub-Audio-Cache", state)
+	/* 缓存文件名就是内容寻址的哈希（路径+修改时间+码率），直接拿它当 ETag：
+	   源文件改动会换键 → 换 ETag，浏览器的条件请求不会命中陈旧转码。 */
+	w.Header().Set("ETag", `"`+filepath.Base(path)+`"`)
 	http.ServeContent(w, r, filepath.Base(path), info.ModTime(), f)
 }
 

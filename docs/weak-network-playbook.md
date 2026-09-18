@@ -77,7 +77,7 @@ curl -b cookies.txt -o /dev/null -w '%{speed_download} B/s\n' \
 1. **接入侧**：Cloudflare Tunnel 或 frp/FRPS 都可用，但请把**大文件走直连域名的同源路径**
    （`/api/media/*`）而不是套一层会缓冲整响应的反代；VaultHub 的转码流是分块输出，
    中途被反代全量缓冲会显著增加首字节时间。
-2. **容器侧**：`MEDIA_CACHE_DIR` 指到 SSD 卷（例如 `/vol3/1000/监控/date`），
+2. **容器侧**：`MEDIA_CACHE_DIR` 指到 SSD 卷（例如 `/path/to/ssd/transcode-cache`；转码缓存只有读写在缓存目录，放在 SSD 上命中更快），
    转码缓存命中后重播几乎零成本。
 3. **客户端侧**：弱网模式 `自动`；如果用户长期在移动网络，建议直接教他们切到 `始终开启`。
 4. **CPU**：单个 128k MP3 转码约 0.2–0.5 核，NAS 上通常不是瓶颈；

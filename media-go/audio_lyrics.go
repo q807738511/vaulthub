@@ -86,36 +86,59 @@ func (a *App) scrapeAudioLyrics(ctx context.Context, title, artist string) (lyri
 	if len(queries) == 0 {
 		queries = []audioQuery{{Title: title, Artist: artist}}
 	}
+	/* 分阶段预算：get ≤3、结构化 search ≤3、自由文本 q= ≤2、lyrics.ovh ≤1（合计 ≤9）。
+	   早期写法用「一个总计数器 + 2×变体数」的上限（8），当检索词正好 4 个变体时
+	   get(4)+search(4) 会把预算吃光，**q= 兜底一次都跑不到**（独立审查用
+	   TestRev71FreeTextFallbackUnreachableWithFourVariants 复现）。分阶段后每个阶段
+	   都有独立额度，q= 与 lyrics.ovh 一定有机会执行。 */
 	attempts := 0
+	phase := func(limit int) int {
+		if attempts+limit > lyricsMaxAttempts {
+			limit = lyricsMaxAttempts - attempts
+		}
+		if limit < 0 {
+			limit = 0
+		}
+		return limit
+	}
+	used := 0
 	for _, q := range queries {
-		if attempts >= lyricsMaxAttempts {
+		if used >= phase(lyricsGetPhaseMax) {
 			break
 		}
+		used++
 		attempts++
 		if r, ok := a.lrclibGet(ctx, q.Title, q.Artist); ok {
 			return r, true
 		}
 	}
+	used = 0
 	for _, q := range queries {
-		if attempts >= lyricsMaxAttempts {
+		if used >= phase(lyricsSearchPhaseMax) {
 			break
 		}
+		used++
 		attempts++
 		if r, ok := a.lrclibSearch(ctx, q.Title, q.Artist); ok {
 			return r, true
 		}
 	}
+	used = 0
 	for _, q := range queries {
-		if attempts >= lyricsMaxAttempts {
+		if used >= phase(lyricsFreePhaseMax) {
 			break
 		}
+		used++
 		attempts++
 		if r, ok := a.lrclibSearchFree(ctx, q.Title); ok {
 			return r, true
 		}
 	}
-	if r, ok := a.lyricsOvh(ctx, title, artist); ok {
-		return r, true
+	if attempts < lyricsMaxAttempts {
+		attempts++
+		if r, ok := a.lyricsOvh(ctx, title, artist); ok {
+			return r, true
+		}
 	}
 	if a.neteaseLyricsEnabled() {
 		if r, ok := a.neteaseLyrics(ctx, title, artist); ok {
@@ -125,8 +148,15 @@ func (a *App) scrapeAudioLyrics(ctx context.Context, title, artist string) (lyri
 	return lyricsResult{}, false
 }
 
-// lyricsMaxAttempts 是单次歌词刮削的外呼次数上限（每次外呼前有 900ms 节流）。
-const lyricsMaxAttempts = 8
+/* v0.9.71 歌词刮削外呼预算（每次外呼前有 900ms 节流）。
+   总计 ≤ lyricsMaxAttempts，且每个阶段各有上限，保证「自由文本 q=」与「lyrics.ovh」
+   不会因为前面的变体多而被挤掉。 */
+const (
+	lyricsMaxAttempts    = 9 // 单次刮削外呼总上限（含 lyrics.ovh）
+	lyricsGetPhaseMax    = 3 // LRCLIB /api/get 阶段
+	lyricsSearchPhaseMax = 3 // LRCLIB 结构化 /api/search 阶段
+	lyricsFreePhaseMax   = 2 // LRCLIB 自由文本 q= 阶段
+)
 
 type lrclibRecord struct {
 	TrackName     string `json:"trackName"`
@@ -288,8 +318,20 @@ func audioLyricsTitleMatches(want, got string) bool {
 		short, long = long, short
 	}
 	if len(short) >= 4 && strings.Contains(string(long), string(short)) {
-		if !audioHasCJK(string(long)) || audioHasCJK(string(short)) {
+		longCJK, shortCJK := audioHasCJK(string(long)), audioHasCJK(string(short))
+		switch {
+		case longCJK && !shortCJK:
+			// 纯拉丁短标题不得被中日文长标题包含（NUMBER ⊂ back number - 水平線）
+		case longCJK || shortCJK:
+			// 中日文标题允许官方长后缀（残酷な天使のテーゼ ⊂ …(off vocal version)）
 			return true
+		default:
+			/* 纯拉丁标题要求覆盖度 ≥0.7：否则 "Rain" ⊂ "Rain On Me"、
+			   "Lemon" ⊂ "Lemonade" 会被判成同一首（独立审查 REV-2/REV-9 用
+			   scrapeAudioLyrics("Rain","") 复现出拿错歌歌词）。 */
+			if float64(len(short))/float64(len(long)) >= 0.7 {
+				return true
+			}
 		}
 	}
 	if audioIsASCII(w) && audioIsASCII(g) {

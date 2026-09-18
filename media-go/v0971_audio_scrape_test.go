@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -700,5 +702,235 @@ func TestV0971ArtistAliasCacheExpiry(t *testing.T) {
 	}
 	if len(names) == 1 && names[0] == "stale" {
 		t.Fatal("过期缓存内容不得继续返回")
+	}
+}
+
+/* ================= 独立审查发现（v0.9.71 复审轮）的守卫 ================= */
+
+/* REV-1：4 个检索词变体时，自由文本 q= 兜底必须仍然跑到。
+   旧实现 lyricMaxAttempts=8 恰好被 get(4)+search(4) 吃光，q= 一次都执行不到。 */
+func TestV0971LyricsFreeTextReachableWithFourVariants(t *testing.T) {
+	var getCalls, searchCalls, qCalls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		path := r.URL.Path
+		switch {
+		case strings.HasPrefix(path, "/api/get"):
+			getCalls++
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte(`{"code":404,"message":"Not Found"}`))
+		case strings.HasPrefix(path, "/api/search"):
+			if r.URL.Query().Get("q") != "" {
+				qCalls++
+				w.Write([]byte(`[{"trackName":"打上花火","artistName":"uploader","syncedLyrics":"[00:00.00]あの日見た花火"}]`))
+				return
+			}
+			searchCalls++
+			w.Write([]byte(`[]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	oldBase, oldOvh, oldClient, oldInterval := lrclibBase, lyricsOvhBase, outboundHTTPClient, lyricsMinInterval
+	lrclibBase, lyricsOvhBase = server.URL, server.URL
+	lyricsMinInterval = 0
+	defer func() {
+		lrclibBase, lyricsOvhBase, outboundHTTPClient, lyricsMinInterval = oldBase, oldOvh, oldClient, oldInterval
+	}()
+	outboundHTTPClient = func(string) (*http.Client, error) { return server.Client(), nil }
+
+	a := &App{}
+	// 带修饰的标题 + 合作演唱歌手串 → 原样/去修饰 × 整串/主歌手 共 4 个变体
+	title, artist := "打上花火 (MOVIE ver.)", "DAOKO × 米津玄師"
+	if got := len(audioQueryVariants(title, artist)); got != 4 {
+		t.Fatalf("用例前提失效：期望 4 个检索变体，实际 %d", got)
+	}
+	res, ok := a.scrapeAudioLyrics(context.Background(), title, artist)
+	if !ok || !strings.Contains(res.Lyrics, "あの日見た花火") {
+		t.Fatalf("4 变体场景下 q= 兜底必须仍可命中：ok=%v res=%+v（get=%d search=%d q=%d）", ok, res, getCalls, searchCalls, qCalls)
+	}
+	if qCalls == 0 {
+		t.Fatalf("q= 兜底一次都没调用（get=%d search=%d）", getCalls, searchCalls)
+	}
+	if getCalls > lyricsGetPhaseMax || searchCalls > lyricsSearchPhaseMax || qCalls > lyricsFreePhaseMax {
+		t.Fatalf("分阶段预算被突破：get=%d search=%d q=%d", getCalls, searchCalls, qCalls)
+	}
+}
+
+/* REV-7：外呼预算必须把 lyrics.ovh 也覆盖在内（旧实现的常量只管 LRCLIB 阶梯）。 */
+func TestV0971LyricsBudgetCoversOvh(t *testing.T) {
+	var total int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		total++
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasPrefix(r.URL.Path, "/api/search") {
+			w.Write([]byte(`[]`))
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/v1/") {
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte(`{"error":"No lyrics found"}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"code":404,"message":"Not Found"}`))
+	}))
+	defer server.Close()
+	oldBase, oldOvh, oldClient, oldInterval := lrclibBase, lyricsOvhBase, outboundHTTPClient, lyricsMinInterval
+	lrclibBase, lyricsOvhBase = server.URL, server.URL
+	lyricsMinInterval = 0
+	defer func() {
+		lrclibBase, lyricsOvhBase, outboundHTTPClient, lyricsMinInterval = oldBase, oldOvh, oldClient, oldInterval
+	}()
+	outboundHTTPClient = func(string) (*http.Client, error) { return server.Client(), nil }
+
+	a := &App{}
+	if _, ok := a.scrapeAudioLyrics(context.Background(), "残酷な天使のテーゼ【MV】", "高橋洋子"); ok {
+		t.Fatal("全部落空时不得返回歌词")
+	}
+	if total > lyricsMaxAttempts {
+		t.Fatalf("总外呼 %d 超过预算 %d（发布说明承诺的上限必须真正生效）", total, lyricsMaxAttempts)
+	}
+	if total < lyricsMaxAttempts {
+		t.Fatalf("只外呼了 %d 次（< %d）：说明某个阶段被提前掐断，预算没被用满", total, lyricsMaxAttempts)
+	}
+}
+
+/* REV-2 / REV-9：短拉丁标题被更长的无关标题包含时不得判成同一首（会拿错歌歌词）。 */
+func TestV0971LyricsTitleRejectsShortLatinContainment(t *testing.T) {
+	cases := []struct {
+		want, got string
+		ok        bool
+		why       string
+	}{
+		{"Rain", "Rain On Me", false, "独立审查实测：本地曲目 Rain 拿到了 Lady Gaga《Rain On Me》的歌词"},
+		{"Lemon", "Lemonade", false, "短标题 ⊂ 长标题但覆盖度不足"},
+		{"Rain", "Rainy Days", false, "相似度 0.44 < 0.8 阈值"},
+		{"Rain", "Rain", true, "完全相同"},
+		{"Lemon", "Lemon (Remastered)", true, "官方版本后缀（覆盖度 0.625→按去修饰后全等命中）"},
+		{"残酷な天使のテーゼ", "残酷な天使のテーゼ (off vocal version)", true, "中日文标题允许长后缀"},
+		{"说好不哭", "說好不哭", true, "等长简繁差异"},
+	}
+	for _, c := range cases {
+		if got := audioLyricsTitleMatches(c.want, c.got); got != c.ok {
+			t.Fatalf("audioLyricsTitleMatches(%q,%q) = %v, want %v（%s）", c.want, c.got, got, c.ok, c.why)
+		}
+	}
+	// 端到端：本地没有歌手标签的短标题，不能把 q= 里第一首有歌词的无关曲目贴上去
+	list := []lrclibRecord{
+		{TrackName: "Rain On Me", ArtistName: "Lady Gaga", SyncedLyrics: "[00:00.00]I'd rather be dry"},
+		{TrackName: "Rain", ArtistName: "The Beatles", SyncedLyrics: "[00:00.00]If the rain comes"},
+	}
+	rec, ok := pickLrclibRecordFree("Rain", list)
+	if !ok || rec.ArtistName != "The Beatles" {
+		t.Fatalf("自由文本选择器必须挑中同名记录：%+v ok=%v", rec, ok)
+	}
+	if rec, ok := pickLrclibRecordFree("Rain", list[:1]); ok {
+		t.Fatalf("只有无关曲目时不得返回歌词：%+v", rec)
+	}
+	// 相似度阈值必须是 0.8 这一档（不是被悄悄放宽）
+	if sim := audioLatinSimilarity("rain", "rainydays"); sim >= 0.8 || sim <= 0.3 {
+		t.Fatalf("用例前提失效：rain/rainydays 相似度 %.3f 不在 (0.3, 0.8) 内", sim)
+	}
+}
+
+/* REV-3：真实标题里的前导数字不能被当成音轨号裁掉（"21 Guns" → "Guns"）。 */
+func TestV0971LeadingNumberKeptForRealTitles(t *testing.T) {
+	keep := []string{"21 Guns", "24 Hours", "7 Years", "99 Problems", "1989", "1-800-273-8255"}
+	for _, in := range keep {
+		if got := audioStripDecorations(in); got != in {
+			t.Fatalf("audioStripDecorations(%q) = %q，真实标题的前导数字被误裁", in, got)
+		}
+	}
+	strip := map[string]string{"01 Song": "Song", "1. Song": "Song", "1 - Song": "Song", "01 千里之外": "千里之外"}
+	for in, want := range strip {
+		if got := audioStripDecorations(in); got != want {
+			t.Fatalf("audioStripDecorations(%q) = %q, want %q", in, got, want)
+		}
+	}
+	for _, v := range audioQueryVariants("21 Guns", "Green Day") {
+		if v.Title == "Guns" {
+			t.Fatal("不得生成「仅标题=Guns」这种被裁坏的检索变体")
+		}
+	}
+}
+
+/* REV-8：HEAD 请求在缓存未命中时不应真的跑 ffmpeg。 */
+func TestV0971AudioStreamHeadDoesNotTranscode(t *testing.T) {
+	a, _, cacheDir := newStreamTestApp(t)
+	oldOK := managerSessionOK
+	managerSessionOK = func(*http.Request) bool { return true }
+	defer func() { managerSessionOK = oldOK }()
+
+	rec := httptest.NewRecorder()
+	a.audioStream(rec, httptest.NewRequest(http.MethodHead, "/api/media/audio/stream?id=l1&path=song.mp3&bitrate=128k", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("HEAD 应 200，实际 %d", rec.Code)
+	}
+	if rec.Header().Get("X-Vaulthub-Audio-Cache") != "would-transcode" {
+		t.Fatalf("HEAD 未命中缓存应标记 would-transcode，实际 %q", rec.Header().Get("X-Vaulthub-Audio-Cache"))
+	}
+	entries, _ := os.ReadDir(filepath.Join(cacheDir, audioStreamCacheDirName))
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".mp3") {
+			t.Fatalf("HEAD 不得产出缓存文件：%s", e.Name())
+		}
+	}
+}
+
+/* REV-5：同键转码合并（singleflight）—— 第二个请求必须等待并复用，而不是再跑一次 ffmpeg。 */
+func TestV0971AudioJobSingleflight(t *testing.T) {
+	a := &App{}
+	first, leader := a.beginAudioJob("/tmp/x.mp3")
+	if !leader {
+		t.Fatal("第一个请求必须是 leader")
+	}
+	second, leader2 := a.beginAudioJob("/tmp/x.mp3")
+	if leader2 {
+		t.Fatal("同键第二个请求不得是 leader（否则会重复转码）")
+	}
+	if first != second {
+		t.Fatal("同键必须拿到同一个 job")
+	}
+	select {
+	case <-second.done:
+		t.Fatal("leader 未完成时 done 不应关闭")
+	default:
+	}
+	a.finishAudioJob("/tmp/x.mp3", first)
+	select {
+	case <-second.done:
+	default:
+		t.Fatal("leader 完成后等待者必须被唤醒")
+	}
+	if _, leader3 := a.beginAudioJob("/tmp/x.mp3"); !leader3 {
+		t.Fatal("job 完成后同键应可重新成为 leader")
+	}
+}
+
+/* G7：转码队列拥塞时 503 必须带 Retry-After: 3（发布说明写的是 3 秒）。 */
+func TestV0971AudioStreamBusy503RetryAfter(t *testing.T) {
+	a, _, _ := newStreamTestApp(t)
+	oldOK := managerSessionOK
+	managerSessionOK = func(*http.Request) bool { return true }
+	defer func() { managerSessionOK = oldOK }()
+
+	// 直接占满全局转码闸门（容量 1），再用已取消的上下文发请求 → acquireTranscode 立即失败
+	a.transcodeSemOnce.Do(func() {})
+	a.transcodeSem = make(chan struct{}, 1)
+	a.transcodeSem <- struct{}{}
+	defer func() { <-a.transcodeSem }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	req := httptest.NewRequest(http.MethodGet, "/api/media/audio/stream?id=l1&path=song.mp3&bitrate=128k", nil).WithContext(ctx)
+	rec := httptest.NewRecorder()
+	a.audioStream(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("拥塞时应 503，实际 %d", rec.Code)
+	}
+	if got := rec.Header().Get("Retry-After"); got != "3" {
+		t.Fatalf("Retry-After 应为 3，实际 %q", got)
 	}
 }

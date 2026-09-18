@@ -237,38 +237,44 @@ func audioCollapseSpaces(s string) string {
 	return strings.TrimSpace(b.String())
 }
 
-// audioStripTrackNumber 去掉开头的音轨序号（"01 "、"01. "、"1-02 "），
-// 只在前缀是纯序号且剩余部分不是纯数字时生效（"1-800-273-8255" 不会被误删）。
+// audioStripTrackNumber 去掉开头的音轨序号（"01 标题"、"1. 标题"、"1 - 标题"）。
+// v0.9.71 判定规则（独立审查 REV-3 修正）：
+//   - 数字后跟标点分隔（. - _ ．）→ 是音轨号，剥离；
+//   - 数字后只有空格 → 仅当数字带前导零（"01"）才算音轨号，
+//     否则 "21 Guns"、"99 Problems"、"1 Song" 这类真实标题会被裁坏；
+//   - 剩余部分是纯数字组合（"1-800-273-8255"）时一律不剥离。
 func audioStripTrackNumber(s string) string {
 	runes := []rune(s)
 	i := 0
-	for i < len(runes) && (runes[i] >= '0' && runes[i] <= '9' || runes[i] == '-' || runes[i] == '.') {
+	for i < len(runes) && runes[i] >= '0' && runes[i] <= '9' {
 		i++
 	}
 	if i == 0 || i == len(runes) {
 		return s
 	}
-	sep := false
-	if runes[i] == ' ' || runes[i] == '_' || runes[i] == '．' {
-		sep = true
-	}
-	// "01 - 标题" / "01. 标题" / "01 标题" 三种形态
-	prefix := string(runes[:i])
-	if !sep && !strings.HasSuffix(prefix, "-") && !strings.HasSuffix(prefix, ".") {
+	digits := string(runes[:i])
+	if len([]rune(digits)) > 3 {
 		return s
 	}
-	digits := 0
-	for _, r := range prefix {
-		if r >= '0' && r <= '9' {
-			digits++
+	j := i
+	for j < len(runes) && (runes[j] == ' ' || runes[j] == '\t') {
+		j++
+	}
+	if j < len(runes) && strings.ContainsRune(".-_．", runes[j]) {
+		j++
+		for j < len(runes) && (runes[j] == ' ' || runes[j] == '\t') {
+			j++
 		}
+	} else if j == i {
+		return s // 数字后既无标点也无空格（"1989"）
+	} else if !strings.HasPrefix(digits, "0") {
+		return s // 纯空格分隔且无前导零（"21 Guns"、"1 Song"）
 	}
-	if digits < 1 || digits > 3 {
+	rest := strings.TrimSpace(string(runes[j:]))
+	if rest == "" {
 		return s
 	}
-	rest := strings.TrimLeft(string(runes[i:]), " \t-–—_.")
-	// 剩余部分是纯数字（如 "1-800"）时不当作音轨号
-	numeric := rest != ""
+	numeric := true
 	for _, r := range rest {
 		if !(r >= '0' && r <= '9' || r == '-' || r == ' ') {
 			numeric = false
@@ -386,9 +392,12 @@ func audioStripDecorations(s string) string {
 		b.WriteRune(r)
 	}
 	out := audioCollapseSpaces(b.String())
+	/* 顺序很重要：音轨号必须在「去标点」之前判定 —— 旧顺序先由 audioDropDecorationTokens
+	   把 "1. Song" 折成 "1 Song"，再判音轨号时已是「纯空格分隔的数字前缀」，按 REV-3 的
+	   新规则（要求前导零）就不再剥离，导致 "1. Song" 这类常见命名解析不出来。 */
+	out = audioStripTrackNumber(out)
 	out = audioDropDecorationTokens(out)
 	out = audioTrimSeparators(out)
-	out = audioStripTrackNumber(out)
 	return strings.TrimSpace(audioDropGluedDecorationSuffix(out))
 }
 

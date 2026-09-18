@@ -86,11 +86,16 @@ check("药丸切换函数与默认海报页",
       "function setAudioFullscreenPage(page)" in ZOOM
       and 'data-page="poster"' in HTML and 'audioFullscreenPage = "poster"' in ZOOM)
 check("主海报按宽度 5% 虚化（CSS 变量折算，blur 不接受百分比）",
-      "--poster-lyrics-blur:calc(min(520px,80vw) * .05)" in CSS
+      "--poster-lyrics-blur:calc(var(--poster-size) * .05)" in CSS
+      and "--poster-size:min(520px,80vw)" in CSS
       and '.audio-fullscreen-overlay[data-page="lyrics"] .audio-fullscreen-poster img' in CSS
       and "blur(var(--poster-lyrics-blur" in CSS)
+check("窄屏断点同步 --poster-size（虚化始终是海报宽度的 5%）",
+      "--poster-size:min(420px,90vw)" in CSS and "width:var(--poster-size" in CSS)
 check("歌词在页面中部（居中面板）",
       ".audio-fs-lyrics { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%)" in CSS)
+check("拖动阈值常量（6px，独立审查 J1：改成 0 会让拖动被当成点击）",
+      "AUDIO_FS_DRAG_SLOP = 6" in ZOOM)
 check("拖动：指针捕获 + 位移阈值 + 只滚列表",
       "function audioFsLyricsDragStart(event)" in ZOOM and "setPointerCapture" in ZOOM
       and "AUDIO_FS_DRAG_SLOP = 6" in ZOOM and "scrollTop = Math.max(0, startTop - delta)" in ZOOM)
@@ -150,7 +155,7 @@ check("说明里的弱网阈值与代码一致",
       and "1.5 MiB/s" in NOTES and "WEAK_MEDIUM_BPS = 1500 * 1024" in MEDIA)
 check("说明里的档位白名单与代码一致",
       "64/96/128/160/192/256/320" in NOTES and "audioBitrateLadder = []int{64, 96, 128, 160, 192, 256, 320}" in GOSTREAM)
-check("说明里的 5% 折算与 CSS 一致", "5%" in NOTES and "* .05)" in CSS)
+check("说明里的 5% 折算与 CSS 一致", "5%" in NOTES and "* .05)" in CSS and "--poster-size" in CSS)
 check("说明里的歌词阶梯与代码一致",
       "LRCLIB get(原样)" in NOTES and "func (a *App) lrclibGet" in GOLYRICS
       and "自由文本 q=" in NOTES and "lrclibSearchFree" in GOLYRICS)
