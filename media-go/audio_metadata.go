@@ -41,9 +41,11 @@ type itunesSearchResponse struct {
 
 /* v0.9.56：itunesSearchBase 是 API 根（不含路径），search/lookup 各自拼自己的端点。
    旧值曾是 ".../search" 又在调用处再拼 "/search"，实际请求 /search/search（Apple 容错才 200），
-   而 lookup 拼成 /search/lookup 一律返回空结果集 —— 歌手封面因此永远刮不到。 */
+   而 lookup 拼成 /search/lookup 一律返回空结果集 —— 歌手封面因此永远刮不到。
+
+   v0.9.71：店铺顺序不再是固定表，改由 audioCountryOrder 按标题/歌手的脚本动态选择
+   （假名 → JP 优先，汉字 → TW 优先，拉丁 → US 优先）。 */
 var itunesSearchBase = "https://itunes.apple.com"
-var itunesCountryOrder = []string{"TW", "US"}
 
 // audioHiResArtwork 把 iTunes 100x100 缩略图 URL 提升到 600x600。
 func audioHiResArtwork(u string) string {
@@ -53,34 +55,24 @@ func audioHiResArtwork(u string) string {
 	return u
 }
 
-// audioArtistNameMatches 判断本地歌手标签与 iTunes 规范歌手名是否指同一演唱者。
-// iTunes 对简体查询常返回繁体名（周杰伦→周杰倫），归一化不折叠简繁，只能靠共享
-// 字符判断：共享 ≥2 个非拉丁字符即视为同一人；纯拉丁名要求共享 ≥3 个 ASCII 字符。
-func audioArtistNameMatches(want, got string) bool {
-	if want == "" || got == "" {
-		return false
-	}
-	if want == got || strings.Contains(got, want) || strings.Contains(want, got) {
-		return true
-	}
-	shared := 0
-	for _, r := range want {
-		if r >= 128 && strings.ContainsRune(got, r) {
-			shared++
-		}
-	}
-	if shared >= 2 {
-		return true
-	}
-	return len(want) >= 4 && len(got) >= 4 && sharedCommonAscii(want, got) >= 3
-}
+/* v0.9.71：歌手名匹配统一到 audio_query.go 的 audioArtistNameMatches
+   （汉字共享 ≥2 字 / 拉丁编辑距离相似度 ≥0.7）；旧的
+   「共享 ≥3 个 ASCII 字符」判定实测会把 RADWIMPS 与 Piano Echoes 误判为同一歌手。 */
 
-// itunesPick 从 iTunes 结果中挑选可靠候选。
-// v0.9.56：按 iTunes 相关度顺序取「标题命中 且 歌手命中」的第一条（歌手候选含合作串
-// 拆出的每个参与者，简繁差异用共享字符兜底）；只有整轮都没有歌手命中时，才退回
-// 「标题完全相等」的首条。旧实现先看「标题完全相等」，合作演唱曲目（如
-// 「周杰伦 feat. 费玉清 - 千里之外」，正确条目标题带 (feat. 費玉清)）会被
-// 标题恰好相等的翻唱版本（雨天 & 楊蔓《世間情歌》）抢走元数据。
+/* itunesPick 从一批 iTunes 结果中择优（v0.9.56 引入择优，v0.9.71 起改为打分制）。
+ *
+ * 硬门槛：标题必须命中（audioTitleMatches：归一化全等/包含 → 去修饰后全等 → 拉丁相似度
+ * ≥0.8 → 非拉丁共享 ≥2 字且长度比 ≥0.7；简繁差异标题靠最后一条命中）。
+ * 打分：歌手整串命中 4 分 > 未知歌手 3 分 > 仅合作参与者命中 2 分；标题去修饰后完全相等 +1。
+ * 取分最高者，同分取 iTunes 相关度靠前（下标小）者。
+ *
+ * 该结构同时保留旧梯级的语义：
+ *   - 「周杰伦 feat. 费玉清 - 千里之外」不再被标题恰好相等的翻唱版（雨天 & 楊蔓）抢走；
+ *   - 带 "(Album Version)" 后缀的自家版本优先于标题完全相等的翻唱版；
+ *   - 歌手完全不匹配（本地标签写错）时才回落到「标题完全相等」的首条，未知歌手可放宽为包含命中。
+ * v0.9.56 的旧实现用「共享 ≥3 个 ASCII 字符」判拉丁歌手，实测会把
+ * RADWIMPS 与 Piano Echoes 判成同一人；v0.9.71 改用编辑距离相似度（≥0.7）。
+ */
 func itunesPick(title, artist string, tracks []itunesTrack) (audioScrapeResult, bool) {
 	wantTitle := normalizedAudioText(title)
 	if wantTitle == "" || len(tracks) == 0 {
@@ -98,12 +90,6 @@ func itunesPick(title, artist string, tracks []itunesTrack) (audioScrapeResult, 
 			}
 		}
 	}
-	titleOK := func(got string) bool {
-		if got == "" {
-			return false
-		}
-		return got == wantTitle || strings.Contains(got, wantTitle) || strings.Contains(wantTitle, got)
-	}
 	build := func(tr itunesTrack) audioScrapeResult {
 		out := audioScrapeResult{Title: tr.TrackName, Artist: tr.ArtistName, Provider: "iTunes"}
 		if out.Artist == "" {
@@ -119,38 +105,45 @@ func itunesPick(title, artist string, tracks []itunesTrack) (audioScrapeResult, 
 		}
 		return out
 	}
-	// 第一趟：标题 + 歌手双命中，按 iTunes 相关度顺序取首条
-	for _, tr := range tracks {
-		if !titleOK(normalizedAudioText(tr.TrackName)) {
+	wantStripped := normalizedAudioText(audioStripDecorations(title))
+	bestScore, bestIndex := 0, -1
+	for i, tr := range tracks {
+		if !audioTitleMatches(title, tr.TrackName) {
 			continue
 		}
 		gotArtist := normalizedAudioText(tr.ArtistName)
-		for _, cand := range artistCandidates {
-			if audioArtistNameMatches(cand, gotArtist) {
-				return build(tr), true
+		score := 0
+		switch {
+		case unknownArtist:
+			score = 3
+		case audioArtistFullMatch(wantArtist, gotArtist):
+			score = 4
+		default:
+			for _, cand := range artistCandidates {
+				if cand != wantArtist && audioArtistNameMatches(cand, gotArtist) {
+					score = 2
+					break
+				}
 			}
 		}
-	}
-	// 第二趟（歌手已知）：宽松标题 + 歌手再次校验（容忍 "(Album Version)" 等
-	// 标题后缀；与第一趟条件等价，此处显式成阶梯，保证带后缀的自家版本优先于
-	// 后续只认精确标题的兜底，不会因后缀整轮落空掉到 MusicBrainz）。
-	for _, tr := range tracks {
-		gotTitle := normalizedAudioText(tr.TrackName)
-		if !titleOK(gotTitle) {
+		if score == 0 {
 			continue
 		}
-		gotArtist := normalizedAudioText(tr.ArtistName)
-		for _, cand := range artistCandidates {
-			if audioArtistNameMatches(cand, gotArtist) {
-				return build(tr), true
-			}
+		/* 去修饰标题完全相等再 +1，但只对歌手已命中的候选（评分口径与 audioCandidateScore 一致）。 */
+		if score >= 2 && wantStripped != "" && normalizedAudioText(audioStripDecorations(tr.TrackName)) == wantStripped {
+			score++
+		}
+		if score > bestScore {
+			bestScore, bestIndex = score, i
 		}
 	}
-	// 第三趟：歌手全部落空（或未知歌手）→ 只接受标题完全相等的首条；
-	// 未知歌手下可放宽为标题包含命中（保持旧回退语义）。
+	if bestIndex >= 0 {
+		return build(tracks[bestIndex]), true
+	}
+	// 兜底：歌手全部落空（或未知歌手）→ 标题完全相等的首条；未知歌手可再放宽为包含命中。
 	for _, tr := range tracks {
 		gotTitle := normalizedAudioText(tr.TrackName)
-		if gotTitle == wantTitle || (unknownArtist && titleOK(gotTitle)) {
+		if gotTitle == wantTitle || (unknownArtist && audioTitleMatches(title, tr.TrackName)) {
 			return build(tr), true
 		}
 	}
@@ -171,13 +164,17 @@ type musicBrainzSearch struct {
 
 var audioScrapeBase = "https://musicbrainz.org/ws/2"
 
+/* normalizedAudioText 是刮削匹配的统一归一化：折叠全角/半角（含半角片假名）→ 小写 →
+   去标点与括号。v0.9.71 起把中文书名/曲名括号（【】「」『』〈〉《》〔〕）、中点与
+   全角运算符一并去掉 —— 实测带【MV】/「」的标题在未归一化时与数据源记录永不相等。 */
 func normalizedAudioText(v string) string {
+	folded := strings.ToLower(audioWidthFold(strings.TrimSpace(v)))
 	return strings.Map(func(r rune) rune {
-		if strings.ContainsRune(" ._-–—'\"`·、,，:：!！?？()（）[]", r) {
+		if strings.ContainsRune(" ._-–—'\"`·、,，:：!！?？()（）[]【】「」『』〈〉《》〔〕・〜～~*＊#＃/／\\＼|｜+＋=＝&＆%％$＄@＠^＾	", r) {
 			return -1
 		}
 		return r
-	}, strings.ToLower(strings.TrimSpace(v)))
+	}, folded)
 }
 
 func audioCandidateMatches(title, artist string, score int, gotTitle string, credits []struct {
@@ -232,59 +229,155 @@ func (a *App) scrapeAudio(ctx context.Context, title, artist string) (audioScrap
 	return out, err
 }
 
+/* scrapeAudioItunes 按「检索词阶梯 × 店铺顺序」检索（v0.9.71）。
+ *
+ * 旧实现只用一个检索词（"歌手 标题"）扫 TW/US 两个店铺，遇到
+ *   - 日语曲目（TW/US 返回罗马音标题，标题归一化后不命中）
+ *   - 带【MV】/「」/全角修饰的标题（数据源没有同名字段）
+ * 就会整轮落空。现在：
+ *   1) 检索词用 audioQueryVariants 给出的阶梯（原样 → 去修饰 → 主歌手 → 仅标题）；
+ *   2) 店铺顺序按脚本选择（假名 → JP 优先，汉字 → TW 优先，拉丁 → US 优先）；
+ *   3) 命中即打分（itunesPick），只要拿到「标题+歌手双命中且标题去修饰后完全相等」
+ *      的最高分（5）就立刻停止，避免把所有组合都请求一遍。
+ */
 func (a *App) scrapeAudioItunes(ctx context.Context, title, artist string) (audioScrapeResult, bool) {
-	term := strings.TrimSpace(title)
-	if artist != "" && artist != "未知歌手" {
-		term = strings.TrimSpace(artist) + " " + term
+	queries := audioQueryVariants(title, artist)
+	if len(queries) == 0 {
+		return audioScrapeResult{}, false
 	}
-	for _, country := range itunesCountryOrder {
-		u := strings.TrimRight(itunesSearchBase, "/") + "/search?entity=song&limit=5&country=" + country + "&term=" + url.QueryEscape(term)
-		// 公共 API 节流：单实例 ~200ms/请求（与 MusicBrainz 的 1rps 锁互不影响）。
-		a.itunesScrapeMu.Lock()
-		if wait := 200*time.Millisecond - time.Since(a.itunesScrapeLast); wait > 0 && !a.itunesScrapeLast.IsZero() {
-			timer := time.NewTimer(wait)
-			select {
-			case <-ctx.Done():
-				timer.Stop()
-				a.itunesScrapeMu.Unlock()
-				return audioScrapeResult{}, false
-			case <-timer.C:
-			}
+	countries := audioCountryOrder(title + " " + artist)
+	var best audioScrapeResult
+	bestScore := 0
+	for _, q := range queries {
+		term := strings.TrimSpace(q.Title)
+		if q.Artist != "" && q.Artist != "未知歌手" {
+			term = strings.TrimSpace(q.Artist) + " " + term
 		}
-		client, err := outboundHTTPClient(a.scraperProxy)
-		if err != nil {
-			a.itunesScrapeMu.Unlock()
-			return audioScrapeResult{}, false
-		}
-		reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, u, nil)
-		if err != nil {
-			cancel()
-			a.itunesScrapeMu.Unlock()
-			return audioScrapeResult{}, false
-		}
-		req.Header.Set("Accept", "application/json")
-		req.Header.Set("User-Agent", "VaultHub/0.9.56 (https://github.com/q807738511/vaulthub)")
-		res, err := client.Do(req)
-		a.itunesScrapeLast = time.Now()
-		a.itunesScrapeMu.Unlock()
-		cancel()
-		if err != nil {
+		if term == "" {
 			continue
 		}
-		var data itunesSearchResponse
-		okBody := res.StatusCode == http.StatusOK
-		if okBody {
-			err = json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(&data)
-		}
-		_ = res.Body.Close()
-		if okBody && err == nil {
-			if out, ok := itunesPick(title, artist, data.Results); ok {
-				return out, true
+		for _, country := range countries {
+			u := strings.TrimRight(itunesSearchBase, "/") + "/search?entity=song&limit=5&country=" + country + "&term=" + url.QueryEscape(term)
+			result, score, ok := a.itunesSongSearch(ctx, u, title, artist, q)
+			if !ok {
+				continue
+			}
+			if score > bestScore {
+				best, bestScore = result, score
+			}
+			if bestScore >= 5 {
+				return best, true
 			}
 		}
 	}
+	if bestScore > 0 {
+		return best, true
+	}
 	return audioScrapeResult{}, false
+}
+
+/* itunesSongSearch 发一次 entity=song 检索并给候选打分；score 0 表示这一枪没命中。
+   打分口径与 itunesPick 一致，这里额外返回分数以便调用侧决定是否提前收手。 */
+func (a *App) itunesSongSearch(ctx context.Context, u, title, artist string, q audioQuery) (audioScrapeResult, int, bool) {
+	// 公共 API 节流：单实例 ~200ms/请求（与 MusicBrainz 的 1rps 锁互不影响）。
+	a.itunesScrapeMu.Lock()
+	if wait := 200*time.Millisecond - time.Since(a.itunesScrapeLast); wait > 0 && !a.itunesScrapeLast.IsZero() {
+		timer := time.NewTimer(wait)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			a.itunesScrapeMu.Unlock()
+			return audioScrapeResult{}, 0, false
+		case <-timer.C:
+		}
+	}
+	client, err := outboundHTTPClient(a.scraperProxy)
+	if err != nil {
+		a.itunesScrapeMu.Unlock()
+		return audioScrapeResult{}, 0, false
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, u, nil)
+	if err != nil {
+		cancel()
+		a.itunesScrapeMu.Unlock()
+		return audioScrapeResult{}, 0, false
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "VaultHub/0.9.71 (https://github.com/q807738511/vaulthub)")
+	res, err := client.Do(req)
+	a.itunesScrapeLast = time.Now()
+	a.itunesScrapeMu.Unlock()
+	cancel()
+	if err != nil {
+		return audioScrapeResult{}, 0, false
+	}
+	var data itunesSearchResponse
+	okBody := res.StatusCode == http.StatusOK
+	if okBody {
+		err = json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(&data)
+	}
+	_ = res.Body.Close()
+	if !okBody || err != nil {
+		return audioScrapeResult{}, 0, false
+	}
+	out, ok := itunesPick(q.Title, q.Artist, data.Results)
+	if !ok {
+		// 检索词本身带歌手时，结果里可能有该曲目的其它版本：仍以原始标题/歌手再判一次，
+		// 但只有在结果确实以「原始标题 + 原始歌手」出现时才采纳。
+		if q.Title == title && q.Artist == artist {
+			return audioScrapeResult{}, 0, false
+		}
+		out, ok = itunesPick(title, artist, data.Results)
+		if !ok {
+			return audioScrapeResult{}, 0, false
+		}
+	}
+	score := audioCandidateScore(title, artist, out.Title, out.Artist)
+	return out, score, score > 0
+}
+
+/* audioCandidateScore：标题+歌手双命中 4 分（标题去修饰后完全相等 5 分），
+   仅合作参与者命中 2 分，未知歌手 3 分；**标题完全相等但歌手不匹配 1 分** ——
+   1 分是「本地歌手标签写错」时的最后回退（保持旧实现 tier-3 的语义：不会因为
+   歌手串不对就完全放弃元数据），任何更高分的候选都会压过它。
+   打分口径与 itunesPick 一致，用于跨国家/跨检索词比较候选质量。 */
+func audioCandidateScore(title, artist, gotTitle, gotArtist string) int {
+	if !audioTitleMatches(title, gotTitle) {
+		return 0
+	}
+	wantArtist := normalizedAudioText(artist)
+	unknownArtist := wantArtist == "" || wantArtist == normalizedAudioText("未知歌手")
+	base := 0
+	switch {
+	case unknownArtist:
+		base = 3
+	case audioArtistFullMatch(wantArtist, gotArtist):
+		base = 4
+	default:
+		for _, part := range splitAudioCollaborators(artist) {
+			if p := normalizedAudioText(part); p != "" && p != wantArtist && audioArtistNameMatches(p, normalizedAudioText(gotArtist)) {
+				base = 2
+				break
+			}
+		}
+	}
+	if base == 0 {
+		// 歌手不匹配：只有标题完全相等时才给最低分兜底（旧 tier-3 语义）
+		if normalizedAudioText(gotTitle) != normalizedAudioText(title) {
+			return 0
+		}
+		base = 1
+	}
+	// 去修饰标题完全相等的加分只给「歌手已命中」的候选（base ≥ 2）：
+	// 否则低分兜底会升到 2 分，与「仅合作参与者命中」同档，排序失真。
+	if base >= 2 {
+		if wantStripped := normalizedAudioText(audioStripDecorations(title)); wantStripped != "" &&
+			normalizedAudioText(audioStripDecorations(gotTitle)) == wantStripped {
+			base++
+		}
+	}
+	return base
 }
 
 func (a *App) scrapeAudioMusicBrainz(ctx context.Context, title, artist string) (audioScrapeResult, error) {
@@ -414,10 +507,38 @@ type itunesLookupResponse struct {
 }
 
 type musicBrainzArtistHit struct {
-	ID     string `json:"id"`
-	Name   string `json:"name"`
-	Score  int    `json:"score"`
-	Type   string `json:"type,omitempty"` // Person | Group
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Score   int    `json:"score"`
+	Type    string `json:"type,omitempty"` // Person | Group
+	Aliases []struct {
+		Name   string `json:"name"`
+		Locale string `json:"locale,omitempty"`
+	} `json:"aliases,omitempty"`
+}
+
+// AliasNames 展开别名列表（MusicBrainz 会带出 locale=ja/en 等多语言别名，
+// 罗马音规范名通常挂在别名里，例如 米津玄師 → "Kenshi Yonezu"）。
+func (h musicBrainzArtistHit) AliasNames() []string {
+	out := make([]string, 0, len(h.Aliases))
+	for _, a := range h.Aliases {
+		if strings.TrimSpace(a.Name) != "" {
+			out = append(out, a.Name)
+		}
+	}
+	return out
+}
+
+// musicBrainzArtistAliasSearch 是别名查询的响应包装（与 musicBrainzArtistSearch 同形，
+// 单独命名以便测试与调用点显式表达「这次调用是为了别名」）。
+type musicBrainzArtistAliasSearch struct {
+	Artists []musicBrainzArtistHit `json:"artists"`
+}
+
+// artistAliasEntry 是歌手别名表的内存缓存项（24 小时有效）。
+type artistAliasEntry struct {
+	names []string
+	at    time.Time
 }
 
 type musicBrainzArtistSearch struct {
@@ -463,11 +584,12 @@ func splitAudioCollaborators(name string) []string {
 	return out
 }
 
-// itunesPickArtist 从 iTunes musicArtist 结果中挑选命中者。
-// 注意：iTunes 对简体查询常返回繁体规范名（周杰伦→周杰倫），归一化去标点后
-// 简繁不折叠，全等/包含匹配会全部落空；而 entity=musicArtist&term=<歌手名>
-// 的检索词本身就是歌手名，iTunes 已按相关度排序 —— 取「与查询共享任意字符」
-// 的首条即足够可靠（完全无关的名字才拒绝，例如查询词为空或零公共字）。
+/* itunesPickArtist 从 iTunes musicArtist 结果中挑选命中者。
+   注意：iTunes 对简体查询常返回繁体规范名（周杰伦→周杰倫），对日语歌手
+   则一律返回罗马音规范名（高橋洋子→Yoko Takahashi、米津玄師→Kenshi Yonezu）。
+   简繁交给共享汉字判定；罗马音走 audioArtistAliasMatch（MusicBrainz 别名表）。
+   musicArtist 检索词本身就是歌手名、iTunes 已按相关度排序，因此「与查询共享
+   任意有效字符」的首条即足够可靠（零公共字才拒绝）。 */
 func itunesPickArtist(want string, hits []itunesArtistResult) (itunesArtistResult, bool) {
 	if want == "" {
 		return itunesArtistResult{}, false
@@ -480,26 +602,24 @@ func itunesPickArtist(want string, hits []itunesArtistResult) (itunesArtistResul
 		if h.ArtistName == "" {
 			continue
 		}
-		got := normalizedAudioText(h.ArtistName)
-		if got == wantNorm || strings.Contains(got, wantNorm) || strings.Contains(wantNorm, got) {
+		if audioArtistNameMatches(want, h.ArtistName) {
 			return h, true
 		}
-		// 简繁/别名差异：共享至少两个非拉丁字符（汉字/假名）才视为同一歌手，
-			// 与歌曲侧 audioArtistNameMatches 的 ≥2 门槛保持一致，避免「邓丽君/邓紫棋」
-			// 这类仅共享一字的不同歌手误配；纯拉丁名要求共享 3 个以上字符。
-			shared := 0
-			for _, r := range wantNorm {
-				if r < 128 {
-					continue
-				}
-				if strings.ContainsRune(got, r) {
-					shared++
-				}
-			}
-			if shared >= 2 {
-				return h, true
-			}
-		if len(wantNorm) >= 4 && len(got) >= 4 && sharedCommonAscii(wantNorm, got) >= 3 {
+	}
+	return itunesArtistResult{}, false
+}
+
+/* itunesPickArtistByAlias 用 MusicBrainz 别名表确认「罗马音规范名」就是同一歌手。
+   只用于 audioHasCJK 的查询（拉丁查询本来就能直接命中）。 */
+func itunesPickArtistByAlias(want string, aliases []string, hits []itunesArtistResult) (itunesArtistResult, bool) {
+	if want == "" || len(aliases) == 0 {
+		return itunesArtistResult{}, false
+	}
+	for _, h := range hits {
+		if h.ArtistName == "" {
+			continue
+		}
+		if audioArtistAliasMatch(h.ArtistName, aliases) {
 			return h, true
 		}
 	}
@@ -564,36 +684,171 @@ func (a *App) itunesGet(ctx context.Context, u string, dst any) bool {
 	return json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(dst) == nil
 }
 
+/* scrapeAudioArtistItunes 歌手封面主源（v0.9.71 重写）：
+   1) 检索词阶梯来自 audioQueryVariants（歌手名通常只需原样/去修饰两份）；
+   2) 店铺顺序按脚本选择，含 JP/HK —— 实测「DAOKO×米津玄師」在 TW/US/HK 三家
+      店铺都返回 0 条，只有 JP 店铺返回结果；
+   3) 直接匹配失败且查询含 CJK 时，用 MusicBrainz 别名表桥接罗马音规范名
+      （高橋洋子 → Yoko Takahashi、米津玄師 → Kenshi Yonezu、ヨルシカ → Yorushika），
+      这是旧实现里日语歌手封面「永远刮不到」的根因。
+   命中后取 600x600 头像；musicArtist 实体不带图则 lookup 其代表专辑封面。 */
 func (a *App) scrapeAudioArtistItunes(ctx context.Context, name string) (artistScrapeResult, bool) {
-	for _, country := range itunesCountryOrder {
-		u := strings.TrimRight(itunesSearchBase, "/") + "/search?entity=musicArtist&limit=5&country=" + country + "&term=" + url.QueryEscape(name)
-		var data itunesArtistSearchResponse
-		if !a.itunesGet(ctx, u, &data) {
-			continue
+	if strings.TrimSpace(name) == "" {
+		return artistScrapeResult{}, false
+	}
+	queries := audioQueryVariants(name, "")
+	if len(queries) == 0 {
+		return artistScrapeResult{}, false
+	}
+	var pending []itunesArtistResult
+	seen := map[int64]bool{}
+	collect := func(hits []itunesArtistResult) {
+		for _, h := range hits {
+			if h.ArtistID == 0 || h.ArtistName == "" || seen[h.ArtistID] {
+				continue
+			}
+			seen[h.ArtistID] = true
+			pending = append(pending, h)
 		}
-		hit, ok := itunesPickArtist(name, data.Results)
-		if !ok || hit.ArtistName == "" || hit.ArtistID == 0 {
-			continue
-		}
-		out := artistScrapeResult{Name: hit.ArtistName, Provider: "iTunes"}
-		if hit.ArtworkURL100 != "" {
-			out.Cover = audioHiResArtwork(hit.ArtworkURL100)
-			return out, true
-		}
-		// musicArtist 实体不带 artwork：lookup 该歌手的代表专辑取封面
-		lu := strings.TrimRight(itunesSearchBase, "/") + "/lookup?id=" + fmt.Sprintf("%d", hit.ArtistID) + "&entity=album&limit=1"
-		var lr itunesLookupResponse
-		if a.itunesGet(ctx, lu, &lr) {
-			for _, item := range lr.Results {
-				if item.WrapperType == "collection" && item.ArtworkURL100 != "" {
-					out.Cover = audioHiResArtwork(item.ArtworkURL100)
-					return out, true
+	}
+	for _, q := range queries {
+		for _, country := range audioCountryOrder(q.Title) {
+			u := strings.TrimRight(itunesSearchBase, "/") + "/search?entity=musicArtist&limit=5&country=" + country + "&term=" + url.QueryEscape(q.Title)
+			var data itunesArtistSearchResponse
+			if !a.itunesGet(ctx, u, &data) {
+				continue
+			}
+			if hit, ok := itunesPickArtist(name, data.Results); ok {
+				if res, ok := a.artistResultForHit(ctx, hit); ok {
+					return res, true
 				}
+			}
+			collect(data.Results)
+		}
+	}
+	// 罗马音桥接：只在查询含中日文字符时才需要（拉丁查询能直接命中）。
+	if len(pending) > 0 && audioHasCJK(name) {
+		aliases := a.audioArtistAliasNames(ctx, name)
+		if hit, ok := itunesPickArtistByAlias(name, aliases, pending); ok {
+			if res, ok := a.artistResultForHit(ctx, hit); ok {
+				return res, true
 			}
 		}
 	}
 	return artistScrapeResult{}, false
 }
+
+/* artistResultForHit 把 iTunes 命中转成 artistScrapeResult：头像优先，
+   没有头像时 lookup 该歌手的代表专辑封面（musicArtist 实体通常不带 artwork）。 */
+func (a *App) artistResultForHit(ctx context.Context, hit itunesArtistResult) (artistScrapeResult, bool) {
+	if hit.ArtistName == "" || hit.ArtistID == 0 {
+		return artistScrapeResult{}, false
+	}
+	out := artistScrapeResult{Name: hit.ArtistName, Provider: "iTunes"}
+	if hit.ArtworkURL100 != "" {
+		out.Cover = audioHiResArtwork(hit.ArtworkURL100)
+		return out, true
+	}
+	lu := strings.TrimRight(itunesSearchBase, "/") + "/lookup?id=" + fmt.Sprintf("%d", hit.ArtistID) + "&entity=album&limit=1"
+	var lr itunesLookupResponse
+	if a.itunesGet(ctx, lu, &lr) {
+		for _, item := range lr.Results {
+			if item.WrapperType == "collection" && item.ArtworkURL100 != "" {
+				out.Cover = audioHiResArtwork(item.ArtworkURL100)
+				return out, true
+			}
+		}
+	}
+	return artistScrapeResult{}, false
+}
+
+/* audioArtistAliasNames 取 MusicBrainz 的歌手规范名与别名（含罗马音名）。
+   结果带 24 小时内存缓存（批量刮削时同一歌手只查一次 MusicBrainz）；
+   命中要求 MB score ≥ 88 且与查询名匹配，避免同名歧义歌手污染别名表。 */
+func (a *App) audioArtistAliasNames(ctx context.Context, name string) []string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil
+	}
+	a.artistAliasMu.Lock()
+	if entry, ok := a.artistAliasCache[name]; ok && time.Since(entry.at) < 24*time.Hour {
+		a.artistAliasMu.Unlock()
+		return entry.names
+	}
+	a.artistAliasMu.Unlock()
+
+	client, err := outboundHTTPClient(a.scraperProxy)
+	if err != nil {
+		return nil
+	}
+	query := `artist:"` + strings.ReplaceAll(name, `"`, "") + `"`
+	u := strings.TrimRight(audioScrapeBase, "/") + "/artist/?query=" + url.QueryEscape(query) + "&fmt=json&limit=3"
+	/* 与 scrapeAudioMusicBrainz 相同的持锁模式：整段请求都在 audioScrapeMu 下完成，
+	   既满足 MusicBrainz 的 1 请求/秒约定，也不与歌曲侧请求并发打过去。 */
+	a.audioScrapeMu.Lock()
+	defer a.audioScrapeMu.Unlock()
+	if wait := time.Second - time.Since(a.audioScrapeLast); wait > 0 && !a.audioScrapeLast.IsZero() {
+		timer := time.NewTimer(wait)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-timer.C:
+		}
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, 12*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "VaultHub/0.9.71 (https://github.com/q807738511/vaulthub)")
+	res, err := client.Do(req)
+	a.audioScrapeLast = time.Now()
+	if err != nil {
+		return nil
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return nil
+	}
+	var data musicBrainzArtistAliasSearch
+	if err := json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(&data); err != nil {
+		return nil
+	}
+	var names []string
+	seen := map[string]bool{}
+	for _, hit := range data.Artists {
+		if hit.Score < 88 || !audioArtistNameMatches(name, hit.Name) {
+			continue
+		}
+		for _, candidate := range append([]string{hit.Name}, hit.AliasNames()...) {
+			key := normalizedAudioText(candidate)
+			if key == "" || seen[key] {
+				continue
+			}
+			seen[key] = true
+			names = append(names, candidate)
+		}
+		break // 只采信最相关的一条记录
+	}
+	if len(names) > 0 {
+		a.artistAliasMu.Lock()
+		if a.artistAliasCache == nil {
+			a.artistAliasCache = map[string]artistAliasEntry{}
+		}
+		if len(a.artistAliasCache) >= 256 { // 有界：满了就整表丢弃重建
+			a.artistAliasCache = map[string]artistAliasEntry{}
+		}
+		a.artistAliasCache[name] = artistAliasEntry{names: names, at: time.Now()}
+		a.artistAliasMu.Unlock()
+	}
+	return names
+}
+
+/* musicBrainzWait 已并入 audioArtistAliasNames（与歌曲侧同样的持锁节流模式），
+   不再单独暴露。 */
 
 // scrapeAudioArtistMusicBrainz 兜底：校验歌手存在并返回规范名（无头像时 cover 留空）。
 func (a *App) scrapeAudioArtistMusicBrainz(ctx context.Context, name string) (artistScrapeResult, error) {
