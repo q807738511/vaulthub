@@ -123,6 +123,10 @@ function audioFsLyricsClick(event) {
 function closeAudioCoverZoom() {
   if (!audioCoverZoomed) return;
   audioCoverZoomed = false;
+  /* v0.9.71：复位拖动引起的「暂停跟随」与拖动状态，避免下次打开仍停在暂停态。 */
+  audioFsLyricsDragging = false;
+  audioFsLyricsFollowPausedUntil = 0;
+  document.getElementById("audioFullscreenLyrics")?.classList.remove("dragging");
   document.getElementById("audioFullscreenOverlay")?.classList.remove("show");
   const zoomBtn = document.querySelector(".audio-cover-zoom-btn");
   /* 关闭后把焦点归还放大按钮；音频底栏未显示（按钮不可见）时才跳过。 */
