@@ -22,7 +22,7 @@ checks = {
     "关闭释放阅读器监听": 'closeComicReader()' in FEATURES,
     "历史焦点检查仍存在": 'aria-modal="true"' in HTML and ':focus-visible' in CSS,
     "网易云默认关闭": 'NetEase' in MEDIA and '默认关闭' in MEDIA,
-    "本版版本": 'VAULTHUB_ASSET_VERSION = "0.9.70"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.70"' in STATE,
+    "本版版本": 'VAULTHUB_ASSET_VERSION = "0.9.71"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.71"' in STATE,
 }
 GO_MAIN = (ROOT / "media-go/main.go").read_text(encoding="utf-8")
 GO_EPUB = (ROOT / "media-go/document_epub.go").read_text(encoding="utf-8")

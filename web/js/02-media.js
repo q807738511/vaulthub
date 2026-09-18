@@ -1147,14 +1147,27 @@ function syncActiveAudioCover(path) {
 }
 function audioBaseMetadata(path) {
   /* 先用原始文件名解析「歌手 - 歌名」，displayBookTitle 会把连字符换成空格，
-     直接拿它切分会丢掉歌手信息。 */
+     直接拿它切分会丢掉歌手信息。
+     v0.9.71：分隔符扩展到日文/全角常见写法（－ − — ― ／ ｜），并把全角数字折成半角 ——
+     「アーティスト－タイトル」「０１ 曲名」这类命名此前会解析成「未知歌手」，
+     歌手名进不了刮削查询，日语曲目因此更难命中。字母保持原样（不改变展示）。 */
   const raw = String(path).split("/").pop().replace(/\.[^.]+$/, "").trim();
-  const parts = raw.split(/\s+-\s+|\s*-\s*/).map(x => x.trim()).filter(Boolean);
+  const normalized = raw
+    .replace(/\u3000/g, " ")
+    .replace(/[\uFF10-\uFF19]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0))
+    .replace(/[－−—―–]/g, "-")
+    .replace(/[／｜]/g, "/");
+  /* 去掉开头的音轨号：必须是「前导零」（01）或带分隔符（1. / 1- / 1_），
+     否则「24 Hours」这类正常标题会被削掉数字。 */
+  const withoutTrack = normalized
+    .replace(/^\s*0\d{1,2}\s*[.\-_]?\s+/, "")
+    .replace(/^\s*\d{1,3}\s*[.\-_]\s*/, "");
+  const parts = withoutTrack.split(/\s+-\s+|\s*-\s*|\s*\/\s*/).map(x => x.trim()).filter(Boolean);
   const stem = displayBookTitle(path);
   if (parts.length > 1) {
     return { title: parts.slice(1).join(" - "), artist: parts[0], album: "未知专辑", cover: "", lyrics: "" };
   }
-  return { title: stem, artist: "未知歌手", album: "未知专辑", cover: "", lyrics: "" };
+  return { title: withoutTrack || stem, artist: "未知歌手", album: "未知专辑", cover: "", lyrics: "" };
 }
 
 function audioMetadataFor(path) {
@@ -1542,44 +1555,268 @@ function parseLyrics(lrc) {
   });
   return lines;
 }
-function renderPlayerLyrics(meta) {
-  const el = document.getElementById("audioPlayerLyrics"); if (!el) return;
-  const lines = parseLyrics(meta.lyrics);
+/* v0.9.71：歌词容器登记。底部展开面板与放大视图歌词层共用同一套「渲染 / 高亮 / 居中滚动」
+   逻辑（此前只有展开面板一套；放大视图另写一套必然随时间漂移）。
+   lines 持有 .lyric-line，scroller 是可滚动祖先：展开面板两者合一，
+   放大视图的 scroller 是外层 .audio-fs-lyrics、lines 是内层 .audio-fs-lyrics-inner。 */
+function lyricHosts() {
+  const hosts = [];
+  const panel = document.getElementById("audioPlayerLyrics");
+  if (panel) hosts.push({ lines: panel, scroller: panel, emptyClass: "audio-lyric-empty", id: "audioPlayerLyrics" });
+  const inner = document.getElementById("audioFullscreenLyricsInner"), outer = document.getElementById("audioFullscreenLyrics");
+  if (inner && outer) hosts.push({ lines: inner, scroller: outer, emptyClass: "audio-fs-empty", id: "audioFullscreenLyricsInner" });
+  return hosts;
+}
+/* 渲染歌词行：有带时间轴的 LRC 就逐行渲染（可点击跳转），否则给出可操作的空状态提示。 */
+function renderLyricLinesInto(el, meta, emptyText) {
+  if (!el) return;
+  const lines = parseLyrics(meta && meta.lyrics);
+  el.dataset.lastLyricIndex = "-1";
   if (lines.length) {
     el.classList.remove("audio-lyric-empty");
     el.innerHTML = lines.map((line, i) => `<span class="lyric-line" data-time="${line.time}" data-index="${i}">${esc(line.text)}</span>`).join("\n");
   } else {
-    el.classList.add("audio-lyric-empty");
-    el.innerHTML = '<span>暂无歌词信息。可在音乐文件/曲目行的「✎ 编辑歌曲信息」中粘贴 LRC 歌词，每行形如 [00:12.50] 歌词文本，播放时即可同步高亮。</span>';
+    el.innerHTML = `<span class="${el.classList.contains("audio-fs-lyrics-inner") ? "audio-fs-empty" : "audio-lyric-empty"}">${esc(emptyText)}</span>`;
   }
+}
+function renderPlayerLyrics(meta) {
+  const el = document.getElementById("audioPlayerLyrics"); if (!el) return;
+  renderLyricLinesInto(el, meta, "暂无歌词信息。可在音乐文件/曲目行的「✎ 编辑歌曲信息」中粘贴 LRC 歌词，每行形如 [00:12.50] 歌词文本，播放时即可同步高亮。");
   lastLyricActiveIndex = -1;
+  /* 放大视图歌词层与面板同源：曲目/歌词变化时同步刷新（函数由 03-audio-zoom.js 提供）。 */
+  if (typeof refreshAudioFullscreenLyrics === "function") refreshAudioFullscreenLyrics();
 }
 function seekLyric(event) {
   const line = event.target.closest("[data-time]");
   const player = document.getElementById("audioPlayerElement");
   if (line && player && Number.isFinite(Number(line.dataset.time))) player.currentTime = Number(line.dataset.time);
 }
-/* 歌词跟随播放时间同步：高亮当前行并把该行滚到歌词区中部（v0.9.56）。 */
-function scrollActiveLyricIntoView() {
-  const el = document.getElementById("audioPlayerLyrics"); if (!el || !el.offsetParent) return;
-  const active = el.querySelector(".lyric-line.active");
-  if (!active) return;
-  const top = active.offsetTop - el.clientHeight / 2 + active.clientHeight / 2;
-  if (Math.abs(el.scrollTop - top) > 6) el.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+/* 歌词跟随播放时间同步：高亮当前行并把该行滚到歌词区中部。
+   target 省略时更新全部歌词容器；放大视图拖动歌词期间会暂停自动滚动（见 03-audio-zoom.js）。 */
+function scrollActiveLyricIntoView(target) {
+  const hosts = target ? lyricHosts().filter(host => host.lines === target || host.scroller === target) : lyricHosts();
+  hosts.forEach(host => {
+    if (!host.scroller.offsetParent) return;
+    /* 放大视图拖动歌词期间（含释放后 6 秒）暂停自动滚动，避免和用户手势打架；
+       判定函数由 03-audio-zoom.js 提供，未加载时按「不暂停」处理。 */
+    if (typeof lyricFollowPaused === "function" && lyricFollowPaused(host)) return;
+    const active = host.lines.querySelector(".lyric-line.active");
+    if (!active) return;
+    const top = active.offsetTop - host.scroller.clientHeight / 2 + active.clientHeight / 2;
+    if (Math.abs(host.scroller.scrollTop - top) > 6) host.scroller.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+  });
 }
-function updateLyricHighlight() {
-  const el = document.getElementById("audioPlayerLyrics"), player = document.getElementById("audioPlayerElement");
-  if (!el || !player) return;
-  const lines = el.querySelectorAll(".lyric-line");
+function updateLyricHighlightIn(host) {
+  const player = document.getElementById("audioPlayerElement");
+  if (!player) return;
+  const lines = host.lines.querySelectorAll(".lyric-line");
   if (!lines.length) return;
   const current = player.currentTime || 0;
   let activeIndex = -1;
   lines.forEach((line, i) => { if (Number(line.dataset.time) <= current) activeIndex = i; });
   lines.forEach((line, i) => line.classList.toggle("active", i === activeIndex));
-  if (activeIndex !== lastLyricActiveIndex) {
-    lastLyricActiveIndex = activeIndex;
-    if (el.offsetParent) scrollActiveLyricIntoView();
+  /* 每个容器各自记录上次高亮行，互不干扰（旧版用一个全局变量，多容器会互相打断滚动）；
+     底部面板同时写回旧全局 lastLyricActiveIndex（保持 v0.9.56 契约语义）。 */
+  if (host.id === "audioPlayerLyrics") lastLyricActiveIndex = activeIndex;
+  if (String(activeIndex) !== host.lines.dataset.lastLyricIndex) {
+    host.lines.dataset.lastLyricIndex = String(activeIndex);
+    if (host.scroller.offsetParent) scrollActiveLyricIntoView(host.lines);
   }
+}
+function updateLyricHighlight() { lyricHosts().forEach(updateLyricHighlightIn); }
+/* ================= v0.9.71：弱网模式（参考 Plex/Emby/Navidrome 的通行做法）=================
+   1) 下行探测：GET /api/media/weak/probe?kb=256（服务端返回不可压缩随机数据），
+      用传输耗时算真实下行速率，按档位归类 fast / medium / slow；
+   2) 档位联动：slow → 音频走服务端 96k 转码流、漫画省流模式自动开启；
+      medium → 音频 160k；fast → 原文件直出（LAN 场景零额外开销）；
+   3) 用户可显式指定：音质（原文件/自动/320k/192k/128k/96k）与弱网模式（自动/始终/关闭），
+      显式选择优先于自动判定；
+   4) 服务端转码流带 Range 与 1 天私有缓存，重播不再重复转码；转码队列拥塞会返回 503，
+      前端自动回落原文件直出。
+   Plex/Emby 用「自动质量 + 自适应码率」，Navidrome 用「客户端选码率 + 服务端转码」，
+   这里有浏览器 <audio> 的限制，采用后者：档位由前端选、转码由服务端做、结果落盘复用。 */
+const WEAK_NETWORK_KEY = "vaulthub_weak_network_v1";
+const AUDIO_QUALITY_KEY = "vaulthub_audio_quality_v1";
+const WEAK_PROBE_TTL = 30 * 60 * 1000;   // 探测结果 30 分钟内复用
+const WEAK_SLOW_BPS = 400 * 1024;        // < 400 KiB/s ≈ 3.2 Mbps 视为弱网
+const WEAK_MEDIUM_BPS = 1500 * 1024;     // < 1.5 MiB/s ≈ 12 Mbps 视为中等
+const AUDIO_QUALITY_LADDER = ["original", "auto", "320", "192", "128", "96"];
+const AUDIO_QUALITY_LABEL = { original: "原文件", auto: "自动" };
+
+function weakNetworkState() {
+  const def = { mode: "auto", speedBps: 0, measuredAt: 0, level: "" };
+  try { return Object.assign(def, JSON.parse(localStorage.getItem(WEAK_NETWORK_KEY) || "{}") || {}); } catch (e) { return def; }
+}
+function saveWeakNetworkState(patch) {
+  const next = Object.assign(weakNetworkState(), patch || {});
+  try { localStorage.setItem(WEAK_NETWORK_KEY, JSON.stringify(next)); } catch (e) { console.warn("[weak] 无法写入弱网设置（localStorage 受限）", e); }
+  syncWeakNetworkSettings();
+  return next;
+}
+function audioQualityChoice() {
+  try {
+    const value = String(localStorage.getItem(AUDIO_QUALITY_KEY) || "auto");
+    return AUDIO_QUALITY_LADDER.includes(value) ? value : "auto";
+  } catch (e) { return "auto"; }
+}
+function saveAudioQualityChoice(value) {
+  const next = AUDIO_QUALITY_LADDER.includes(String(value)) ? String(value) : "auto";
+  try { localStorage.setItem(AUDIO_QUALITY_KEY, next); } catch (e) { console.warn("[weak] 无法写入音质设置（localStorage 受限）", e); }
+  updateAudioQualityButton();
+  return next;
+}
+function weakNetworkLevel(speedBps) {
+  if (!speedBps || speedBps <= 0) return "";
+  if (speedBps < WEAK_SLOW_BPS) return "slow";
+  if (speedBps < WEAK_MEDIUM_BPS) return "medium";
+  return "fast";
+}
+/* 弱网是否生效：显式「开启」优先；「关闭」直接否；「自动」看探测结果与浏览器网络提示。 */
+function weakNetworkActive() {
+  const state = weakNetworkState();
+  if (state.mode === "on") return true;
+  if (state.mode === "off") return false;
+  if (state.level === "slow") return true;
+  const c = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  if (c && (c.saveData || /(^|-)2g$/.test(String(c.effectiveType || "")))) return true;
+  return false;
+}
+/* 自动档位对应的码率：弱网 96k、中等 160k、良好不限（原文件）。 */
+function autoAudioKbps() {
+  const state = weakNetworkState();
+  if (state.mode === "off") return 0;
+  if (state.level === "slow") return 96;
+  if (state.mode === "on") return weakNetworkActive() ? 96 : 0;
+  if (state.level === "medium") return 160;
+  return 0;
+}
+/* 当前实际生效的码率（0 = 原文件直出）。 */
+function effectiveAudioKbps() {
+  const choice = audioQualityChoice();
+  if (choice === "original") return 0;
+  if (choice === "auto") return autoAudioKbps();
+  const n = Number(choice);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+function audioQualityLabel() {
+  const choice = audioQualityChoice();
+  if (choice === "auto") {
+    const kbps = autoAudioKbps();
+    return kbps ? `自动（${kbps}k）` : "自动（原文件）";
+  }
+  return AUDIO_QUALITY_LABEL[choice] || `${choice}k`;
+}
+function audioStreamUrl(lib, path, kbps) {
+  const q = new URLSearchParams();
+  q.set("id", String(lib.id));
+  q.set("path", String(path));
+  q.set("bitrate", `${kbps}k`);
+  return `/api/media/audio/stream?${q.toString()}`;
+}
+/* 探测下行速率：小样本 1 次 + 依据耗时归类；失败保持原状态（不误判为弱网）。 */
+async function probeWeakNetwork(options = {}) {
+  const kb = Number(options.kb) || 256;
+  if (typeof performance === "undefined" || !performance.now) return weakNetworkState();
+  const started = performance.now();
+  try {
+    const res = await fetch(`/api/media/weak/probe?kb=${kb}`, { cache: "no-store", credentials: "same-origin" });
+    if (!res.ok) return weakNetworkState();
+    const buf = await res.arrayBuffer();
+    const seconds = Math.max(0.001, (performance.now() - started) / 1000);
+    const speedBps = Math.round(buf.byteLength / seconds);
+    const next = saveWeakNetworkState({ speedBps, measuredAt: Date.now(), level: weakNetworkLevel(speedBps) });
+    if (options.toast) toast(`📶 下行约 ${(speedBps / 1024 / 1024).toFixed(2)} MiB/s（${next.level === "slow" ? "弱网" : next.level === "medium" ? "中等" : "良好"}）`);
+    return next;
+  } catch (e) {
+    console.warn("[weak] 探测失败，沿用上一次结果", e);
+    return weakNetworkState();
+  }
+}
+/* 自动档位下：没有新鲜探测结果就后台补一次（不阻塞首屏）。 */
+function ensureWeakNetworkProbe() {
+  const state = weakNetworkState();
+  if (state.mode === "off") return;
+  if (state.measuredAt && Date.now() - state.measuredAt < WEAK_PROBE_TTL) return;
+  const run = () => { probeWeakNetwork().then(() => updateAudioQualityButton()); };
+  if (typeof requestIdleCallback === "function") requestIdleCallback(run, { timeout: 4000 });
+  else setTimeout(run, 1200);
+}
+function audioKbpsText(kbps) { return kbps ? `${kbps}k` : "原文件"; }
+function updateAudioQualityButton() {
+  const button = document.getElementById("audioQualityButton");
+  if (!button) return;
+  const kbps = effectiveAudioKbps();
+  button.dataset.quality = audioQualityChoice();
+  button.dataset.kbps = String(kbps);
+  button.classList.toggle("audio-quality-transcode", !!kbps);
+  const label = audioQualityLabel();
+  button.title = `音质：${label}（点击切换 原文件/自动/320k/192k/128k/96k；弱网模式：${weakNetworkState().mode === "on" ? "始终" : weakNetworkState().mode === "off" ? "关闭" : "自动"}）`;
+  button.setAttribute("aria-label", `音质：${label}`);
+  const text = button.querySelector("[data-audio-quality-label]");
+  if (text) text.textContent = kbps ? `音质·${kbps}k` : "音质·原文件";
+}
+function cycleAudioQuality() {
+  const ladder = AUDIO_QUALITY_LADDER;
+  const current = audioQualityChoice();
+  const next = ladder[(ladder.indexOf(current) + 1) % ladder.length];
+  saveAudioQualityChoice(next);
+  const kbps = effectiveAudioKbps();
+  toast(kbps ? `🎚️ 音质：${audioQualityLabel()}（服务端转码流）` : `🎚️ 音质：${audioQualityLabel()}（原文件直出）`);
+  /* 正在播放时按新档位重载当前曲目（保持播放位置）。 */
+  if (activeAudio) {
+    const player = document.getElementById("audioPlayerElement");
+    const at = player ? player.currentTime : 0;
+    const lib = findMediaLibrary(activeAudio.libId);
+    if (player && lib && player.src) {
+      applyAudioSource(lib, activeAudio.path, player, { keepTime: at });
+      player.play().catch(() => {});
+    }
+  }
+}
+/* 选择播放源：弱网/显式档位 → 服务端转码流；其余 → 原文件。
+   转码流失败（503 拥塞、ffmpeg 缺失等）自动回落原文件，不让播放卡死。 */
+function applyAudioSource(lib, path, player, options = {}) {
+  const kbps = effectiveAudioKbps();
+  if (options.keepTime && player.currentTime) {
+    try { player.dataset.resumeAt = String(options.keepTime); } catch (e) { /* 忽略 */ }
+  }
+  player.dataset.streamFallback = "";
+  if (!kbps) {
+    player.dataset.streamKbps = "";
+    player.src = mediaFileUrl(lib, path);
+    return 0;
+  }
+  player.dataset.streamKbps = String(kbps);
+  player.src = audioStreamUrl(lib, path, kbps);
+  return kbps;
+}
+/* 弱网模式设置面板（系统设置里的「弱网与省流」区块）。 */
+function saveWeakNetworkMode() {
+  const value = document.getElementById("weakNetworkMode")?.value;
+  const mode = ["auto", "on", "off"].includes(value) ? value : "auto";
+  const next = saveWeakNetworkState({ mode });
+  toast(mode === "on" ? "📶 弱网模式：始终开启（音频按 96k 转码、漫画省流开启）" : mode === "off" ? "📶 弱网模式：关闭（原文件与原图直出）" : "📶 弱网模式：自动（按探测结果决定）");
+  if (mode !== "off") probeWeakNetwork();
+  updateAudioQualityButton();
+  return next;
+}
+function syncWeakNetworkSettings() {
+  const state = weakNetworkState();
+  const select = document.getElementById("weakNetworkMode");
+  if (select) select.value = ["auto", "on", "off"].includes(state.mode) ? state.mode : "auto";
+  const status = document.getElementById("weakNetworkStatus");
+  if (status) {
+    const speed = state.speedBps ? `${(state.speedBps / 1024 / 1024).toFixed(2)} MiB/s` : "未测速";
+    const level = state.level === "slow" ? "弱网" : state.level === "medium" ? "中等" : state.level === "fast" ? "良好" : "未知";
+    status.textContent = `最近测速：${speed}（判定 ${level}）· 当前生效：${weakNetworkActive() ? "弱网档位（音频 96k / 省流开启）" : "标准档位（原文件直出）"}`;
+  }
+}
+async function probeWeakNetworkFromSettings() {
+  const status = document.getElementById("weakNetworkStatus");
+  if (status) status.textContent = "正在测速…";
+  await probeWeakNetwork({ kb: 512, toast: true });
+  syncWeakNetworkSettings();
+  updateAudioQualityButton();
 }
 function playAudioFile(libId, path) {
   const lib = findMediaLibrary(libId), player = document.getElementById("audioPlayerElement"); if (!lib || !player) return;
@@ -1587,8 +1824,32 @@ function playAudioFile(libId, path) {
   const index = audioFiles.findIndex(file => String(file.path) === String(path));
   activeAudio = { libId, path, index: index < 0 ? 0 : index };
   const meta = audioMetadataFor(path);
-  player.src = mediaFileUrl(lib, path);
-  player.onerror = () => { toast("⚠️ 无法加载音频：文件不存在或路径含特殊字符"); document.getElementById("audioPlayerMeta").textContent = "加载失败，请检查文件路径"; };
+  /* v0.9.71：按音质档位/弱网模式选源（0 = 原文件直出，>0 = 服务端限码率转码流）。 */
+  applyAudioSource(lib, path, player);
+  player.onerror = () => {
+    /* 转码流不可用（转码队列拥塞 503、ffmpeg 异常、网络中断）→ 回落原文件直出一次。 */
+    if (player.dataset.streamKbps && player.dataset.streamFallback !== "1") {
+      const at = player.currentTime || 0;
+      player.dataset.streamFallback = "1";
+      player.dataset.streamKbps = "";
+      player.src = mediaFileUrl(lib, path);
+      if (at) { try { player.dataset.resumeAt = String(at); } catch (e) { /* 忽略 */ } }
+      toast("📶 转码流不可用，已回落原文件直出");
+      player.play().catch(() => {});
+      return;
+    }
+    toast("⚠️ 无法加载音频：文件不存在或路径含特殊字符");
+    document.getElementById("audioPlayerMeta").textContent = "加载失败，请检查文件路径";
+  };
+  player.onloadedmetadata = () => {
+    /* 切换音质/回落时保持播放位置。 */
+    const resume = Number(player.dataset.resumeAt || 0);
+    if (Number.isFinite(resume) && resume > 0) {
+      try { player.currentTime = resume; } catch (e) { /* 忽略不可 seek 的流 */ }
+      player.dataset.resumeAt = "";
+    }
+    updateAudioQualityButton();
+  };
   player.play().catch(() => {});
   const bar = document.getElementById("audio-bottom-player");
   bar.classList.add("show");
@@ -2033,6 +2294,9 @@ async function scrapeLyricsForOpenEditor() {
   const path = document.getElementById("audioMetadataPath")?.value || "";
   const lib = findMediaLibrary(localMediaSelection.audio);
   if (!path || !lib) return;
+  /* v0.9.71：清掉本次会话的「已尝试」标记，让服务端全新的检索阶梯
+     （去修饰变体 → 结构化检索 → 自由文本兜底，含日语/特殊字符策略）真正跑一遍。 */
+  audioLyricsAttempted.delete(path);
   const box = document.getElementById("audioMetadataLyrics");
   toast("🎵 正在刮削歌词…");
   try {
@@ -2113,6 +2377,8 @@ function comicSaveDataActive() {
   const mode = String(comicPrefs().saveData || "auto");
   if (mode === "on") return true;
   if (mode === "off") return false;
+  /* v0.9.71：弱网模式（测速判定为弱网）也视同省流 —— 与音频 96k 档位同一套判定。 */
+  if (typeof weakNetworkActive === "function" && weakNetworkActive()) return true;
   const c = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
   if (!c) return false;
   if (c.saveData) return true;

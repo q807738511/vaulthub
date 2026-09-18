@@ -883,6 +883,44 @@
   .reader-theme-light .audio-fullscreen-overlay { background:rgba(255,255,255,.96); }
   .reader-theme-light .audio-fullscreen-overlay { background:rgba(255,255,255,.9); }
   .reader-theme-light .audio-fullscreen-fallback { color:#284b63; }
+  /* ============ v0.9.71：放大视图的「海报 / 歌词」药丸与歌词层 ============
+     主海报虚化 5%：CSS 的 filter:blur() 只接受长度，不接受百分比，
+     因此把「海报宽度的 5%」折算成长度（min(520px,80vw) × 5% ≈ 26px），
+     与同容器既有的 36px 背景虚化属同一量级、视觉一致。 */
+  .audio-fullscreen-overlay { --poster-lyrics-blur:calc(min(520px,80vw) * .05); }
+  .audio-fullscreen-overlay[data-page="lyrics"] .audio-fullscreen-poster img { filter:blur(var(--poster-lyrics-blur,26px)) brightness(.6); opacity:.7; }
+  .audio-fullscreen-overlay[data-page="lyrics"] .audio-fullscreen-fallback { filter:blur(calc(var(--poster-lyrics-blur,26px) * .5)); opacity:.45; }
+  .audio-fs-pills { position:absolute; right:18px; top:50%; transform:translateY(-50%); z-index:3; display:flex; flex-direction:column; gap:10px; }
+  .audio-pill { display:inline-flex; align-items:center; gap:6px; padding:9px 16px; border-radius:999px; border:1px solid rgba(255,255,255,.28); background:rgba(255,255,255,.12); backdrop-filter:blur(14px) saturate(160%); color:rgba(255,255,255,.94); font-size:13px; font-weight:600; cursor:pointer; transition:background .15s,border-color .15s,transform .12s; }
+  .audio-pill:hover { background:rgba(255,255,255,.24); border-color:rgba(255,255,255,.6); transform:translateX(-2px); }
+  .audio-pill:active { transform:scale(.96); }
+  .audio-pill.active { background:var(--accent); border-color:var(--accent); color:#fff; box-shadow:0 6px 20px rgba(88,166,255,.5); }
+  .reader-theme-light .audio-pill { border-color:rgba(0,0,0,.16); background:rgba(255,255,255,.9); color:#1d1d1f; }
+  .reader-theme-light .audio-pill.active { background:#0a84ff; border-color:#0a84ff; color:#fff; }
+  .audio-fs-lyrics { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:2; display:none; width:min(760px,84vw); height:min(60vh,520px); border-radius:18px; background:rgba(0,0,0,.42); border:1px solid rgba(255,255,255,.16); backdrop-filter:blur(10px); overflow:auto; cursor:grab; touch-action:pan-y; overscroll-behavior:contain; }
+  .audio-fullscreen-overlay[data-page="lyrics"] .audio-fs-lyrics { display:block; }
+  .audio-fs-lyrics.dragging { cursor:grabbing; }
+  .audio-fs-lyrics-inner { display:block; padding:26px 22px 34vh; }
+  .audio-fs-lyrics .lyric-line { display:block; padding:7px 10px; border-radius:8px; font-size:15px; line-height:1.85; color:rgba(255,255,255,.62); cursor:pointer; }
+  .audio-fs-lyrics .lyric-line:hover { background:rgba(255,255,255,.1); color:#fff; }
+  .audio-fs-lyrics .lyric-line.active { color:#fff; font-weight:700; background:rgba(88,166,255,.24); }
+  .audio-fs-lyrics .audio-fs-empty { display:block; padding:6px 10px; color:rgba(255,255,255,.72); font-size:13px; line-height:1.9; }
+  .audio-fs-lyrics-hint { position:absolute; z-index:3; left:50%; bottom:26px; transform:translateX(-50%); display:none; padding:6px 14px; border-radius:999px; background:rgba(0,0,0,.6); color:rgba(255,255,255,.78); font-size:12px; white-space:nowrap; }
+  .audio-fullscreen-overlay[data-page="lyrics"] .audio-fs-lyrics-hint { display:block; }
+  .audio-fs-lyrics-hint.follow-paused { color:#ffd166; }
+  .reader-theme-light .audio-fs-lyrics { background:rgba(255,255,255,.72); border-color:rgba(0,0,0,.12); }
+  .reader-theme-light .audio-fs-lyrics .lyric-line { color:rgba(29,29,31,.6); }
+  .reader-theme-light .audio-fs-lyrics .lyric-line.active { color:#0a4a99; background:rgba(10,132,255,.16); }
+  .reader-theme-light .audio-fs-lyrics .audio-fs-empty { color:rgba(29,29,31,.7); }
+  .reader-theme-light .audio-fs-lyrics-hint { background:rgba(255,255,255,.9); color:#1d1d1f; }
+  @media (max-width:768px) {
+    .audio-fs-pills { right:10px; top:auto; bottom:76px; transform:none; flex-direction:row; gap:8px; }
+    .audio-pill { padding:8px 12px; font-size:12px; }
+    .audio-fs-pills .audio-pill span { display:none; }
+    .audio-fs-lyrics { width:92vw; height:min(56vh,460px); }
+    .audio-fs-lyrics-inner { padding:18px 14px 34vh; }
+    .audio-fs-lyrics-hint { bottom:14px; font-size:11px; }
+  }
   @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
   @media (max-width:768px) { .audio-fullscreen-overlay, body.sidebar-hidden .audio-fullscreen-overlay { left:0; } .audio-fullscreen-poster { width:min(420px,90vw); } .media-reader-overlay.movie-player.video-controller-docked, body.sidebar-hidden .media-reader-overlay.movie-player.video-controller-docked { left:0; height:180px; overflow:auto; } .media-reader-overlay.movie-player.video-controller-docked .media-reader-body, .media-reader-overlay.movie-player.video-controller-docked .media-reader-wrap, .media-reader-overlay.movie-player.video-controller-docked .media-video-body { height:180px; } .media-reader-overlay.movie-player.video-controller-docked video { width:132px; height:74px; left:8px; bottom:10px; } .media-reader-overlay.movie-player.video-controller-docked .vc-top { padding-left:150px; } .media-reader-overlay.movie-player.video-controller-docked .vc-bottom { margin-left:150px; } }
   .audio-player-main { min-width:0; flex:1; }
@@ -902,6 +940,12 @@
   .audio-player-controls button.audio-play-btn .vc-svg { width:22px; height:22px; }
   .audio-player-controls button.audio-play-btn:hover { background:color-mix(in srgb,var(--accent) 80%,#fff); }
   .audio-player-controls button.audio-fav-on { border-color:#ff3b69; color:#ff3b69; background:rgba(255,59,105,.18); }
+  /* v0.9.71：音质药丸（弱网/限码率档位）。转码档位用强调色描边，一眼看出当前走的是转码流。 */
+  .audio-player-controls button.audio-quality-btn { min-width:auto; width:auto; padding:0 12px; border-radius:999px; font-size:11px; font-weight:600; gap:6px; }
+  .audio-player-controls button.audio-quality-btn .vc-svg { width:14px; height:14px; }
+  .audio-player-controls button.audio-quality-btn.audio-quality-transcode { border-color:var(--accent); color:#fff; background:color-mix(in srgb,var(--accent) 45%,transparent); }
+  .reader-theme-light .audio-player-controls button.audio-quality-btn.audio-quality-transcode { color:#0a4a99; background:rgba(10,132,255,.16); }
+  @media (max-width:768px) { .audio-player-controls button.audio-quality-btn span { display:none; } .audio-player-controls button.audio-quality-btn { padding:0 9px; } }
   .reader-theme-light .audio-player-controls button { border-color:rgba(0,0,0,.14); color:#1d1d1f; background:rgba(255,255,255,.92); box-shadow:0 2px 12px rgba(0,0,0,.28); }
   .reader-theme-light .audio-player-controls button:hover { background:#fff; transform:scale(1.08); }
   .reader-theme-light .audio-player-controls button.audio-play-btn { border-color:#0a84ff; color:#fff; background:#0a84ff; box-shadow:0 6px 20px rgba(10,132,255,.55); }
@@ -1438,6 +1482,11 @@
   .comic-stage { position:relative; display:flex; gap:8px; justify-content:center; align-items:flex-start; min-height:40vh; }
   .comic-stage.comic-rtl { flex-direction:row-reverse; }
   .comic-slot { flex:1 1 0; min-width:0; display:flex; justify-content:center; }
+  /* v0.9.71：恢复 [hidden] 语义。上面 .comic-slot 的 display:flex 是作者样式，
+     恒胜 UA 样式表里的 [hidden]{display:none}（与选择器优先级无关），
+     于是 comicRenderStage 里的 slot.hidden=true 并不隐藏第二个槽位：
+     单页模式下页面被挤到半宽、右侧永远留一个空槽。这里用 (0,2,0) 显式补齐。 */
+  .comic-slot[hidden] { display:none; }
   .comic-img { display:block; max-width:100%; height:auto; border-radius:6px; background:rgba(255,255,255,.04); }
   .comic-reader.fit-width .comic-img { width:100%; }
   .comic-reader.fit-height .comic-img { max-height:calc(100vh - 200px); width:auto; }

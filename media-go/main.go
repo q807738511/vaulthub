@@ -47,6 +47,8 @@ type App struct {
 	lyricsMu          sync.Mutex // v0.9.67: 歌词源全局节流（LRCLIB 突发会 503）
 	lyricsLast        time.Time
 	lyricsBatchSem    chan struct{} // v0.9.69: 批量歌词串行闸门（容量 1）
+	artistAliasMu     sync.Mutex    // v0.9.71: 歌手别名表（MusicBrainz）缓存锁
+	artistAliasCache  map[string]artistAliasEntry
 	zipCacheMu        sync.Mutex
 	zipCache          *zipArchiveCache // v0.9.56: ZIP/CBZ 中央目录 LRU 缓存（漫画读取提速）
 	pageCacheMu       sync.Mutex
@@ -2359,6 +2361,9 @@ func main() {
 	mux.HandleFunc("/api/media/audio/metadata", a.audioMetadata)
 	/* v0.9.56：歌手维度刮削（单人/组合/合作演唱关系），返回演唱者头像作为歌手封面。 */
 	mux.HandleFunc("/api/media/audio/artist", a.audioArtist)
+	/* v0.9.71 弱网：限码率音频流转码 + 客户端下行探测（见 audio_stream.go）。 */
+	mux.HandleFunc("/api/media/audio/stream", a.audioStream)
+	mux.HandleFunc("/api/media/weak/probe", a.weakProbe)
 	mux.HandleFunc("/api/media/network/speed", a.networkSpeed)
 	mux.HandleFunc("/api/media/compat", a.compat)
 	fmt.Println("VaultHub media API listening on 127.0.0.1:9100")

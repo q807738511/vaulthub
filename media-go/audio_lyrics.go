@@ -35,7 +35,8 @@ var (
 )
 
 // lyricsMinInterval 全局节流间隔：LRCLIB 公开实例对突发请求会返回 503。
-const lyricsMinInterval = 900 * time.Millisecond
+// v0.9.71：由 const 改为 var，便于测试把间隔设为 0 后验证整条检索阶梯（不改生产值）。
+var lyricsMinInterval = 900 * time.Millisecond
 
 func (a *App) neteaseLyricsEnabled() bool {
 	v := strings.ToLower(strings.TrimSpace(env("VAULTHUB_LYRICS_NETEASE", "0")))
@@ -63,18 +64,55 @@ func (a *App) lyricsClient() (*http.Client, error) {
 	return outboundHTTPClient(a.scraperProxy)
 }
 
-// scrapeAudioLyrics 按「LRCLIB 精确 → LRCLIB 搜索 → lyrics.ovh → （可选）NetEase」顺序尝试。
+/* scrapeAudioLyrics 按「检索词阶梯 × 检索方式」顺序尝试（v0.9.71 重写）。
+ *
+ * 实测（2026-09 直连 LRCLIB）：
+ *   - 带修饰的标题（残酷な天使のテーゼ【MV】）结构化检索返回 0 条，
+ *     去掉【MV】后 /api/get 精确命中 → 必须先做「去修饰」变体；
+ *   - 含特殊字符的标题（【東方】Bad Apple!!）结构化检索同样 0 条，
+ *     而自由文本 q= 返回 16 条 → 需要 q= 兜底（并按标题强校验，避免采纳无关上传）。
+ *
+ * 顺序：get(原样) → get(去修饰) → get(仅标题) → search(原样) → search(去修饰)
+ *      → search(仅标题) → q=(去修饰标题) → lyrics.ovh（英文向）→（可选）NetEase。
+ * 总尝试次数上限 lyricsMaxAttempts，避免整链在弱网/无结果时拖太久。
+ */
 func (a *App) scrapeAudioLyrics(ctx context.Context, title, artist string) (lyricsResult, bool) {
 	title = strings.TrimSpace(title)
 	artist = strings.TrimSpace(artist)
 	if title == "" {
 		return lyricsResult{}, false
 	}
-	if r, ok := a.lrclibGet(ctx, title, artist); ok {
-		return r, true
+	queries := audioQueryVariants(title, artist)
+	if len(queries) == 0 {
+		queries = []audioQuery{{Title: title, Artist: artist}}
 	}
-	if r, ok := a.lrclibSearch(ctx, title, artist); ok {
-		return r, true
+	attempts := 0
+	for _, q := range queries {
+		if attempts >= lyricsMaxAttempts {
+			break
+		}
+		attempts++
+		if r, ok := a.lrclibGet(ctx, q.Title, q.Artist); ok {
+			return r, true
+		}
+	}
+	for _, q := range queries {
+		if attempts >= lyricsMaxAttempts {
+			break
+		}
+		attempts++
+		if r, ok := a.lrclibSearch(ctx, q.Title, q.Artist); ok {
+			return r, true
+		}
+	}
+	for _, q := range queries {
+		if attempts >= lyricsMaxAttempts {
+			break
+		}
+		attempts++
+		if r, ok := a.lrclibSearchFree(ctx, q.Title); ok {
+			return r, true
+		}
 	}
 	if r, ok := a.lyricsOvh(ctx, title, artist); ok {
 		return r, true
@@ -86,6 +124,9 @@ func (a *App) scrapeAudioLyrics(ctx context.Context, title, artist string) (lyri
 	}
 	return lyricsResult{}, false
 }
+
+// lyricsMaxAttempts 是单次歌词刮削的外呼次数上限（每次外呼前有 900ms 节流）。
+const lyricsMaxAttempts = 8
 
 type lrclibRecord struct {
 	TrackName     string `json:"trackName"`
@@ -130,31 +171,27 @@ func (a *App) lrclibGet(ctx context.Context, title, artist string) (lyricsResult
 	return lrclibResult(rec, "LRCLIB")
 }
 
-// lrclibSearch 模糊搜索（中文场景更稳），503 时指数退避重试。
-func (a *App) lrclibSearch(ctx context.Context, title, artist string) (lyricsResult, bool) {
+/* lrclibSearchRaw 发一次 /api/search 并把结果解码成记录列表（503/429 指数退避重试）。
+   v0.9.71 抽成公共实现：结构化检索与自由文本 q= 检索只差查询参数。 */
+func (a *App) lrclibSearchRaw(ctx context.Context, params url.Values) ([]lrclibRecord, bool) {
 	client, err := a.lyricsClient()
 	if err != nil {
-		return lyricsResult{}, false
-	}
-	q := url.Values{}
-	q.Set("track_name", title)
-	if artist != "" {
-		q.Set("artist_name", artist)
+		return nil, false
 	}
 	backoff := 800 * time.Millisecond
 	for attempt := 0; attempt < 3; attempt++ {
 		a.lyricsThrottle(ctx)
-		reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, lrclibBase+"/api/search?"+q.Encode(), nil)
+		reqCtx, cancel := context.WithTimeout(ctx, 12*time.Second)
+		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, lrclibBase+"/api/search?"+params.Encode(), nil)
 		if err != nil {
 			cancel()
-			return lyricsResult{}, false
+			return nil, false
 		}
-		req.Header.Set("User-Agent", "VaultHub/0.9.67 (+https://github.com/q807738511/vaulthub)")
+		req.Header.Set("User-Agent", "VaultHub/0.9.71 (+https://github.com/q807738511/vaulthub)")
 		res, err := client.Do(req)
 		if err != nil {
 			cancel()
-			return lyricsResult{}, false
+			return nil, false
 		}
 		if res.StatusCode == http.StatusServiceUnavailable || res.StatusCode == http.StatusTooManyRequests {
 			res.Body.Close()
@@ -162,7 +199,7 @@ func (a *App) lrclibSearch(ctx context.Context, title, artist string) (lyricsRes
 			select {
 			case <-time.After(backoff):
 			case <-ctx.Done():
-				return lyricsResult{}, false
+				return nil, false
 			}
 			backoff *= 2
 			continue
@@ -170,49 +207,179 @@ func (a *App) lrclibSearch(ctx context.Context, title, artist string) (lyricsRes
 		if res.StatusCode != http.StatusOK {
 			res.Body.Close()
 			cancel()
-			return lyricsResult{}, false
+			return nil, false
 		}
 		var list []lrclibRecord
 		decErr := json.NewDecoder(io.LimitReader(res.Body, 2<<20)).Decode(&list)
 		res.Body.Close()
 		cancel()
 		if decErr != nil || len(list) == 0 {
-			return lyricsResult{}, false
+			return nil, false
 		}
-		best := pickLrclibRecord(title, artist, list)
-		return lrclibResult(best, "LRCLIB")
+		return list, true
 	}
-	return lyricsResult{}, false
+	return nil, false
 }
 
-// pickLrclibRecord 优先「标题命中且歌手命中」，其次标题命中，最后取第一条有歌词的。
-func pickLrclibRecord(title, artist string, list []lrclibRecord) lrclibRecord {
-	hasLyrics := func(r lrclibRecord) bool { return strings.TrimSpace(r.SyncedLyrics) != "" || strings.TrimSpace(r.PlainLyrics) != "" }
-	norm := func(s string) string {
-		s = strings.ToLower(strings.TrimSpace(s))
-		s = strings.NewReplacer(" ", "", "-", "", "_", "", "(", "", ")", "", "[", "", "]", "", "（", "", "）", "").Replace(s)
-		return s
+// lrclibSearch 结构化模糊搜索（track_name + artist_name），中文/日文场景更稳。
+func (a *App) lrclibSearch(ctx context.Context, title, artist string) (lyricsResult, bool) {
+	q := url.Values{}
+	q.Set("track_name", title)
+	if artist != "" {
+		q.Set("artist_name", artist)
 	}
-	nt, na := norm(title), norm(artist)
+	list, ok := a.lrclibSearchRaw(ctx, q)
+	if !ok {
+		return lyricsResult{}, false
+	}
+	best, ok := pickLrclibRecord(title, artist, list)
+	if !ok {
+		return lyricsResult{}, false
+	}
+	return lrclibResult(best, "LRCLIB")
+}
+
+/* lrclibSearchFree 自由文本兜底（v0.9.71）：实测含特殊字符的标题
+   （【東方】Bad Apple!!）在结构化检索下返回 0 条，而 q= 返回十余条。
+   代价是 q= 结果里混有无关上传（实测 q=ＮＵＭＢＥＲ 返回的是 back number 的歌），
+   所以这里 **只接受标题松匹配** 的记录，绝不退回「第一条有歌词的」。 */
+func (a *App) lrclibSearchFree(ctx context.Context, title string) (lyricsResult, bool) {
+	q := url.Values{}
+	q.Set("q", title)
+	list, ok := a.lrclibSearchRaw(ctx, q)
+	if !ok {
+		return lyricsResult{}, false
+	}
+	best, ok := pickLrclibRecordFree(title, list)
+	if !ok {
+		return lyricsResult{}, false
+	}
+	return lrclibResult(best, "LRCLIB")
+}
+
+/* audioLyricsTitleMatches 歌词记录与本地标题是否同一曲目（v0.9.71）。
+ *
+ * 旧实现（pickLrclibRecord 里的 norm()）只做「去少数标点后全等」，且最后会退回
+ * 「列表里第一条有歌词的记录」，把完全不相干的曲目歌词贴到当前歌曲上。
+ * 实测两端的真实数据都要求更细的判定：
+ *   - 带修饰的标题（残酷な天使のテーゼ【MV】）与记录永不相等 → 必须先做「去修饰」；
+ *   - 自由文本 q= 结果里混有无关曲目（q=ＮＵＭＢＥＲ 第一条是 back number 的「水平線」），
+ *     纯包含判断（"number" ⊂ "backnumber水平線"）会把它们认成同一首 → 必须挡掉。
+ *
+ * 判定顺序：
+ *   1) 去修饰后归一化全等 → 命中；
+ *   2) 包含关系 → 命中，但要求「短侧 ≥4 字符」且「长侧含中日文时短侧也含中日文」
+ *      （挡掉 NUMBER ⊂ back number - 水平線，保留 残酷な天使のテーゼ ⊂ …(off vocal version)）；
+ *   3) 双方纯拉丁 → 相似度 ≥0.8（长度均 ≥4）；
+ *   4) 双方含中日文 → 等长且 ≤2 个字符不同（简繁差异，如 说好不哭/說好不哭），
+ *      或长度比 ≥0.7 且共享 ≥2 个不同字符。
+ */
+func audioLyricsTitleMatches(want, got string) bool {
+	w := normalizedAudioText(audioStripDecorations(want))
+	g := normalizedAudioText(audioStripDecorations(got))
+	if w == "" || g == "" {
+		return false
+	}
+	if w == g {
+		return true
+	}
+	short, long := []rune(w), []rune(g)
+	if len(long) < len(short) {
+		short, long = long, short
+	}
+	if len(short) >= 4 && strings.Contains(string(long), string(short)) {
+		if !audioHasCJK(string(long)) || audioHasCJK(string(short)) {
+			return true
+		}
+	}
+	if audioIsASCII(w) && audioIsASCII(g) {
+		if len([]rune(w)) < 4 || len([]rune(g)) < 4 {
+			return false
+		}
+		return audioLatinSimilarity(w, g) >= 0.8
+	}
+	if audioHasCJK(w) && audioHasCJK(g) {
+		wl, gl := len([]rune(w)), len([]rune(g))
+		if wl == gl {
+			return audioRuneDistanceAtMost(w, g, 2)
+		}
+		if audioSharedCJK(w, g) >= 2 {
+			shortLen, longLen := wl, gl
+			if gl < wl {
+				shortLen, longLen = gl, wl
+			}
+			return float64(shortLen)/float64(longLen) >= 0.7
+		}
+	}
+	return false
+}
+
+// audioRuneDistanceAtMost 等长字符串的逐字符差异数是否 ≤ n（简繁差异判定用）。
+func audioRuneDistanceAtMost(a, b string, n int) bool {
+	ra, rb := []rune(a), []rune(b)
+	if len(ra) != len(rb) {
+		return false
+	}
+	diff := 0
+	for i := range ra {
+		if ra[i] != rb[i] {
+			diff++
+			if diff > n {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func lrclibHasLyrics(r lrclibRecord) bool {
+	return strings.TrimSpace(r.SyncedLyrics) != "" || strings.TrimSpace(r.PlainLyrics) != ""
+}
+
+/* pickLrclibRecord 优先「标题命中且歌手命中」，其次「标题命中」；都不满足就返回 ok=false。
+ *
+ * v0.9.71 两处语义修正（旧实现的问题在实测中可复现）：
+ *   1) 标题比对改用 audioLyricsTitleMatches（归一化 + 去修饰 + 简繁/相似度），
+ *      旧实现的 norm() 只去少数标点，带【MV】/（）的标题与记录永不相等；
+ *   2) **不再** 退回「列表中第一条有歌词的记录」—— 旧行为会把完全不相干的
+ *      曲目歌词贴到当前歌曲上（标题只共享一个字也会命中）。匹配不上就返回 ok=false，
+ *      让上层继续走下一级源或保持无歌词。
+ */
+func pickLrclibRecord(title, artist string, list []lrclibRecord) (lrclibRecord, bool) {
+	var titleOnly lrclibRecord
+	titleOnlyOK := false
 	for _, r := range list {
-		if !hasLyrics(r) {
+		if !lrclibHasLyrics(r) || !audioLyricsTitleMatches(title, r.TrackName) {
 			continue
 		}
-		if norm(r.TrackName) == nt && (na == "" || audioArtistNameMatches(artist, r.ArtistName) || norm(r.ArtistName) == na) {
-			return r
+		if artist == "" || audioArtistNameMatches(artist, r.ArtistName) ||
+			normalizedAudioText(artist) == normalizedAudioText(r.ArtistName) {
+			return r, true
+		}
+		if !titleOnlyOK {
+			titleOnly, titleOnlyOK = r, true
 		}
 	}
+	return titleOnly, titleOnlyOK
+}
+
+/* pickLrclibRecordFree 用于自由文本 q= 结果：上传者字段常是上传者昵称而非歌手，
+   因此只按标题匹配挑选（优先带时间轴的记录），匹配不上就返回 ok=false。 */
+func pickLrclibRecordFree(title string, list []lrclibRecord) (lrclibRecord, bool) {
+	var matched lrclibRecord
+	matchedOK := false
 	for _, r := range list {
-		if hasLyrics(r) && norm(r.TrackName) == nt {
-			return r
+		if !lrclibHasLyrics(r) || !audioLyricsTitleMatches(title, r.TrackName) {
+			continue
+		}
+		if strings.TrimSpace(r.SyncedLyrics) != "" {
+			return r, true
+		}
+		if !matchedOK {
+			matched, matchedOK = r, true
 		}
 	}
-	for _, r := range list {
-		if hasLyrics(r) {
-			return r
-		}
-	}
-	return list[0]
+	return matched, matchedOK
 }
 
 func lrclibResult(rec lrclibRecord, source string) (lyricsResult, bool) {

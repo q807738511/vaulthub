@@ -51,6 +51,11 @@ renderPtLoginState();
 renderPtMock();
 tickMetrics();
 setInterval(tickMetrics, 5000);
+/* v0.9.71：弱网与音质状态初始化 —— 面板文案同步 + 音质药丸 + 后台补一次下行测速
+   （自动档位 30 分钟内的结果直接复用，不重复打探测接口）。 */
+if (typeof syncWeakNetworkSettings === "function") syncWeakNetworkSettings();
+if (typeof updateAudioQualityButton === "function") updateAudioQualityButton();
+if (typeof ensureWeakNetworkProbe === "function") ensureWeakNetworkProbe();
 /* 首页四栏（服务器监控 / 正在进行 / 最近入库）在媒体库拉取完成后渲染 */
 refreshMediaLibraries(false).then(initHome);
 }
