@@ -2,12 +2,14 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -373,6 +375,68 @@ func TestV0971WeakNetworkRoutesRegistered(t *testing.T) {
 	} {
 		if !strings.Contains(string(src), route) {
 			t.Fatalf("缺少路由注册：%s", route)
+		}
+	}
+}
+
+/* 同键并发必须只转码一次（singleflight 的**行为**守卫）。
+   之前只测了 beginAudioJob 这个辅助函数，把 audioStream 里的合并逻辑改掉测试仍然通过
+   （突变 M28 未捕获）；这里用假 ffmpeg 记录调用次数，直接打两个并发 HTTP 请求。 */
+func TestV0971AudioStreamMergesConcurrentTranscodes(t *testing.T) {
+	a, _, _ := newStreamTestApp(t)
+	oldOK := managerSessionOK
+	managerSessionOK = func(*http.Request) bool { return true }
+	defer func() { managerSessionOK = oldOK }()
+
+	binDir := t.TempDir()
+	counter := filepath.Join(t.TempDir(), "calls.log")
+	// 假 ffmpeg：记录一次调用，延迟 800ms 让两个请求真正重叠，然后写出假 MP3。
+	// 真正的 ffmpeg 参数里输出路径是最后一个参数（-y <tmp>）。
+	script := "#!/bin/sh\n" +
+		"echo call >> " + counter + "\n" +
+		"sleep 0.8\n" +
+		"for a in \"$@\"; do out=\"$a\"; done\n" +
+		"printf 'ID3fake-transcoded' > \"$out\"\n"
+	if err := os.WriteFile(filepath.Join(binDir, "ffmpeg"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
+
+	srv := httptest.NewServer(http.HandlerFunc(a.audioStream))
+	defer srv.Close()
+	target := srv.URL + "/api/media/audio/stream?id=l1&path=song.mp3&bitrate=128k"
+
+	var wg sync.WaitGroup
+	codes := make([]int, 2)
+	bodies := make([]string, 2)
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			res, err := http.Get(target)
+			if err != nil {
+				codes[i] = -1
+				return
+			}
+			defer res.Body.Close()
+			codes[i] = res.StatusCode
+			body, _ := io.ReadAll(res.Body)
+			bodies[i] = string(body)
+		}(i)
+	}
+	wg.Wait()
+
+	raw, _ := os.ReadFile(counter)
+	calls := strings.Count(string(raw), "call")
+	if calls != 1 {
+		t.Fatalf("同键并发应只调用一次转码器，实际 %d 次（HTTP 状态 %v，响应 %q/%q）", calls, codes, bodies[0], bodies[1])
+	}
+	for i, code := range codes {
+		if code != http.StatusOK {
+			t.Fatalf("第 %d 个请求应 200，实际 %d", i+1, code)
+		}
+		if bodies[i] != "ID3fake-transcoded" {
+			t.Fatalf("第 %d 个请求响应体应来自缓存转码结果，实际 %q", i+1, bodies[i])
 		}
 	}
 }
