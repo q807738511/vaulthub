@@ -106,15 +106,16 @@ func (a *App) pruneAudioStreamCache(maxBytes int64) {
 		items = append(items, item{path: filepath.Join(dir, entry.Name()), size: info.Size(), mod: info.ModTime()})
 		total += info.Size()
 	}
-	if total <= maxBytes {
-		return
-	}
 	sort.Slice(items, func(i, j int) bool { return items[i].mod.Before(items[j].mod) })
 	for _, it := range items {
-		if total <= maxBytes {
-			return
+		age := time.Since(it.mod)
+		/* 一小时内的新文件可能正在被读取，两种清理都不动它。 */
+		if age < time.Hour {
+			continue
 		}
-		if time.Since(it.mod) < time.Hour { // 一小时内的新文件（可能正在被读取）不动
+		/* 保留条件：未过期（audioStreamCacheMaxAge）**且**配额还够；
+		   过期文件即使配额充足也清掉（与发布说明/客户手册的「默认 7 天」一致）。 */
+		if age < audioStreamCacheMaxAge && total <= maxBytes {
 			continue
 		}
 		if os.Remove(it.path) == nil {

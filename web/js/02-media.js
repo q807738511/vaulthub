@@ -1741,7 +1741,6 @@ function ensureWeakNetworkProbe() {
   if (typeof requestIdleCallback === "function") requestIdleCallback(run, { timeout: 4000 });
   else setTimeout(run, 1200);
 }
-function audioKbpsText(kbps) { return kbps ? `${kbps}k` : "原文件"; }
 function updateAudioQualityButton() {
   const button = document.getElementById("audioQualityButton");
   if (!button) return;

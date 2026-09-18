@@ -319,6 +319,21 @@ func TestV0971AudioStreamPrunesOldCache(t *testing.T) {
 		t.Fatalf("应只保留最新的 cache-2.mp3，实际保留 %v", kept)
 	}
 
+	// 按龄过期：超过 audioStreamCacheMaxAge 的缓存即使配额充足也必须清掉
+	// （发布说明与客户手册都写了「默认 7 天」，这一条让声明可被突变验证）。
+	stale := filepath.Join(dir, "stale.mp3")
+	if err := os.WriteFile(stale, make([]byte, 1024), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	longAgo := time.Now().Add(-8 * 24 * time.Hour)
+	if err := os.Chtimes(stale, longAgo, longAgo); err != nil {
+		t.Fatal(err)
+	}
+	a.pruneAudioStreamCache(1 << 30) // 配额充足 → 只有过期规则能删它
+	if _, err := os.Stat(stale); err == nil {
+		t.Fatal("超过缓存有效期（7 天）的文件必须被清理")
+	}
+
 	// 一小时内的新文件受保护（可能正在被读取）
 	fresh := filepath.Join(dir, "fresh.mp3")
 	if err := os.WriteFile(fresh, make([]byte, 1024), 0o644); err != nil {
