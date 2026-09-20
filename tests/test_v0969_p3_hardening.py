@@ -22,14 +22,15 @@ checks = {
     "源体积上限对齐像素上限": "maxPageSourceBytes = 32 << 20" in GO_TRANS
         and "maxPageSourceBytes = 96 << 20" not in GO_TRANS,
 
-    # 2. 元数据缓存读取上限：SQL 侧 ORDER BY + LIMIT，多取一行判定 truncated
+    # 2. 元数据缓存读取上限：SQL 侧 ORDER BY + LIMIT，多取一批判定 truncated
+    #    （v0.9.72 起为避免「磁盘已变化的过期行」占满配额，扫描上限改为 limit 的 2 倍）
     "缓存 SQL 侧 LIMIT": "ORDER BY m.path LIMIT ?" in GO_ACACHE
-        and "limit+1" in GO_ACACHE,
+        and "audioCacheScanCap(limit)" in GO_ACACHE,
     "缓存 limit 参数与上限": 'Get("limit")' in GO_ACACHE and "n <= 50000" in GO_ACACHE
         and "limit := 5000" in GO_ACACHE,
     "缓存 truncated 标记": '"truncated": truncated' in GO_ACACHE
         and '"limit": limit' in GO_ACACHE,
-    "多取行不入响应": "break" in GO_ACACHE.split("if scanned >= limit {")[1].split("}")[0],
+    "多取行不入响应": "break" in GO_ACACHE.split("if len(items) >= limit {")[1].split("}")[0],
 
     # 3. 批量歌词串行闸门（闭包释放：不可被非持有者误释放）
     "批量闸门闭包释放": "func (a *App) beginLyricsBatch() (func(), bool)" in GO_LYRICS
@@ -50,11 +51,11 @@ checks = {
         and "元数据已改由服务端缓存保存" not in MEDIA,
 
     # 5. 版本与文档自洽
-    "版本串一致": 'VAULTHUB_ASSET_VERSION = "0.9.71"' in (ROOT / "index.html").read_text(encoding="utf-8")
-        and 'VAULTHUB_SCRIPT_VERSION = "0.9.71"' in (ROOT / "web/js/01-state.js").read_text(encoding="utf-8"),
+    "版本串一致": 'VAULTHUB_ASSET_VERSION = "0.9.72"' in (ROOT / "index.html").read_text(encoding="utf-8")
+        and 'VAULTHUB_SCRIPT_VERSION = "0.9.72"' in (ROOT / "web/js/01-state.js").read_text(encoding="utf-8"),
     "发布说明含加固项": "v0.9.69" in NOTES and "32MB" in NOTES and "truncated" in NOTES
         and "429" in NOTES,
-    "更新日志有本版段": "# VaultHub 蜀鼠之家 v0.9.71" in LOG,
+    "更新日志有本版段": "# VaultHub 蜀鼠之家 v0.9.72" in LOG,
     "历史说明未改": (ROOT / ".github/RELEASE_NOTES_0.9.68.md").read_text(encoding="utf-8").startswith(
         "# VaultHub 蜀鼠之家 v0.9.68"),
 }

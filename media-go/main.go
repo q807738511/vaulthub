@@ -28,10 +28,10 @@ import (
 // VaultHub media API replacement. Beyond the standard library it uses only the
 // pure-Go SQLite driver modernc.org/sqlite (no cgo), keeping static builds.
 type Library struct {
-	ID    string   `json:"id"`
-	Name  string   `json:"name"`
-	Type  string   `json:"type"`
-	Path  string   `json:"path"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Type string `json:"type"`
+	Path string `json:"path"`
 	// v0.9.52：多存储路径支持 —— 单个媒体库可以挂载多个存储路径。
 	// Paths 与 Path 互为补充：Path 是主路径（兼容旧版配置），Paths 是扩展路径列表。
 	// 扫描时会遍历所有路径，文件路径以相对路径形式存储。
@@ -137,17 +137,17 @@ type playbackMedia struct {
 }
 
 type playbackPlan struct {
-	Layer       string        `json:"layer"`
-	Mode        string        `json:"mode"`
-	Reason      string        `json:"reason"`
-	URL         string        `json:"url"`
-	VideoAction string        `json:"video_action"`
-	AudioAction string        `json:"audio_action"`
-	Hardware    string        `json:"hardware"`
+	Layer       string `json:"layer"`
+	Mode        string `json:"mode"`
+	Reason      string `json:"reason"`
+	URL         string `json:"url"`
+	VideoAction string `json:"video_action"`
+	AudioAction string `json:"audio_action"`
+	Hardware    string `json:"hardware"`
 	// MaxHeight caps the output height when the caller asked for an explicit
 	// transcode quality (v0.9.50 播放器设置 → 转码质量). 0 means "no cap".
-	MaxHeight   int           `json:"max_height,omitempty"`
-	Media       playbackMedia `json:"media"`
+	MaxHeight int           `json:"max_height,omitempty"`
+	Media     playbackMedia `json:"media"`
 }
 
 type playbackSession struct {
@@ -2334,6 +2334,9 @@ func main() {
 	mux.HandleFunc("/api/media/audio/lyrics/batch", a.batchLyrics)
 	mux.HandleFunc("/api/media/audio/cache", a.audioCache)
 	mux.HandleFunc("/api/media/audio/cache/stats", a.audioCacheStats)
+	/* v0.9.72: authoritative scrape status and persistent metadata commit. */
+	mux.HandleFunc("/api/media/audio/scrape/status", a.audioScrapeStatus)
+	mux.HandleFunc("/api/media/audio/metadata/commit", a.audioMetadataCommit)
 	mux.HandleFunc("/api/media/archive", a.archive)
 	mux.HandleFunc("/api/media/zip", a.archive)
 	mux.HandleFunc("/api/media/settings", a.runtimeSettings)
@@ -2464,11 +2467,12 @@ func compatArgs(ctx context.Context, p, audioTrack, hw, mode string) (pre []stri
 // forces a real re-encode because you cannot scale a copied stream.
 //
 // v0.9.51 音画同步修复：
-//   · copy 模式显式补 -fflags +genpts+igndts，避免容器时间基漂移导致音画不同步
-//   · 转码/重编码模式加 -async 1，强制 ffmpeg 在输出结尾做 1 次音频时钟同步拉伸，
-//     修正长播放后音频时钟相对于视频时钟的累积漂移
-//   · 统一 -vsync cfr + -r 源帧率，保证输出恒定帧率，消除因 VFR 内容导致的
-//     音频时钟与视频时钟脱钩
+//
+//	· copy 模式显式补 -fflags +genpts+igndts，避免容器时间基漂移导致音画不同步
+//	· 转码/重编码模式加 -async 1，强制 ffmpeg 在输出结尾做 1 次音频时钟同步拉伸，
+//	  修正长播放后音频时钟相对于视频时钟的累积漂移
+//	· 统一 -vsync cfr + -r 源帧率，保证输出恒定帧率，消除因 VFR 内容导致的
+//	  音频时钟与视频时钟脱钩
 func compatArgsScaled(ctx context.Context, p, audioTrack, hw, mode string, maxHeight int) (pre []string, mid []string) {
 	vcodec := ""
 	var post []string
@@ -2477,7 +2481,7 @@ func compatArgsScaled(ctx context.Context, p, audioTrack, hw, mode string, maxHe
 		srcFps = fmt.Sprintf("%d", fc)
 	}
 	if vc, _ := probeVideoCodec(ctx, p); vc == "h264" && mode != "full_transcode" && maxHeight <= 0 {
-		vcodec = "copy" // stream copy: no CPU transcode, starts instantly
+		vcodec = "copy"                                // stream copy: no CPU transcode, starts instantly
 		pre = append(pre, "-fflags", "+genpts+igndts") // v0.9.51 音画同步：修复 PTS 生成
 	} else {
 		hwInfo := detectHardware(ctx, hw)
@@ -2487,8 +2491,8 @@ func compatArgsScaled(ctx context.Context, p, audioTrack, hw, mode string, maxHe
 		if maxHeight > 0 {
 			post = withScaleFilter(post, vcodec, maxHeight)
 		}
-		pre = append(pre, "-fflags", "+genpts+igndts")       // v0.9.51 音画同步
-		pre = append(pre, "-async", "1")                       // v0.9.51 音画同步：结尾同步拉伸
+		pre = append(pre, "-fflags", "+genpts+igndts") // v0.9.51 音画同步
+		pre = append(pre, "-async", "1")               // v0.9.51 音画同步：结尾同步拉伸
 	}
 	mid = []string{"-map", "0:v:0"}
 	if n, err := strconv.Atoi(audioTrack); audioTrack != "" && err == nil && n >= 0 {
@@ -2529,7 +2533,7 @@ func detectFramerate(ctx context.Context, p string) (int, bool) {
 		return 0, false
 	}
 	// Round to nearest integer fps; use > 0 guard.
-	fps := int(float64(num) / float64(den) + 0.5)
+	fps := int(float64(num)/float64(den) + 0.5)
 	if fps <= 0 {
 		return 0, false
 	}

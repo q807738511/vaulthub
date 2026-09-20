@@ -1507,3 +1507,12 @@
     .comic-reader.fit-height .comic-img { max-height:calc(100vh - 160px); }
     .comic-tool { padding:5px 8px; }
   }
+
+
+/* v0.9.72: 刮削校正与长列表渲染优化 */
+.audio-scrape-correction{margin:10px 0;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:color-mix(in srgb,var(--panel) 88%,transparent)}
+.audio-scrape-correction summary{cursor:pointer;font-weight:700;margin-bottom:8px}
+.audio-field-locks{display:flex;gap:10px;flex-wrap:wrap;margin:8px 0 10px;font-size:12px}
+.audio-field-locks label{display:inline-flex;align-items:center;gap:4px}
+.media-file-row,.audio-album-card,.media-poster-card{content-visibility:auto;contain-intrinsic-size:auto 96px}
+.audio-album-card,.media-poster-card{contain-intrinsic-size:auto 280px}

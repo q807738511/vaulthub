@@ -54,7 +54,7 @@ check("T3 iTunes 端点根", 'itunesSearchBase = "https://itunes.apple.com"' in 
 check("T3 search/lookup 各自拼路径", '"/search?entity=musicArtist' in GOAUDIO and '"/lookup?id="' in GOAUDIO)
 check("T3 合作串主歌手重试", "if parts := splitAudioCollaborators(artist); len(parts) > 1" in GOAUDIO
       and "a.scrapeAudioItunes(ctx, title, parts[0])" in GOAUDIO)
-# v0.9.71：择优从「三趟梯级」升级为「打分制」——标题是硬门槛，歌手按
+# v0.9.72：择优从「三趟梯级」升级为「打分制」——标题是硬门槛，歌手按
 # 整串命中(4)/未知歌手(3)/仅合作者命中(2)/标题相等但歌手不符(1)分档；歌手名匹配
 # 统一到 audio_query.go 的 audioArtistNameMatches + audioArtistFullMatch。
 check("T3 择优按打分制（标题硬门槛 + 歌手分档）",
@@ -124,7 +124,7 @@ for fname, txt in [("README.md", README), ("Update Log.md", UPDATELOG)]:
 
 # ============ 版本号 ============
 check("版本 HTML >=2", HTML.count("v0.9.56") >= 2)
-check("版本 script 变量", 'VAULTHUB_SCRIPT_VERSION = "0.9.71"' in STATE)
+check("版本 script 变量", 'VAULTHUB_SCRIPT_VERSION = "0.9.72"' in STATE)
 check("版本 release notes 存在", (ROOT / ".github/RELEASE_NOTES_0.9.56.md").exists())
 
 if fails:
