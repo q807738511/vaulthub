@@ -14,6 +14,7 @@ const HOME_TYPE_ICON = { book: "📖", comic: "📚", movie: "🎬", series: "�
 const HOME_FILTER_GROUPS = { all: HOME_GROUPS, book: ["comic"], video: ["movie"], audio: ["audio"] };
 let homeFilter = "all";
 let homeIndexStatus = {};
+let homeScrapeStatus = {};
 
 function homeGroupOfType(type) {
   if (type === "comic" || type === "book") return "comic";
@@ -437,6 +438,19 @@ async function loadHomeIndexStatus() {
     homeIndexStatus = map;
   } catch (e) {}
 }
+async function loadHomeScrapeStatus() {
+  const audioLibs=(localMediaLibraries||[]).filter(lib=>lib.type==="audio");
+  const rows=await Promise.all(audioLibs.map(async lib=>{try{const res=await fetch(`/api/media/audio/scrape/status?id=${encodeURIComponent(lib.id)}`,{cache:"no-store"});return [lib.id,res.ok?await res.json():null];}catch(e){return [lib.id,null];}}));
+  homeScrapeStatus=Object.fromEntries(rows);
+}
+function homeScrapePill(lib) {
+  if(lib.type!=="audio") return `<span class="pill info">按需读取</span>`;
+  const st=homeScrapeStatus[lib.id]; if(!st) return `<span class="pill info">待读取</span>`;
+  const c=st.counts||{}, done=Number(st.complete||0), total=Number(st.total||0), failures=Number(c.failed||0)+Number(c.not_found||0);
+  if(failures) return `<span class="pill warn" title="失败 ${failures} · 可打开音乐库手动校正">${done}/${total} · ${failures} 待校正</span>`;
+  if(total&&done>=total) return `<span class="pill ok">${done}/${total} 已缓存</span>`;
+  return `<span class="pill info">${done}/${total} 已读取</span>`;
+}
 function homeLibStatePill(st) {
   if (!st) return `<span class="pill info">${esc(t("stateWait"))}</span>`;
   if (st.running || st.state === "scanning") {
@@ -453,7 +467,7 @@ function renderHomeLibTable() {
   if (!body) return;
   const libs = localMediaLibraries || [];
   if (!libs.length) {
-    body.innerHTML = `<tr><td colspan="6"><div class="empty-tip">${esc(t("libEmpty"))}</div></td></tr>`;
+    body.innerHTML = `<tr><td colspan="7"><div class="empty-tip">${esc(t("libEmpty"))}</div></td></tr>`;
     return;
   }
   body.innerHTML = libs.map(lib => {
@@ -466,6 +480,7 @@ function renderHomeLibTable() {
       <td class="mono">${paths.map(esc).join("<br>")}</td>
       <td>${st ? Number(st.total || 0).toLocaleString(curLang === "en" ? "en-US" : "zh-CN") : "--"}</td>
       <td>${homeLibStatePill(st)}</td>
+      <td>${homeScrapePill(lib)}</td>
       <td><div class="row-acts">
         <button class="icon-btn" title="${esc(t("actRescan"))}" onclick="rebuildOneLibrary('${esc(lib.id)}')">🔄</button>
         <button class="icon-btn" title="${esc(t("actOpenLib"))}" onclick="openHomeLibrary('${esc(group)}','${esc(lib.id)}')">↗</button>
@@ -489,7 +504,7 @@ function initLibKindCards() {
 
 /* ---------- 汇总刷新 ---------- */
 async function refreshHomeData() {
-  await loadHomeIndexStatus();
+  await Promise.all([loadHomeIndexStatus(), loadHomeScrapeStatus()]);
   renderHomeCount();
   renderHomeLibraryNav();
   renderHomeLibTable();
@@ -502,13 +517,15 @@ function initHome() {
   initLibKindCards();
   applyHomeFilter();
   refreshHomeData();
-  /* 播放状态每 5s 跟随监控刷新；索引状态每 20s 拉一次 */
-  setInterval(renderNowPlaying, 5000);
-  /* 索引状态 5 秒一次：顶栏「正在构建」提示与侧栏计数需要及时反映扫描进度。 */
+  /* v0.9.72：页面不可见时停止高频 DOM/网络刷新；可见时只在状态 JSON 真变化时重绘。 */
+  let lastHomeStatus="";
+  setInterval(() => { if(!document.hidden) renderNowPlaying(); }, 5000);
   setInterval(async () => {
-    await loadHomeIndexStatus();
-    renderHomeCount();
-    renderHomeLibraryNav();
-    renderHomeLibTable();
+    if(document.hidden) return;
+    await Promise.all([loadHomeIndexStatus(),loadHomeScrapeStatus()]);
+    const signature=JSON.stringify([homeIndexStatus,homeScrapeStatus]);
+    if(signature===lastHomeStatus) return;
+    lastHomeStatus=signature;
+    renderHomeCount(); renderHomeLibraryNav(); renderHomeLibTable();
   }, 5000);
 }

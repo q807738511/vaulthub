@@ -107,7 +107,7 @@ assert 'data-i18n="libRescanAll"' in HTML, "按钮必须绑定新文案 key"
 assert "全部重新刮削" not in HTML and "全部重新刮削" not in STATE, "不能再出现「全部重新刮削」"
 assert 't("actRescan")' in HOME, "媒体库行按钮必须用新文案"
 assert "已触发全部媒体库重新扫描" in HOME and "已触发重新扫描" in HOME, "toast 文案必须改为扫描"
-assert "扫描状态" in HTML, "表头必须是扫描状态"
+assert "索引状态" in HTML and "刮削读取" in HTML, "表头必须分开显示索引状态与真实刮削状态"
 
 # ---------------------------------------------------------------- 7. 阅读主题
 assert ".media-reader-overlay.reader-theme-light .media-reader-body" in CSS, "亮色主题正文区必须跟随主题"
@@ -115,9 +115,9 @@ assert ".media-reader-overlay.reader-theme-custom .media-reader-body" in CSS, "�
 assert "readerThemeClass()" in JS, "阅读器必须应用主题类"
 
 # ---------------------------------------------------------------- 版本与发布引用
-assert HTML.count("v0.9.71") >= 2, "关于与侧栏版本必须是 v0.9.71"
-assert 'VAULTHUB_ASSET_VERSION = "0.9.71"' in HTML, "资源版本必须是 0.9.71"
-assert 'VAULTHUB_SCRIPT_VERSION = "0.9.71"' in STATE, "脚本版本必须是 0.9.71"
+assert HTML.count("v0.9.72") >= 2, "关于与侧栏版本必须是 v0.9.72"
+assert 'VAULTHUB_ASSET_VERSION = "0.9.72"' in HTML, "资源版本必须是 0.9.72"
+assert 'VAULTHUB_SCRIPT_VERSION = "0.9.72"' in STATE, "脚本版本必须是 0.9.72"
 assert "ghcr.io/q807738511/vaulthub:latest" in COMPOSE, "v0.9.56 起 Compose 跟随 latest"
 assert (ROOT / ".github/RELEASE_NOTES_0.9.56.md").exists(), "缺少 v0.9.56 release notes"
 

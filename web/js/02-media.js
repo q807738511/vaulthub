@@ -195,6 +195,7 @@ let audioCursor = 0;
 let audioTrackTitle = "";
 let activeAudio = null;
 const audioMetadataCache = "vaulthub_audio_metadata_v1";
+let audioMetadataMemory = null; // v0.9.72: 单次载入内存 Map，避免每张卡片重复 JSON.parse
 const audioFavoritesCache = "vaulthub_audio_favorites_v1";
 let activeReader = null;
 function readAudioFavorites() { try { return JSON.parse(localStorage.getItem(audioFavoritesCache) || "[]") || []; } catch (e) { return []; } }
@@ -1094,10 +1095,13 @@ function formatFileSize(size) {
   return `${(n / 1048576).toFixed(1)} MB`;
 }
 function readAudioMetadata() {
-  try { return JSON.parse(localStorage.getItem(audioMetadataCache) || "{}") || {}; } catch (e) { return {}; }
+  if (audioMetadataMemory) return audioMetadataMemory;
+  try { audioMetadataMemory = JSON.parse(localStorage.getItem(audioMetadataCache) || "{}") || {}; } catch (e) { audioMetadataMemory = {}; }
+  return audioMetadataMemory;
 }
 function writeAudioMetadata(data) {
-  try { localStorage.setItem(audioMetadataCache, JSON.stringify(data)); }
+  audioMetadataMemory = data || {};
+  try { localStorage.setItem(audioMetadataCache, JSON.stringify(audioMetadataMemory)); }
   catch (e) {
     /* v0.9.70：写入失败此前被静默吞掉（表现为「刮削过但下次打开又没了」）。
        只提示一次；服务端 sqlite 缓存仍是权威来源，重开页面会自动回灌。 */
@@ -1170,8 +1174,8 @@ function audioBaseMetadata(path) {
   return { title: withoutTrack || stem, artist: "未知歌手", album: "未知专辑", cover: "", lyrics: "" };
 }
 
-function audioMetadataFor(path) {
-  const all = readAudioMetadata();
+function audioMetadataFor(path, cache) {
+  const all = cache || readAudioMetadata();
   return { ...audioBaseMetadata(path), ...(all[path] || {}) };
 }
 
@@ -1296,10 +1300,16 @@ async function scrapeAudioMetadataInner(host, lib, files) {
       const item = response.ok ? await response.json() : null;
       if (item) {
         /* v0.9.67：成功结果写入服务端缓存，供下次直接读取（不重复联网）。 */
-        saveAudioServerCache(lib.id, path, {
-          title: item.title, artist: item.artist, album: item.album,
-          cover: item.cover, provider: item.provider || "MusicBrainz"
-        });
+        /* v0.9.72：先把封面落到源目录，再统一提交元数据与真实状态；
+           服务端 sidecar + SQLite 都成功才算 persisted。 */
+        let localizedCover = item.cover || "";
+        if (localizedCover) localizedCover = await persistCoverToLibrary(lib.id, path, localizedCover);
+        const committed = await commitAudioMetadata({ id:lib.id, path,
+          title:item.title||fallback.title, artist:item.artist||fallback.artist, album:item.album||fallback.album,
+          cover:localizedCover, provider:item.provider||"MusicBrainz", status:"succeeded", source:item.provider||"auto",
+          query_title:fallback.title, query_artist:known?fallback.artist:"", country:"AUTO" });
+        item.cover = localizedCover;
+        item.persisted = !!committed.persisted;
         /* v0.9.56：单路径合并写，不再基于旧快照整表覆写 —— 音乐库视图与首页「最近入库」
            可能并发触发多次刮削，整表写会把另一路刚本地化的封面冲回远端。 */
         const cur = readAudioMetadata();
@@ -1310,14 +1320,19 @@ async function scrapeAudioMetadataInner(host, lib, files) {
           album: item.album || fallback.album,
           cover: item.cover || fallback.cover || "",
           provider: item.provider || "MusicBrainz",
+          persisted: !!item.persisted,
           checkedAt: Date.now(),
         };
         writeAudioMetadata(cur);
         // 封面写入媒体库持久化（每路径独立合并写，落盘失败自动回退远端直链）
         await localizeAudioCover(lib.id, path);
         updated = true;
+      } else {
+        await commitAudioMetadata({id:lib.id,path,title:fallback.title,artist:fallback.artist,album:fallback.album,status:"not_found",error_code:"no_reliable_match",source:"auto",query_title:fallback.title,query_artist:known?fallback.artist:"",country:"AUTO"});
       }
-    } catch (e) { /* Keep filename-derived metadata when scraping is unavailable. */ }
+    } catch (e) {
+      try { await commitAudioMetadata({id:lib.id,path,title:fallback.title,artist:fallback.artist,album:fallback.album,status:"failed",error_code:"scrape_unavailable",source:"auto",query_title:fallback.title,query_artist:known?fallback.artist:"",country:"AUTO"}); } catch (_) {}
+    }
     audioScrapeAttemptedSession.add(path); // 无论成败，本会话内不再重复请求该曲
   }
   if (updated && host && lib) renderAudioLibraryContent(host, lib, files);
@@ -1503,10 +1518,59 @@ function renderAudioLibraryContent(host, lib, files) {
 function renderAudioLatestCard(lib, file) { const path=String(file.path), meta=audioMetadataFor(path); return `<article class="audio-latest-card" onclick="playAudioFile(${jsAttrArg(lib.id)},${jsAttrArg(path)})"><div class="audio-latest-cover" style="background:${coverGradient(meta.title)}">${audioCoverData(meta, meta.title)}</div><div><strong>${esc(meta.title)}</strong><small>${esc(meta.artist)}</small></div><button class="btn" title="喜欢" onclick="event.stopPropagation();toggleAudioFavorite(${jsAttrArg(lib.id)},${jsAttrArg(path)})">${isAudioFavorite(lib.id,path)?"♥":"♡"}</button></article>`; }
 function renderAudioLibrary(lib, files) { const host = document.createElement("div"); renderAudioLibraryContent(host, lib, files); return host.innerHTML; }
 function renderAudioRow(lib, file) { const path = String(file.path), meta = audioMetadataFor(path); return `<div class="media-file-row audio-row-click" data-audio-path="${esc(path)}" onclick="playAudioFile(${jsAttrArg(lib.id)},${jsAttrArg(path)})"><div class="media-file-name" title="${esc(path)}"><b>${esc(meta.title)}</b><small>${esc(meta.artist)} · ${esc(meta.album)}</small></div><span class="media-file-meta">${esc(fileExt(path).toUpperCase())}</span><div class="media-actions"><button class="btn" title="播放" onclick="event.stopPropagation();playAudioFile(${jsAttrArg(lib.id)},${jsAttrArg(path)})">▶</button><button class="btn" title="喜欢" onclick="event.stopPropagation();toggleAudioFavorite(${jsAttrArg(lib.id)},${jsAttrArg(path)})">${isAudioFavorite(lib.id, path) ? "♥" : "♡"}</button><button class="btn" title="加入歌单" onclick="event.stopPropagation();openAudioPlaylistPicker(${jsAttrArg(lib.id)},${jsAttrArg(path)})">♫</button><button class="btn" title="编辑歌曲信息" onclick="event.stopPropagation();openAudioMetadata(${jsAttrArg(path)})">✎</button></div></div>`; }
-function refreshAudioMetadata() { try { localStorage.removeItem(audioMetadataCache); } catch (e) {} audioScrapeAttemptedSession.clear(); const lib = findMediaLibrary(localMediaSelection.audio); if (lib) loadLocalFiles("audio", lib, 0); toast("🔄 正在重新刮削音乐信息"); }
-function openAudioMetadata(path) { const meta = audioMetadataFor(path); document.getElementById("audioMetadataPath").value=path; document.getElementById("audioMetadataTitle").value=meta.title; document.getElementById("audioMetadataArtist").value=meta.artist; document.getElementById("audioMetadataAlbum").value=meta.album; document.getElementById("audioMetadataCover").value=meta.cover; document.getElementById("audioMetadataLyrics").value=meta.lyrics; openModal("audioMetadataModal"); }
+function refreshAudioMetadata() { audioMetadataMemory=null; try { localStorage.removeItem(audioMetadataCache); } catch (e) {} audioScrapeAttemptedSession.clear(); const lib = findMediaLibrary(localMediaSelection.audio); if (lib) loadLocalFiles("audio", lib, 0); toast("🔄 正在重新刮削音乐信息"); }
+function openAudioMetadata(path) {
+  const meta = audioMetadataFor(path);
+  const value = (id, v) => { const el=document.getElementById(id); if(el) el.value=v||""; };
+  value("audioMetadataPath", path); value("audioMetadataTitle", meta.title); value("audioMetadataArtist", meta.artist);
+  value("audioMetadataAlbum", meta.album); value("audioMetadataCover", meta.cover); value("audioMetadataLyrics", meta.lyrics);
+  value("audioMetadataQueryTitle", meta.query_title); value("audioMetadataQueryArtist", meta.query_artist);
+  value("audioMetadataCountry", meta.country||"AUTO"); value("audioMetadataSource", meta.source||"auto");
+  for (const [id,key] of [["audioLockTitle","lock_title"],["audioLockArtist","lock_artist"],["audioLockAlbum","lock_album"],["audioLockCover","lock_cover"],["audioLockLyrics","lock_lyrics"]]) {
+    const el=document.getElementById(id); if(el) el.checked=!!meta[key];
+  }
+  const hint=document.getElementById("audioMetadataPersistHint"); if(hint) hint.textContent=meta.persisted===false?"⚠ 上次仅缓存到服务器，源目录不可写":"保存后会同时缓存到服务器和音频源目录";
+  openModal("audioMetadataModal");
+}
 function manualAudioMetadata(path) { openAudioMetadata(path); }
-function saveManualAudioMetadata() { const path=document.getElementById("audioMetadataPath").value, all=readAudioMetadata(); all[path]={title:document.getElementById("audioMetadataTitle").value.trim()||audioBaseMetadata(path).title,artist:document.getElementById("audioMetadataArtist").value.trim()||"未知歌手",album:document.getElementById("audioMetadataAlbum").value.trim()||"未知专辑",cover:document.getElementById("audioMetadataCover").value.trim(),lyrics:document.getElementById("audioMetadataLyrics").value,provider:"manual",checkedAt:Date.now()}; writeAudioMetadata(all); closeModal("audioMetadataModal"); const lib=findMediaLibrary(localMediaSelection.audio); if(lib) loadLocalFiles("audio",lib,audioCursor); if(lib) localizeAudioCover(lib.id, path); syncActiveAudioCover(path); }
+function audioEditorPayload(status="manual") {
+  const path=document.getElementById("audioMetadataPath").value, base=audioBaseMetadata(path);
+  return { id:String(localMediaSelection.audio||""), path,
+    title:document.getElementById("audioMetadataTitle").value.trim()||base.title,
+    artist:document.getElementById("audioMetadataArtist").value.trim()||"未知歌手",
+    album:document.getElementById("audioMetadataAlbum").value.trim()||"未知专辑",
+    cover:document.getElementById("audioMetadataCover").value.trim(), lyrics:document.getElementById("audioMetadataLyrics").value,
+    provider:status==="manual"?"manual":"", status, source:document.getElementById("audioMetadataSource").value||"auto",
+    query_title:document.getElementById("audioMetadataQueryTitle").value.trim(), query_artist:document.getElementById("audioMetadataQueryArtist").value.trim(), country:document.getElementById("audioMetadataCountry").value||"AUTO",
+    lock_title:document.getElementById("audioLockTitle").checked, lock_artist:document.getElementById("audioLockArtist").checked,
+    lock_album:document.getElementById("audioLockAlbum").checked, lock_cover:document.getElementById("audioLockCover").checked, lock_lyrics:document.getElementById("audioLockLyrics").checked };
+}
+async function commitAudioMetadata(payload) {
+  const res=await fetch("/api/media/audio/metadata/commit",{method:"POST",headers:sessionWriteHeaders(true),credentials:"same-origin",body:JSON.stringify(payload)});
+  const data=await res.json(); if(!res.ok) throw new Error(data.error||`HTTP ${res.status}`); return data;
+}
+async function saveManualAudioMetadata() {
+  const payload=audioEditorPayload("manual"), all=readAudioMetadata();
+  try {
+    const saved=await commitAudioMetadata(payload); all[payload.path]={...payload,provider:"manual",checkedAt:Date.now(),persisted:!!saved.persisted}; writeAudioMetadata(all);
+    if(payload.cover) await localizeAudioCover(payload.id,payload.path); syncActiveAudioCover(payload.path); closeModal("audioMetadataModal");
+    toast(saved.persisted?"✅ 已保存并写入音频源目录":"⚠️ 已保存到服务器缓存，但音频源目录不可写");
+    const lib=findMediaLibrary(payload.id); if(lib) loadLocalFiles("audio",lib,audioCursor);
+  } catch(e) { toast("⚠️ 保存失败："+e.message); }
+}
+async function rescrapeAudioFromEditor() {
+  const payload=audioEditorPayload("running"), queryTitle=payload.query_title||payload.title, queryArtist=payload.query_artist||payload.artist;
+  const hint=document.getElementById("audioMetadataPersistHint"); if(hint) hint.textContent="正在使用校正参数刮削…";
+  try {
+    const qs=new URLSearchParams({title:queryTitle,artist:queryArtist,country:payload.country,source:payload.source});
+    const res=await fetch("/api/media/audio/metadata?"+qs,{cache:"no-store"}); const item=await res.json(); if(!res.ok) throw new Error(item.error||`HTTP ${res.status}`);
+    if(!payload.lock_title) document.getElementById("audioMetadataTitle").value=item.title||payload.title;
+    if(!payload.lock_artist) document.getElementById("audioMetadataArtist").value=item.artist||payload.artist;
+    if(!payload.lock_album) document.getElementById("audioMetadataAlbum").value=item.album||payload.album;
+    if(!payload.lock_cover) document.getElementById("audioMetadataCover").value=item.cover||payload.cover;
+    if(hint) hint.textContent=`候选已命中：${item.provider||"未知来源"}，确认后点“保存适配”`;
+  } catch(e) { if(hint) hint.textContent="未找到可靠候选："+e.message; }
+}
 let audioLoopMode = "sequence";
 let audioExpandPage = "poster"; // 展开播放器当前页：poster | lyrics（v0.9.56）
 let lastLyricActiveIndex = -1;  // 歌词高亮切换检测（避免重复滚动）

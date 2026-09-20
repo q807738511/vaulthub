@@ -217,7 +217,7 @@ func (a *App) lrclibSearchRaw(ctx context.Context, params url.Values) ([]lrclibR
 			cancel()
 			return nil, false
 		}
-		req.Header.Set("User-Agent", "VaultHub/0.9.71 (+https://github.com/q807738511/vaulthub)")
+		req.Header.Set("User-Agent", "VaultHub/0.9.72 (+https://github.com/q807738511/vaulthub)")
 		res, err := client.Do(req)
 		if err != nil {
 			cancel()

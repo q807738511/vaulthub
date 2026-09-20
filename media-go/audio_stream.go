@@ -80,8 +80,11 @@ func (a *App) audioStreamCacheDir() string {
 	return filepath.Join(base, audioStreamCacheDirName)
 }
 
-/* pruneAudioStreamCache 按「总量超限就删最旧」清理音频转码缓存。
-   独立于页面缓存配额，避免弱网听歌把漫画页缓存挤掉。 */
+/*
+pruneAudioStreamCache 按「总量超限就删最旧」清理音频转码缓存。
+
+	独立于页面缓存配额，避免弱网听歌把漫画页缓存挤掉。
+*/
 func (a *App) pruneAudioStreamCache(maxBytes int64) {
 	dir := a.audioStreamCacheDir()
 	entries, err := os.ReadDir(dir)
@@ -218,8 +221,11 @@ func (a *App) audioStream(w http.ResponseWriter, r *http.Request) {
 	a.serveAudioStreamFile(w, r, cachePath, info, bitrate, "miss")
 }
 
-/* beginAudioJob 登记一次「同键转码」：leader=true 表示由本请求真正执行 ffmpeg；
-   leader=false 时返回的 job 会在 leader 完成后关闭 done。 */
+/*
+beginAudioJob 登记一次「同键转码」：leader=true 表示由本请求真正执行 ffmpeg；
+
+	leader=false 时返回的 job 会在 leader 完成后关闭 done。
+*/
 func (a *App) beginAudioJob(key string) (*audioJob, bool) {
 	a.audioJobsMu.Lock()
 	defer a.audioJobsMu.Unlock()
@@ -267,8 +273,11 @@ func (a *App) serveAudioStreamFile(w http.ResponseWriter, r *http.Request, path 
 	http.ServeContent(w, r, filepath.Base(path), info.ModTime(), f)
 }
 
-/* transcodeAudioToMP3 用 ffmpeg 转成固定码率 MP3，先写临时文件再原子改名，
-   避免并发读到一个半截文件（同名并发由页面缓存同款的「临时文件唯一化 + publish 后改名」处理）。 */
+/*
+transcodeAudioToMP3 用 ffmpeg 转成固定码率 MP3，先写临时文件再原子改名，
+
+	避免并发读到一个半截文件（同名并发由页面缓存同款的「临时文件唯一化 + publish 后改名」处理）。
+*/
 func (a *App) transcodeAudioToMP3(ctx context.Context, src, dst string, bitrate int) error {
 	if info, err := os.Stat(src); err != nil {
 		return err
@@ -290,8 +299,14 @@ func (a *App) transcodeAudioToMP3(ctx context.Context, src, dst string, bitrate 
 		"-f", "mp3",
 		"-y", tmpPath,
 	}
-	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
-	var stderr strings.Builder
+	ffmpegPath, err := trustedFFmpegPath()
+	if err != nil {
+		return fmt.Errorf("ffmpeg unavailable: %w", err)
+	}
+	cmd := exec.CommandContext(ctx, ffmpegPath, args...)
+	/* 最小环境 + 有界 stderr：防 PATH 劫持和恶意媒体错误输出撑爆内存。 */
+	cmd.Env = []string{"PATH=" + filepath.Dir(ffmpegPath), "LANG=C", "LC_ALL=C"}
+	var stderr boundedErrorBuffer
 	cmd.Stderr = &stderr
 	if err := tmp.Close(); err != nil {
 		return err
@@ -354,9 +369,6 @@ func (a *App) weakProbe(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 	w.Header().Set("X-Vaulthub-Probe-Bytes", strconv.Itoa(size))
 	w.Header().Set("Content-Length", strconv.Itoa(len(payload)))
-	if r.Method == http.MethodHead {
-		return
-	}
 	_, _ = w.Write(payload)
 }
 

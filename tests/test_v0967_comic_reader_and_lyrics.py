@@ -19,6 +19,7 @@ GO_PROGRESS = (ROOT / "media-go/reading_progress.go").read_text(encoding="utf-8"
 GO_LYRICS = (ROOT / "media-go/audio_lyrics.go").read_text(encoding="utf-8")
 GO_LOCAL = (ROOT / "media-go/audio_lyrics_local.go").read_text(encoding="utf-8")
 GO_ACACHE = (ROOT / "media-go/audio_cache.go").read_text(encoding="utf-8")
+GO_APERSIST = (ROOT / "media-go/audio_persist.go").read_text(encoding="utf-8")
 GO_NETEASE = (ROOT / "media-go/audio_metadata_netease.go").read_text(encoding="utf-8")
 
 checks = {
@@ -124,7 +125,9 @@ checks = {
 
     # ============ G. 音乐：服务端元数据缓存 ============
     "sqlite缓存表": "ensureAudioCacheTable" in GO_ACACHE and "CREATE TABLE IF NOT EXISTS audio_metadata" in GO_ACACHE,
-    "size+mtime失效": "f.size = m.size AND f.mtime = m.mtime" in GO_ACACHE,
+    # v0.9.72 起新鲜度改为直接比对磁盘真实 size/mtime（索引表可能落后于磁盘），
+    # 判定原意不变：文件变化后旧缓存必须失效。
+    "size+mtime失效": "audioFileUnchanged(l, e.Path, size, mtime)" in GO_ACACHE and "fi.Size() == size && fi.ModTime().Unix() == mtime" in GO_APERSIST,
     "缓存路由": '"/api/media/audio/cache"' in GO_MAIN and '"/api/media/audio/cache/stats"' in GO_MAIN,
     "歌词长度上限": "audioCacheLyricsLimit" in GO_ACACHE,
 
@@ -134,16 +137,16 @@ checks = {
     "来源标记": "function audioLyricsSourceLabel(" in MEDIA and "LRCLIB" in MEDIA,
     "批量刮削入口": "async function scrapeAllAudioLyrics(" in MEDIA and "scrapeAllAudioLyrics()" in HTML,
     "服务端缓存优先": "async function loadAudioServerCache(" in MEDIA
-        and "saveAudioServerCache(lib.id, path" in MEDIA,
+        and "commitAudioMetadata({ id:lib.id, path" in MEDIA,
     "弹窗按钮": "scrapeLyricsForOpenEditor()" in HTML and "scrapeAllAudioLyrics()" in HTML,
 
     # ============ I. 版本与发布物 ============
-    "HTML版本": 'VAULTHUB_ASSET_VERSION = "0.9.71"' in HTML and HTML.count("?v=0.9.71") >= 7,
-    "脚本版本": 'VAULTHUB_SCRIPT_VERSION = "0.9.71"' in STATE,
-    "UI角标": "v0.9.71 · 刮削与弱网" in HTML,
+    "HTML版本": 'VAULTHUB_ASSET_VERSION = "0.9.72"' in HTML and HTML.count("?v=0.9.72") >= 7,
+    "脚本版本": 'VAULTHUB_SCRIPT_VERSION = "0.9.72"' in STATE,
+    "UI角标": "v0.9.72 · 刮削状态与性能" in HTML,
     "发布说明": "VaultHub 蜀鼠之家 v0.9.67" in NOTES and "漫画阅读器" in NOTES  # 读的是本版（v0.9.67）历史说明
         and "歌词" in NOTES and "不新增任何容器" in NOTES,
-    "更新日志段": "# VaultHub 蜀鼠之家 v0.9.71" in LOG,
+    "更新日志段": "# VaultHub 蜀鼠之家 v0.9.72" in LOG,
     "历史说明未改": (ROOT / ".github/RELEASE_NOTES_0.9.66.md").read_text(encoding="utf-8").startswith(
         "# VaultHub 蜀鼠之家 v0.9.66"),
 }

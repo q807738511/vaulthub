@@ -26,6 +26,19 @@ import (
 
 const audioCacheLyricsLimit = 64 * 1024
 
+// audioCacheScanCap 允许为跳过「磁盘已变化」的过期行多扫一批，
+// 但仍有硬上限，避免整库过期时一次请求扫全表。
+func audioCacheScanCap(limit int) int {
+	n := limit * 2
+	if n < 64 {
+		n = 64
+	}
+	if n > 100000 {
+		n = 100000
+	}
+	return n
+}
+
 func (a *App) ensureAudioCacheTable() error {
 	if a.db == nil {
 		return os.ErrInvalid
@@ -43,9 +56,41 @@ func (a *App) ensureAudioCacheTable() error {
   lyrics_source TEXT,
   provider      TEXT,
   checked_at    INTEGER NOT NULL,
+  status        TEXT NOT NULL DEFAULT '',
+  error_code    TEXT NOT NULL DEFAULT '',
+  query_title   TEXT NOT NULL DEFAULT '',
+  query_artist  TEXT NOT NULL DEFAULT '',
+  country       TEXT NOT NULL DEFAULT 'AUTO',
+  source        TEXT NOT NULL DEFAULT 'auto',
+  lock_title    INTEGER NOT NULL DEFAULT 0,
+  lock_artist   INTEGER NOT NULL DEFAULT 0,
+  lock_album    INTEGER NOT NULL DEFAULT 0,
+  lock_cover    INTEGER NOT NULL DEFAULT 0,
+  lock_lyrics   INTEGER NOT NULL DEFAULT 0,
+  persisted     INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY(lib, path)
 );`)
-	return err
+	if err != nil {
+		return err
+	}
+	/* 旧库在线迁移：SQLite 不支持 ADD COLUMN IF NOT EXISTS，重复列错误可忽略。 */
+	for _, ddl := range []string{
+		`ALTER TABLE audio_metadata ADD COLUMN status TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE audio_metadata ADD COLUMN error_code TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE audio_metadata ADD COLUMN query_title TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE audio_metadata ADD COLUMN query_artist TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE audio_metadata ADD COLUMN country TEXT NOT NULL DEFAULT 'AUTO'`,
+		`ALTER TABLE audio_metadata ADD COLUMN source TEXT NOT NULL DEFAULT 'auto'`,
+		`ALTER TABLE audio_metadata ADD COLUMN lock_title INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE audio_metadata ADD COLUMN lock_artist INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE audio_metadata ADD COLUMN lock_album INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE audio_metadata ADD COLUMN lock_cover INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE audio_metadata ADD COLUMN lock_lyrics INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE audio_metadata ADD COLUMN persisted INTEGER NOT NULL DEFAULT 0`,
+	} {
+		_, _ = a.db.Exec(ddl)
+	}
+	return nil
 }
 
 type audioCacheEntry struct {
@@ -58,6 +103,18 @@ type audioCacheEntry struct {
 	LyricsSource string `json:"lyrics_source,omitempty"`
 	Provider     string `json:"provider,omitempty"`
 	CheckedAt    int64  `json:"checked_at,omitempty"`
+	Status       string `json:"status,omitempty"`
+	ErrorCode    string `json:"error_code,omitempty"`
+	QueryTitle   string `json:"query_title,omitempty"`
+	QueryArtist  string `json:"query_artist,omitempty"`
+	Country      string `json:"country,omitempty"`
+	Source       string `json:"source,omitempty"`
+	LockTitle    bool   `json:"lock_title,omitempty"`
+	LockArtist   bool   `json:"lock_artist,omitempty"`
+	LockAlbum    bool   `json:"lock_album,omitempty"`
+	LockCover    bool   `json:"lock_cover,omitempty"`
+	LockLyrics   bool   `json:"lock_lyrics,omitempty"`
+	Persisted    bool   `json:"persisted"`
 }
 
 func (a *App) audioCache(w http.ResponseWriter, r *http.Request) {
@@ -85,14 +142,20 @@ func (a *App) audioCache(w http.ResponseWriter, r *http.Request) {
 				limit = n
 			}
 		}
-		/* LEFT JOIN：仍在索引里且 size/mtime 一致的条目才算新鲜；
-		   索引里查不到的（如刚加入还没扫描完）也返回，交由前端决定是否重刮。 */
+		/* v0.9.72：新鲜度以磁盘真实 size/mtime 为准（索引表可能落后于磁盘），
+		   索引里查不到的（如刚加入还没扫描完）仍返回，交由前端决定是否重刮。
+		   NULL 列统一 coalesce 成空串/0：否则 Scan 失败会被静默丢弃，
+		   表现为「缓存里明明有记录却读不到」。 */
 		rows, err := a.db.Query(`
-SELECT m.path, m.title, m.artist, m.album, m.cover, m.lyrics, m.lyrics_source, m.provider, m.checked_at
+SELECT m.path, coalesce(m.title,''), coalesce(m.artist,''), coalesce(m.album,''), coalesce(m.cover,''),
+       coalesce(m.lyrics,''), coalesce(m.lyrics_source,''), coalesce(m.provider,''), m.checked_at,
+       m.status, m.error_code, m.query_title, m.query_artist, m.country, m.source,
+       m.lock_title, m.lock_artist, m.lock_album, m.lock_cover, m.lock_lyrics, m.persisted,
+       m.size, m.mtime
 FROM audio_metadata m
 LEFT JOIN files f ON f.lib = m.lib AND f.path = m.path
-WHERE m.lib = ? AND (f.size IS NULL OR (f.size = m.size AND f.mtime = m.mtime))
-ORDER BY m.path LIMIT ?`, l.ID, limit+1)
+WHERE m.lib = ?
+ORDER BY m.path LIMIT ?`, l.ID, audioCacheScanCap(limit))
 		if err != nil {
 			errJSON(w, 500, "audio cache read failed")
 			return
@@ -101,20 +164,34 @@ ORDER BY m.path LIMIT ?`, l.ID, limit+1)
 		truncated := false
 		items := map[string]audioCacheEntry{}
 		scanned := 0
+		scanErrs := 0
 		for rows.Next() {
 			var e audioCacheEntry
-			if err := rows.Scan(&e.Path, &e.Title, &e.Artist, &e.Album, &e.Cover, &e.Lyrics, &e.LyricsSource, &e.Provider, &e.CheckedAt); err != nil {
+			var size, mtime int64
+			if err := rows.Scan(&e.Path, &e.Title, &e.Artist, &e.Album, &e.Cover, &e.Lyrics, &e.LyricsSource, &e.Provider, &e.CheckedAt,
+				&e.Status, &e.ErrorCode, &e.QueryTitle, &e.QueryArtist, &e.Country, &e.Source,
+				&e.LockTitle, &e.LockArtist, &e.LockAlbum, &e.LockCover, &e.LockLyrics, &e.Persisted,
+				&size, &mtime); err != nil {
+				scanErrs++
 				continue
 			}
-			if scanned >= limit {
-				/* 多取的那一行只用于判定截断，不入响应。 */
+			if scanned >= audioCacheScanCap(limit) {
+				/* 扫描上限内的行都用完了，剩余条目本次不返回。 */
+				truncated = true
+				break
+			}
+			scanned++
+			/* 磁盘上已变化/已消失的条目视为过期，不返回，前端会按未命中重新刮削。 */
+			if !a.audioFileUnchanged(l, e.Path, size, mtime) {
+				continue
+			}
+			if len(items) >= limit {
 				truncated = true
 				break
 			}
 			items[e.Path] = e
-			scanned++
 		}
-		writeJSON(w, 200, map[string]any{"id": l.ID, "items": items, "count": len(items), "truncated": truncated, "limit": limit})
+		writeJSON(w, 200, map[string]any{"id": l.ID, "items": items, "count": len(items), "truncated": truncated, "limit": limit, "scan_errors": scanErrs})
 	case http.MethodPut, http.MethodPost:
 		if !writeAuth(r) {
 			errJSON(w, 401, "login required")
@@ -138,15 +215,21 @@ ORDER BY m.path LIMIT ?`, l.ID, limit+1)
 			errJSON(w, 404, "file not found")
 			return
 		}
-		_, err = a.db.Exec(`INSERT OR REPLACE INTO audio_metadata
+		/* 兼容旧写入口，但不得用 REPLACE 清空 v0.9.72 新增的查询参数、字段锁和真实状态。 */
+		_, err = a.db.Exec(`INSERT INTO audio_metadata
 (lib, path, size, mtime, title, artist, album, cover, lyrics, lyrics_source, provider, checked_at)
-VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
+VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+ON CONFLICT(lib,path) DO UPDATE SET
+size=excluded.size, mtime=excluded.mtime, title=excluded.title, artist=excluded.artist,
+album=excluded.album, cover=excluded.cover, lyrics=excluded.lyrics,
+lyrics_source=excluded.lyrics_source, provider=excluded.provider, checked_at=excluded.checked_at`,
 			l.ID, in.Path, fi.Size(), fi.ModTime().Unix(),
 			in.Title, in.Artist, in.Album, in.Cover, in.Lyrics, in.LyricsSource, in.Provider, time.Now().Unix())
 		if err != nil {
 			errJSON(w, 500, "audio cache write failed")
 			return
 		}
+		invalidateAudioScrapeStatus(l.ID)
 		writeJSON(w, 200, map[string]any{"ok": true, "path": in.Path, "stored": true})
 	case http.MethodDelete:
 		if !writeAuth(r) {
@@ -162,6 +245,7 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
 			errJSON(w, 400, "path or all=1 required")
 			return
 		}
+		invalidateAudioScrapeStatus(l.ID)
 		writeJSON(w, 200, map[string]any{"ok": true})
 	default:
 		errJSON(w, 405, "method not allowed")
@@ -183,11 +267,11 @@ func (a *App) audioCacheStats(w http.ResponseWriter, r *http.Request) {
 	_ = a.db.QueryRow(`SELECT count(*), coalesce(sum(length(coalesce(lyrics,''))),0) FROM audio_metadata`).Scan(&rows, &bytes)
 	_ = a.db.QueryRow(`SELECT count(*) FROM audio_metadata WHERE coalesce(lyrics,'') <> ''`).Scan(&withLyrics)
 	writeJSON(w, 200, map[string]any{
-		"available":   true,
-		"entries":     rows,
-		"with_lyrics": withLyrics,
-		"lyrics_bytes": bytes,
-		"netease":     a.neteaseLyricsEnabled(),
+		"available":      true,
+		"entries":        rows,
+		"with_lyrics":    withLyrics,
+		"lyrics_bytes":   bytes,
+		"netease":        a.neteaseLyricsEnabled(),
 		"lyrics_sources": []string{"local-lrc", "local-id3", "local-vorbis", "local-mp4", "LRCLIB", "lyrics.ovh", "NetEase"},
 	})
 }
