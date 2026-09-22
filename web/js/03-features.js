@@ -16,8 +16,12 @@ function closeLocalViewer(group) {
   /* v0.9.30：关闭前把待写的阅读进度立刻落盘，避免 800ms 合并窗口内关闭丢进度。 */
   if (typeof flushReadingProgressNow === "function") flushReadingProgressNow();
   if (group === "comic") {
-    setComicShelfView("shelf");
-    if (prior && readingState(prior.libId, prior.path).progress >= COMPLETED_PROGRESS) toast("📚 已读文档已移入收藏");
+    /* v0.9.73：关闭阅读器不再强制跳回「未读」视图。
+       用户常从「历史阅读」点开一本书，关掉就被踢回未读列表 —— 看起来正像
+       这本书被「释放」出了收藏（用户报告的「已读收藏释放依旧故障」）。
+       现在保持原视图并只重渲染当前视图，条目变化即时可见。 */
+    setComicShelfView(comicShelfView);
+    if (prior && readingState(prior.libId, prior.path).progress >= COMPLETED_PROGRESS) toast("📚 已读文档已移入历史阅读");
   }
 }
 /* v0.7.0：媒体库的增删改全部集中到「系统设置 → 媒体库」，不再有独立弹窗。
@@ -844,9 +848,28 @@ function closeModal(id) {
 document.querySelectorAll(".modal-mask").forEach(m => m.addEventListener("click", e => { if (e.target === m && m.id !== "forcedPasswordModal") closeModal(m.id); }));
 
 let toastTimer;
+/* v0.9.73：提示条与底部播放器/最小化视频条抢同一块屏幕区域。
+   播放器 z-index 更高且是整条不透明面板，所以旧写法下播放音乐时点
+   「播放模式」等按钮，提示虽然弹了却被盖住（用户报告的“提示被覆盖”）。
+   这里按底部浮层的实际位置算出上移量，写进 --toast-lift 让提示条浮到它上面。 */
+function toastBottomLift() {
+  let lift = 0;
+  const candidates = [document.getElementById("audio-bottom-player"), document.querySelector(".media-reader-overlay.video-controller-docked")];
+  for (const el of candidates) {
+    if (!el) continue;
+    const styles = window.getComputedStyle(el);
+    if (styles.display === "none" || styles.visibility === "hidden") continue;
+    const rect = el.getBoundingClientRect();
+    if (!rect.height) continue;
+    /* 只处理真正贴在底部的浮层（顶边落在视口下缘 160px 内）。 */
+    if (window.innerHeight - rect.top <= 160) lift = Math.max(lift, window.innerHeight - rect.top + 12);
+  }
+  return lift;
+}
 function toast(msg) {
   const el = document.getElementById("toast");
   el.textContent = msg;
+  el.style.setProperty("--toast-lift", Math.round(toastBottomLift()) + "px");
   el.classList.add("show");
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove("show"), 2400);
@@ -855,6 +878,9 @@ function toast(msg) {
 function setLang(l) {
   curLang = l;
   applyI18n();
+  /* v0.9.73：主题面板里的调色板/明暗/强调色文案由 06-theme.js 动态生成，
+     applyI18n 只覆盖带 data-i18n 的静态节点，所以这里要显式重渲染。 */
+  if (typeof renderThemePanel === "function") renderThemePanel();
   renderBoardList();
   renderCustomNav();
   /* 首页与媒体库表单里的动态文案（库名列、子类型 option、海报占位、

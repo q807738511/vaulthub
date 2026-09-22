@@ -203,11 +203,14 @@ assert "if (epoch !== vaultHubAuthEpoch) return vaultHubAuthenticated;" in state
 assert state.count("vaultHubAuthEpoch++") >= 2, "login and logout must both advance the epoch"
 # Scrolling the reader into view must not be able to masquerade as a read failure.
 assert "function scrollViewerIntoView(" in media, "reader scroll must be isolated"
-# The only scrollIntoView call site is inside the helper's guarded line
-# (`typeof ... === "function"` + the call itself, hence two textual hits on one line).
+# Every scrollIntoView call site must be typeof-guarded, so a missing method can never
+# be mistaken for a read failure. v0.9.73：播放列表面板新增「当前曲目滚入可视区」调用，
+# 它同样带 typeof 守卫；旧断言写死「全文件只有一处调用」，与本版新增的合法调用冲突，
+# 因此规则改为「每一处调用都必须守卫」，并保留阅读器助手必须独立成函数这条。
 scroll_lines = [l for l in media.splitlines() if "scrollIntoView" in l]
-assert len(scroll_lines) == 1 and "typeof overlay.scrollIntoView" in scroll_lines[0], \
-    f"scrollIntoView must only be called from the guarded helper, found: {scroll_lines}"
+assert scroll_lines and all("typeof" in l and '"function"' in l for l in scroll_lines), \
+    f"every scrollIntoView call must be typeof-guarded, found: {scroll_lines}"
+assert "function scrollViewerIntoView(" in media, "reader scroll must stay isolated"
 reader = media[media.index('if (ext === "txt")'):]
 reader = reader[:reader.index("} else {")]
 assert reader.index("文本读取失败") < reader.index("scrollViewerIntoView(viewer)"), \

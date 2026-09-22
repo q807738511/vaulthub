@@ -87,10 +87,18 @@ func (a *App) saveReadingProgressStore(all map[string]readingProgressEntry) erro
 	return dir.Sync()
 }
 
-// readingProgress serves GET (whole library) and PUT (one media path).
+// readingProgress serves GET (whole library), PUT (one media path) and
+// DELETE (release one media path from the reading history).
 //
-// GET  /api/media/reading/progress?id=<lib>
-// PUT  /api/media/reading/progress?id=<lib>&path=<rel>   {"progress": 42.5}
+// GET    /api/media/reading/progress?id=<lib>
+// PUT    /api/media/reading/progress?id=<lib>&path=<rel>   {"progress": 42.5}
+// DELETE /api/media/reading/progress?id=<lib>&path=<rel>
+//
+// v0.9.73: before this, a finished book could never leave 「历史阅读」 — the store
+// only ever gained entries, so the shelf kept counting it as read even after the
+// user asked to release it. DELETE removes the entry outright (rather than
+// writing progress 0, which would leave a zero-progress row behind and made the
+// release look like it had not happened).
 func (a *App) readingProgress(w http.ResponseWriter, r *http.Request) {
 	if !writeAuth(r) {
 		errJSON(w, 401, "login required")
@@ -159,6 +167,33 @@ func (a *App) readingProgress(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, 200, in)
+	case http.MethodDelete:
+		/* v0.9.73：「释放」= 从阅读历史里真正删除该条目（用户诉求：已读收藏可释放）。
+		   路径校验沿用与 PUT 相同的包含性检查，避免用 id+path 组合删掉别的键。 */
+		mediaPath := r.URL.Query().Get("path")
+		if _, _, err := safeFile(lib, mediaPath); err != nil {
+			errJSON(w, 404, "invalid media path")
+			return
+		}
+		a.configMu.Lock()
+		defer a.configMu.Unlock()
+		all, err := a.loadReadingProgress()
+		if err != nil {
+			errJSON(w, 500, "reading progress store is invalid")
+			return
+		}
+		key := overrideKey(lib.ID, mediaPath)
+		if _, exists := all[key]; !exists {
+			/* 幂等：重复释放不算错误，但要如实回报「这次没有条目被删除」。 */
+			writeJSON(w, 200, map[string]any{"ok": true, "id": lib.ID, "path": mediaPath, "removed": false})
+			return
+		}
+		delete(all, key)
+		if err := a.saveReadingProgressStore(all); err != nil {
+			errJSON(w, 500, "reading progress save failed")
+			return
+		}
+		writeJSON(w, 200, map[string]any{"ok": true, "id": lib.ID, "path": mediaPath, "removed": true})
 	default:
 		errJSON(w, 405, "method not allowed")
 	}

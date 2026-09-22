@@ -8,7 +8,7 @@ const VAULTHUB_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
    历史故障：v0.8.3→v0.8.5 的前端修改在服务端已生效，但浏览器仍执行缓存里的
    旧 02-media.js，用户看到「没有更新」。现在入口页 no-store、静态资源带 ?v=，
    并在启动时做一次一致性自查，不一致就绕过缓存强制重载一次。 */
-const VAULTHUB_SCRIPT_VERSION = "0.9.72";
+const VAULTHUB_SCRIPT_VERSION = "0.9.73";
 function ensureFreshAssets() {
   /* expected 为空 = 浏览器执行的 index.html 早于 v0.8.6（旧版本入口页没有声明
      版本号），同样属于"页面是旧的"，也需要换 URL 重新取一次。 */
@@ -473,7 +473,14 @@ const I18N = {
     secDocker: "Docker 容器", searchPh: "🔍 搜索容器名称 / 镜像 / 状态…",
     colName: "名称", colImage: "镜像", colStatus: "状态", colPorts: "端口", colHealth: "健康",
     settingsTitle: "系统设置", langLbl: "界面语言",
-    themeLbl: "主题", themeDark: "晚上（暗色）", themeLight: "白天（亮色）", themeCustom: "自定义（上传背景图片）",
+    themeLbl: "外观主题", themeDark: "暗色", themeLight: "亮色", themeCustom: "自定义背景（上传图片）",
+    themeModeLbl: "明暗", themePaletteLbl: "调色板", themeAccentLbl: "强调色",
+    accentTheme: "跟随主题", themeAccentHint: "只换主色，不改明暗",
+    themeModeSaved: "显示模式已切换", themePaletteSaved: "调色板已切换", themeAccentSaved: "强调色已切换",
+    themeReduceMotion: "减弱动效", themeReduceMotionSub: "对动画敏感或老设备：过渡与动画压到 1ms",
+    themeCustomBg: "使用自定义背景图片", themeCustomBgSub: "独立背景层，图片只存在本浏览器",
+    bgEnabled: "已启用自定义背景", bgDisabled: "已关闭自定义背景",
+    themeNote: "主题 = 调色板 × 明暗 × 强调色 三层叠加；每套调色板自带圆角、阴影、标题字族与动效节奏，选择只保存在本浏览器。",
     bgUpload: "上传背景图片", bgClear: "清除自定义背景", bgHint: "提示：图片仅保存在本浏览器 localStorage，不经过服务器。",
     monitoringLbl: "NAS 监控（内置读取）", monitoringHint: "监控参数由 Compose 环境变量和只读挂载配置。",
     nasOnline: "内置监控 · 每 5s 刷新", nasOffline: "内置监控不可用",
@@ -611,7 +618,14 @@ const I18N = {
     secDocker: "Docker 容器", searchPh: "🔍 搜尋容器名稱 / 映像 / 狀態…",
     colName: "名稱", colImage: "映像", colStatus: "狀態", colPorts: "連接埠", colHealth: "健康",
     settingsTitle: "系統設定", langLbl: "介面語言",
-    themeLbl: "主題", themeDark: "晚上（暗色）", themeLight: "白天（亮色）", themeCustom: "自訂（上傳背景圖片）",
+    themeLbl: "外觀主題", themeDark: "暗色", themeLight: "亮色", themeCustom: "自訂背景（上傳圖片）",
+    themeModeLbl: "明暗", themePaletteLbl: "調色板", themeAccentLbl: "強調色",
+    accentTheme: "跟隨主題", themeAccentHint: "只換主色，不改明暗",
+    themeModeSaved: "顯示模式已切換", themePaletteSaved: "調色板已切換", themeAccentSaved: "強調色已切換",
+    themeReduceMotion: "減弱動效", themeReduceMotionSub: "對動畫敏感或舊機器：過渡與動畫壓到 1ms",
+    themeCustomBg: "使用自訂背景圖片", themeCustomBgSub: "獨立背景層，圖片只存在本瀏覽器",
+    bgEnabled: "已啟用自訂背景", bgDisabled: "已關閉自訂背景",
+    themeNote: "主題 = 調色板 × 明暗 × 強調色 三層疊加；每套調色板自帶圓角、陰影、標題字族與動效節奏，選擇只存在本瀏覽器。",
     bgUpload: "上傳背景圖片", bgClear: "清除自訂背景", bgHint: "提示：圖片僅保存在本瀏覽器 localStorage，不經過伺服器。",
     monitoringLbl: "NAS 監控（內建讀取）", monitoringHint: "監控參數由 Compose 環境變數和唯讀掛載設定。",
     nasOnline: "內建監控 · 每 5s 重新整理", nasOffline: "內建監控不可用",
@@ -832,7 +846,14 @@ const I18N = {
     secDocker: "Docker Containers", searchPh: "🔍 Search name / image / status…",
     colName: "Name", colImage: "Image", colStatus: "Status", colPorts: "Ports", colHealth: "Health",
     settingsTitle: "Settings", langLbl: "Language",
-    themeLbl: "Theme", themeDark: "Night (dark)", themeLight: "Day (light)", themeCustom: "Custom (upload background)",
+    themeLbl: "Appearance", themeDark: "Dark", themeLight: "Light", themeCustom: "Custom background (upload)",
+    themeModeLbl: "Light / dark", themePaletteLbl: "Palette", themeAccentLbl: "Accent",
+    accentTheme: "Follow palette", themeAccentHint: "Recolors the primary only",
+    themeModeSaved: "Display mode", themePaletteSaved: "Palette", themeAccentSaved: "Accent",
+    themeReduceMotion: "Reduce motion", themeReduceMotionSub: "For motion-sensitive or older devices: 1ms transitions",
+    themeCustomBg: "Custom background image", themeCustomBgSub: "Independent layer, stored in this browser only",
+    bgEnabled: "Custom background on", bgDisabled: "Custom background off",
+    themeNote: "Theme = palette × light/dark × accent. Each palette carries its own radius, shadow, heading font and motion tempo; choices stay in this browser.",
     bgUpload: "Upload background image", bgClear: "Clear custom background", bgHint: "Tip: image stays in this browser's localStorage, never sent to a server.",
     monitoringLbl: "NAS Monitor (built in)", monitoringHint: "Configure monitoring with Compose environment variables and read-only mounts.",
     nasOnline: "Built-in monitor · refresh 5s", nasOffline: "Built-in monitor unavailable",
@@ -1016,7 +1037,12 @@ const LS_BOARDS = "dwu_boards";
 const LS_BG = "dwu_bgimg";
 
 let settings = {
-  theme: "dark",
+  theme: "dark",          /* 兼容字段：始终同步成 dark|light（阅读器与旧 CSS 仍在读它） */
+  mode: "dark",           /* 明暗层：dark | light | auto（auto = 跟随系统） */
+  palette: "emerald",     /* 调色板层：emerald | plum | neon | clay */
+  accent: "theme",        /* 强调色层：theme（跟随调色板）| teal | indigo | rose | amber | violet */
+  customBg: false,        /* 背景图层：是否启用自定义背景图片 */
+  reduceMotion: false,    /* 动效：减弱过渡与动画 */
   hardwareAcceleration: "auto",
   /* 容器版默认经同源 Caddy 代理；外部浏览器无需直连家庭内网地址 */
   mp: { mpUrl: "/api/mp", username: "", password: "", token: "", tokenUser: "" }
@@ -1049,6 +1075,15 @@ function loadSettings() {
   try {
     const s = JSON.parse(localStorage.getItem(LS_SETTINGS) || "{}");
     if (s.theme) settings.theme = s.theme;
+    /* v0.9.73 迁移：旧版只有 theme = dark|light|custom 一档，
+       「custom」= 自定义背景（当年一律按暗色渲染），迁到 明暗层 + 背景层两个字段。 */
+    if (["dark", "light", "auto"].includes(s.mode)) settings.mode = s.mode;
+    else settings.mode = s.theme === "light" ? "light" : "dark";
+    if (["emerald", "plum", "neon", "clay"].includes(s.palette)) settings.palette = s.palette;
+    if (["theme", "teal", "indigo", "rose", "amber", "violet"].includes(s.accent)) settings.accent = s.accent;
+    if (s.theme === "custom") settings.customBg = true;
+    if (typeof s.customBg === "boolean") settings.customBg = s.customBg;
+    settings.reduceMotion = !!s.reduceMotion;
     if (["auto","cpu","vaapi","qsv","cuda"].includes(s.hardwareAcceleration)) settings.hardwareAcceleration = s.hardwareAcceleration;
     if (s.mp && typeof s.mp === "object") Object.assign(settings.mp, s.mp);
     settings.mp.mpUrl = preferContainerProxy(settings.mp.mpUrl, "/api/mp");
@@ -1087,23 +1122,13 @@ function saveHiddenModules() {
   try { localStorage.setItem(LS_HIDDEN_MODULES, JSON.stringify(hiddenModules)); } catch (e) {}
 }
 
-/* ================= 主题 ================= */
-function setTheme(th) {
-  settings.theme = th;
-  saveSettings();
-  document.body.dataset.theme = (th === "light") ? "light" : "dark";
-  document.body.classList.toggle("custom-bg", th === "custom");
-  document.getElementById("customBgWrap").style.display = th === "custom" ? "block" : "none";
-  document.querySelectorAll(".theme-opt").forEach(el => el.classList.toggle("on", el.dataset.themeOpt === th));
-  document.querySelectorAll(".media-reader-overlay").forEach(el => {
-    el.classList.remove("reader-theme-dark", "reader-theme-light", "reader-theme-custom");
-    el.classList.add(readerThemeClass());
-  });
-  if (th === "custom") applyBgImage();
-}
+/* ================= 主题 =================
+   v0.9.73：主题定义整体搬到 web/js/06-theme.js（调色板 × 明暗 × 强调色 三层叠加，
+   方案见该文件顶部注释）。这里只保留与「背景图层」相关的部分：
+   背景是独立一层，不再伪装成第三种主题（旧版选「自定义背景」会把正文强行按暗色渲染）。 */
 function applyBgImage() {
   const img = localStorage.getItem(LS_BG);
-  if (img) document.body.style.setProperty("--bgImg", `url(${img})`);
+  if (img && settings.customBg) document.body.style.setProperty("--bgImg", `url(${img})`);
   else document.body.style.removeProperty("--bgImg");
 }
 function uploadBg(input) {
@@ -1113,7 +1138,11 @@ function uploadBg(input) {
   reader.onload = e => {
     try {
       localStorage.setItem(LS_BG, e.target.result);
+      /* v0.9.73：上传即视为要启用背景层（旧版必须先选中「自定义」主题才生效）。 */
+      if (!settings.customBg) { settings.customBg = true; saveSettings(); }
       applyBgImage();
+      document.body.classList.add("custom-bg");
+      if (typeof syncThemeControls === "function") syncThemeControls();
       toast("✅ " + (curLang === "en" ? "Background saved" : "背景已保存"));
     } catch (err) {
       toast("⚠️ " + (curLang === "en" ? "Image too large for localStorage" : "图片过大，无法保存到 localStorage"));
@@ -1123,7 +1152,11 @@ function uploadBg(input) {
 }
 function clearBg() {
   localStorage.removeItem(LS_BG);
+  settings.customBg = false;
+  saveSettings();
+  document.body.classList.remove("custom-bg");
   applyBgImage();
+  if (typeof syncThemeControls === "function") syncThemeControls();
   toast("🗑 " + (curLang === "en" ? "Background cleared" : "背景已清除"));
 }
 

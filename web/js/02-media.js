@@ -657,6 +657,32 @@ function saveReadingProgress(libId, path, progress, page, total) {
   if (!readingProgressFlushTimer) readingProgressFlushTimer = setTimeout(flushReadingProgress, 800);
   return value;
 }
+/* v0.9.73：释放历史阅读。
+   用户报告「已读收藏释放依旧故障」，根因有两条，缺一不可：
+     ① 服务端进度库只有 PUT，没有删除入口 —— 任何释放都只能写 progress=0，
+        条目仍留在库里，书架与服务端统计继续把它算作已读；
+     ② 只清服务端会留下 localStorage 旧值，下一次读取又把它当已读（跨设备更明显）。
+   所以这里三处一起清：服务端 DELETE、内存缓存、localStorage，并撤掉尚未落盘的待写项
+   （否则 800ms 合并窗口里那个 progress=100 会把刚释放的状态又写回去）。 */
+async function releaseReadingState(libId, path) {
+  const lib = String(libId), rel = String(path);
+  try {
+    const res = await fetch(`/api/media/reading/progress?id=${encodeURIComponent(lib)}&path=${encodeURIComponent(rel)}`, {
+      method: "DELETE", headers: sessionWriteHeaders(), credentials: "same-origin"
+    });
+    if (!await handleProtectedResponse(res)) throw new Error("会话已失效，请重新登录");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json().catch(() => ({}));
+    if (data && data.ok === false) throw new Error(data.error || "服务端未删除该条目");
+  } catch (e) {
+    toast("⚠️ 释放失败：" + e.message);
+    return false;
+  }
+  readingProgressPending.delete(`${lib}\n${rel}`);
+  if (readingProgressCache[lib]) delete readingProgressCache[lib][rel];
+  try { localStorage.removeItem(mediaStateKey(lib, rel)); } catch (e) {}
+  return true;
+}
 function flushReadingProgressNow() {
   if (readingProgressFlushTimer) { clearTimeout(readingProgressFlushTimer); readingProgressFlushTimer = null; }
   if (readingProgressPending.size) flushReadingProgress();
@@ -983,9 +1009,9 @@ async function loadLocalFiles(group, lib, offset = 0) {
       ? `<div class="media-actions"><span class="media-file-meta">已加载全部 ${files.length} / ${total} 项${mediaTruncated ? "（加载未完成）" : ""}</span></div>`
       : `<div class="media-actions">${prev}<span class="media-file-meta">${range} / ${total}</span>${next}</div>`;
     if (group === "comic") {
-      const toolbar = mediaLibraryHeading(lib, "", `<div class="comic-shelf-tabs"><button class="${comicShelfView === "completed" ? "active" : ""}" onclick="setComicShelfView(comicShelfView === \"completed\" ? \"shelf\" : \"completed\")">${comicShelfView === "completed" ? "← 返回未读" : "✓ 已读收藏"}</button></div>`);
+      const toolbar = mediaLibraryHeading(lib, "", `<div class="comic-shelf-tabs"><button class="${comicShelfView === "completed" ? "active" : ""}" onclick="setComicShelfView(comicShelfView === \"completed\" ? \"shelf\" : \"completed\")">${comicShelfView === "completed" ? "← 返回未读" : "🕘 历史阅读"}</button></div>`);
       const emptyTip = comicShelfView === "completed"
-        ? "还没有读完的书；读完的书籍会自动归档到这里。"
+        ? "历史阅读还是空的 —— 读完或标记已读的书会出现在这里。"
         : (data.has_more ? "本页书籍都已读完，点击「下一页 →」继续查看未读书籍。" : "该媒体库暂无未读书籍。");
       target.innerHTML = `${toolbar}${files.length ? `<div class="book-grid">${files.map(file => renderBookCard(group, lib, file)).join("")}</div>` : `<div class="empty-tip">${esc(emptyTip)}</div>`}${pager}`;
       scrapeVisibleBookCovers(target);
@@ -995,6 +1021,8 @@ async function loadLocalFiles(group, lib, offset = 0) {
          列表展示仍按当前分页数据渲染，仅播放队列保持分组。setAudioView 切换页签即释放锁。 */
       if (!audioGroupLock) { audioFiles = files; audioCursor = offset; }
       target.innerHTML = renderAudioLibrary(lib, files, data);
+      /* v0.9.73：整页/整专辑重载会替换 audioFiles（队列真相），面板要同步重建。 */
+      refreshAudioPlaylistPanel();
       scrapeAudioMetadata(target, lib, files);
     } else if (group === "movie") {
       target.innerHTML = renderMovieLibrary(lib, files, data) + pager;
@@ -1609,6 +1637,104 @@ function setAudioLoop(mode) {
   if (lib && audioView === "tracks") loadLocalFiles("audio", lib, audioCursor);
 }
 function cycleAudioLoop() { setAudioLoop(AUDIO_LOOP_ORDER[(AUDIO_LOOP_ORDER.indexOf(audioLoopMode) + 1) % AUDIO_LOOP_ORDER.length]); toast("🔁 " + AUDIO_LOOP_LABEL[audioLoopMode]); }
+
+/* ==================== v0.9.73 播放列表（播放队列） ====================
+   用户诉求：播放器上的「歌词详情」按钮改成播放列表，并加入播放列表功能。
+   队列的唯一真相就是 audioFiles + activeAudio.index（连播、上一首/下一首、
+   专辑/歌手/歌单分组播放全都基于它），面板只做可视化，不再另存一份队列，
+   否则会出现「面板里删掉的歌下次又回来」这类双份状态缺陷。 */
+function audioQueueLibId() { return activeAudio ? String(activeAudio.libId) : String(localMediaSelection.audio || ""); }
+function audioQueueEntries() { return (audioFiles || []).map((file, index) => ({ index, path: String(file.path) })); }
+function audioPlaylistPanelEl() { return document.getElementById("audioPlaylistPanel"); }
+function audioPlaylistPanelOpen() { const p = audioPlaylistPanelEl(); return !!(p && p.classList.contains("open")); }
+function renderAudioPlaylistPanel() {
+  const host = document.getElementById("audioPlaylistList");
+  if (!host) return;
+  const list = audioQueueEntries();
+  const count = document.getElementById("audioPlaylistCount");
+  if (count) count.textContent = list.length ? `${list.length} 首` : "队列为空";
+  if (!list.length) {
+    host.innerHTML = '<div class="apl-empty">播放队列为空 —— 在曲目列表里点任意歌曲即会建立队列。</div>';
+    return;
+  }
+  const current = activeAudio ? Number(activeAudio.index) : -1;
+  host.innerHTML = list.map(({ index, path }) => {
+    const meta = audioMetadataFor(path), active = index === current;
+    return `<div class="apl-row${active ? " active" : ""}" data-queue-index="${index}" onclick="playAudioQueueIndex(${index})" title="${esc(path)}">
+      <span class="apl-idx">${active ? "♪" : index + 1}</span>
+      <span class="apl-info"><b>${esc(meta.title)}</b><small>${esc(meta.artist)} · ${esc(meta.album)}</small></span>
+      <span class="apl-act">
+        <button type="button" title="歌曲详情与歌词" onclick="event.stopPropagation();audioQueueDetails(${index})">ⓘ</button>
+        <button type="button" title="移出播放列表" onclick="event.stopPropagation();removeAudioQueueIndex(${index})">✕</button>
+      </span>
+    </div>`;
+  }).join("");
+  const activeRow = host.querySelector(".apl-row.active");
+  /* 只在本行不在可视区时才滚动，避免每次 timeupdate 式重渲染抖动。
+     与阅读器同一防御风格：滚动调用必须 typeof 守卫，避免环境缺该方法时
+     把整块面板渲染带崩。 */
+  if (activeRow) {
+    const box = host.getBoundingClientRect(), row = activeRow.getBoundingClientRect();
+    if (row.top < box.top || row.bottom > box.bottom) {
+      if (typeof activeRow.scrollIntoView === "function") activeRow.scrollIntoView({ block: "nearest" });
+    }
+  }
+}
+function openAudioPlaylistPanel() {
+  const p = audioPlaylistPanelEl();
+  if (!p) return;
+  renderAudioPlaylistPanel();
+  p.classList.add("open");
+  document.getElementById("audioPlaylistButton")?.setAttribute("aria-expanded", "true");
+}
+function closeAudioPlaylistPanel() {
+  audioPlaylistPanelEl()?.classList.remove("open");
+  document.getElementById("audioPlaylistButton")?.setAttribute("aria-expanded", "false");
+}
+function toggleAudioPlaylistPanel() { audioPlaylistPanelOpen() ? closeAudioPlaylistPanel() : openAudioPlaylistPanel(); }
+function refreshAudioPlaylistPanel() { if (audioPlaylistPanelOpen()) renderAudioPlaylistPanel(); }
+function playAudioQueueIndex(index) {
+  const entry = (audioFiles || [])[index];
+  if (!entry) return;
+  playAudioFile(audioQueueLibId(), String(entry.path));
+  refreshAudioPlaylistPanel();
+}
+function removeAudioQueueIndex(index) {
+  if (index < 0 || index >= (audioFiles || []).length) return;
+  const removed = audioFiles.splice(index, 1)[0];
+  /* 删的是当前曲目之前的行 → 当前位置左移一位，否则连播会跳过一首。 */
+  if (activeAudio && Number(activeAudio.index) > index) activeAudio.index = Number(activeAudio.index) - 1;
+  toast(`🗑 已移出播放列表：${audioMetadataFor(String(removed.path)).title}`);
+  renderAudioPlaylistPanel();
+}
+function clearAudioQueue() {
+  const count = (audioFiles || []).length;
+  if (!count) { toast("ℹ️ 播放队列已经是空的"); return; }
+  audioFiles = [];
+  if (activeAudio) activeAudio.index = -1;
+  toast(`🗑 已清空播放列表（${count} 首）`);
+  renderAudioPlaylistPanel();
+}
+function audioQueueDetails(index) {
+  const entry = (audioFiles || [])[index];
+  if (!entry) return;
+  if (!activeAudio || Number(activeAudio.index) !== index) playAudioFile(audioQueueLibId(), String(entry.path));
+  showAudioDetails();
+}
+function saveAudioQueueAsPlaylist() {
+  if (!(audioFiles || []).length) { toast("⚠️ 播放队列为空，先播放一首歌再保存"); return; }
+  const libId = audioQueueLibId();
+  if (!libId) { toast("⚠️ 没有可用的媒体库上下文"); return; }
+  const name = (window.prompt("歌单名称（已存在则覆盖为当前队列）", "") || "").trim();
+  if (!name) return;
+  const list = readAudioPlaylists();
+  const keys = audioFiles.map(file => audioFavoriteKey(libId, String(file.path)));
+  const found = list.find(p => p.name === name);
+  if (found) found.songs = keys;
+  else list.push({ name, songs: keys });
+  writeAudioPlaylists(list);
+  toast(`✅ 已保存歌单「${name}」（${keys.length} 首）`);
+}
 function parseLyrics(lrc) {
   const lines = [];
   String(lrc || "").split(/\r?\n/).forEach(line => {
@@ -1926,6 +2052,8 @@ function playAudioFile(libId, path) {
   audioSetPauseIcon(true);
   renderPlayerLyrics(meta);
   updateAudioExpandArt(meta);
+  /* v0.9.73：切曲后播放面板要跟着换「正在播放」高亮，否则面板显示的仍是上一首。 */
+  refreshAudioPlaylistPanel();
   /* v0.9.67：播放时若本曲没有歌词，自动按「本地识别 → 在线源链」补一次并落盘 .lrc。 */
   ensureAudioLyrics(lib.id, path, meta);
   localizeAudioCover(lib.id, path); // v0.9.56：远端封面顺带落盘持久化（只读媒体库自动回退）
@@ -2103,7 +2231,11 @@ function renderBookCard(group, lib, file) {
   /* v0.9.67：漫画归档（zip/cbz）直接用「第一页缩略图」当封面（服务端 w=320，
      命中磁盘缓存；省掉此前外网刮削既慢又常失败的问题）。刮削仍可选覆盖。 */
   const archiveCover = group === "comic" && ["ZIP", "CBZ"].includes(ext) ? comicCoverUrl(lib, path, 320) : "";
-  return `<article class="book-card" data-media-group="${esc(group)}" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openLocalMediaButton(this)"><div class="book-cover" style="background:${coverGradient(title)}"><span class="book-cover-title">${esc(title)}</span>${archiveCover
+  /* v0.9.73：历史阅读视图里每张卡自带「↩ 释放」，不必进阅读器才能移出。 */
+  const releaseBtn = group === "comic" && comicShelfView === "completed"
+    ? `<button class="book-card-release" type="button" title="从历史阅读释放这本书" onclick="event.stopPropagation();releaseBookFromHistory(${jsAttrArg(lib.id)},${jsAttrArg(path)})">↩ 释放</button>`
+    : "";
+  return `<article class="book-card" data-media-group="${esc(group)}" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openLocalMediaButton(this)">${releaseBtn}<div class="book-cover" style="background:${coverGradient(title)}"><span class="book-cover-title">${esc(title)}</span>${archiveCover
       ? `<img class="book-cover-image" src="${esc(archiveCover)}" alt="${esc(title)} 封面" loading="lazy" onload="this.classList.add('loaded')" onerror="bookCoverFallback(this)">`
       : `<img class="book-cover-image" data-cover-title="${esc(title)}" alt="${esc(title)} 封面" hidden onload="this.hidden=false;this.classList.add('loaded')" onerror="bookCoverFallback(this)">`}</div><div class="book-card-title" title="${esc(path)}">${esc(title)}</div><div class="book-card-meta"><span>${esc(ext)}</span><span>${progress ? progress.toFixed(1)+"%" : "新入书架"}</span></div><div class="book-progress"><span style="width:${Math.min(100,progress)}%"></span></div></article>`;
 }
@@ -2112,7 +2244,10 @@ function openLocalMediaButton(button) {
 }
 function findMediaLibrary(id) { return localMediaLibraries.find(lib => lib.id === id); }
 function readerThemeClass() {
-  return settings.theme === "light" ? "reader-theme-light" : settings.theme === "custom" ? "reader-theme-custom" : "reader-theme-dark";
+  /* v0.9.73：阅读器主题跟随「明暗」层的解析结果（dark|light，auto 已按系统偏好解析）。
+     旧版把「自定义背景」当成第三种主题，导致亮色 + 自定义背景时正文被强制按暗色渲染。 */
+  const mode = typeof resolvedThemeMode === "function" ? resolvedThemeMode() : (settings.theme === "light" ? "light" : "dark");
+  return mode === "light" ? "reader-theme-light" : "reader-theme-dark";
 }
 function viewerShell(group, lib, path, body, url, opts = {}) {
   const chapters = opts.chapters || [];
@@ -2122,7 +2257,10 @@ function viewerShell(group, lib, path, body, url, opts = {}) {
   /* v0.9.51：真正的视频播放器（opts.player）不再渲染外层标题条与 ✕ —— 标题已移入
      播放器左上角 ⌄ 右侧（vc-heading），关闭统一走底部控制栏的 ✕。movie 组里的
      PDF/图片等非视频浏览仍保留外层头（标题 + ✕ 关闭）。文档/音频类阅读器同理。 */
-  const head = opts.player ? "" : `<div class="media-reader-head"><strong class="media-reader-title" title="${esc(path)}">${esc(displayBookTitle(path))}</strong><div class="media-actions">${toolbar}<button class="btn" onclick="markReaderCompleted()">✓ 标记已读</button><button class="media-reader-close" title="关闭并返回书架" onclick="closeLocalViewer('${esc(group)}')">✕</button></div></div>`;
+  /* v0.9.73：同一个按钮承担「标记已读 / 释放」两态（已读时显示 ↩ 释放），
+     文案按该书真实进度渲染，不再永远显示「标记已读」。 */
+  const readDone = Number(readingState(lib.id, path).progress || 0) >= COMPLETED_PROGRESS;
+  const head = opts.player ? "" : `<div class="media-reader-head"><strong class="media-reader-title" title="${esc(path)}">${esc(displayBookTitle(path))}</strong><div class="media-actions">${toolbar}<button class="btn" id="readerReadToggle" onclick="markReaderCompleted()" title="${readDone ? "从历史阅读释放这本书" : "标记为已读，归档到历史阅读"}">${readDone ? "↩ 释放" : "✓ 标记已读"}</button><button class="media-reader-close" title="关闭并返回书架" onclick="closeLocalViewer('${esc(group)}')">✕</button></div></div>`;
   /* v0.9.30：文档类阅读器（TXT 正文、ZIP 漫画整页）标记 reader-doc，
      让正文区改成内容驱动高度并跟随主题上色，避免纸张只有一屏、
      其余正文落在深色底上，以及漫画页左右露出下层底色。
@@ -2206,10 +2344,31 @@ function trackReaderProgress(scroller) {
   const progress = Math.min(100, scroller.scrollTop / max * 100);
   saveReadingProgress(activeReader.libId, activeReader.path, progress);
 }
+/* v0.9.73：两态入口 —— 未读时标记已读，已读时释放出历史阅读。 */
 function markReaderCompleted() {
   if (!activeReader) return;
-  saveReadingProgress(activeReader.libId, activeReader.path, 100);
-  toast("✅ 已归档到已读收藏");
+  const libId = String(activeReader.libId), path = String(activeReader.path);
+  if (Number(readingState(libId, path).progress || 0) >= COMPLETED_PROGRESS) { releaseBookFromHistory(libId, path); return; }
+  saveReadingProgress(libId, path, 100);
+  syncReaderReadToggle();
+  toast("✅ 已移入历史阅读");
+}
+function syncReaderReadToggle() {
+  const button = document.getElementById("readerReadToggle");
+  if (!button || !activeReader) return;
+  const done = Number(readingState(activeReader.libId, activeReader.path).progress || 0) >= COMPLETED_PROGRESS;
+  button.textContent = done ? "↩ 释放" : "✓ 标记已读";
+  button.title = done ? "从历史阅读释放这本书" : "标记为已读，归档到历史阅读";
+}
+async function releaseBookFromHistory(libId, path) {
+  const ok = await releaseReadingState(libId, path);
+  if (!ok) return;
+  syncReaderReadToggle();
+  toast("↩ 已从历史阅读释放");
+  /* 书架可能正停在历史阅读视图（关闭阅读器也保持该视图），必须重渲染，
+     否则被释放的书仍然挂在列表上 —— 这正是用户看到的「释放没生效」。 */
+  const lib = findMediaLibrary(String(libId));
+  if (lib) loadLocalFiles(String(activeReader ? activeReader.group : "comic"), lib, 0);
 }
 
 

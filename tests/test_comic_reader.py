@@ -29,6 +29,9 @@ assert 'limit=${pageSize}' in html, "file request does not use selected page siz
 assert 'offset - pageSize' in html, "previous page does not honor selected size"
 assert 'offset + pageSize' in html, "next page does not honor selected size"
 assert 'progress >= COMPLETED_PROGRESS' in html, "completed items are not archived at 99.9%"
-assert 'setComicShelfView("shelf")' in html, "closing reader does not return to shelf"
+# v0.9.73：关闭阅读器不再强制跳回「未读」视图 —— 用户常从「历史阅读」点开一本书，
+# 关掉就被踢回未读，看起来正像这本书被释放出了历史列表（用户报告的缺陷）。
+# 现在保持当前视图并重渲染（setComicShelfView(comicShelfView)）。
+assert 'setComicShelfView(comicShelfView)' in html, "closing reader must keep the current shelf view"
 
 print("PASS: comic bookshelf, pagination and immersive reader markers are present")

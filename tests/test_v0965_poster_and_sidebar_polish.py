@@ -47,8 +47,8 @@ checks = {
     "磨砂模糊半径降低": "blur(14px) saturate(1.1) brightness(.66)" in CSS,
 
     # 版本与发布资料
-    "HTML版本": 'VAULTHUB_ASSET_VERSION = "0.9.72"' in HTML and HTML.count("?v=0.9.72") >= 7,
-    "脚本版本": 'VAULTHUB_SCRIPT_VERSION = "0.9.72"' in STATE,
+    "HTML版本": 'VAULTHUB_ASSET_VERSION = "0.9.73"' in HTML and HTML.count("?v=0.9.73") >= 7,
+    "脚本版本": 'VAULTHUB_SCRIPT_VERSION = "0.9.73"' in STATE,
     "发布说明": NOTES.exists(),
 }
 
