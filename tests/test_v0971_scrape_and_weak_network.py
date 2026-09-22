@@ -143,7 +143,12 @@ check("启动时初始化弱网状态与后台测速",
 check("客户向弱网手册", PLAYBOOK.exists() and "Plex" in PLAYBOOK.read_text(encoding="utf-8")
       and "Navidrome" in PLAYBOOK.read_text(encoding="utf-8")
       and "audio/stream" in PLAYBOOK.read_text(encoding="utf-8"))
-check("README 提到本版能力", "弱网" in README and len(README) > 1000)
+# v0.9.73：仓库主在 e97c23f 里精简 README，删掉了「弱网与远程访问」小节（细则以
+# docs/weak-network-playbook.md 为准）。原断言钉死 README 里的「弱网」二字，会被这次
+# 正当的文档精简打红 —— 改为断言「能力有客户向文档可查」，README 提到与否都算通过。
+check("弱网能力有客户向文档（README 或客户手册）",
+      "弱网" in README or "weak-network" in README or PLAYBOOK.exists(),
+      "README 可精简，但能力必须留下客户向文档")
 
 # ============ 附带修复：漫画单页槽位隐藏 ============
 check("漫画单页槽位 [hidden] 兜底", ".comic-slot[hidden] { display:none; }" in CSS)
