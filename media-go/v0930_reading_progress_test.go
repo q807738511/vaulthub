@@ -108,8 +108,11 @@ func TestReadingProgressClampsAndRejectsBadInput(t *testing.T) {
 	if w.Code != 404 {
 		t.Fatalf("unknown library must 404, got %d", w.Code)
 	}
+	/* v0.9.73：DELETE 已从「不支持」升级为「释放历史阅读」的正式动词
+	   （见 v0973_reading_release_test.go 的删除语义契约），
+	   所以这里改用仍未支持的方法验证 405 分支。 */
 	w = httptest.NewRecorder()
-	a.readingProgress(w, httptest.NewRequest(http.MethodDelete, "/api/media/reading/progress?id=books", nil))
+	a.readingProgress(w, httptest.NewRequest(http.MethodPatch, "/api/media/reading/progress?id=books", nil))
 	if w.Code != 405 {
 		t.Fatalf("unsupported method must 405, got %d", w.Code)
 	}

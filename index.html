@@ -4,10 +4,40 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VaultHub 蜀鼠之家</title>
-<link rel="stylesheet" href="/web/css/main.css?v=0.9.72">
+<link rel="stylesheet" href="/web/css/main.css?v=0.9.73">
 <script>
 /* 资源版本号：index.html 用它给所有静态资源打查询串。 */
-window.VAULTHUB_ASSET_VERSION = "0.9.72";
+window.VAULTHUB_ASSET_VERSION = "0.9.73";
+</script>
+<script>
+/* v0.9.73 主题防闪：调色板/明暗/强调色必须在首帧渲染前落到 <html> 上，
+   否则亮色或暖陶用户会先看到一帧默认暗色（旧版只有暗/亮两档，没有这个问题）。
+   「跟随系统」档在这里就解析成具体明暗，避免先渲染错误档再纠正。 */
+(function () {
+  try {
+    var s = JSON.parse(localStorage.getItem("dwu_settings") || "{}");
+    /* 白名单：localStorage 里可能是旧版本或外部写入的值（例如旧版 theme:"custom"、
+       手工改过的 palette），未识别时必须回落到默认，否则首帧会套用一个 CSS 里
+       根本不存在的 data-palette，亮色用户会看到一帧暗色（防闪反而失效）。 */
+    var PALETTES = ["emerald", "plum", "neon", "clay"];
+    var ACCENTS = ["theme", "teal", "indigo", "rose", "amber", "violet"];
+    var mode = s.mode === "light" ? "light"
+      : s.mode === "auto" ? (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+      : (s.theme === "light" ? "light" : "dark");
+    var root = document.documentElement;
+    root.dataset.palette = PALETTES.indexOf(s.palette) >= 0 ? s.palette : "emerald";
+    root.dataset.mode = mode;
+    root.dataset.accent = ACCENTS.indexOf(s.accent) >= 0 ? s.accent : "theme";
+    if (s.reduceMotion) root.dataset.motion = "reduce";
+    if (s.customBg || s.theme === "custom") {
+      document.addEventListener("DOMContentLoaded", function () {
+        document.body.classList.add("custom-bg");
+        var img = localStorage.getItem("dwu_bgimg");
+        if (img) document.body.style.setProperty("--bgImg", "url(" + img + ")");
+      });
+    }
+  } catch (e) {}
+})();
 </script>
 </head>
 <body data-theme="dark">
@@ -89,7 +119,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.72";
   <div class="sidebar-foot">
     <button class="rail-btn rail-settings" id="sidebarSettingsButton" type="button" onclick="openSettingsModalFromSidebar()" title="系统设置" aria-label="系统设置"><span class="ic">⚙</span><span class="txt" data-i18n="settingsTitle">系统设置</span></button>
     <div class="sidebar-foot-row">
-      <span class="ver">v0.9.72 · 刮削状态与性能</span>
+      <span class="ver">v0.9.73 · 主题与播放列表</span>
       <button class="rail-btn rail-collapse" id="sidebarCollapseButton" type="button" onclick="toggleBars()" title="折叠 / 展开侧栏" aria-label="折叠或展开侧栏">⇤</button>
     </div>
   </div>
@@ -481,17 +511,35 @@ window.VAULTHUB_ASSET_VERSION = "0.9.72";
           <span class="radio"></span>English
         </div>
 
-        <div class="modal-sec" data-i18n="themeLbl">主题</div>
-        <div class="theme-opt" data-theme-opt="dark" onclick="setTheme('dark')">
-          <span class="radio"></span><span data-i18n="themeDark">黑暗（暗色）</span>
+        <div class="modal-sec" data-i18n="themeLbl">外观主题</div>
+        <!-- v0.9.73：主题面板重做（会话 mtkzexy5e4e2te 的方案）——
+             三层分别是 明暗 / 调色板 / 强调色，互不耦合；调色板与强调色由
+             web/js/06-theme.js 渲染，卡片里是「用该主题自己的令牌画的小界面」。 -->
+        <div class="theme-block">
+          <span class="theme-lbl" data-i18n="themeModeLbl">明暗</span>
+          <div class="theme-seg" id="themeModeSeg"></div>
         </div>
-        <div class="theme-opt" data-theme-opt="light" onclick="setTheme('light')">
-          <span class="radio"></span><span data-i18n="themeLight">明亮（亮色）</span>
+        <div class="theme-block">
+          <span class="theme-lbl" data-i18n="themePaletteLbl">调色板</span>
+          <div class="theme-grid" id="themePaletteGrid"></div>
         </div>
-        <div class="theme-opt" data-theme-opt="custom" onclick="setTheme('custom')">
-          <span class="radio"></span><span data-i18n="themeCustom">自定义背景（上传图片）</span>
+        <div class="theme-block">
+          <span class="theme-lbl" data-i18n="themeAccentLbl">强调色</span>
+          <div class="swatches" id="themeAccentSwatches"></div>
         </div>
-        <div id="customBgWrap" style="display:none;">
+        <div class="theme-block">
+          <label class="toggle-row">
+            <input type="checkbox" id="themeReduceMotion" onchange="setThemeReduceMotion(this.checked)">
+            <span data-i18n="themeReduceMotion">减弱动效</span>
+            <small data-i18n="themeReduceMotionSub">适合对动画敏感或老设备：过渡与动画时长压到 1ms</small>
+          </label>
+          <label class="toggle-row">
+            <input type="checkbox" id="themeCustomBgToggle" onchange="setCustomBg(this.checked)">
+            <span data-i18n="themeCustomBg">使用自定义背景图片</span>
+            <small data-i18n="themeCustomBgSub">独立于调色板/明暗的背景层，图片只存在本浏览器</small>
+          </label>
+        </div>
+        <div id="customBgWrap">
           <div class="cfg-field">
             <label data-i18n="bgUpload">上传背景图片</label>
             <input id="bgFile" type="file" accept="image/*" onchange="uploadBg(this)">
@@ -499,6 +547,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.72";
           <button class="btn btn-danger" onclick="clearBg()" style="margin-bottom:8px;">🗑 <span data-i18n="bgClear">清除自定义背景</span></button>
           <div class="hint" data-i18n="bgHint">提示：图片仅保存在本浏览器 localStorage，不经过服务器。</div>
         </div>
+        <div class="theme-note" data-i18n="themeNote">主题 = 调色板 × 明暗 × 强调色 三层叠加；每套调色板自带圆角、阴影、标题字族与动效节奏，选择只保存在本浏览器。</div>
 
         <div class="modal-sec" data-i18n="setSidebar">侧栏</div>
         <div class="toggle-row">
@@ -722,7 +771,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.72";
   <div class="modal">
     <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
     <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
-    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.9.72 · 刮削状态与性能</b></div>
+    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.9.73 · 主题与播放列表</b></div>
     <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>Go (media/manager/subtitle) · Caddy · FFmpeg · SQLite · HTML/CSS/JS</b></div>
     <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>VaultHub 内置系统监控</b></div>
     <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>
@@ -755,7 +804,9 @@ window.VAULTHUB_ASSET_VERSION = "0.9.72";
       <span data-audio-quality-label>音质·原文件</span>
     </button>
     <button id="audioFavoriteButton" title="喜欢" onclick="toggleActiveAudioFavorite()" aria-label="喜欢"><svg class="vc-svg audio-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></button>
-    <button title="歌曲详情与歌词" onclick="showAudioDetails()" aria-label="详情"><svg class="vc-svg audio-svg" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.4"/><path d="M12 11.2v4.6"/><circle cx="12" cy="7.7" r="1.05" fill="currentColor"/></svg></button>
+    <!-- v0.9.73：原「歌曲详情与歌词」按钮改为播放列表入口（用户诉求），
+         歌曲详情/歌词仍可从播放列表每行的 ⓘ、曲目行的 ✎ 进入。 -->
+    <button id="audioPlaylistButton" title="播放列表" onclick="toggleAudioPlaylistPanel()" aria-label="播放列表" aria-expanded="false"><svg class="vc-svg audio-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.4h11"/><path d="M4 12h11"/><path d="M4 17.6h7"/><path d="M18.4 12.2v6.2"/><circle cx="16.6" cy="19.4" r="1.8"/><path d="M18.4 12.2 21 11.4v-2.6l-2.6.9z"/></svg></button>
   </div>
   <!-- v0.9.56：展开播放器双页 —— 海报页 / 歌词页（歌词覆盖海报磨砂蒙版，跟随播放时间高亮）。 -->
   <div class="audio-expand" id="audioExpand" data-page="poster">
@@ -771,6 +822,19 @@ window.VAULTHUB_ASSET_VERSION = "0.9.72";
       <div class="audio-lyrics-scrim"></div>
       <pre class="audio-player-lyrics" id="audioPlayerLyrics" onclick="seekLyric(event)"></pre>
     </div>
+  </div>
+  <!-- v0.9.73：播放列表面板 —— 挂在播放器上方，展示当前播放队列
+       （可跳播、移出、清空、保存为歌单）。队列即 audioFiles，不另存副本。 -->
+  <div class="audio-playlist-panel" id="audioPlaylistPanel" role="region" aria-label="播放列表">
+    <div class="apl-head">
+      <strong>播放列表</strong>
+      <span class="apl-count" id="audioPlaylistCount">队列为空</span>
+      <span class="apl-spacer"></span>
+      <button type="button" class="apl-mini" onclick="saveAudioQueueAsPlaylist()" title="把当前队列保存为歌单">保存为歌单</button>
+      <button type="button" class="apl-mini" onclick="clearAudioQueue()" title="清空当前播放队列">清空</button>
+      <button type="button" class="apl-close" onclick="closeAudioPlaylistPanel()" aria-label="收起播放列表">✕</button>
+    </div>
+    <div class="apl-list" id="audioPlaylistList"><div class="apl-empty">播放队列为空 —— 在曲目列表里点任意歌曲即会建立队列。</div></div>
   </div>
   <audio id="audioPlayerElement" preload="metadata"></audio>
 </div>
@@ -853,11 +917,12 @@ window.VAULTHUB_ASSET_VERSION = "0.9.72";
 
 <div class="toast" id="toast"></div>
 
-<script src="/web/js/01-state.js?v=0.9.72"></script>
-<script src="/web/js/02-media.js?v=0.9.72"></script>
-<script src="/web/js/03-features.js?v=0.9.72"></script>
-<script src="/web/js/05-home.js?v=0.9.72"></script>
-<script src="/web/js/03-audio-zoom.js?v=0.9.72"></script>
-<script src="/web/js/04-boot.js?v=0.9.72"></script>
+<script src="/web/js/01-state.js?v=0.9.73"></script>
+<script src="/web/js/02-media.js?v=0.9.73"></script>
+<script src="/web/js/03-features.js?v=0.9.73"></script>
+<script src="/web/js/05-home.js?v=0.9.73"></script>
+<script src="/web/js/06-theme.js?v=0.9.73"></script>
+<script src="/web/js/03-audio-zoom.js?v=0.9.73"></script>
+<script src="/web/js/04-boot.js?v=0.9.73"></script>
 </body>
 </html>
