@@ -141,7 +141,11 @@ assert 'data-i18n="navHome">首页</span></div>' not in header, "no 首页 butto
 assert 'navLibrary' not in state, "the 资料库 label is obsolete and must be dropped"
 assert 'id="tb-info"' in header or 'class="tb-info"' in header, \
     "the top bar right side must be an info area"
-info = header[header.index('class="tb-info"'):]
+# v0.9.74：顶栏导航回归 —— 信息区后面跟着全局搜索与头像菜单（都是按钮），
+# 因此这里改为只截取 tb-info 自己的那个 div，语义不变：信息区本身不含按钮。
+info_start = header.index('class="tb-info"')
+info_block = header[info_start:]
+info = info_block[:info_block.index("</div>") + len("</div>")]
 assert '<button' not in info, "the top bar info area must contain no buttons"
 assert 'id="topScanStat"' in info, "the info area must show scan progress"
 assert 'id="topLibStat"' not in info, "the duplicate library/item total must be removed"

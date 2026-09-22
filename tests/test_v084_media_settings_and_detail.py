@@ -26,7 +26,9 @@ assert "tmdb_api_key_masked" in backend and 'json:"tmdb_api_key,omitempty"' in b
 # Sidebar must change the selected library even when book and comic share the same view.
 assert "openHomeLibrary" in home and "selectLocalLibrary(group, libId)" in home
 assert "setBookTypeView" not in media
-assert "comicShelfView ===" in media and "返回未读" in media and "已读收藏" in media
+# v0.9.74：书架视图由「未读 / 历史阅读」两态按钮升级为四个分段标签，
+# comicShelfView 仍由标签单向同步（v0.9.73 的释放逻辑依赖它）。
+assert "bookShelfTab" in media and "历史阅读" in media and "setBookShelfTab" in media
 assert "📄 电子书</button>" not in media and "📚 漫画</button>" not in media
 
 # Poster opens details; details own playback/share/favorite/rating/cast/recommendations/metadata.

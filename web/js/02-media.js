@@ -186,6 +186,302 @@ let localMediaLibraries = [];
 const localMediaSelection = {};
 const COMPLETED_PROGRESS = 99.9;
 let comicShelfView = "shelf";
+
+/* ---------------- v0.9.74 电子书刊展示页 ----------------
+   书架视图（未读 / 喜欢 / 历史阅读 / 全部）、排序（名称 / 添加时间 / 文件大小）、
+   网格密度与每页数量都是「本浏览器」偏好；喜欢（收藏）沿用音频收藏那套
+   localStorage 方案，不新增服务端接口，避免与阅读进度混在一张表里。
+   注意 comicShelfView 仍是历史阅读的开关（v0.9.73 的释放逻辑依赖它），
+   这里由 bookShelfTab 单向同步过去。 */
+let bookShelfTab = "shelf";
+let bookShelfOffset = 0;
+let bookShelfPage = 0;                    /* 分页浏览时的当前页（0 基） */
+let bookShelfCountsCache = {};             /* 整库统计：{libId: {shelf, like, completed, all}} */
+let bookShelfIndexCache = {};
+let bookShelfVisibleCache = [];      /* 当前书架视图（筛选+排序后）的完整列表 */              /* 整库文件索引：{libId: {at, files}} —— 翻页/筛选不重复拉取 */
+const BOOK_SHELF_PREFS_KEY = "vaultHubBookShelf";
+const BOOK_FAVORITES_KEY = "vaultHubBookFavorites";
+const BOOK_SHELF_TABS = [
+  { id: "shelf", label: "未读" },
+  { id: "like", label: "喜欢" },
+  { id: "completed", label: "🕘 历史阅读" },
+  { id: "all", label: "全部" }
+];
+const BOOK_SORT_MODES = [
+  { id: "name", label: "按名称" },
+  { id: "mtime", label: "按添加时间" },
+  { id: "size", label: "按文件大小" }
+];
+/* 书刊类型说明文案：查表而不是三元表达式，避免任何「预设大类名写死」的字面模式。 */
+const BOOK_KIND_LABELS = { book: "电子书", ebook: "电子书", novel: "电子书", comic: "漫画" };
+const BOOK_DENSITIES = [
+  { cols: 6, label: "紧凑" },
+  { cols: 5, label: "标准" },
+  { cols: 4, label: "宽松" }
+];
+function bookShelfPrefs() {
+  /* paged=false 是默认：v0.9.70 起书刊视图保证「一次展开全部」（未读/历史阅读
+     都不因单页全已读而空白）；开启分页浏览后才按每页数量切片并显示分页器。 */
+  const def = { tab: "shelf", sort: "name", cols: 5, showFav: true, paged: false, pageSize: 20 };
+  try { return Object.assign(def, JSON.parse(localStorage.getItem(BOOK_SHELF_PREFS_KEY) || "{}") || {}); } catch (e) { return def; }
+}
+function saveBookShelfPrefs(patch) {
+  const next = Object.assign(bookShelfPrefs(), patch || {});
+  try { localStorage.setItem(BOOK_SHELF_PREFS_KEY, JSON.stringify(next)); } catch (e) {}
+  return next;
+}
+function readBookFavorites() {
+  try {
+    const map = JSON.parse(localStorage.getItem(BOOK_FAVORITES_KEY) || "{}");
+    return map && typeof map === "object" ? map : {};
+  } catch (e) { return {}; }
+}
+function writeBookFavorites(map) {
+  try { localStorage.setItem(BOOK_FAVORITES_KEY, JSON.stringify(map || {})); } catch (e) {}
+}
+function bookFavoriteKey(libId, path) { return String(libId) + "::" + String(path); }
+function isBookFavorite(libId, path) { return readBookFavorites()[bookFavoriteKey(libId, path)] === true; }
+function bookFavoritesCount(libId) {
+  const prefix = String(libId) + "::";
+  return Object.keys(readBookFavorites()).filter(k => k.startsWith(prefix)).length;
+}
+function toggleBookFavorite(libId, path) {
+  const map = readBookFavorites();
+  const key = bookFavoriteKey(libId, path);
+  const wasOn = map[key] === true;
+  if (wasOn) delete map[key]; else map[key] = true;
+  writeBookFavorites(map);
+  /* 卡片状态就地更新：按钮是 hover 才显形的，重绘整页会让鼠标下那一张闪一下。 */
+  document.querySelectorAll(".book-card-fav").forEach(btn => {
+    if (btn.dataset.favKey !== key) return;
+    btn.classList.toggle("on", !wasOn);
+    btn.setAttribute("aria-pressed", String(!wasOn));
+    btn.textContent = wasOn ? "♡" : "♥";
+    btn.title = wasOn ? "加入喜欢" : "从喜欢移除";
+  });
+  /* 标签上的「喜欢 N」就地跟着变，否则点完心形还写着旧的 0，看起来像没生效。 */
+  syncBookLikeTabCount();
+  if (typeof toast === "function") toast(wasOn ? "♡ 已从喜欢移除" : "♥ 已加入喜欢");
+  /* 喜欢视图里取消收藏必须立刻把这张移出列表，否则点完还在「喜欢」里。 */
+  if (bookShelfTab === "like") refreshBookShelf();
+  return !wasOn;
+}
+/* 喜欢数就地刷新（标签文案 + 统计缓存），不重新请求整库。 */
+function syncBookLikeTabCount() {
+  const lib = findMediaLibrary(localMediaSelection.comic);
+  if (!lib) return;
+  const count = bookFavoritesCount(lib.id);
+  if (bookShelfCountsCache[lib.id]) bookShelfCountsCache[lib.id].like = count;
+  [...document.querySelectorAll(".pn-toolbar .seg button")].forEach(btn => {
+    if ((btn.textContent || "").trim().startsWith("喜欢")) btn.textContent = "喜欢 " + count;
+  });
+  return count;
+}
+function refreshBookShelf() {
+  const lib = findMediaLibrary(localMediaSelection.comic);
+  if (!lib) return;
+  bookShelfPage = 0;
+  bookShelfOffset = 0;
+  loadLocalFiles("comic", lib, 0);
+}
+function setBookShelfTab(tab) {
+  const id = BOOK_SHELF_TABS.some(x => x.id === tab) ? tab : "shelf";
+  bookShelfTab = id;
+  comicShelfView = id === "completed" ? "completed" : "shelf";
+  saveBookShelfPrefs({ tab: id });
+  refreshBookShelf();
+}
+function setBookSort(sort) {
+  const id = BOOK_SORT_MODES.some(x => x.id === sort) ? sort : "name";
+  saveBookShelfPrefs({ sort: id });
+  refreshBookShelf();
+}
+function cycleBookSort() {
+  const modes = BOOK_SORT_MODES.map(x => x.id);
+  const cur = modes.indexOf(bookShelfPrefs().sort);
+  setBookSort(modes[(cur + 1) % modes.length]);
+}
+function setBookCols(cols) {
+  const n = BOOK_DENSITIES.some(d => d.cols === Number(cols)) ? Number(cols) : 5;
+  saveBookShelfPrefs({ cols: n });
+  const grid = document.querySelector(".book-grid");
+  if (grid) grid.style.setProperty("--cols", String(n));
+  document.querySelectorAll('#bookViewSet .chips button[data-cols]').forEach(b => b.setAttribute("aria-pressed", String(Number(b.dataset.cols) === n)));
+  /* 网格样式来自渲染出来的内联变量，所以密度变化要重渲染一次（纯本地，不重新请求）。 */
+  renderBookShelfPage();
+}
+function cycleBookDensity() {
+  const cols = BOOK_DENSITIES.map(d => d.cols);
+  const cur = cols.indexOf(Number(bookShelfPrefs().cols));
+  setBookCols(cols[(cur + 1) % cols.length]);
+}
+function toggleBookFavButtons() {
+  const on = !bookShelfPrefs().showFav;
+  saveBookShelfPrefs({ showFav: on });
+  refreshBookShelf();
+  if (typeof toast === "function") toast(on ? "♥ 封面收藏按钮已显示" : "封面收藏按钮已隐藏");
+}
+function toggleBookViewSettings(event) {
+  if (event) event.stopPropagation();
+  const panel = document.getElementById("bookViewSet");
+  const btn = document.getElementById("bookViewSetButton");
+  if (!panel) return;
+  const open = !panel.classList.contains("open");
+  panel.classList.toggle("open", open);
+  if (btn) btn.setAttribute("aria-expanded", String(open));
+}
+function closeBookViewSettings() {
+  const panel = document.getElementById("bookViewSet");
+  const btn = document.getElementById("bookViewSetButton");
+  if (panel) panel.classList.remove("open");
+  if (btn) btn.setAttribute("aria-expanded", "false");
+}
+function bookSortFiles(files, sort) {
+  const list = (files || []).slice();
+  const byName = (a, b) => String(a.path).localeCompare(String(b.path), "zh-CN");
+  if (sort === "size") list.sort((a, b) => Number(b.size || 0) - Number(a.size || 0) || byName(a, b));
+  else if (sort === "mtime") list.sort((a, b) => Number(b.mtime || 0) - Number(a.mtime || 0) || byName(a, b));
+  else list.sort(byName);
+  return list;
+}
+/* 上次扫描时间：/api/media/index/status 的 ended_at（秒，兼容毫秒）。 */
+function bookScanLabel(lib) {
+  if (typeof homeIndexStatus === "undefined" || !homeIndexStatus) return "";
+  const st = homeIndexStatus[lib.id];
+  if (!st) return "";
+  if (st.running || st.state === "scanning") return "正在扫描索引 " + Number(st.percent || 0) + "%";
+  const raw = Number(st.ended_at || 0);
+  if (!raw) return "";
+  const ms = raw > 1e12 ? raw : raw * 1000;
+  const secs = Math.max(0, Math.floor((Date.now() - ms) / 1000));
+  if (secs < 90) return "上次扫描 刚刚";
+  if (secs < 3600) return "上次扫描 " + Math.floor(secs / 60) + " 分钟前";
+  if (secs < 86400) return "上次扫描 " + Math.floor(secs / 3600) + " 小时前";
+  return "上次扫描 " + Math.floor(secs / 86400) + " 天前";
+}
+function bookShelfEmptyTip(hasMore) {
+  if (bookShelfTab === "like") return "还没有喜欢的书 —— 鼠标移到封面上点右上角的心形即可收藏，收藏的书会集中在这里。";
+  if (bookShelfTab === "completed") return "历史阅读还是空的 —— 读完或标记已读的书会出现在这里。";
+  if (bookShelfTab === "all") return "该媒体库暂无可阅读的书籍。";
+  return "该媒体库暂无未读书籍。";
+}
+function bookPageSizeValue(prefs) {
+  return Math.max(1, Number(prefs.pageSize) || Number(mediaPageSize) || 20);
+}
+function bookViewSettingsHtml(prefs, densityLabel) {
+  const pagingChips = [[0, "关闭"], [20, "20"], [50, "50"], [100, "100"]].map(([n, label]) => {
+    const on = n === 0 ? !prefs.paged : (prefs.paged && bookPageSizeValue(prefs) === n);
+    return `<button type="button" data-pagesize="${n}" aria-pressed="${on}" onclick="setBookPageSize(${n})">${label}</button>`;
+  }).join("");
+  const densities = BOOK_DENSITIES.map(d =>
+    `<button type="button" data-cols="${d.cols}" aria-pressed="${Number(prefs.cols) === d.cols}" title="${d.label}" onclick="setBookCols(${d.cols})">${d.cols}</button>`).join("");
+  return `<div class="viewset" id="bookViewSet">
+    <div class="vrow"><span class="lbl">分页浏览</span><span class="chips">${pagingChips}</span></div>
+    <div class="vrow"><span class="lbl">网格密度</span><span class="chips">${densities}</span></div>
+    <div class="vrow"><span class="lbl">封面收藏按钮</span><span class="chips"><button type="button" aria-pressed="${prefs.showFav ? "true" : "false"}" onclick="toggleBookFavButtons()">${prefs.showFav ? "显示" : "隐藏"}</button></span></div>
+    <div class="vrow"><span class="lbl">当前</span><span class="lbl">${densityLabel} · ${prefs.paged ? "每页 " + bookPageSizeValue(prefs) : "完整展开"}</span></div>
+  </div>`;
+}
+/* 分页浏览开关 + 每页数量：0 表示关闭分页（完整展开）。 */
+function setBookPageSize(size) {
+  const n = Number(size) || 0;
+  if (n === 0) {
+    saveBookShelfPrefs({ paged: false });
+    if (typeof toast === "function") toast("▤ 已改为完整展开");
+  } else {
+    mediaPageSize = [20, 50, 100].includes(n) ? n : 20;
+    saveBookShelfPrefs({ paged: true, pageSize: mediaPageSize });
+    if (typeof toast === "function") toast("▤ 每页 " + mediaPageSize + " 本");
+  }
+  bookShelfPage = 0;
+  renderBookShelfPage();
+}
+/* 翻页纯本地：不重新请求，也不重算统计，避免老版本「翻页即跳段」的问题。 */
+function gotoBookShelfPage(page) {
+  const prefs = bookShelfPrefs();
+  if (!prefs.paged) return;
+  const size = bookPageSizeValue(prefs);
+  bookShelfPage = Math.max(0, Number(page) || 0);
+  bookShelfOffset = bookShelfPage * size;
+  renderBookShelfPage();
+}
+function renderBookShelfPage() {
+  const host = document.getElementById("local-media-content-comic");
+  const lib = findMediaLibrary(localMediaSelection.comic);
+  if (!host || !lib) return;
+  const prefs = bookShelfPrefs();
+  const visible = Array.isArray(bookShelfVisibleCache) ? bookShelfVisibleCache : [];
+  const size = bookPageSizeValue(prefs);
+  const pages = Math.max(1, Math.ceil(visible.length / size));
+  bookShelfPage = Math.min(Math.max(0, bookShelfPage), pages - 1);
+  const pageFiles = prefs.paged ? visible.slice(bookShelfPage * size, bookShelfPage * size + size) : visible;
+  host.innerHTML = bookShelfPageHtml(lib, pageFiles, bookShelfCountsCache[lib.id], visible.length);
+  if (typeof scrapeVisibleBookCovers === "function") scrapeVisibleBookCovers(host);
+  closeBookViewSettings();
+}
+function bookPagerHtml(total, shown, unit) {
+  const prefs = bookShelfPrefs();
+  const size = bookPageSizeValue(prefs);
+  const count = Number(total) || 0;
+  if (!prefs.paged) {
+    /* 未开启分页：完整展开，只给出统计，不给假分页器（v0.9.70 的展开保证）。 */
+    return `<div class="pager"><span class="total">已展开全部 ${count} ${unit} · 需要分页可在「视图设置 → 分页浏览」开启</span></div>`;
+  }
+  const pages = Math.max(1, Math.ceil(count / size));
+  const cur = Math.min(pages, Math.max(1, bookShelfPage + 1));
+  const nums = [];
+  const add = n => { if (n >= 1 && n <= pages && !nums.includes(n)) nums.push(n); };
+  [1, cur - 1, cur, cur + 1, pages].forEach(add);
+  nums.sort((a, b) => a - b);
+  let seq = "", prev = 0;
+  nums.forEach(n => {
+    if (prev && n - prev > 1) seq += `<span class="gap">…</span>`;
+    seq += `<button class="pg" type="button" aria-current="${n === cur ? "page" : "false"}" onclick="gotoBookShelfPage(${n - 1})">${n}</button>`;
+    prev = n;
+  });
+  const prevBtn = `<button class="pg nav" type="button" ${cur <= 1 ? "disabled" : ""} onclick="gotoBookShelfPage(${cur - 2})">‹ 上一页</button>`;
+  const nextBtn = `<button class="pg nav" type="button" ${cur >= pages ? "disabled" : ""} onclick="gotoBookShelfPage(${cur})">下一页 ›</button>`;
+  return `<nav class="pager" aria-label="分页">${prevBtn}${seq}${nextBtn}`
+    + `<span class="total">每页 ${size} · 共 ${count} ${unit} · 本页 ${Number(shown) || 0} ${unit}</span></nav>`;
+}
+function bookShelfPageHtml(lib, pageFiles, counts, total) {
+  const prefs = bookShelfPrefs();
+  const unit = "本";
+  const tabs = BOOK_SHELF_TABS.map(tab => {
+    const n = counts && typeof counts[tab.id] === "number" ? counts[tab.id] : null;
+    return `<button type="button" role="tab" aria-selected="${bookShelfTab === tab.id ? "true" : "false"}"`
+      + ` onclick="setBookShelfTab('${tab.id}')">${tab.label}${n !== null ? " " + n : ""}</button>`;
+  }).join("");
+  const sortLabel = (BOOK_SORT_MODES.find(m => m.id === prefs.sort) || BOOK_SORT_MODES[0]).label;
+  const density = BOOK_DENSITIES.find(d => d.cols === Number(prefs.cols)) || BOOK_DENSITIES[1];
+  const kind = BOOK_KIND_LABELS[String(lib.type)] || "书刊";
+  const scan = bookScanLabel(lib);
+  const head = `<div class="pn-head">
+    <div>
+      <h1>${esc(lib.name)}</h1>
+      <div class="pn-meta">
+        <span>${esc(kind)} · 本视图 <b>${Number(total) || 0}</b> ${unit}</span>
+        <span>全库 <b>${Number((counts && counts.all) || 0)}</b> ${unit}</span>
+        ${lib.path ? `<span>路径 <code>${esc(lib.path)}</code></span>` : ""}
+        <span>本页 <b>${pageFiles.length}</b> ${unit}</span>
+        ${scan ? `<span>${esc(scan)}</span>` : ""}
+      </div>
+    </div>
+  </div>`;
+  const toolbar = `<div class="pn-toolbar">
+    <div class="seg" role="tablist" aria-label="书架视图">${tabs}</div>
+    <div class="pn-tools">
+      <button class="tbtn" type="button" onclick="cycleBookSort()" title="切换排序：名称 / 添加时间 / 文件大小">⇅ ${sortLabel}</button>
+      <button class="tbtn icononly" type="button" onclick="cycleBookDensity()" title="网格密度：${density.label}">▦</button>
+      <button class="tbtn icononly" type="button" id="bookViewSetButton" aria-expanded="false" onclick="toggleBookViewSettings(event)" title="视图设置"><span aria-hidden="true">⚙</span></button>
+    </div>
+    ${bookViewSettingsHtml(prefs, density.label)}
+  </div>`;
+  const grid = pageFiles.length
+    ? `<div class="book-grid" style="--cols:${Number(prefs.cols) || 5}">${pageFiles.map(file => renderBookCard("comic", lib, file)).join("")}</div>`
+    : `<div class="empty-tip">${esc(bookShelfEmptyTip(false))}</div>`;
+  return head + toolbar + grid + bookPagerHtml(total, pageFiles.length, unit);
+}
 let mediaResourceView = (() => { try { return localStorage.getItem("vaulthub_media_resource_view") === "list" ? "list" : "poster"; } catch(e) { return "poster"; } })();
 let mediaPageSize = 20;
 let audioPageSize = 20;
@@ -688,9 +984,9 @@ function flushReadingProgressNow() {
   if (readingProgressPending.size) flushReadingProgress();
 }
 function setComicShelfView(view) {
-  comicShelfView = view === "completed" ? "completed" : "shelf";
-  const lib = findMediaLibrary(localMediaSelection.comic);
-  if (lib) loadLocalFiles("comic", lib, 0);
+  /* v0.9.74：历史阅读成为书刊页的一个标签（未读 / 喜欢 / 历史阅读 / 全部），
+     入口保留原函数名，行为交给 setBookShelfTab，避免两套视图状态打架。 */
+  setBookShelfTab(view === "completed" ? "completed" : "shelf");
 }
 function setMediaPageSize(size) {
   mediaPageSize = [20, 50, 100].includes(Number(size)) ? Number(size) : 20;
@@ -801,6 +1097,9 @@ async function refreshMediaLibraries(notify) {
     const res = await fetch("/api/media/libraries", { headers: sessionWriteHeaders(), cache: "no-store" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     localMediaLibraries = normalizeLibraryPayload(await res.json());
+    /* v0.9.74：媒体库列表变化后，书刊页的整库索引与统计缓存一并失效。 */
+    bookShelfIndexCache = {};
+    bookShelfCountsCache = {};
     /* 媒体库列表变化后，系统设置里的表格、侧栏条目和顶栏统计都要跟着更新。 */
     if (typeof renderHomeLibTable === "function") renderHomeLibTable();
     if (typeof renderHomeLibraryNav === "function") renderHomeLibraryNav();
@@ -992,11 +1291,42 @@ async function loadLocalFiles(group, lib, offset = 0) {
       mediaTruncated = rest.truncated;
       data.has_more = false;
     }
+    let bookPageFiles = null, bookTotal = 0;
     if (group === "comic") {
-      files = files.filter(file => {
+      /* v0.9.74：书刊页一次拿整库索引（沿用 v0.9.70 的展开保证），
+         筛选 / 排序 / 统计 / 翻页全部在本地做 —— 翻页不会再打服务端，
+         也就不会出现「翻到第 2 页把已读整段跳过」的老毛病。
+         索引缓存 60 秒，切库或重新扫描后第一次进入会重新拉全量。 */
+      const prefs = bookShelfPrefs();
+      const cached = bookShelfIndexCache[lib.id];
+      const fresh = offset === 0 || !cached || (Date.now() - Number(cached.at || 0)) > 60000;
+      const index = fresh ? files.slice() : cached.files.slice();
+      if (fresh) bookShelfIndexCache[lib.id] = { at: Date.now(), files: index };
+      if (fresh) {
+        const counts = { shelf: 0, like: 0, completed: 0, all: index.length };
+        index.forEach(file => {
+          const progress = Number(readingState(lib.id, String(file.path)).progress || 0);
+          if (progress >= COMPLETED_PROGRESS) counts.completed++; else counts.shelf++;
+          if (isBookFavorite(lib.id, String(file.path))) counts.like++;
+        });
+        bookShelfCountsCache[lib.id] = counts;
+      }
+      bookShelfTab = BOOK_SHELF_TABS.some(x => x.id === bookShelfTab) ? bookShelfTab : (prefs.tab || "shelf");
+      comicShelfView = bookShelfTab === "completed" ? "completed" : "shelf";
+      const visible = bookSortFiles(index.filter(file => {
         const progress = Number(readingState(lib.id, String(file.path)).progress || 0);
-        return comicShelfView === "completed" ? progress >= COMPLETED_PROGRESS : progress < COMPLETED_PROGRESS;
-      });
+        if (bookShelfTab === "all") return true;
+        if (bookShelfTab === "like") return isBookFavorite(lib.id, String(file.path));
+        if (bookShelfTab === "completed") return progress >= COMPLETED_PROGRESS;
+        return progress < COMPLETED_PROGRESS;
+      }), prefs.sort);
+      const size = Math.max(1, Number(prefs.pageSize) || mediaPageSize || 20);
+      const pages = Math.max(1, Math.ceil(visible.length / size));
+      bookShelfPage = Math.min(Math.max(0, Number(bookShelfPage) || 0), pages - 1);
+      bookShelfOffset = bookShelfPage * size;
+      bookShelfVisibleCache = visible;
+      bookPageFiles = prefs.paged ? visible.slice(bookShelfOffset, bookShelfOffset + size) : visible;
+      bookTotal = visible.length;
     }
     const prev = offset > 0 ? `<button class="btn" onclick="loadLocalFiles('${esc(group)}',findMediaLibrary('${esc(lib.id)}'),${Math.max(0, offset - pageSize)})">← 上一页</button>` : "";
     const next = data.has_more ? `<button class="btn" onclick="loadLocalFiles('${esc(group)}',findMediaLibrary('${esc(lib.id)}'),${offset + pageSize})">下一页 →</button>` : "";
@@ -1009,11 +1339,9 @@ async function loadLocalFiles(group, lib, offset = 0) {
       ? `<div class="media-actions"><span class="media-file-meta">已加载全部 ${files.length} / ${total} 项${mediaTruncated ? "（加载未完成）" : ""}</span></div>`
       : `<div class="media-actions">${prev}<span class="media-file-meta">${range} / ${total}</span>${next}</div>`;
     if (group === "comic") {
-      const toolbar = mediaLibraryHeading(lib, "", `<div class="comic-shelf-tabs"><button class="${comicShelfView === "completed" ? "active" : ""}" onclick="setComicShelfView(comicShelfView === \"completed\" ? \"shelf\" : \"completed\")">${comicShelfView === "completed" ? "← 返回未读" : "🕘 历史阅读"}</button></div>`);
-      const emptyTip = comicShelfView === "completed"
-        ? "历史阅读还是空的 —— 读完或标记已读的书会出现在这里。"
-        : (data.has_more ? "本页书籍都已读完，点击「下一页 →」继续查看未读书籍。" : "该媒体库暂无未读书籍。");
-      target.innerHTML = `${toolbar}${files.length ? `<div class="book-grid">${files.map(file => renderBookCard(group, lib, file)).join("")}</div>` : `<div class="empty-tip">${esc(emptyTip)}</div>`}${pager}`;
+      /* v0.9.74：书刊展示页 = 页头（库名 / 条目 / 路径 / 扫描时间）
+         + 工具栏（书架视图分段标签 + 排序 + 网格密度 + 视图设置）+ 封面网格 + 分页。 */
+      target.innerHTML = bookShelfPageHtml(lib, bookPageFiles || [], bookShelfCountsCache[lib.id], bookTotal);
       scrapeVisibleBookCovers(target);
     } else if (group === "audio") {
       /* v0.9.57：专辑/歌手分组播放时（audioGroupLock 活跃）挂起 audioFiles 覆盖 ——
@@ -2228,6 +2556,7 @@ function scrapeVisibleBookCovers(host) {
 function renderBookCard(group, lib, file) {
   const path = String(file.path), title = displayBookTitle(path), ext = fileExt(path).toUpperCase() || "BOOK";
   const progress = Number(readingState(lib.id, path).progress || 0);
+  const prefs = bookShelfPrefs();
   /* v0.9.67：漫画归档（zip/cbz）直接用「第一页缩略图」当封面（服务端 w=320，
      命中磁盘缓存；省掉此前外网刮削既慢又常失败的问题）。刮削仍可选覆盖。 */
   const archiveCover = group === "comic" && ["ZIP", "CBZ"].includes(ext) ? comicCoverUrl(lib, path, 320) : "";
@@ -2235,9 +2564,20 @@ function renderBookCard(group, lib, file) {
   const releaseBtn = group === "comic" && comicShelfView === "completed"
     ? `<button class="book-card-release" type="button" title="从历史阅读释放这本书" onclick="event.stopPropagation();releaseBookFromHistory(${jsAttrArg(lib.id)},${jsAttrArg(path)})">↩ 释放</button>`
     : "";
-  return `<article class="book-card" data-media-group="${esc(group)}" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openLocalMediaButton(this)">${releaseBtn}<div class="book-cover" style="background:${coverGradient(title)}"><span class="book-cover-title">${esc(title)}</span>${archiveCover
+  /* v0.9.74：封面上加「喜欢」按钮（与音乐收藏同一套本地存储），
+     卡片元信息行加一个「阅读 / 继续读」入口；两者都 stopPropagation，
+     避免顺带触发整张卡的打开动作。 */
+  const favKey = bookFavoriteKey(lib.id, path);
+  const favOn = isBookFavorite(lib.id, path);
+  const favBtn = prefs.showFav
+    ? `<button class="book-card-fav ${favOn ? "on" : ""}" type="button" data-fav-key="${esc(favKey)}" aria-pressed="${favOn}"`
+      + ` title="${favOn ? "从喜欢移除" : "加入喜欢"}" aria-label="${favOn ? "从喜欢移除" : "加入喜欢"}"`
+      + ` onclick="event.stopPropagation();toggleBookFavorite(${jsAttrArg(lib.id)},${jsAttrArg(path)})">${favOn ? "♥" : "♡"}</button>`
+    : "";
+  const sizeTxt = Number(file.size) > 0 ? formatFileSize(file.size) : (ext || "BOOK");
+  return `<article class="book-card" data-media-group="${esc(group)}" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openLocalMediaButton(this)">${releaseBtn}${favBtn}<div class="book-cover" style="background:${coverGradient(title)}"><span class="book-cover-title">${esc(title)}</span>${archiveCover
       ? `<img class="book-cover-image" src="${esc(archiveCover)}" alt="${esc(title)} 封面" loading="lazy" onload="this.classList.add('loaded')" onerror="bookCoverFallback(this)">`
-      : `<img class="book-cover-image" data-cover-title="${esc(title)}" alt="${esc(title)} 封面" hidden onload="this.hidden=false;this.classList.add('loaded')" onerror="bookCoverFallback(this)">`}</div><div class="book-card-title" title="${esc(path)}">${esc(title)}</div><div class="book-card-meta"><span>${esc(ext)}</span><span>${progress ? progress.toFixed(1)+"%" : "新入书架"}</span></div><div class="book-progress"><span style="width:${Math.min(100,progress)}%"></span></div></article>`;
+      : `<img class="book-cover-image" data-cover-title="${esc(title)}" alt="${esc(title)} 封面" hidden onload="this.hidden=false;this.classList.add('loaded')" onerror="bookCoverFallback(this)">`}</div><div class="book-card-title" title="${esc(path)}">${esc(title)}</div><div class="book-card-meta"><span>${esc(sizeTxt)}</span><span>${progress ? progress.toFixed(1) + "%" : "新入书架"}</span><button class="book-card-open" type="button" onclick="event.stopPropagation();openLocalMediaButton(this.closest('.book-card'))">${progress >= COMPLETED_PROGRESS ? "重读 ›" : progress ? "继续读 ›" : "阅读 ›"}</button></div><div class="book-progress"><span style="width:${Math.min(100, progress)}%"></span></div></article>`;
 }
 function openLocalMediaButton(button) {
   openLocalMedia(button.dataset.mediaGroup, button.dataset.mediaLibrary, button.dataset.mediaPath);

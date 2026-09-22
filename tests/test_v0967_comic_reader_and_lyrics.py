@@ -143,7 +143,7 @@ checks = {
     # ============ I. 版本与发布物 ============
     "HTML版本": 'VAULTHUB_ASSET_VERSION = "0.9.73"' in HTML and HTML.count("?v=0.9.73") >= 7,
     "脚本版本": 'VAULTHUB_SCRIPT_VERSION = "0.9.73"' in STATE,
-    "UI角标": "v0.9.73 · 主题与播放列表" in HTML,
+    "UI角标": "v0.9.73 · 顶栏导航与书刊页" in HTML,
     "发布说明": "VaultHub 蜀鼠之家 v0.9.67" in NOTES and "漫画阅读器" in NOTES  # 读的是本版（v0.9.67）历史说明
         and "歌词" in NOTES and "不新增任何容器" in NOTES,
     "更新日志段": "# VaultHub 蜀鼠之家 v0.9.73" in LOG,

@@ -38,6 +38,10 @@ else {
   applyBgImage();
 }
 
+/* v0.9.74：顶栏导航（媒体库标签 / 全局搜索 / 头像菜单 / 布局模式）初始化。
+   同样用 typeof 守卫：升级瞬间新 04-boot.js 可能配着缓存里的旧脚本集。 */
+if (typeof initTopNav === "function") initTopNav();
+
 document.getElementById("mpUrl").value = settings.mp.mpUrl || "";
 document.getElementById("mpUser").value = settings.mp.username || "";
 document.getElementById("mpPass").value = settings.mp.password || "";

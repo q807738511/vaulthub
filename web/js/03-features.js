@@ -677,7 +677,8 @@ function toggleModule(id) {
 /* 根据隐藏模块列表应用侧边栏可见性 */
 function applyModuleVisibility() {
   document.body.classList.toggle("module-hidden-pt", hiddenModules.includes("pt"));
-  document.querySelectorAll(".nav-item[data-module]").forEach(item => {
+  /* v0.9.74：模块开关同时作用于侧栏条目与顶栏一级导航项（PT 管理两处都有入口）。 */
+  document.querySelectorAll(".nav-item[data-module], .tn-item[data-module]").forEach(item => {
     item.style.display = hiddenModules.includes(item.dataset.module) ? "none" : "";
   });
   /* v0.7.0：侧栏不再有三个资源大类分组，只有主导航 / 媒体库 / 自定义。 */
@@ -881,6 +882,9 @@ function setLang(l) {
   /* v0.9.73：主题面板里的调色板/明暗/强调色文案由 06-theme.js 动态生成，
      applyI18n 只覆盖带 data-i18n 的静态节点，所以这里要显式重渲染。 */
   if (typeof renderThemePanel === "function") renderThemePanel();
+  if (typeof renderLayoutChips === "function") renderLayoutChips();
+  if (typeof renderTopLibTabs === "function") renderTopLibTabs();
+  if (typeof fillTopUserMenu === "function") fillTopUserMenu();
   renderBoardList();
   renderCustomNav();
   /* 首页与媒体库表单里的动态文案（库名列、子类型 option、海报占位、

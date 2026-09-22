@@ -84,7 +84,11 @@ assert 'strings.ToLower(sqliteLikeEscape(q))' in GO, "查询词必须先转义�
 assert "function mediaLibraryHeading(lib" in JS, "需要统一的媒体库标题渲染函数"
 assert "String(lib?.name" in JS, "标题必须取媒体库名称"
 assert "mediaLibraryHeading(lib" in JS, "各媒体库渲染必须使用该标题函数"
-assert JS.count("mediaLibraryHeading(lib") >= 5, "电影/剧集/书刊/音乐都要使用库名称标题"
+# v0.9.74：书刊页改成自己的页头（pn-head，标题同样是 lib.name 动态渲染），
+# 因此 mediaLibraryHeading 的使用点少一处；这里要求「其余视图都用库名标题 +
+# 书刊页标题也用 lib.name」两条同时成立。
+assert JS.count("mediaLibraryHeading(lib") >= 4, "电影/剧集/音乐都要使用库名称标题"
+assert "<h1>${esc(lib.name)}</h1>" in JS, "书刊页标题必须使用库名称"
 for preset in ["<h3>电影</h3>", "<h3>电视剧集</h3>", "<h3>音乐与 MV</h3>"]:
     assert preset not in JS, f"标题不能写死预设大类名: {preset}"
 assert '"电子书" : "漫画"' not in JS, "书刊标题不能按预设大类渲染"
