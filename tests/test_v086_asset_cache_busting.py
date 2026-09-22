@@ -60,6 +60,9 @@ expected_order = [
     # 01-state.js 的 settings/i18n 与 03-features.js 的 toast，且必须早于
     # 04-boot.js（启动时调用 initTheme()）。既有文件的相对顺序未变。
     "/web/js/06-theme.js",
+    # v0.9.74：顶栏导航（媒体库标签 / 全局搜索 / 头像菜单 / 布局模式）依赖
+    # 05-home 的库列表与 06-theme 的专题文案，因此排在它们之后。
+    "/web/js/07-topnav.js",
     "/web/js/03-audio-zoom.js",
     "/web/js/04-boot.js",
 ]

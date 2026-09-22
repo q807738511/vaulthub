@@ -20,7 +20,7 @@ check("T1 JS 脚本版本", 'VAULTHUB_SCRIPT_VERSION = "0.9.73"' in STATE)
 check("T1 CSS 缓存串", 'href="/web/css/main.css?v=0.9.73"' in HTML)
 check("T1 JS 缓存串 x5", HTML.count('?v=0.9.73') >= 6)  # css 1 + js 5
 check("T1 无 0.9.56 缓存串残留", HTML.count('?v=0.9.56') == 0)
-check("T1 UI 版本角标", "v0.9.73 · 主题与播放列表" in HTML)
+check("T1 UI 版本角标", "v0.9.73 · 顶栏导航与书刊页" in HTML)
 
 # ============ T2 影视详情返回按钮 → 横向药丸（修复穿模） ============
 # 不再使用圆形 media-reader-close + ✕ 长文案组合

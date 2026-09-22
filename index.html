@@ -74,24 +74,63 @@ window.VAULTHUB_ASSET_VERSION = "0.9.73";
 <!-- ===== 顶栏：左侧只保留品牌标识；登录状态 / 关于 / 退出登录已迁移到
      系统设置 → 账户与登录（v0.9.17），右侧全部留给媒体库与首页信息 ===== -->
 <header class="topbar">
-  <div class="logo" id="accountWrap">
-    <span class="logo-icon" id="logoMenuButton" role="img" aria-label="VaultHub 蜀鼠之家">
-      <svg class="mouse-logo" viewBox="0 0 32 32" role="img" aria-hidden="true">
-        <path class="tail" d="M22 21c5 1 7-2 5-5" fill="none" stroke="#6b3e20" stroke-width="2" stroke-linecap="round"/>
-        <circle cx="10" cy="10" r="4" fill="#8a5a35"/><circle cx="20" cy="10" r="4" fill="#8a5a35"/>
-        <ellipse cx="16" cy="18" rx="10" ry="9" fill="#c78b4d"/><ellipse cx="16" cy="20" rx="6" ry="5" fill="#f0c98a"/>
-        <circle cx="12" cy="17" r="1.4" fill="#1f130b"/><circle cx="20" cy="17" r="1.4" fill="#1f130b"/>
-        <path d="M15 20l1.1 1 1.1-1" fill="none" stroke="#5a3218" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
-        <path class="whisker" d="M9 20H3m20 0h6M10 22l-5 2m17-2 5 2" fill="none" stroke="#5a3218" stroke-width="1" stroke-linecap="round"/>
-      </svg>
-    </span>
-    <div class="brand-copy" title="蜀鼠之家，承包你的所有休闲内容"><strong class="brand-title">VaultHub</strong><small data-i18n="appName">蜀鼠之家</small></div>
+  <!-- v0.9.74 顶栏导航（原型 VaultHub-TopNav-Emerald）：
+       媒体库直接平铺在顶栏（不再走左侧栏），系统设置/外观主题/自定义模块/账户
+       与退出登录统一收进右上角头像菜单；顶栏信息区只保留扫描与播放状态（无按钮）。 -->
+  <div class="tn-wrap">
+    <div class="logo tn-brand" id="accountWrap" title="蜀鼠之家，承包你的所有休闲内容">
+      <span class="logo-icon" id="logoMenuButton" role="img" aria-label="VaultHub 蜀鼠之家">
+        <svg class="mouse-logo" viewBox="0 0 32 32" role="img" aria-hidden="true">
+          <path class="tail" d="M22 21c5 1 7-2 5-5" fill="none" stroke="#6b3e20" stroke-width="2" stroke-linecap="round"/>
+          <circle cx="10" cy="10" r="4" fill="#8a5a35"/><circle cx="20" cy="10" r="4" fill="#8a5a35"/>
+          <ellipse cx="16" cy="18" rx="10" ry="9" fill="#c78b4d"/><ellipse cx="16" cy="20" rx="6" ry="5" fill="#f0c98a"/>
+          <circle cx="12" cy="17" r="1.4" fill="#1f130b"/><circle cx="20" cy="17" r="1.4" fill="#1f130b"/>
+          <path d="M15 20l1.1 1 1.1-1" fill="none" stroke="#5a3218" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+          <path class="whisker" d="M9 20H3m20 0h6M10 22l-5 2m17-2 5 2" fill="none" stroke="#5a3218" stroke-width="1" stroke-linecap="round"/>
+        </svg>
+      </span>
+      <div class="brand-copy"><strong class="brand-title">VaultHub</strong><small data-i18n="appName">蜀鼠之家</small></div>
+    </div>
+
+    <nav class="tn-nav" aria-label="主导航">
+      <button class="tn-item active" type="button" data-topnav="home" onclick="switchView('home')" title="首页"><span class="ic">🏠</span><span class="nl" data-i18n="navHome">首页</span></button>
+      <button class="tn-item" type="button" data-topnav="search" onclick="openMediaSearch()" title="媒体搜索"><span class="ic">🔍</span><span class="nl" data-i18n="navMediaSearch">媒体搜索</span></button>
+      <button class="tn-item" type="button" data-topnav="pt" data-module="pt" onclick="switchView('pt')" title="PT 管理"><span class="ic">🌊</span><span class="nl" data-i18n="navPt">PT 管理</span></button>
+    </nav>
+
+    <span class="tn-sep" aria-hidden="true"></span>
+
+    <!-- 媒体库分类：标签就是库名本身，由 renderTopLibTabs() 按真实媒体库渲染 -->
+    <div class="tn-libs" id="topLibTabs" role="tablist" aria-label="媒体库"></div>
+
+    <!-- 顶栏信息区：只展示媒体库与首页信息，不再有任何导航按钮 -->
+    <div class="tb-info" id="topInfo">
+      <span class="tb-stat" id="topScanStat"></span>
+      <span class="tb-stat" id="topPlayStat"></span>
+    </div>
+
+    <label class="tn-search">
+      <span aria-hidden="true">⌕</span>
+      <input id="topSearch" type="search" placeholder="搜索当前媒体库…" aria-label="全局搜索" oninput="onTopSearchInput()" onkeydown="onTopSearchKey(event)">
+      <kbd>⌘K</kbd>
+    </label>
+
+    <div class="tn-actions">
+      <button class="tn-avatar" id="topUserButton" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="topUserMenu" onclick="toggleTopUserMenu(event)" title="账户 / 系统设置">E</button>
+    </div>
   </div>
 
-  <!-- 右侧信息区：只展示媒体库与首页信息，不再有任何导航按钮 -->
-  <div class="tb-info" id="topInfo">
-    <span class="tb-stat" id="topScanStat"></span>
-    <span class="tb-stat" id="topPlayStat"></span>
+  <div class="tn-pop" id="topUserMenu" role="menu">
+    <div class="tn-menuhead">
+      <span class="avatar" id="topUserAvatar" aria-hidden="true">E</span>
+      <span class="who"><strong id="topUserName">管理员</strong><span id="topUserMeta">VaultHub</span></span>
+    </div>
+    <button class="tn-popitem" type="button" role="menuitem" onclick="topUserMenuGo('library')"><span class="ic">⚙</span>系统设置<span class="k">媒体库 · 外观 · 刮削 · 账户</span></button>
+    <button class="tn-popitem" type="button" role="menuitem" onclick="topUserMenuGo('look')"><span class="ic">🎨</span>外观主题<span class="k" id="topMenuTheme">当前：青瓷</span></button>
+    <button class="tn-popitem" type="button" role="menuitem" onclick="topUserMenuGo('custom')"><span class="ic">★</span>自定义模块<span class="k">已并入系统设置</span></button>
+    <button class="tn-popitem" type="button" role="menuitem" onclick="topUserMenuGo('account')"><span class="ic">👤</span>账户与登录<span class="k">会话与退出</span></button>
+    <div class="tn-popsep"></div>
+    <button class="tn-popitem danger" type="button" role="menuitem" onclick="topUserMenuLogout()"><span class="ic">⏏</span>退出登录</button>
   </div>
 </header>
 
@@ -119,7 +158,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.73";
   <div class="sidebar-foot">
     <button class="rail-btn rail-settings" id="sidebarSettingsButton" type="button" onclick="openSettingsModalFromSidebar()" title="系统设置" aria-label="系统设置"><span class="ic">⚙</span><span class="txt" data-i18n="settingsTitle">系统设置</span></button>
     <div class="sidebar-foot-row">
-      <span class="ver">v0.9.73 · 主题与播放列表</span>
+      <span class="ver">v0.9.73 · 顶栏导航与书刊页</span>
       <button class="rail-btn rail-collapse" id="sidebarCollapseButton" type="button" onclick="toggleBars()" title="折叠 / 展开侧栏" aria-label="折叠或展开侧栏">⇤</button>
     </div>
   </div>
@@ -549,6 +588,15 @@ window.VAULTHUB_ASSET_VERSION = "0.9.73";
         </div>
         <div class="theme-note" data-i18n="themeNote">主题 = 调色板 × 明暗 × 强调色 三层叠加；每套调色板自带圆角、阴影、标题字族与动效节奏，选择只保存在本浏览器。</div>
 
+        <div class="modal-sec" data-i18n="setLayout">布局</div>
+        <!-- v0.9.74：媒体库导航放顶栏还是放侧栏。顶栏 = 原型布局（默认），
+             侧栏 = v0.9.73 及以前的样子，切换只影响本浏览器。 -->
+        <div class="chips" id="layoutModeChips">
+          <button type="button" data-layout="topnav" aria-pressed="true" onclick="setLayoutMode('topnav')" data-i18n="setLayoutTop">顶部导航</button>
+          <button type="button" data-layout="sidebar" aria-pressed="false" onclick="setLayoutMode('sidebar')" data-i18n="setLayoutSide">侧边导航</button>
+        </div>
+        <div class="hint" data-i18n="setLayoutHint">顶部导航把媒体库平铺在顶栏、设置收进右上角头像菜单；侧边导航保留可折叠侧栏。两种布局下媒体库、阅读进度与播放状态完全相同。</div>
+
         <div class="modal-sec" data-i18n="setSidebar">侧栏</div>
         <div class="toggle-row">
           <div class="l"><span data-i18n="setSidebarMem">侧栏宽度记忆</span><small data-i18n="setSidebarMemSub">拖拽侧栏右边缘调整宽度，自动写入本浏览器</small></div>
@@ -771,7 +819,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.73";
   <div class="modal">
     <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
     <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
-    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.9.73 · 主题与播放列表</b></div>
+    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.9.73 · 顶栏导航与书刊页</b></div>
     <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>Go (media/manager/subtitle) · Caddy · FFmpeg · SQLite · HTML/CSS/JS</b></div>
     <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>VaultHub 内置系统监控</b></div>
     <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>
@@ -922,6 +970,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.73";
 <script src="/web/js/03-features.js?v=0.9.73"></script>
 <script src="/web/js/05-home.js?v=0.9.73"></script>
 <script src="/web/js/06-theme.js?v=0.9.73"></script>
+<script src="/web/js/07-topnav.js?v=0.9.73"></script>
 <script src="/web/js/03-audio-zoom.js?v=0.9.73"></script>
 <script src="/web/js/04-boot.js?v=0.9.73"></script>
 </body>

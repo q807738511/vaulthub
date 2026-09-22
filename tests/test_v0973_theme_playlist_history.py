@@ -194,7 +194,8 @@ check("V 入口页资源版本 0.9.73", f'window.VAULTHUB_ASSET_VERSION = "{VERS
 check("V 脚本自校验版本 0.9.73", f'const VAULTHUB_SCRIPT_VERSION = "{VERSION}";' in STATE)
 check("V 所有静态资源带 ?v=0.9.73", HTML.count(f"?v={VERSION}") >= 8, f"命中 {HTML.count(f'?v={VERSION}')}")
 check("V 主题脚本被入口页引用", f'/web/js/06-theme.js?v={VERSION}' in HTML)
-check("V 侧栏与关于弹窗角标已升版", HTML.count(f"v{VERSION} · 主题与播放列表") == 2)
+# 同一版本内角标文案随本版主功能追加而调整（v0.9.73 收尾加入顶栏导航与书刊页）。
+check("V 侧栏与关于弹窗角标已升版", HTML.count(f"v{VERSION} · 顶栏导航与书刊页") == 2)
 check("V release notes 文件存在", NOTES.is_file())
 check("V Update Log 有 v0.9.73 段", f"# VaultHub 蜀鼠之家 v{VERSION}" in UPDATELOG)
 check("V 历史版本号仍钉在历史注释里",

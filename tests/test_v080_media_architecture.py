@@ -34,7 +34,9 @@ assert "renderMoviePoster(" in media and "media-poster-grid" in media
 assert "renderBookCard(" in media and "book-grid" in media
 assert "renderAudioAlbums(" in media and "audio-album-grid" in media
 assert "我的媒体库" in media and "最新音乐" in media
-assert "已读收藏" in media and "返回未读" in media
+# v0.9.74：书刊页把「已读收藏」升级为四个书架标签（未读 / 喜欢 / 🕘 历史阅读 / 全部），
+# 「返回未读」这个来回切换的按钮被分段标签取代。
+assert "历史阅读" in media and "未读" in media and "喜欢" in media
 assert "selectLocalLibrary" in media
 assert "setBookTypeView" not in media and "电子书" in media and "漫画" in media
 # Scrape buttons/config text must not be emitted by content renderers.

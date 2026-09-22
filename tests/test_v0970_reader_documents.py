@@ -13,8 +13,12 @@ checks = {
     "完整索引用于书刊筛选": 'group === "comic" && data.status !== "indexing"' in MEDIA
         and "files = await fetchAllLibraryFiles(lib.id, data, offset)" in MEDIA,
     "不再发送超大已读分页": 'comicShelfView === "completed" ? 100000' not in MEDIA,
-    "已读过滤仍按进度": 'comicShelfView === "completed" ? progress >= COMPLETED_PROGRESS : progress < COMPLETED_PROGRESS' in MEDIA,
-    "已读收藏按钮可切回": 'setComicShelfView(comicShelfView === \\"completed\\" ? \\"shelf\\" : \\"completed\\")' in MEDIA,
+    # v0.9.74：书架视图从「两态按钮」升级为四个分段标签（未读 / 喜欢 / 🕘 历史阅读 / 全部），
+    # 过滤仍按同一个阅读进度阈值判断，只是判断入口换成了标签状态。
+    "已读过滤仍按进度": 'if (bookShelfTab === "completed") return progress >= COMPLETED_PROGRESS;' in MEDIA
+        and "return progress < COMPLETED_PROGRESS;" in MEDIA,
+    "书架标签含历史阅读且保留旧入口": 'id: "completed", label: "🕘 历史阅读"' in MEDIA
+        and "function setComicShelfView(view)" in MEDIA,
     "PDF 使用登录媒体流": 'else if (ext === "pdf")' in MEDIA and 'body = `<iframe src="${esc(url)}#view=FitH"' in MEDIA
         and 'url = mediaFileUrl(lib, path)' in MEDIA,
     "常见文档格式进入阅读器": '"epub"' in MEDIA and '"docx"' in MEDIA and 'MEDIA_FORMATS.book.includes(ext)' in MEDIA,

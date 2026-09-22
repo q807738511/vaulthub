@@ -1042,6 +1042,7 @@ let settings = {
   palette: "emerald",     /* 调色板层：emerald | plum | neon | clay */
   accent: "theme",        /* 强调色层：theme（跟随调色板）| teal | indigo | rose | amber | violet */
   customBg: false,        /* 背景图层：是否启用自定义背景图片 */
+  layout: "topnav",       /* v0.9.74 布局层：topnav（媒体库平铺顶栏，默认）| sidebar（v0.9.73 的侧栏） */
   reduceMotion: false,    /* 动效：减弱过渡与动画 */
   hardwareAcceleration: "auto",
   /* 容器版默认经同源 Caddy 代理；外部浏览器无需直连家庭内网地址 */
@@ -1081,6 +1082,7 @@ function loadSettings() {
     else settings.mode = s.theme === "light" ? "light" : "dark";
     if (["emerald", "plum", "neon", "clay"].includes(s.palette)) settings.palette = s.palette;
     if (["theme", "teal", "indigo", "rose", "amber", "violet"].includes(s.accent)) settings.accent = s.accent;
+    if (s.layout === "sidebar" || s.layout === "topnav") settings.layout = s.layout;
     if (s.theme === "custom") settings.customBg = true;
     if (typeof s.customBg === "boolean") settings.customBg = s.customBg;
     settings.reduceMotion = !!s.reduceMotion;
@@ -1228,6 +1230,10 @@ function switchView(v, libId) {
     navKey = v + ":" + localMediaSelection[v];
   }
   window.vaultHubActiveNavKey = navKey;
+  /* v0.9.74：顶栏媒体库标签与一级导航的高亮跟随同一次视图切换
+     （同组媒体库靠 navKey 区分，所以必须把 navKey 一起传下去）。 */
+  if (typeof syncTopLibTabs === "function") syncTopLibTabs(navKey);
+  if (typeof syncTopNavView === "function") syncTopNavView("view-" + v);
   const navItem = (navKey && items.find(n => n.dataset.navKey === navKey))
     || items.find(n => n.dataset.view === v && !n.dataset.libId)
     || items.find(n => n.dataset.view === v);

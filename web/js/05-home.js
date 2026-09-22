@@ -53,6 +53,8 @@ function renderHomeLibraryNav() {
   }
   host.innerHTML = rows.length ? rows.join("")
     : `<div class="nav-empty">${esc(t("libNavEmpty"))}</div>`;
+  /* v0.9.74：顶栏媒体库标签与侧栏同一份数据源、同一时刻渲染。 */
+  if (typeof renderTopLibTabs === "function") renderTopLibTabs();
   /* 这里每 5 秒被 initHome 的定时器整体重建一次（为了刷新计数与索引进度）。
      重建出来的节点都是新的、都不带 active，因此必须按 switchView 记下的
      选中键重新套用高亮，否则用户点完媒体库 5 秒后侧栏就什么都不亮了。 */
