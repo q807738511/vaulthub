@@ -6,7 +6,7 @@
 web/js/02-media.js 与 web/js/07-topnav.js 一并载入 Node，用桩 document /
 localStorage / fetch 真实执行渲染路径，断言：
 
-  1. 书刊页有四个书架标签（未读 / 喜欢 / 🕘 历史阅读 / 全部），计数正确；
+  1. 书刊页有三个书架标签（书架 / 喜欢 / 🕘 历史阅读，v0.9.74 移除「全部」），计数正确；
   2. 默认是「完整展开」（v0.9.70 的展开保证不能被分页吞掉）；
   3. 喜欢（收藏）按钮真的写进 localStorage，取消收藏后从「喜欢」里消失；
   4. 开启分页浏览后按每页数量切片，翻页是纯本地操作（不再打服务端）；
@@ -63,8 +63,8 @@ function mkTab(key) {
 const fakeTabs = [mkTab("audio:m1"), mkTab("comic:c1"), mkTab("comic:b1")];
 /* 已渲染的书架标签（文案形如「喜欢 0」），用来观察原地刷新 */
 const fakeSegButtons = [
-  { textContent: "未读 25" }, { textContent: "喜欢 0" },
-  { textContent: "🕘 历史阅读 20" }, { textContent: "全部 45" }
+  { textContent: "书架 25" }, { textContent: "喜欢 0" },
+  { textContent: "🕘 历史阅读 20" }
 ];
 const document = {
   getElementById: id => (els[id] || (els[id] = fakeEl())),
@@ -163,12 +163,12 @@ const chk = (name, cond, extra) => {
   chk("页头显示库名", html().includes("<h1>漫画</h1>"));
   chk("页头元信息含本视图/全库与路径", html().includes("本视图 <b>25</b> 本") && html().includes("全库 <b>45</b> 本") && html().includes("<code>/MH</code>"));
   chk("页头含扫描时间", html().includes("上次扫描"));
-  chk("四个书架标签齐备", ["未读", "喜欢", "🕘 历史阅读", "全部"].every(x => html().includes(">" + x) || html().includes(x)));
-  chk("标签带计数", html().includes("未读 25") && html().includes("喜欢 0") && html().includes("历史阅读 20"));
-  chk("默认未读视图", api.getTab() === "shelf");
+  chk("三个书架标签齐备（书架/喜欢/历史阅读，无全部）", ["书架", "喜欢", "🕘 历史阅读"].every(x => html().includes(">" + x) || html().includes(x)) && !html().includes(">全部"));
+  chk("标签带计数", html().includes("书架 25") && html().includes("喜欢 0") && html().includes("历史阅读 20"));
+  chk("默认书架视图（扫描文件统一进书架）", api.getTab() === "shelf");
   chk("默认完整展开（不截断）", countCards() === 25, "实际 " + countCards());
   chk("默认不显示分页器", !html().includes('aria-current="page"') && html().includes("已展开全部 25 本"));
-  chk("未读视图不含已读书", !html().includes("book-01.cbz"));
+  chk("书架视图不含已读书", !html().includes("book-01.cbz"));
   chk("封面带喜欢按钮", html().includes('class="book-card-fav '));
   chk("卡片带阅读入口", html().includes("book-card-open"));
   chk("视图设置浮层齐备", html().includes('id="bookViewSet"') && html().includes("分页浏览") && html().includes("网格密度"));
@@ -195,9 +195,10 @@ const chk = (name, cond, extra) => {
   await wait();
   chk("历史阅读视图只显示已读", countCards() === 20, "实际 " + countCards());
   chk("历史阅读仍带释放按钮", html().includes("book-card-release"));
+  /* v0.9.74：「全部」标签已移除；setBookShelfTab 对未知标签回退到书架。 */
   api.setBookShelfTab("all");
   await wait();
-  chk("全部视图显示整库 45 本", countCards() === 45, "实际 " + countCards());
+  chk("移除的『全部』标签回退到书架视图", api.getTab() === "shelf" && countCards() === 25, "实际 " + countCards());
 
   /* 分页浏览：显式开启后才切片，翻页纯本地 */
   const before = requests.filter(u => u.includes("/api/media/files")).length;
@@ -205,18 +206,18 @@ const chk = (name, cond, extra) => {
   await wait();
   chk("开启分页后每页 20 本", countCards() === 20, "实际 " + countCards());
   chk("分页器高亮第 1 页", html().includes('aria-current="page"'));
-  chk("分页器统计正确", html().includes("每页 20 · 共 45 本"));
-  api.gotoBookShelfPage(2);
+  chk("分页器统计正确", html().includes("每页 20 · 共 25 本"));
+  api.gotoBookShelfPage(1);
   await wait();
-  chk("第 3 页剩余 5 本", countCards() === 5, "实际 " + countCards());
-  chk("第 3 页高亮页码 3", html().includes(">3</button>") && html().includes('aria-current="page"'));
+  chk("第 2 页剩余 5 本", countCards() === 5, "实际 " + countCards());
+  chk("第 2 页高亮页码 2", html().includes(">2</button>") && html().includes('aria-current="page"'));
   chk("翻页不再请求服务端", requests.filter(u => u.includes("/api/media/files")).length === before);
   api.gotoBookShelfPage(0);
   await wait();
   chk("回到第 1 页", api.getPage() === 0 && countCards() === 20);
   api.setBookPageSize(0);
   await wait();
-  chk("关闭分页后恢复完整展开", countCards() === 45, "实际 " + countCards());
+  chk("关闭分页后恢复完整展开", countCards() === 25, "实际 " + countCards());
 
   /* 排序 / 密度 */
   api.cycleBookSort();

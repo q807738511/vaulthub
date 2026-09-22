@@ -30,9 +30,9 @@ def check(name, cond, extra=""):
     checks[name] = (bool(cond), extra)
 
 # ============ 版本一致性 ============
-check("本版版本", 'VAULTHUB_ASSET_VERSION = "0.9.73"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.73"' in STATE)
-check("资源缓存串", HTML.count("?v=0.9.73") >= 7, f"实际 {HTML.count('?v=0.9.73')}")
-check("UI 版本角标", "v0.9.73" in HTML and HTML.count("v0.9.73") >= 2)
+check("本版版本", 'VAULTHUB_ASSET_VERSION = "0.9.74"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.74"' in STATE)
+check("资源缓存串", HTML.count("?v=0.9.74") >= 7, f"实际 {HTML.count('?v=0.9.74')}")
+check("UI 版本角标", "v0.9.74" in HTML and HTML.count("v0.9.74") >= 2)
 
 # ============ 需求 1：刮削识别策略（特殊字符 / 日语 / 全角） ============
 check("归一化：宽度折叠（含半角片假名）",
@@ -143,7 +143,7 @@ check("启动时初始化弱网状态与后台测速",
 check("客户向弱网手册", PLAYBOOK.exists() and "Plex" in PLAYBOOK.read_text(encoding="utf-8")
       and "Navidrome" in PLAYBOOK.read_text(encoding="utf-8")
       and "audio/stream" in PLAYBOOK.read_text(encoding="utf-8"))
-# v0.9.73：仓库主在 e97c23f 里精简 README，删掉了「弱网与远程访问」小节（细则以
+# v0.9.74：仓库主在 e97c23f 里精简 README，删掉了「弱网与远程访问」小节（细则以
 # docs/weak-network-playbook.md 为准）。原断言钉死 README 里的「弱网」二字，会被这次
 # 正当的文档精简打红 —— 改为断言「能力有客户向文档可查」，README 提到与否都算通过。
 check("弱网能力有客户向文档（README 或客户手册）",
