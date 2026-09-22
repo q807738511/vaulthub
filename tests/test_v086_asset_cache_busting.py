@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.9.73"
+VERSION = "0.9.74"
 
 failures = []
 
@@ -56,7 +56,7 @@ expected_order = [
     "/web/js/02-media.js",
     "/web/js/03-features.js",
     "/web/js/05-home.js",
-    # v0.9.73：主题引擎插在 05-home.js 与 03-audio-zoom.js 之间 —— 它依赖
+    # v0.9.74：主题引擎插在 05-home.js 与 03-audio-zoom.js 之间 —— 它依赖
     # 01-state.js 的 settings/i18n 与 03-features.js 的 toast，且必须早于
     # 04-boot.js（启动时调用 initTheme()）。既有文件的相对顺序未变。
     "/web/js/06-theme.js",

@@ -4,10 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VaultHub 蜀鼠之家</title>
-<link rel="stylesheet" href="/web/css/main.css?v=0.9.73">
+<link rel="stylesheet" href="/web/css/main.css?v=0.9.74">
 <script>
 /* 资源版本号：index.html 用它给所有静态资源打查询串。 */
-window.VAULTHUB_ASSET_VERSION = "0.9.73";
+window.VAULTHUB_ASSET_VERSION = "0.9.74";
 </script>
 <script>
 /* v0.9.73 主题防闪：调色板/明暗/强调色必须在首帧渲染前落到 <html> 上，
@@ -94,7 +94,6 @@ window.VAULTHUB_ASSET_VERSION = "0.9.73";
 
     <nav class="tn-nav" aria-label="主导航">
       <button class="tn-item active" type="button" data-topnav="home" onclick="switchView('home')" title="首页"><span class="ic">🏠</span><span class="nl" data-i18n="navHome">首页</span></button>
-      <button class="tn-item" type="button" data-topnav="search" onclick="openMediaSearch()" title="媒体搜索"><span class="ic">🔍</span><span class="nl" data-i18n="navMediaSearch">媒体搜索</span></button>
       <button class="tn-item" type="button" data-topnav="pt" data-module="pt" onclick="switchView('pt')" title="PT 管理"><span class="ic">🌊</span><span class="nl" data-i18n="navPt">PT 管理</span></button>
     </nav>
 
@@ -158,7 +157,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.73";
   <div class="sidebar-foot">
     <button class="rail-btn rail-settings" id="sidebarSettingsButton" type="button" onclick="openSettingsModalFromSidebar()" title="系统设置" aria-label="系统设置"><span class="ic">⚙</span><span class="txt" data-i18n="settingsTitle">系统设置</span></button>
     <div class="sidebar-foot-row">
-      <span class="ver">v0.9.73 · 顶栏导航与书刊页</span>
+      <span class="ver">v0.9.74 · 书架视图与顶栏精简</span>
       <button class="rail-btn rail-collapse" id="sidebarCollapseButton" type="button" onclick="toggleBars()" title="折叠 / 展开侧栏" aria-label="折叠或展开侧栏">⇤</button>
     </div>
   </div>
@@ -819,7 +818,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.73";
   <div class="modal">
     <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
     <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
-    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.9.73 · 顶栏导航与书刊页</b></div>
+    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.9.74 · 书架视图与顶栏精简</b></div>
     <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>Go (media/manager/subtitle) · Caddy · FFmpeg · SQLite · HTML/CSS/JS</b></div>
     <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>VaultHub 内置系统监控</b></div>
     <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>
@@ -965,13 +964,13 @@ window.VAULTHUB_ASSET_VERSION = "0.9.73";
 
 <div class="toast" id="toast"></div>
 
-<script src="/web/js/01-state.js?v=0.9.73"></script>
-<script src="/web/js/02-media.js?v=0.9.73"></script>
-<script src="/web/js/03-features.js?v=0.9.73"></script>
-<script src="/web/js/05-home.js?v=0.9.73"></script>
-<script src="/web/js/06-theme.js?v=0.9.73"></script>
-<script src="/web/js/07-topnav.js?v=0.9.73"></script>
-<script src="/web/js/03-audio-zoom.js?v=0.9.73"></script>
-<script src="/web/js/04-boot.js?v=0.9.73"></script>
+<script src="/web/js/01-state.js?v=0.9.74"></script>
+<script src="/web/js/02-media.js?v=0.9.74"></script>
+<script src="/web/js/03-features.js?v=0.9.74"></script>
+<script src="/web/js/05-home.js?v=0.9.74"></script>
+<script src="/web/js/06-theme.js?v=0.9.74"></script>
+<script src="/web/js/07-topnav.js?v=0.9.74"></script>
+<script src="/web/js/03-audio-zoom.js?v=0.9.74"></script>
+<script src="/web/js/04-boot.js?v=0.9.74"></script>
 </body>
 </html>

@@ -202,10 +202,9 @@ let bookShelfVisibleCache = [];      /* 当前书架视图（筛选+排序后）
 const BOOK_SHELF_PREFS_KEY = "vaultHubBookShelf";
 const BOOK_FAVORITES_KEY = "vaultHubBookFavorites";
 const BOOK_SHELF_TABS = [
-  { id: "shelf", label: "未读" },
+  { id: "shelf", label: "书架" },
   { id: "like", label: "喜欢" },
-  { id: "completed", label: "🕘 历史阅读" },
-  { id: "all", label: "全部" }
+  { id: "completed", label: "🕘 历史阅读" }
 ];
 const BOOK_SORT_MODES = [
   { id: "name", label: "按名称" },
@@ -362,8 +361,8 @@ function bookScanLabel(lib) {
 function bookShelfEmptyTip(hasMore) {
   if (bookShelfTab === "like") return "还没有喜欢的书 —— 鼠标移到封面上点右上角的心形即可收藏，收藏的书会集中在这里。";
   if (bookShelfTab === "completed") return "历史阅读还是空的 —— 读完或标记已读的书会出现在这里。";
-  if (bookShelfTab === "all") return "该媒体库暂无可阅读的书籍。";
-  return "该媒体库暂无未读书籍。";
+
+  return "书架还是空的 —— 扫描到的文件会先集中在这里。";
 }
 function bookPageSizeValue(prefs) {
   return Math.max(1, Number(prefs.pageSize) || Number(mediaPageSize) || 20);
@@ -1315,7 +1314,8 @@ async function loadLocalFiles(group, lib, offset = 0) {
       comicShelfView = bookShelfTab === "completed" ? "completed" : "shelf";
       const visible = bookSortFiles(index.filter(file => {
         const progress = Number(readingState(lib.id, String(file.path)).progress || 0);
-        if (bookShelfTab === "all") return true;
+        /* v0.9.74：「全部」标签移除 —— 扫描到的文件统一先进「书架」，
+           书架/历史阅读之外不再提供整库视图；counts.all 仅作为页头全库计数保留。 */
         if (bookShelfTab === "like") return isBookFavorite(lib.id, String(file.path));
         if (bookShelfTab === "completed") return progress >= COMPLETED_PROGRESS;
         return progress < COMPLETED_PROGRESS;

@@ -22,13 +22,13 @@ checks = {
     "PDF 使用登录媒体流": 'else if (ext === "pdf")' in MEDIA and 'body = `<iframe src="${esc(url)}#view=FitH"' in MEDIA
         and 'url = mediaFileUrl(lib, path)' in MEDIA,
     "常见文档格式进入阅读器": '"epub"' in MEDIA and '"docx"' in MEDIA and 'MEDIA_FORMATS.book.includes(ext)' in MEDIA,
-    # v0.9.73：原契约是「关闭阅读器强制回到未读视图」；用户报告从「历史阅读」点开一本
+    # v0.9.74：原契约是「关闭阅读器强制回到未读视图」；用户报告从「历史阅读」点开一本
     # 再关闭会被踢回未读，看起来像条目被释放。新契约：保持当前视图并刷新。
     "关闭阅读器刷新书架视图": 'if (group === "comic")' in FEATURES and 'setComicShelfView(comicShelfView)' in FEATURES,
     "关闭释放阅读器监听": 'closeComicReader()' in FEATURES,
     "历史焦点检查仍存在": 'aria-modal="true"' in HTML and ':focus-visible' in CSS,
     "网易云默认关闭": 'NetEase' in MEDIA and '默认关闭' in MEDIA,
-    "本版版本": 'VAULTHUB_ASSET_VERSION = "0.9.73"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.73"' in STATE,
+    "本版版本": 'VAULTHUB_ASSET_VERSION = "0.9.74"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.74"' in STATE,
 }
 GO_MAIN = (ROOT / "media-go/main.go").read_text(encoding="utf-8")
 GO_EPUB = (ROOT / "media-go/document_epub.go").read_text(encoding="utf-8")
