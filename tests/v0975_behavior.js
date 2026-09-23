@@ -43,7 +43,7 @@ const sandbox = {
     execCommand: () => true,
   },
   navigator: {},
-  location: { pathname: "/", origin: "http://192.168.112.3:8088", href: "http://192.168.112.3:8088/" },
+  location: { pathname: "/", origin: "http://192.0.2.10:8088", href: "http://192.0.2.10:8088/" },
   window: { isSecureContext: false, addEventListener: () => {} },
   esc: s => String(s), jsAttrArg: s => JSON.stringify(s),
   event: { clientX: 0 },
@@ -87,7 +87,7 @@ chk("B9 移出后恢复已存 5 分显示", w1.valueEl.textContent === "我的�
   const dialogHtml = appended.length ? String(appended[appended.length - 1].innerHTML || "") : "";
   chk("A1 http 下打开分享面板（不依赖剪贴板权限）", appended.length > 0 && appended[appended.length - 1].id === "shareDialog", JSON.stringify(appended.map(a=>a.id)));
   const shareUrl = appended.length ? String(appended[appended.length-1].attrs["data-share-url"] || "") : "";
-  chk("A2 面板含可选中链接（内网地址）", dialogHtml.includes("shareLinkInput") && shareUrl.includes("192.168.112.3:8088"), shareUrl);
+  chk("A2 面板含可选中链接（内网地址）", dialogHtml.includes("shareLinkInput") && shareUrl.includes("192.0.2.10:8088"), shareUrl);
   chk("A3 面板提示内网分享语义", dialogHtml.includes("内网分享"));
   const btn = { textContent: "", attrs: {}, setAttribute(k,v){ this.attrs[k]=v; } };
   sandbox.__btn = btn;
