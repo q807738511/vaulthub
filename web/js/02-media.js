@@ -728,7 +728,7 @@ async function loadMediaRuntimeSettings(notify = false) {
     const res = await fetch("/api/media/settings", { cache:"no-store" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const c = await res.json();
-    const values = { mediaScraperMode:c.scraper_mode, tmdbApiBase:c.tmdb_api_base, tmdbImageBase:c.tmdb_image_base, tvdbApiBase:c.tvdb_api_base, mediaCacheDir:c.cache_dir, mediaCacheMaxBytes:c.cache_max_bytes, mediaCacheMaxAge:c.cache_max_age_hours, mediaCacheCleanup:c.cache_cleanup_interval_hours };
+    const values = { mediaScraperMode:c.scraper_mode, tmdbApiBase:c.tmdb_api_base, tmdbImageBase:c.tmdb_image_base, tvdbApiBase:c.tvdb_api_base, mediaCacheDir:c.cache_dir, mediaCacheMaxBytes:c.cache_max_bytes, mediaCacheMaxAge:c.cache_max_age_hours, mediaCacheCleanup:c.cache_cleanup_interval_hours, sharePublicBase:c.share_public_base || "" };
     Object.entries(values).forEach(([id,value]) => { const el=document.getElementById(id); if(el && value !== undefined) el.value=String(value); });
     const key=document.getElementById("tmdbApiKey"); if(key){ key.value=""; key.placeholder=c.tmdb_api_key_masked ? "已设置；留空保留" : "未设置"; }
     const tvdbKey=document.getElementById("tvdbApiKey"); if(tvdbKey){ tvdbKey.value=""; tvdbKey.placeholder=c.tvdb_api_key_masked ? "已设置；留空保留" : "未设置"; }
@@ -740,7 +740,7 @@ async function loadMediaRuntimeSettings(notify = false) {
 async function saveMediaRuntimeSettings() {
   const value=id=>document.getElementById(id)?.value?.trim() || "";
   const proxyEl=document.getElementById("scraperProxy"), proxyValue=value("scraperProxy");
-  const payload={ scraper_mode:value("mediaScraperMode")||"auto", tmdb_api_key:value("tmdbApiKey"), tmdb_api_base:value("tmdbApiBase"), tmdb_image_base:value("tmdbImageBase"), tvdb_api_key:value("tvdbApiKey"), tvdb_api_base:value("tvdbApiBase"), scraper_proxy:proxyValue, scraper_proxy_set:!!proxyValue || proxyEl?.dataset.configured!=="1", cache_dir:value("mediaCacheDir"), cache_max_bytes:Number(value("mediaCacheMaxBytes")), cache_max_age_hours:Number(value("mediaCacheMaxAge")), cache_cleanup_interval_hours:Number(value("mediaCacheCleanup")) };
+  const payload={ scraper_mode:value("mediaScraperMode")||"auto", tmdb_api_key:value("tmdbApiKey"), tmdb_api_base:value("tmdbApiBase"), tmdb_image_base:value("tmdbImageBase"), tvdb_api_key:value("tvdbApiKey"), tvdb_api_base:value("tvdbApiBase"), scraper_proxy:proxyValue, scraper_proxy_set:!!proxyValue || proxyEl?.dataset.configured!=="1", share_public_base:value("sharePublicBase").trim(), share_public_base_set:true, cache_dir:value("mediaCacheDir"), cache_max_bytes:Number(value("mediaCacheMaxBytes")), cache_max_age_hours:Number(value("mediaCacheMaxAge")), cache_cleanup_interval_hours:Number(value("mediaCacheCleanup")) };
   const status=document.getElementById("mediaRuntimeStatus"); if(status) status.textContent="保存中…";
   try { const res=await fetch("/api/media/settings",{method:"PUT",headers:sessionWriteHeaders(true),body:JSON.stringify(payload)}); const data=await res.json(); if(!res.ok) throw new Error(data.error||`HTTP ${res.status}`); scraperStatus={...scraperStatus,...data,default:data.scraper_mode}; await loadMediaRuntimeSettings(false); toast("✅ 刮削与缓存设置已立即生效"); }
   catch(e){ if(status)status.textContent=`⚠ ${e.message}`; toast("⚠️ 保存失败："+e.message); }
@@ -851,14 +851,154 @@ function renderMovieRow(lib, file) { const path=String(file.path), meta=movieMet
 function movieStateKey(kind, libId, path) { return `vaulthub_movie_${kind}_${libId}_${path}`; }
 function movieFlag(kind, libId, path) { try { return localStorage.getItem(movieStateKey(kind,libId,path)) === "1"; } catch(e) { return false; } }
 
-function toggleMovieFavorite(libId,path,button){const next=!movieFlag("favorite",libId,path);try{localStorage.setItem(movieStateKey("favorite",libId,path),next?"1":"0");}catch(e){} if(button)button.textContent=next?"♥ 已收藏":"♡ 收藏";}
+function toggleMovieFavorite(libId,path,button){
+  const next=!movieFlag("favorite",libId,path);
+  try{localStorage.setItem(movieStateKey("favorite",libId,path),next?"1":"0");}catch(e){}
+  if(button){button.textContent=next?"♥ 已收藏":"♡ 收藏";button.setAttribute("aria-pressed",next?"true":"false");}
+  toast(next?"♥ 已加入收藏":"♡ 已取消收藏");
+}
 async function saveMovieMetadataOverride(libId,path,values){const res=await fetch(`/api/media/metadata/override?id=${encodeURIComponent(libId)}&path=${encodeURIComponent(path)}`,{method:"PUT",headers:sessionWriteHeaders(true),body:JSON.stringify(values)});const data=await res.json();if(!res.ok)throw new Error(data.error||`HTTP ${res.status}`);return data;}
 async function toggleMovieWatched(libId,path,button){const meta=movieMetadataFor(path),next=!(meta.watched||movieFlag("watched",libId,path));try{const data=await saveMovieMetadataOverride(libId,path,{poster:meta.poster||"",logo:meta.logo||"",fanart:meta.fanart||"",backdrop:meta.backdrop||"",tags:meta.tags||[],watched:next});meta.watched=!!data.watched;const all=readMovieMetadata();all[path]=meta;writeMovieMetadata(all);localStorage.setItem(movieStateKey("watched",libId,path),next?"1":"0");if(button)button.textContent=next?"✓ 已观看":"○ 未观看";}catch(e){toast("⚠️ 状态保存失败："+e.message);}}
 async function openMediaMetadataEditor(libId,path){const meta=movieMetadataFor(path);document.getElementById("mediaEditLibId").value=libId;document.getElementById("mediaEditPath").value=path;for(const role of ["Poster","Logo","Fanart","Backdrop"])document.getElementById(`mediaEdit${role}Url`).value=meta[role.toLowerCase()]||"";document.getElementById("mediaEditTags").value=(meta.tags||[]).join(", ");const host=document.getElementById("mediaEditArtworkChoices");host.innerHTML="正在读取媒体目录图片…";openModal("mediaMetadataEditorModal");try{const res=await fetch(`/api/media/metadata/artwork?id=${encodeURIComponent(libId)}&path=${encodeURIComponent(path)}`,{cache:"no-store"});const data=await res.json();if(!res.ok)throw new Error(data.error||`HTTP ${res.status}`);host.innerHTML=(data.items||[]).map(item=>`<button class="artwork-choice" type="button" onclick="chooseMediaArtwork(${jsAttrArg(item.url)})"><img src="${esc(item.url)}" alt=""><span>${esc(item.name)}</span></button>`).join("")||"该目录没有可选图片";}catch(e){host.textContent="图片读取失败："+e.message;}}
 function chooseMediaArtwork(url){const role=document.getElementById("mediaEditArtworkRole").value;document.getElementById(`mediaEdit${role}Url`).value=url;}
 async function saveMediaMetadataEditor(){const libId=document.getElementById("mediaEditLibId").value,path=document.getElementById("mediaEditPath").value,meta=movieMetadataFor(path);const values={poster:document.getElementById("mediaEditPosterUrl").value.trim(),logo:document.getElementById("mediaEditLogoUrl").value.trim(),fanart:document.getElementById("mediaEditFanartUrl").value.trim(),backdrop:document.getElementById("mediaEditBackdropUrl").value.trim(),tags:document.getElementById("mediaEditTags").value.split(/[,，]/).map(x=>x.trim()).filter(Boolean),watched:!!meta.watched};try{const saved=await saveMovieMetadataOverride(libId,path,values),all=readMovieMetadata();all[path]={...meta,...saved};writeMovieMetadata(all);closeModal("mediaMetadataEditorModal");await openMovieDetails(libId,path);toast("✅ 媒体信息已保存");}catch(e){toast("⚠️ 保存失败："+e.message);}}
-function rateMovie(libId,path){const raw=prompt("请为该视频评分（0-10）",localStorage.getItem(movieStateKey("rating",libId,path))||"");if(raw===null)return;const n=Number(raw);if(!Number.isFinite(n)||n<0||n>10){toast("⚠️ 评分应为 0-10");return;}localStorage.setItem(movieStateKey("rating",libId,path),String(n));document.querySelector("[data-user-rating]")?.replaceChildren(document.createTextNode(`我的评分 ${n.toFixed(1)}`));}
-async function shareMovie(title){try{if(navigator.share)await navigator.share({title,text:title,url:location.href});else{await navigator.clipboard.writeText(location.href);toast("✅ 页面链接已复制");}}catch(e){}}
+/* v0.9.75：十分制五星图示评分（半星步进 0.5），鼠标悬停跟踪预览、点击落定；
+   不再用 prompt 输入。评分存 localStorage（vaulthub_movie_rating_*）。 */
+function movieUserRating(libId, path) { const n = Number(localStorage.getItem(movieStateKey("rating", libId, path))); return Number.isFinite(n) && n > 0 ? n : 0; }
+function movieStarsFor(value) {
+  const v = Math.max(0, Math.min(10, Number(value) || 0));
+  let html = "";
+  for (let i = 1; i <= 5; i++) {
+    const fill = v >= i * 2 ? 1 : (v >= i * 2 - 1 ? 0.5 : 0);
+    html += `<span class="movie-star" data-star="${i}"><span class="movie-star-fill" style="width:${fill * 100}%">★</span>★</span>`;
+  }
+  return html;
+}
+function movieRatingWidget(libId, path) {
+  const mine = movieUserRating(libId, path);
+  return `<span class="movie-rating-widget" data-rate-lib="${esc(libId)}" data-rate-path="${esc(path)}" title="点击星星评分（每颗星十分制半星步进）">`
+    + `<span class="movie-stars" onmousemove="movieStarHover(event,this)" onmouseleave="movieStarLeave(this)" onclick="movieStarClick(event,this)">${movieStarsFor(mine)}</span>`
+    + `<span class="movie-rating-value">${mine ? "我的评分 " + mine.toFixed(1) : "未评分"}</span></span>`;
+}
+function movieStarValue(target) {
+  const rect = target.getBoundingClientRect();
+  const rel = Math.max(0, Math.min(0.999, (event.clientX - rect.left) / rect.width));
+  return (Number(target.dataset.star) * 2 - 1) + (rel > 0.5 ? 1 : 0);
+}
+function movieStarHover(event, host) {
+  const star = event.target.closest(".movie-star");
+  if (!star) return;
+  const value = movieStarValue(star);
+  host.querySelectorAll(".movie-star").forEach((el, idx) => {
+    const fill = value >= (idx + 1) * 2 ? 1 : (value >= (idx + 1) * 2 - 1 ? 0.5 : 0);
+    el.querySelector(".movie-star-fill").style.width = fill * 100 + "%";
+  });
+  host.parentElement.querySelector(".movie-rating-value").textContent = "评分 " + value.toFixed(1);
+}
+function movieStarLeave(host) {
+  const widget = host.parentElement;
+  const libId = widget.dataset.rateLib, path = widget.dataset.ratePath;
+  const mine = movieUserRating(libId, path);
+  host.innerHTML = movieStarsFor(mine);
+  widget.querySelector(".movie-rating-value").textContent = mine ? "我的评分 " + mine.toFixed(1) : "未评分";
+}
+function movieStarClick(event, host) {
+  const star = event.target.closest(".movie-star");
+  if (!star) return;
+  const widget = host.parentElement;
+  const libId = widget.dataset.rateLib, path = widget.dataset.ratePath;
+  const value = movieStarValue(star);
+  localStorage.setItem(movieStateKey("rating", libId, path), String(value));
+  movieStarLeave(host);
+  toast(`★ 已评分 ${value.toFixed(1)} / 10`);
+}
+/* v0.9.75：分享修复 —— http 非安全上下文下 navigator.share 与 navigator.clipboard 都不可用，
+   旧实现抛错后 catch(e){} 静默吞掉，表现为「点了没反应」。改为三级降级，每级都有可见反馈。 */
+function copyTextFallback(text) {
+  const ta = document.createElement("textarea");
+  ta.value = text; ta.setAttribute("readonly", "");
+  ta.style.cssText = "position:fixed;left:-9999px;top:0;opacity:0";
+  document.body.appendChild(ta); ta.select();
+  let ok = false;
+  try { ok = document.execCommand("copy"); } catch(e) { ok = false; }
+  ta.remove();
+  return ok;
+}
+function shareBaseURL() {
+  /* v0.9.75：内网分享默认用当前访问的 IP:端口（location.origin）；
+     系统设置里配置了外网地址（share_public_base，IP 或域名）则优先用它。 */
+  return (scraperStatus.share_public_base || "").replace(/\/+$/, "") || location.origin;
+}
+async function verifyShareReachable(base) {
+  /* 分享前校验配置的外网地址可达（不带凭据的 HEAD 探测，2 秒超时）。
+     不可达只提示、不阻断分享（对方网络可能与本机不同）。 */
+  try {
+    const probe = base.replace(/\/+$/, "") + "/healthz";
+    const res = await fetch(probe, { method: "GET", cache: "no-store", signal: AbortSignal.timeout(2000) });
+    return res.ok || res.status === 401;
+  } catch(e) { return false; }
+}
+/* v0.9.75：分享面板 —— 浏览器 clipboard 权限/非安全上下文下都可能不可用，
+   面板把链接直接摆在可选中输入框里，并给一个用户手势触发的「复制链接」按钮，
+   保证任何环境都有可用分享方式。 */
+function closeShareDialog() {
+  const el = document.getElementById("shareDialog");
+  if (el && typeof el.remove === "function") el.remove();
+}
+function openShareDialog(info) {
+  closeShareDialog();
+  const host = document.createElement("div");
+  host.id = "shareDialog";
+  host.className = "share-dialog-mask";
+  host.setAttribute("data-share-url", info.url);
+  host.innerHTML = `<div class="share-dialog" role="dialog" aria-label="分享">
+    <h4>分享「${esc(info.title)}」</h4>
+    <p class="share-dialog-hint">${info.external
+      ? (info.reachable ? "使用系统设置中的外网地址（已探测可达）" : "⚠️ 外网地址暂不可达，请确认域名解析与端口放行后重试")
+      : "内网分享：使用当前访问的 IP:端口，仅同一局域网可打开"}</p>
+    <input id="shareLinkInput" class="share-link" type="text" readonly value="${esc(info.url)}">
+    <div class="share-dialog-actions">
+      <button class="btn btn-primary" type="button" onclick="copyShareLink(this)">⧉ 复制链接</button>
+      <button class="btn" type="button" onclick="copyShareText(this)">⧉ 复制标题+链接</button>
+      <button class="btn" type="button" onclick="closeShareDialog()">关闭</button>
+    </div>
+  </div>`;
+  document.body.appendChild(host);
+  const input = document.getElementById("shareLinkInput");
+  if (input && typeof input.select === "function") { try { input.select(); } catch(e) {} }
+  return host;
+}
+function copyShareLink(button) {
+  const input = document.getElementById("shareLinkInput");
+  const text = input ? String(input.value || "") : "";
+  if (!text) return;
+  if (copyTextFallback(text)) { toast("✅ 分享链接已复制"); return; }
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(() => toast("✅ 分享链接已复制")).catch(() => toast("⚠️ 请手动复制链接框里的地址"));
+    return;
+  }
+  toast("⚠️ 浏览器拒绝自动复制，请手动选中链接框里的地址");
+}
+function copyShareText(button) {
+  const input = document.getElementById("shareLinkInput");
+  const title = document.querySelector("#shareDialog h4") ? document.querySelector("#shareDialog h4").textContent : "";
+  const text = (title ? "【" + title.replace(/^分享「|」$/g, "") + "】" : "") + (input ? String(input.value || "") : "");
+  if (copyTextFallback(text)) toast("✅ 标题与链接已复制");
+  else toast("⚠️ 浏览器拒绝自动复制，请手动选中链接框里的地址");
+}
+async function shareMovie(libId, path, title) {
+  const base = shareBaseURL();
+  const external = base !== location.origin;
+  const url = base + location.pathname
+    + "?media=movie&lib=" + encodeURIComponent(libId) + "&path=" + encodeURIComponent(path);
+  const reachable = external ? await verifyShareReachable(base) : true;
+  const text = `【${title}】来自 VaultHub 的分享：${url}`;
+  /* https + 支持系统分享时优先用系统分享（微信/邮件/隔空投送等）。 */
+  if (navigator.share && window.isSecureContext) {
+    try { await navigator.share({ title, text, url }); return; } catch(e) { if (e && e.name === "AbortError") return; }
+  }
+  openShareDialog({ libId, path, title, url, external, reachable });
+}
 async function openMovieDetails(libId,path){enterMovieDetailSidebarMode();const lib=findMediaLibrary(libId),viewer=document.getElementById("local-media-viewer-movie");if(!lib||!viewer)return;let meta=movieMetadataFor(path);viewer.innerHTML=renderMovieDetails(lib,path,meta);try{const res=await fetch(`/api/media/metadata?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}`,{cache:"no-store"});if(res.ok){const local=await res.json();if(local.nfo||local.poster||local.logo||local.fanart||local.backdrop||local.tags?.length||local.watched||local.subtitles?.length){meta={...meta,...local,title:local.title||meta.title,year:local.year||meta.year};const all=readMovieMetadata();all[path]=meta;writeMovieMetadata(all);viewer.innerHTML=renderMovieDetails(lib,path,meta);}}}catch(e){}if(meta.tmdb_id&&meta.provider!=="本地 NFO"){try{const res=await fetch(`/api/media/tmdb?id=${encodeURIComponent(meta.tmdb_id)}&type=${encodeURIComponent(meta.media_type||lib.type)}`,{cache:"force-cache"});if(res.ok){const detail=await res.json();meta={...meta,overview:detail.overview||meta.overview,rating:Number(detail.vote_average||meta.rating||0),runtime:detail.runtime||detail.episode_run_time?.[0],genres:(detail.genres||[]).map(x=>x.name),cast:(detail.credits?.cast||[]).slice(0,12),recommendations:(detail.recommendations?.results||[]).slice(0,8)};viewer.innerHTML=renderMovieDetails(lib,path,meta);}}catch(e){}}scrollViewerIntoView(viewer);}
 function closeMovieDetails(){seriesEpisodeReturn=null;const viewer=document.getElementById("local-media-viewer-movie");if(viewer)viewer.innerHTML="";leaveMovieDetailSidebarMode();}
 /* esc() 只做 HTML 实体转义，浏览器解析 style 属性时会把 &#39; 还原成单引号，
@@ -866,8 +1006,13 @@ function closeMovieDetails(){seriesEpisodeReturn=null;const viewer=document.getE
    都属于外部内容，因此进 CSS 前必须先剔除引号、反斜杠、括号与换行。 */
 function cssUrlValue(url) { return String(url || "").replace(/[\u0000-\u001f"'()\\]/g, "").trim(); }
 function movieHeroArt(meta) { if (meta?.fanart) return { kind:"fanart-art", url:meta.fanart }; if (meta?.backdrop) return { kind:"backdrop-art", url:meta.backdrop }; if (meta?.poster) return { kind:"poster-art", url:meta.poster }; return { kind:"no-art", url:"" }; }
-function renderMovieHero(lib,path,meta) { const heroArt = movieHeroArt(meta); const safeArt = cssUrlValue(heroArt.url); const style = safeArt ? `--movie-hero-art:url('${esc(safeArt)}')` : ""; const logo=meta.logo?`<img class="movie-detail-logo" src="${esc(meta.logo)}" alt="${esc(meta.title)} Logo">`:`<h1>${esc(meta.title)}</h1>`; return `<header class="movie-detail-hero ${heroArt.kind}" style="${style}">${logo}<p>${esc(meta.overview||"暂无电影介绍；可在系统设置中配置 TMDB API 进行刮削。")}</p><div class="movie-detail-actions"><button class="btn btn-primary" onclick="openLocalMedia('movie',${jsAttrArg(lib.id)},${jsAttrArg(path)})">▶ 播放</button><button class="btn" onclick="shareMovie(${jsAttrArg(meta.title)})">↗ 分享</button><button class="btn" onclick="toggleMovieFavorite(${jsAttrArg(lib.id)},${jsAttrArg(path)},this)">${movieFlag("favorite",lib.id,path)?"♥ 已收藏":"♡ 收藏"}</button><button class="btn" onclick="rateMovie(${jsAttrArg(lib.id)},${jsAttrArg(path)})">★ <span data-user-rating>评分</span></button><button class="btn" onclick="toggleMovieWatched(${jsAttrArg(lib.id)},${jsAttrArg(path)},this)">${meta.watched||movieFlag("watched",lib.id,path)?"✓ 已观看":"○ 未观看"}</button><button class="btn" onclick="openMediaMetadataEditor(${jsAttrArg(lib.id)},${jsAttrArg(path)})">✎ 编辑</button></div></header>`; }
-function renderMovieDetails(lib,path,meta){const cast=(meta.cast||[]).map(x=>`<article><b>${esc(x.name||"")}</b><small>${esc(x.character||"")}</small></article>`).join("")||'<div class="empty-tip">暂无演职人员信息</div>';const rec=(meta.recommendations||[]).map(x=>`<article><b>${esc(x.title||x.name||"")}</b><small>${esc(String(x.release_date||x.first_air_date||"").slice(0,4))}</small></article>`).join("")||'<div class="empty-tip">暂无视频推荐</div>';return `<div class="media-reader-overlay movie-detail-page media-detail-backdrop" style="${esc(detailBackdropStyle(meta))}"><div class="movie-detail-scroll">${movieDetailCloseButton()}${renderMovieHero(lib,path,meta)}<section><h3>演职人员</h3><div class="movie-detail-strip">${cast}</div></section><section><h3>视频推荐</h3><div class="movie-detail-strip">${rec}</div></section><section><h3>视频元数据</h3><dl class="movie-meta-list"><dt>文件</dt><dd>${esc(path)}</dd><dt>年份</dt><dd>${esc(meta.year||"--")}</dd><dt>类型</dt><dd>${esc((meta.genres||[]).join(" / ")||"--")}</dd><dt>时长</dt><dd>${meta.runtime?esc(meta.runtime+" 分钟"):"--"}</dd><dt>TMDB 评分</dt><dd>${meta.rating?esc(meta.rating.toFixed(1)):"--"}</dd><dt>来源</dt><dd>${esc(meta.provider||"文件名")}</dd></dl></section></div></div>`;}
+function renderMovieHero(lib,path,meta) { const heroArt = movieHeroArt(meta); const safeArt = cssUrlValue(heroArt.url); const style = safeArt ? `--movie-hero-art:url('${esc(safeArt)}')` : ""; const logo=meta.logo?`<img class="movie-detail-logo" src="${esc(meta.logo)}" alt="${esc(meta.title)} Logo">`:`<h1>${esc(meta.title)}</h1>`; return `<header class="movie-detail-hero ${heroArt.kind}" style="${style}">${logo}<p>${esc(meta.overview||"暂无电影介绍；可在系统设置中配置 TMDB API 进行刮削。")}</p><div class="movie-detail-actions"><button class="btn btn-primary" onclick="openLocalMedia('movie',${jsAttrArg(lib.id)},${jsAttrArg(path)})">▶ 播放</button><button class="btn" onclick="shareMovie(${jsAttrArg(lib.id)},${jsAttrArg(path)},${jsAttrArg(meta.title)})">↗ 分享</button><button class="btn" onclick="toggleMovieFavorite(${jsAttrArg(lib.id)},${jsAttrArg(path)},this)">${movieFlag("favorite",lib.id,path)?"♥ 已收藏":"♡ 收藏"}</button>${movieRatingWidget(lib.id,path)}<span class="movie-tmdb-rating" title="TMDB 评分">${meta.rating ? `<b>⭐ ${meta.rating.toFixed(1)}</b><small>TMDB</small>` : ""}</span><button class="btn" onclick="toggleMovieWatched(${jsAttrArg(lib.id)},${jsAttrArg(path)},this)">${meta.watched||movieFlag("watched",lib.id,path)?"✓ 已观看":"○ 未观看"}</button><button class="btn" onclick="openMediaMetadataEditor(${jsAttrArg(lib.id)},${jsAttrArg(path)})">✎ 编辑</button></div></header>`; }
+function renderMovieDetails(lib,path,meta){/* v0.9.75：演职人员从文字方框换成圆形头像 + 下方文字（TMDB profile_path，缺图用首字圆形占位）。 */
+const castBase = scraperStatus.tmdb_image_base || "https://image.tmdb.org/t/p";
+const cast=(meta.cast||[]).map(x=>{
+  const face = x.profile_path ? `<img class="movie-cast-avatar" src="${esc(castBase+"/w185"+x.profile_path)}" alt="${esc(x.name||"")}" loading="lazy">` : `<span class="movie-cast-avatar movie-cast-avatar-fallback">${esc((x.name||"?").slice(0,1))}</span>`;
+  return `<article class="movie-cast-card">${face}<b>${esc(x.name||"")}</b><small>${esc(x.character||"")}</small></article>`;
+}).join("")||'<div class="empty-tip">暂无演职人员信息</div>';const rec=(meta.recommendations||[]).map(x=>`<article><b>${esc(x.title||x.name||"")}</b><small>${esc(String(x.release_date||x.first_air_date||"").slice(0,4))}</small></article>`).join("")||'<div class="empty-tip">暂无视频推荐</div>';return `<div class="media-reader-overlay movie-detail-page media-detail-backdrop" style="${esc(detailBackdropStyle(meta))}"><div class="movie-detail-scroll">${movieDetailCloseButton()}${renderMovieHero(lib,path,meta)}<section><h3>演职人员</h3><div class="movie-detail-strip movie-cast-strip">${cast}</div></section><section><h3>视频推荐</h3><div class="movie-detail-strip">${rec}</div></section><section><h3>视频元数据</h3><dl class="movie-meta-list"><dt>文件</dt><dd>${esc(path)}</dd><dt>年份</dt><dd>${esc(meta.year||"--")}</dd><dt>类型</dt><dd>${esc((meta.genres||[]).join(" / ")||"--")}</dd><dt>时长</dt><dd>${meta.runtime?esc(meta.runtime+" 分钟"):"--"}</dd><dt>TMDB 评分</dt><dd>${meta.rating?esc(meta.rating.toFixed(1)):"--"}</dd><dt>来源</dt><dd>${esc(meta.provider||"文件名")}</dd></dl></section></div></div>`;}
 function renderMoviePoster(lib, file) { const path=String(file.path), meta=movieMetadataFor(path), watched=!!meta.watched||movieFlag("watched",lib.id,path), art=meta.poster ? `<img src="${esc(meta.poster)}" alt="${esc(meta.title)}" loading="lazy">` : `<span>${esc(meta.title)}</span>`; return `<article class="media-poster-card ${watched?"is-read":""}" data-media-group="movie" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openMovieDetails(${jsAttrArg(lib.id)},${jsAttrArg(path)})"><div class="media-poster-art" style="${meta.poster ? "" : `background:${coverGradient(meta.title)}`}" >${art}<button class="movie-poster-settings" data-movie-settings title="观看状态" onclick="event.stopPropagation();toggleMovieWatched(${jsAttrArg(lib.id)},${jsAttrArg(path)},this)">${watched?"✓ 已观看":"○ 未观看"}</button></div><div class="media-poster-info"><strong>${esc(meta.title)}</strong><small>${esc([meta.year,meta.provider].filter(Boolean).join(" · ") || fileExt(path).toUpperCase())}</small></div></article>`; }
 function scrapeSeriesMetadata(host, lib, files) { return scrapeMovieMetadata(host, lib, files); }
 function toggleMediaResourceView(group) { mediaResourceView = mediaResourceView === "poster" ? "list" : "poster"; try { localStorage.setItem("vaulthub_media_resource_view",mediaResourceView); } catch(e) {} const lib=findMediaLibrary(localMediaSelection[group]); if(lib) loadLocalFiles(group,lib,group === "audio" ? audioCursor : 0); }

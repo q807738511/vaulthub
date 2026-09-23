@@ -74,8 +74,8 @@ def test_dockerfile_bakes_template_defaults():
 
 
 def test_version_strings():
-    assert "0.9.74" in index
-    assert 'VAULTHUB_SCRIPT_VERSION = "0.9.74"' in state
+    assert "0.9.75" in index
+    assert 'VAULTHUB_SCRIPT_VERSION = "0.9.75"' in state
     assert "VaultHub 蜀鼠之家 v0.9.71" in release
 
 

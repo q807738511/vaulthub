@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""v0.9.74 顶栏导航布局 + 电子书刊展示页的静态契约。
+"""v0.9.75 顶栏导航布局 + 电子书刊展示页的静态契约。
 
 覆盖三块：
   A. 顶栏导航壳（品牌 / 一级导航 / 媒体库标签 / 全局搜索 / 头像菜单 / 布局切换）
@@ -20,7 +20,7 @@ FEATURES = (ROOT / "web/js/03-features.js").read_text(encoding="utf-8")
 BOOT = (ROOT / "web/js/04-boot.js").read_text(encoding="utf-8")
 HOME = (ROOT / "web/js/05-home.js").read_text(encoding="utf-8")
 TOPNAV = (ROOT / "web/js/07-topnav.js").read_text(encoding="utf-8")
-NOTES = (ROOT / ".github/RELEASE_NOTES_0.9.74.md").read_text(encoding="utf-8")
+NOTES = (ROOT / ".github/RELEASE_NOTES_0.9.75.md").read_text(encoding="utf-8")
 LOG = (ROOT / "Update Log.md").read_text(encoding="utf-8")
 
 checks: list[tuple[str, bool, str]] = []
@@ -36,7 +36,7 @@ HEADER = HTML[HTML.index('<header class="topbar">'):HTML.index("</header>")]
 check("A1 顶栏有媒体库标签容器", 'id="topLibTabs"' in HEADER and 'role="tablist"' in HEADER)
 check("A2 顶栏有全局搜索（⌘K）", 'id="topSearch"' in HEADER and "<kbd>⌘K</kbd>" in HEADER
       and "oninput=\"onTopSearchInput()\"" in HEADER and "onkeydown=\"onTopSearchKey(event)\"" in HEADER)
-check("A3 顶栏一级导航（首页 / PT）—— v0.9.74 移除媒体搜索按钮（右侧已有搜索框）",
+check("A3 顶栏一级导航（首页 / PT）—— v0.9.75 移除媒体搜索按钮（右侧已有搜索框）",
       all(f'data-topnav="{k}"' in HEADER for k in ["home", "pt"])
       and 'data-topnav="search"' not in HEADER)
 check("A4 右上角头像菜单入口", 'id="topUserButton"' in HEADER and 'id="topUserMenu"' in HEADER
@@ -48,7 +48,7 @@ check("A6 品牌与信息区仍在（旧契约不破）",
       'id="accountWrap"' in HEADER and 'id="topScanStat"' in HEADER
       and HEADER.index('id="accountWrap"') < HEADER.index('class="tb-info"'))
 check("A7 独立脚本 07-topnav.js 已挂载且在主题引擎之后",
-      "/web/js/07-topnav.js?v=0.9.74" in HTML
+      "/web/js/07-topnav.js?v=0.9.75" in HTML
       and HTML.index("06-theme.js") < HTML.index("07-topnav.js") < HTML.index("03-audio-zoom.js"))
 check("A8 顶栏渲染器读真实媒体库并保序渲染",
       "function renderTopLibTabs()" in TOPNAV and "localMediaLibraries" in TOPNAV
@@ -95,7 +95,7 @@ check("A23 顶栏模式下侧栏让位（含遮罩左边界）",
       and "body.layout-topnav .media-reader-overlay," in CSS)
 
 # ---------------------------------------------------------------- B. 书刊展示页
-check("B1 三个书架标签（书架/喜欢/历史阅读）—— v0.9.74 未读改名书架、移除全部",
+check("B1 三个书架标签（书架/喜欢/历史阅读）—— v0.9.75 未读改名书架、移除全部",
       all(f'id: "{i}"' in MEDIA for i in ["shelf", "like", "completed"])
       and 'label: "书架"' in MEDIA and 'label: "🕘 历史阅读"' in MEDIA and 'label: "喜欢"' in MEDIA
       and '{ id: "all", label: "全部" }' not in MEDIA)
@@ -164,17 +164,17 @@ check("C 侧栏模式下顶栏不重复媒体库与主导航",
       "否则侧栏 + 顶栏会出现两套一样的入口")
 
 # ---------------------------------------------------------------- D. 文档与版本
-check("D1 发布说明包含本轮界面精简（书架视图 + 顶栏）",
-      "书架" in NOTES and "媒体搜索" in NOTES and "顶栏" in NOTES)
-check("D2 Update Log 有对应条目", "顶栏导航" in LOG and "v0.9.74" in LOG)
-check("D3 版本号为 0.9.74",
-      'VAULTHUB_ASSET_VERSION = "0.9.74"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.74"' in STATE
-      and "?v=0.9.74" in HTML and "?v=0.9.73" not in HTML)
+check("D1 发布说明存在且包含影视详情精修（v0.9.75 说明随版本推进）",
+      "影视" in NOTES and ("分享" in NOTES or "五星" in NOTES or "评分" in NOTES))
+check("D2 Update Log 有对应条目", "顶栏导航" in LOG and "v0.9.75" in LOG)
+check("D3 版本号为 0.9.75",
+      'VAULTHUB_ASSET_VERSION = "0.9.75"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.75"' in STATE
+      and "?v=0.9.75" in HTML and "?v=0.9.73" not in HTML)
 
 fails = [(n, d) for n, ok, d in checks if not ok]
 for n, ok, d in checks:
     print(("PASS: " if ok else "FAIL: ") + n + (f" | {d}" if d and not ok else ""))
 print(f"\nSUMMARY {len(checks) - len(fails)}/{len(checks)} PASS")
 if fails:
-    raise SystemExit("v0.9.74 契约测试未通过")
-print("v0.9.74 顶栏导航 + 书刊展示页契约测试通过")
+    raise SystemExit("v0.9.75 契约测试未通过")
+print("v0.9.75 顶栏导航 + 书刊展示页契约测试通过")
