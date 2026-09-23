@@ -84,6 +84,7 @@ type App struct {
 	tvdbAPIKey        string
 	tvdbAPIBase       string
 	scraperProxy      string
+	sharePublicBase   string
 	configTrusted     bool // false when config exists but cannot be read/decoded
 	// Hooks are test-only fault/interleaving instrumentation, nil in production.
 	scanWriteHook     func(string, int)
@@ -110,6 +111,8 @@ type RuntimeConfig struct {
 	TVDBAPIBase               string `json:"tvdb_api_base"`
 	ScraperProxy              string `json:"scraper_proxy,omitempty"`
 	ScraperProxySet           bool   `json:"scraper_proxy_set,omitempty"`
+	SharePublicBase           string `json:"share_public_base,omitempty"`
+	SharePublicBaseSet        bool   `json:"share_public_base_set,omitempty"`
 	CacheDir                  string `json:"cache_dir"`
 	CacheMaxBytes             int64  `json:"cache_max_bytes"`
 	CacheMaxAgeHours          int64  `json:"cache_max_age_hours"`
@@ -460,6 +463,7 @@ func (a *App) runtimeConfigSnapshot(includeSecret bool) map[string]any {
 		"tmdb_image_base": a.tmdbImageBase, "cache_dir": a.cacheDir,
 		"tvdb_enabled": a.tvdbAPIKey != "", "tvdb_api_key_masked": a.tvdbAPIKey != "", "tvdb_api_base": a.tvdbAPIBase,
 		"scraper_proxy": "", "scraper_proxy_display": maskedProxyURL(a.scraperProxy), "scraper_proxy_configured": a.scraperProxy != "",
+		"share_public_base": a.sharePublicBase, "share_public_base_set": a.sharePublicBase != "",
 		"cache_max_bytes": a.cacheMaxBytes, "cache_max_age_hours": int64(a.cacheMaxAge / time.Hour),
 		"cache_cleanup_interval_hours": int64(a.cacheCleanup / time.Hour),
 	}
@@ -489,6 +493,9 @@ func (a *App) loadRuntimeConfig() {
 	}
 	if c.TMDBImageBase != "" {
 		a.tmdbImageBase = strings.TrimRight(c.TMDBImageBase, "/")
+	}
+	if c.SharePublicBase != "" {
+		a.sharePublicBase = strings.TrimRight(c.SharePublicBase, "/")
 	}
 	if c.TVDBAPIKey != "" {
 		a.tvdbAPIKey = c.TVDBAPIKey
@@ -593,6 +600,16 @@ func (a *App) saveRuntimeConfig(c RuntimeConfig) error {
 	if _, err := validateProxyURL(c.ScraperProxy); err != nil {
 		return err
 	}
+	if c.SharePublicBase != "" && !validSharePublicBase(c.SharePublicBase) {
+		return fmt.Errorf("invalid share public base")
+	}
+	/* v0.9.75：空值默认「保留原值」，但显式 share_public_base_set=true 时允许清空
+	   （表单总是带上该标记，用户清空输入框即可关掉外网分享地址）。 */
+	if c.SharePublicBase == "" && !c.SharePublicBaseSet {
+		a.mu.RLock()
+		c.SharePublicBase = a.sharePublicBase
+		a.mu.RUnlock()
+	}
 	if !filepath.IsAbs(c.CacheDir) || c.CacheMaxBytes < 0 || c.CacheMaxAgeHours < 0 || c.CacheCleanupIntervalHours <= 0 {
 		return fmt.Errorf("invalid cache settings")
 	}
@@ -643,6 +660,7 @@ func (a *App) saveRuntimeConfig(c RuntimeConfig) error {
 		return err
 	}
 	a.mu.Lock()
+	a.sharePublicBase = strings.TrimRight(c.SharePublicBase, "/")
 	a.scraperMode, a.tmdbAPIKey = c.ScraperMode, c.TMDBAPIKey
 	a.tmdbAPIBase, a.tmdbImageBase = strings.TrimRight(c.TMDBAPIBase, "/"), strings.TrimRight(c.TMDBImageBase, "/")
 	a.tvdbAPIKey, a.tvdbAPIBase, a.scraperProxy = c.TVDBAPIKey, strings.TrimRight(c.TVDBAPIBase, "/"), c.ScraperProxy
@@ -683,6 +701,15 @@ func (a *App) runtimeSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, a.runtimeConfigSnapshot(false))
 }
+// validSharePublicBase 校验分享外网基址：必须 http(s)://host[:port]，不允许带路径/查询。
+func validSharePublicBase(s string) bool {
+	u, err := url.Parse(s)
+	if err != nil || u.Scheme != "http" && u.Scheme != "https" || u.Host == "" {
+		return false
+	}
+	return u.Path == "" || u.Path == "/"
+}
+
 func validID(s string) bool {
 	if s == "" || len(s) > 63 {
 		return false
