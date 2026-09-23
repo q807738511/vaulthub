@@ -728,6 +728,9 @@ async function loadMediaRuntimeSettings(notify = false) {
     const res = await fetch("/api/media/settings", { cache:"no-store" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const c = await res.json();
+    /* v0.9.75：读设置时同步刷新本机缓存的运行时配置（外网分享地址/TMDB 图片基址等），
+       否则服务端改了配置而页面未重载时，分享仍用旧地址。 */
+    scraperStatus = { ...scraperStatus, ...c, default: c.scraper_mode || scraperStatus.default };
     const values = { mediaScraperMode:c.scraper_mode, tmdbApiBase:c.tmdb_api_base, tmdbImageBase:c.tmdb_image_base, tvdbApiBase:c.tvdb_api_base, mediaCacheDir:c.cache_dir, mediaCacheMaxBytes:c.cache_max_bytes, mediaCacheMaxAge:c.cache_max_age_hours, mediaCacheCleanup:c.cache_cleanup_interval_hours, sharePublicBase:c.share_public_base || "" };
     Object.entries(values).forEach(([id,value]) => { const el=document.getElementById(id); if(el && value !== undefined) el.value=String(value); });
     const key=document.getElementById("tmdbApiKey"); if(key){ key.value=""; key.placeholder=c.tmdb_api_key_masked ? "已设置；留空保留" : "未设置"; }
