@@ -57,6 +57,7 @@ check("F1 RuntimeConfig 含 share_public_base", 'SharePublicBase' in open(ROOT /
 check("F2 校验 http(s)://host[:port] 无路径", "func validSharePublicBase" in open(ROOT / "media-go/main.go", encoding="utf-8").read())
 check("F3 设置页有外网分享地址输入框", 'id="sharePublicBase"' in HTMLF)
 check("F4 设置读取/保存接线", 'sharePublicBase:c.share_public_base' in MEDIA and 'share_public_base:value("sharePublicBase")' in MEDIA)
+check("F4b 读设置时同步刷新本机缓存（分享地址改动即时生效）", "scraperStatus = { ...scraperStatus, ...c, default: c.scraper_mode || scraperStatus.default };" in MEDIA)
 check("F5 支持显式清空外网地址（share_public_base_set）", "SharePublicBaseSet" in open(ROOT / "media-go/main.go", encoding="utf-8").read() and "share_public_base_set:true" in MEDIA and "c.SharePublicBase == \"\" && !c.SharePublicBaseSet" in open(ROOT / "media-go/main.go", encoding="utf-8").read())
 
 print(f"\nSUMMARY {passed}/{passed+failed} PASS")
