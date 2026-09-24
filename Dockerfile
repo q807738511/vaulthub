@@ -38,7 +38,9 @@ RUN if [ -n "${APT_MIRROR:-}" ]; then \
       sed -i "s|http://deb.debian.org/debian|${APT_MIRROR}|g; s|http://security.debian.org/debian-security|${APT_MIRROR}-security|g" /etc/apt/sources.list; \
     fi \
  && apt-get update \
- && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl ffmpeg \
+ # v0.9.77：poppler-utils 提供 pdftoppm/pdfinfo —— PDF 漫画在服务端光栅化翻页，
+# 不再把 .pdf 交给浏览器内置 PDF 阅读器（客户反馈的问题）。
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl ffmpeg poppler-utils \
  && rm -rf /var/lib/apt/lists/*
 COPY caddy /usr/bin/caddy
 COPY --from=go-build /out-media-api /usr/bin/media-api

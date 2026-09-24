@@ -48,7 +48,7 @@ check("A6 品牌与信息区仍在（旧契约不破）",
       'id="accountWrap"' in HEADER and 'id="topScanStat"' in HEADER
       and HEADER.index('id="accountWrap"') < HEADER.index('class="tb-info"'))
 check("A7 独立脚本 07-topnav.js 已挂载且在主题引擎之后",
-      "/web/js/07-topnav.js?v=0.9.76" in HTML
+      "/web/js/07-topnav.js?v=0.9.77" in HTML
       and HTML.index("06-theme.js") < HTML.index("07-topnav.js") < HTML.index("03-audio-zoom.js"))
 check("A8 顶栏渲染器读真实媒体库并保序渲染",
       "function renderTopLibTabs()" in TOPNAV and "localMediaLibraries" in TOPNAV
@@ -168,8 +168,8 @@ check("D1 发布说明存在且包含视频推荐与评分配置（v0.9.76 说�
       "影视" in NOTES and ("分享" in NOTES or "五星" in NOTES or "评分" in NOTES))
 check("D2 Update Log 有对应条目", "顶栏导航" in LOG and "v0.9.76" in LOG)
 check("D3 版本号为 0.9.76",
-      'VAULTHUB_ASSET_VERSION = "0.9.76"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.76"' in STATE
-      and "?v=0.9.76" in HTML and "?v=0.9.73" not in HTML)
+      'VAULTHUB_ASSET_VERSION = "0.9.77"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.77"' in STATE
+      and "?v=0.9.77" in HTML and "?v=0.9.73" not in HTML)
 
 fails = [(n, d) for n, ok, d in checks if not ok]
 for n, ok, d in checks:
