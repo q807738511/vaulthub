@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""v0.9.75 书刊展示页 + 顶栏导航的行为级测试。
+"""v0.9.76 书刊展示页 + 顶栏导航的行为级测试。
 
 静态断言只能证明「代码这么写」，证明不了「用户会看到什么」。这里把真实的
 web/js/02-media.js 与 web/js/07-topnav.js 一并载入 Node，用桩 document /
 localStorage / fetch 真实执行渲染路径，断言：
 
-  1. 书刊页有三个书架标签（书架 / 喜欢 / 🕘 历史阅读，v0.9.75 移除「全部」），计数正确；
+  1. 书刊页有三个书架标签（书架 / 喜欢 / 🕘 历史阅读，v0.9.76 移除「全部」），计数正确；
   2. 默认是「完整展开」（v0.9.70 的展开保证不能被分页吞掉）；
   3. 喜欢（收藏）按钮真的写进 localStorage，取消收藏后从「喜欢」里消失；
   4. 开启分页浏览后按每页数量切片，翻页是纯本地操作（不再打服务端）；
@@ -26,7 +26,7 @@ MEDIA = ROOT / "web/js/02-media.js"
 TOPNAV = ROOT / "web/js/07-topnav.js"
 
 if shutil.which("node") is None:
-    print("SKIP: 未找到 node，跳过 v0.9.75 行为测试")
+    print("SKIP: 未找到 node，跳过 v0.9.76 行为测试")
     raise SystemExit(0)
 
 HARNESS = r"""
@@ -195,7 +195,7 @@ const chk = (name, cond, extra) => {
   await wait();
   chk("历史阅读视图只显示已读", countCards() === 20, "实际 " + countCards());
   chk("历史阅读仍带释放按钮", html().includes("book-card-release"));
-  /* v0.9.75：「全部」标签已移除；setBookShelfTab 对未知标签回退到书架。 */
+  /* v0.9.76：「全部」标签已移除；setBookShelfTab 对未知标签回退到书架。 */
   api.setBookShelfTab("all");
   await wait();
   chk("移除的『全部』标签回退到书架视图", api.getTab() === "shelf" && countCards() === 25, "实际 " + countCards());
@@ -272,5 +272,5 @@ with tempfile.TemporaryDirectory() as tmp:
 print(proc.stdout.strip())
 if proc.returncode != 0:
     print(proc.stderr.strip()[-2000:])
-    raise SystemExit("v0.9.75 行为测试未通过")
-print("v0.9.75 书刊展示页 + 顶栏导航行为测试通过")
+    raise SystemExit("v0.9.76 行为测试未通过")
+print("v0.9.76 书刊展示页 + 顶栏导航行为测试通过")

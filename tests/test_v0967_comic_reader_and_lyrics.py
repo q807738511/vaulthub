@@ -141,12 +141,12 @@ checks = {
     "弹窗按钮": "scrapeLyricsForOpenEditor()" in HTML and "scrapeAllAudioLyrics()" in HTML,
 
     # ============ I. 版本与发布物 ============
-    "HTML版本": 'VAULTHUB_ASSET_VERSION = "0.9.75"' in HTML and HTML.count("?v=0.9.75") >= 7,
-    "脚本版本": 'VAULTHUB_SCRIPT_VERSION = "0.9.75"' in STATE,
-    "UI角标": "v0.9.75 · 影视详情精修" in HTML,
+    "HTML版本": 'VAULTHUB_ASSET_VERSION = "0.9.76"' in HTML and HTML.count("?v=0.9.76") >= 7,
+    "脚本版本": 'VAULTHUB_SCRIPT_VERSION = "0.9.76"' in STATE,
+    "UI角标": "v0.9.76 · 视频推荐与评分配置" in HTML,
     "发布说明": "VaultHub 蜀鼠之家 v0.9.67" in NOTES and "漫画阅读器" in NOTES  # 读的是本版（v0.9.67）历史说明
         and "歌词" in NOTES and "不新增任何容器" in NOTES,
-    "更新日志段": "# VaultHub 蜀鼠之家 v0.9.75" in LOG,
+    "更新日志段": "# VaultHub 蜀鼠之家 v0.9.76" in LOG,
     "历史说明未改": (ROOT / ".github/RELEASE_NOTES_0.9.66.md").read_text(encoding="utf-8").startswith(
         "# VaultHub 蜀鼠之家 v0.9.66"),
 }
