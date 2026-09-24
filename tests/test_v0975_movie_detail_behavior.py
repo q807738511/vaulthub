@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""v0.9.75 行为测试：跑 tests/v0975_behavior.js（Node VM 桩，18 项）。"""
+"""v0.9.76 行为测试：跑 tests/v0975_behavior.js（Node VM 桩，18 项）。"""
 import subprocess
 from pathlib import Path
 

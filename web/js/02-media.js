@@ -860,6 +860,14 @@ function toggleMovieFavorite(libId,path,button){
   if(button){button.textContent=next?"♥ 已收藏":"♡ 收藏";button.setAttribute("aria-pressed",next?"true":"false");}
   toast(next?"♥ 已加入收藏":"♡ 已取消收藏");
 }
+/* v0.9.76：把十分制评分写进 media override（服务端持久化），失败只提示不阻断。 */
+async function saveMovieUserRating(libId, path, value) {
+  try {
+    const meta = movieMetadataFor(path);
+    const data = await saveMovieMetadataOverride(libId, path, { poster: meta.poster || "", logo: meta.logo || "", fanart: meta.fanart || "", backdrop: meta.backdrop || "", tags: meta.tags || [], watched: !!meta.watched, user_rating: Number(value) || 0 });
+    const all = readMovieMetadata(); all[path] = { ...(all[path] || {}), ...meta, user_rating: data.user_rating || 0 }; writeMovieMetadata(all);
+  } catch (e) { toast("⚠️ 评分同步失败：" + e.message); }
+}
 async function saveMovieMetadataOverride(libId,path,values){const res=await fetch(`/api/media/metadata/override?id=${encodeURIComponent(libId)}&path=${encodeURIComponent(path)}`,{method:"PUT",headers:sessionWriteHeaders(true),body:JSON.stringify(values)});const data=await res.json();if(!res.ok)throw new Error(data.error||`HTTP ${res.status}`);return data;}
 async function toggleMovieWatched(libId,path,button){const meta=movieMetadataFor(path),next=!(meta.watched||movieFlag("watched",libId,path));try{const data=await saveMovieMetadataOverride(libId,path,{poster:meta.poster||"",logo:meta.logo||"",fanart:meta.fanart||"",backdrop:meta.backdrop||"",tags:meta.tags||[],watched:next});meta.watched=!!data.watched;const all=readMovieMetadata();all[path]=meta;writeMovieMetadata(all);localStorage.setItem(movieStateKey("watched",libId,path),next?"1":"0");if(button)button.textContent=next?"✓ 已观看":"○ 未观看";}catch(e){toast("⚠️ 状态保存失败："+e.message);}}
 async function openMediaMetadataEditor(libId,path){const meta=movieMetadataFor(path);document.getElementById("mediaEditLibId").value=libId;document.getElementById("mediaEditPath").value=path;for(const role of ["Poster","Logo","Fanart","Backdrop"])document.getElementById(`mediaEdit${role}Url`).value=meta[role.toLowerCase()]||"";document.getElementById("mediaEditTags").value=(meta.tags||[]).join(", ");const host=document.getElementById("mediaEditArtworkChoices");host.innerHTML="正在读取媒体目录图片…";openModal("mediaMetadataEditorModal");try{const res=await fetch(`/api/media/metadata/artwork?id=${encodeURIComponent(libId)}&path=${encodeURIComponent(path)}`,{cache:"no-store"});const data=await res.json();if(!res.ok)throw new Error(data.error||`HTTP ${res.status}`);host.innerHTML=(data.items||[]).map(item=>`<button class="artwork-choice" type="button" onclick="chooseMediaArtwork(${jsAttrArg(item.url)})"><img src="${esc(item.url)}" alt=""><span>${esc(item.name)}</span></button>`).join("")||"该目录没有可选图片";}catch(e){host.textContent="图片读取失败："+e.message;}}
@@ -867,7 +875,51 @@ function chooseMediaArtwork(url){const role=document.getElementById("mediaEditAr
 async function saveMediaMetadataEditor(){const libId=document.getElementById("mediaEditLibId").value,path=document.getElementById("mediaEditPath").value,meta=movieMetadataFor(path);const values={poster:document.getElementById("mediaEditPosterUrl").value.trim(),logo:document.getElementById("mediaEditLogoUrl").value.trim(),fanart:document.getElementById("mediaEditFanartUrl").value.trim(),backdrop:document.getElementById("mediaEditBackdropUrl").value.trim(),tags:document.getElementById("mediaEditTags").value.split(/[,，]/).map(x=>x.trim()).filter(Boolean),watched:!!meta.watched};try{const saved=await saveMovieMetadataOverride(libId,path,values),all=readMovieMetadata();all[path]={...meta,...saved};writeMovieMetadata(all);closeModal("mediaMetadataEditorModal");await openMovieDetails(libId,path);toast("✅ 媒体信息已保存");}catch(e){toast("⚠️ 保存失败："+e.message);}}
 /* v0.9.75：十分制五星图示评分（半星步进 0.5），鼠标悬停跟踪预览、点击落定；
    不再用 prompt 输入。评分存 localStorage（vaulthub_movie_rating_*）。 */
-function movieUserRating(libId, path) { const n = Number(localStorage.getItem(movieStateKey("rating", libId, path))); return Number.isFinite(n) && n > 0 ? n : 0; }
+/* ==================== v0.9.76 视频推荐 ====================
+   规则（用户定义）：
+   · 默认用 TMDB recommendations（同类型/同系列），过滤出
+     TMDB 评分 >= (当前视频评分 × 1.05) 的条目 —— 「评分+5%」为推荐线；
+   · 当前视频接近满分（≥9.5，与满分差距 <5%）时放宽为
+     「同评分（±5%）优先，其后同演职人员作品（按评分接近排序）」；
+   · 本地刮削失败时按文件名/同目录回落，推荐等级标记展示。 */
+function movieRecommendationsFor(detail, meta) {
+  const raw = (detail.recommendations && detail.recommendations.results || []).slice();
+  const cur = Number(detail.vote_average || meta.rating || 0);
+  const nearMax = cur >= 9.5;
+  const floor = cur * 1.05;
+  const pick = x => ({ title: x.title || x.name || "", year: String(x.release_date || x.first_air_date || "").slice(0, 4), rating: Number(x.vote_average || 0), poster: x.poster_path || "", id: x.id || "", media_type: x.title ? "movie" : "tv", reason: "" });
+  const scored = raw.map(pick).filter(x => x.title);
+  let out = [];
+  if (nearMax) {
+    /* 近满分：同评分(±5%)在前，其余按差距升序 */
+    const band = scored.filter(x => Math.abs(x.rating - cur) <= cur * 0.05).sort((a, b) => b.rating - a.rating);
+    const rest = scored.filter(x => !band.includes(x)).sort((a, b) => Math.abs(b.rating - cur) - Math.abs(a.rating - cur));
+    out = band.concat(rest);
+  } else {
+    out = scored.filter(x => x.rating >= floor).sort((a, b) => b.rating - a.rating);
+    /* 不足 8 条时用同演职人员/次级推荐补位（TMDB recommendations 本身已含关联作品） */
+    if (out.length < 8) out = out.concat(scored.filter(x => !out.includes(x)));
+  }
+  return out.slice(0, 8);
+}
+function movieRecStripHTML(meta) {
+  const list = meta.recommendations || [];
+  if (!list.length) return '<div class="empty-tip">暂无视频推荐</div>';
+  return list.map(x => `<article class="movie-rec-card" title="${esc(movieRecBadge(x, meta))} · ${esc(String(x.rating || 0).slice(0, 3))} 分"><b>${esc(x.title || x.name || "")}</b><small>${esc(String(x.year || ""))}</small><span class="movie-rec-badge">${esc(movieRecBadge(x, meta))}</span></article>`).join("");
+}
+function movieRecBadge(item, meta) {
+  const cur = Number(meta.rating || 0);
+  const d = item.rating - cur;
+  if (cur >= 9.5 && Math.abs(d) <= cur * 0.05) return "同评分";
+  if (d >= cur * 0.05) return "评分+5%";
+  return "相关";
+}
+/* v0.9.76：评分以服务端 override（meta.user_rating）为准，多端同步；
+   localStorage 只作为离线回退缓存。 */
+function movieUserRating(libId, path) {
+  try { const meta = readMovieMetadata()[path]; const srv = Number(meta && meta.user_rating); if (Number.isFinite(srv) && srv > 0) return srv; } catch (e) {}
+  const n = Number(localStorage.getItem(movieStateKey("rating", libId, path))); return Number.isFinite(n) && n > 0 ? n : 0;
+}
 function movieStarsFor(value) {
   const v = Math.max(0, Math.min(10, Number(value) || 0));
   let html = "";
@@ -911,8 +963,10 @@ function movieStarClick(event, host) {
   const widget = host.parentElement;
   const libId = widget.dataset.rateLib, path = widget.dataset.ratePath;
   const value = movieStarValue(star);
-  localStorage.setItem(movieStateKey("rating", libId, path), String(value));
+  try { localStorage.setItem(movieStateKey("rating", libId, path), String(value)); } catch (e) {}
   movieStarLeave(host);
+  /* v0.9.76：同步写服务端 override，其它设备刷新后也能看到同一评分。 */
+  saveMovieUserRating(libId, path, value);
   toast(`★ 已评分 ${value.toFixed(1)} / 10`);
 }
 /* v0.9.75：分享修复 —— http 非安全上下文下 navigator.share 与 navigator.clipboard 都不可用，
@@ -1002,7 +1056,7 @@ async function shareMovie(libId, path, title) {
   }
   openShareDialog({ libId, path, title, url, external, reachable });
 }
-async function openMovieDetails(libId,path){enterMovieDetailSidebarMode();const lib=findMediaLibrary(libId),viewer=document.getElementById("local-media-viewer-movie");if(!lib||!viewer)return;let meta=movieMetadataFor(path);viewer.innerHTML=renderMovieDetails(lib,path,meta);try{const res=await fetch(`/api/media/metadata?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}`,{cache:"no-store"});if(res.ok){const local=await res.json();if(local.nfo||local.poster||local.logo||local.fanart||local.backdrop||local.tags?.length||local.watched||local.subtitles?.length){meta={...meta,...local,title:local.title||meta.title,year:local.year||meta.year};const all=readMovieMetadata();all[path]=meta;writeMovieMetadata(all);viewer.innerHTML=renderMovieDetails(lib,path,meta);}}}catch(e){}if(meta.tmdb_id&&meta.provider!=="本地 NFO"){try{const res=await fetch(`/api/media/tmdb?id=${encodeURIComponent(meta.tmdb_id)}&type=${encodeURIComponent(meta.media_type||lib.type)}`,{cache:"force-cache"});if(res.ok){const detail=await res.json();meta={...meta,overview:detail.overview||meta.overview,rating:Number(detail.vote_average||meta.rating||0),runtime:detail.runtime||detail.episode_run_time?.[0],genres:(detail.genres||[]).map(x=>x.name),cast:(detail.credits?.cast||[]).slice(0,12),recommendations:(detail.recommendations?.results||[]).slice(0,8)};viewer.innerHTML=renderMovieDetails(lib,path,meta);}}catch(e){}}scrollViewerIntoView(viewer);}
+async function openMovieDetails(libId,path){enterMovieDetailSidebarMode();const lib=findMediaLibrary(libId),viewer=document.getElementById("local-media-viewer-movie");if(!lib||!viewer)return;let meta=movieMetadataFor(path);viewer.innerHTML=renderMovieDetails(lib,path,meta);try{const res=await fetch(`/api/media/metadata?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}`,{cache:"no-store"});if(res.ok){const local=await res.json();if(local.nfo||local.poster||local.logo||local.fanart||local.backdrop||local.tags?.length||local.watched||local.subtitles?.length){meta={...meta,...local,title:local.title||meta.title,year:local.year||meta.year};const all=readMovieMetadata();all[path]=meta;writeMovieMetadata(all);viewer.innerHTML=renderMovieDetails(lib,path,meta);}}}catch(e){}if(meta.tmdb_id&&meta.provider!=="本地 NFO"){try{const res=await fetch(`/api/media/tmdb?id=${encodeURIComponent(meta.tmdb_id)}&type=${encodeURIComponent(meta.media_type||lib.type)}`,{cache:"force-cache"});if(res.ok){const detail=await res.json();meta={...meta,overview:detail.overview||meta.overview,rating:Number(detail.vote_average||meta.rating||0),runtime:detail.runtime||detail.episode_run_time?.[0],genres:(detail.genres||[]).map(x=>x.name),cast:(detail.credits?.cast||[]).slice(0,12),recommendations:movieRecommendationsFor(detail,meta)};viewer.innerHTML=renderMovieDetails(lib,path,meta);}}catch(e){}}scrollViewerIntoView(viewer);}
 function closeMovieDetails(){seriesEpisodeReturn=null;const viewer=document.getElementById("local-media-viewer-movie");if(viewer)viewer.innerHTML="";leaveMovieDetailSidebarMode();}
 /* esc() 只做 HTML 实体转义，浏览器解析 style 属性时会把 &#39; 还原成单引号，
    足以闭合 url('…') 并注入任意 CSS 声明。海报地址可能来自本地 NFO、TMDB 或豆瓣，
@@ -1015,7 +1069,7 @@ const castBase = scraperStatus.tmdb_image_base || "https://image.tmdb.org/t/p";
 const cast=(meta.cast||[]).map(x=>{
   const face = x.profile_path ? `<img class="movie-cast-avatar" src="${esc(castBase+"/w185"+x.profile_path)}" alt="${esc(x.name||"")}" loading="lazy">` : `<span class="movie-cast-avatar movie-cast-avatar-fallback">${esc((x.name||"?").slice(0,1))}</span>`;
   return `<article class="movie-cast-card">${face}<b>${esc(x.name||"")}</b><small>${esc(x.character||"")}</small></article>`;
-}).join("")||'<div class="empty-tip">暂无演职人员信息</div>';const rec=(meta.recommendations||[]).map(x=>`<article><b>${esc(x.title||x.name||"")}</b><small>${esc(String(x.release_date||x.first_air_date||"").slice(0,4))}</small></article>`).join("")||'<div class="empty-tip">暂无视频推荐</div>';return `<div class="media-reader-overlay movie-detail-page media-detail-backdrop" style="${esc(detailBackdropStyle(meta))}"><div class="movie-detail-scroll">${movieDetailCloseButton()}${renderMovieHero(lib,path,meta)}<section><h3>演职人员</h3><div class="movie-detail-strip movie-cast-strip">${cast}</div></section><section><h3>视频推荐</h3><div class="movie-detail-strip">${rec}</div></section><section><h3>视频元数据</h3><dl class="movie-meta-list"><dt>文件</dt><dd>${esc(path)}</dd><dt>年份</dt><dd>${esc(meta.year||"--")}</dd><dt>类型</dt><dd>${esc((meta.genres||[]).join(" / ")||"--")}</dd><dt>时长</dt><dd>${meta.runtime?esc(meta.runtime+" 分钟"):"--"}</dd><dt>TMDB 评分</dt><dd>${meta.rating?esc(meta.rating.toFixed(1)):"--"}</dd><dt>来源</dt><dd>${esc(meta.provider||"文件名")}</dd></dl></section></div></div>`;}
+}).join("")||'<div class="empty-tip">暂无演职人员信息</div>';const rec=movieRecStripHTML(meta);return `<div class="media-reader-overlay movie-detail-page media-detail-backdrop" style="${esc(detailBackdropStyle(meta))}"><div class="movie-detail-scroll">${movieDetailCloseButton()}${renderMovieHero(lib,path,meta)}<section><h3>演职人员</h3><div class="movie-detail-strip movie-cast-strip">${cast}</div></section><section><h3>视频推荐</h3><div class="movie-detail-strip">${rec}</div></section><section><h3>视频元数据</h3><dl class="movie-meta-list"><dt>文件</dt><dd>${esc(path)}</dd><dt>年份</dt><dd>${esc(meta.year||"--")}</dd><dt>类型</dt><dd>${esc((meta.genres||[]).join(" / ")||"--")}</dd><dt>时长</dt><dd>${meta.runtime?esc(meta.runtime+" 分钟"):"--"}</dd><dt>TMDB 评分</dt><dd>${meta.rating?esc(meta.rating.toFixed(1)):"--"}</dd><dt>来源</dt><dd>${esc(meta.provider||"文件名")}</dd></dl></section></div></div>`;}
 function renderMoviePoster(lib, file) { const path=String(file.path), meta=movieMetadataFor(path), watched=!!meta.watched||movieFlag("watched",lib.id,path), art=meta.poster ? `<img src="${esc(meta.poster)}" alt="${esc(meta.title)}" loading="lazy">` : `<span>${esc(meta.title)}</span>`; return `<article class="media-poster-card ${watched?"is-read":""}" data-media-group="movie" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openMovieDetails(${jsAttrArg(lib.id)},${jsAttrArg(path)})"><div class="media-poster-art" style="${meta.poster ? "" : `background:${coverGradient(meta.title)}`}" >${art}<button class="movie-poster-settings" data-movie-settings title="观看状态" onclick="event.stopPropagation();toggleMovieWatched(${jsAttrArg(lib.id)},${jsAttrArg(path)},this)">${watched?"✓ 已观看":"○ 未观看"}</button></div><div class="media-poster-info"><strong>${esc(meta.title)}</strong><small>${esc([meta.year,meta.provider].filter(Boolean).join(" · ") || fileExt(path).toUpperCase())}</small></div></article>`; }
 function scrapeSeriesMetadata(host, lib, files) { return scrapeMovieMetadata(host, lib, files); }
 function toggleMediaResourceView(group) { mediaResourceView = mediaResourceView === "poster" ? "list" : "poster"; try { localStorage.setItem("vaulthub_media_resource_view",mediaResourceView); } catch(e) {} const lib=findMediaLibrary(localMediaSelection[group]); if(lib) loadLocalFiles(group,lib,group === "audio" ? audioCursor : 0); }

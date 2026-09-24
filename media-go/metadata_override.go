@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -13,12 +14,13 @@ import (
 )
 
 type mediaMetadataOverride struct {
-	Poster   string   `json:"poster,omitempty"`
-	Logo     string   `json:"logo,omitempty"`
-	Fanart   string   `json:"fanart,omitempty"`
-	Backdrop string   `json:"backdrop,omitempty"`
-	Tags     []string `json:"tags,omitempty"`
-	Watched  bool     `json:"watched,omitempty"`
+	UserRating float64  `json:"user_rating,omitempty"`
+	Poster     string   `json:"poster,omitempty"`
+	Logo       string   `json:"logo,omitempty"`
+	Fanart     string   `json:"fanart,omitempty"`
+	Backdrop   string   `json:"backdrop,omitempty"`
+	Tags       []string `json:"tags,omitempty"`
+	Watched    bool     `json:"watched,omitempty"`
 }
 
 func overrideKey(libID, mediaPath string) string {
@@ -118,6 +120,15 @@ func sanitizeOverride(lib Library, in mediaMetadataOverride) (mediaMetadataOverr
 		}
 	}
 	in.Poster, in.Logo, in.Fanart, in.Backdrop = strings.TrimSpace(in.Poster), strings.TrimSpace(in.Logo), strings.TrimSpace(in.Fanart), strings.TrimSpace(in.Backdrop)
+	/* v0.9.76：手动十分制评分（1–10，0 = 未评分）。存进 override 文件，
+	   走的是同一份 /data 持久化，所以换设备/换浏览器打开同一部影片看到的
+	   都是自己上次打的分 —— 多端同步就靠它，localStorage 只做缓存回退。 */
+	if in.UserRating < 0 || in.UserRating > 10 {
+		return in, os.ErrInvalid
+	}
+	if in.UserRating > 0 && in.UserRating != math.Round(in.UserRating*2)/2 {
+		in.UserRating = math.Round(in.UserRating*2) / 2
+	}
 	seen, tags := map[string]bool{}, []string{}
 	for _, tag := range in.Tags {
 		tag = strings.TrimSpace(tag)
@@ -194,6 +205,9 @@ func (a *App) mergeMetadataOverride(lib Library, mediaPath string, m *localMedia
 	}
 	if in.Backdrop != "" {
 		m.Backdrop = in.Backdrop
+	}
+	if in.UserRating > 0 {
+		m.UserRating = in.UserRating
 	}
 	m.Tags, m.Watched = in.Tags, in.Watched
 }

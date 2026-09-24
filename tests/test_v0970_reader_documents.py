@@ -13,7 +13,7 @@ checks = {
     "完整索引用于书刊筛选": 'group === "comic" && data.status !== "indexing"' in MEDIA
         and "files = await fetchAllLibraryFiles(lib.id, data, offset)" in MEDIA,
     "不再发送超大已读分页": 'comicShelfView === "completed" ? 100000' not in MEDIA,
-    # v0.9.75：书架视图从「两态按钮」升级为四个分段标签（未读 / 喜欢 / 🕘 历史阅读 / 全部），
+    # v0.9.76：书架视图从「两态按钮」升级为四个分段标签（未读 / 喜欢 / 🕘 历史阅读 / 全部），
     # 过滤仍按同一个阅读进度阈值判断，只是判断入口换成了标签状态。
     "已读过滤仍按进度": 'if (bookShelfTab === "completed") return progress >= COMPLETED_PROGRESS;' in MEDIA
         and "return progress < COMPLETED_PROGRESS;" in MEDIA,
@@ -22,13 +22,13 @@ checks = {
     "PDF 使用登录媒体流": 'else if (ext === "pdf")' in MEDIA and 'body = `<iframe src="${esc(url)}#view=FitH"' in MEDIA
         and 'url = mediaFileUrl(lib, path)' in MEDIA,
     "常见文档格式进入阅读器": '"epub"' in MEDIA and '"docx"' in MEDIA and 'MEDIA_FORMATS.book.includes(ext)' in MEDIA,
-    # v0.9.75：原契约是「关闭阅读器强制回到未读视图」；用户报告从「历史阅读」点开一本
+    # v0.9.76：原契约是「关闭阅读器强制回到未读视图」；用户报告从「历史阅读」点开一本
     # 再关闭会被踢回未读，看起来像条目被释放。新契约：保持当前视图并刷新。
     "关闭阅读器刷新书架视图": 'if (group === "comic")' in FEATURES and 'setComicShelfView(comicShelfView)' in FEATURES,
     "关闭释放阅读器监听": 'closeComicReader()' in FEATURES,
     "历史焦点检查仍存在": 'aria-modal="true"' in HTML and ':focus-visible' in CSS,
     "网易云默认关闭": 'NetEase' in MEDIA and '默认关闭' in MEDIA,
-    "本版版本": 'VAULTHUB_ASSET_VERSION = "0.9.75"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.75"' in STATE,
+    "本版版本": 'VAULTHUB_ASSET_VERSION = "0.9.76"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.76"' in STATE,
 }
 GO_MAIN = (ROOT / "media-go/main.go").read_text(encoding="utf-8")
 GO_EPUB = (ROOT / "media-go/document_epub.go").read_text(encoding="utf-8")

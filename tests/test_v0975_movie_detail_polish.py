@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""v0.9.75 影视详情契约：分享可用 / 十分制五星图示评分 / TMDB 评分展示 / 收藏可取消 / 圆形头像演职人员。"""
+"""v0.9.76 影视详情契约：分享可用 / 十分制五星图示评分 / TMDB 评分展示 / 收藏可取消 / 圆形头像演职人员。"""
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -61,5 +61,5 @@ check("F4b 读设置时同步刷新本机缓存（分享地址改动即时生效
 check("F5 支持显式清空外网地址（share_public_base_set）", "SharePublicBaseSet" in open(ROOT / "media-go/main.go", encoding="utf-8").read() and "share_public_base_set:true" in MEDIA and "c.SharePublicBase == \"\" && !c.SharePublicBaseSet" in open(ROOT / "media-go/main.go", encoding="utf-8").read())
 
 print(f"\nSUMMARY {passed}/{passed+failed} PASS")
-if failed: raise SystemExit("FAIL: v0.9.75 契约测试未通过")
-print("PASS: v0.9.75 影视详情契约（分享 / 五星评分 / TMDB / 收藏 / 圆形头像）全部满足")
+if failed: raise SystemExit("FAIL: v0.9.76 契约测试未通过")
+print("PASS: v0.9.76 影视详情契约（分享 / 五星评分 / TMDB / 收藏 / 圆形头像）全部满足")

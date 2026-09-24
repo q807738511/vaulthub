@@ -8,7 +8,7 @@ const VAULTHUB_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
    历史故障：v0.8.3→v0.8.5 的前端修改在服务端已生效，但浏览器仍执行缓存里的
    旧 02-media.js，用户看到「没有更新」。现在入口页 no-store、静态资源带 ?v=，
    并在启动时做一次一致性自查，不一致就绕过缓存强制重载一次。 */
-const VAULTHUB_SCRIPT_VERSION = "0.9.75";
+const VAULTHUB_SCRIPT_VERSION = "0.9.76";
 function ensureFreshAssets() {
   /* expected 为空 = 浏览器执行的 index.html 早于 v0.8.6（旧版本入口页没有声明
      版本号），同样属于"页面是旧的"，也需要换 URL 重新取一次。 */
@@ -1042,7 +1042,8 @@ let settings = {
   palette: "emerald",     /* 调色板层：emerald | plum | neon | clay */
   accent: "theme",        /* 强调色层：theme（跟随调色板）| teal | indigo | rose | amber | violet */
   customBg: false,        /* 背景图层：是否启用自定义背景图片 */
-  layout: "topnav",       /* v0.9.74 布局层：topnav（媒体库平铺顶栏，默认）| sidebar（v0.9.73 的侧栏） */
+  layout: "topnav",
+  uiMode: "auto",         /* v0.9.76 UI 设备模式：auto(按设备识别) | phone | tv | pc */       /* v0.9.74 布局层：topnav（媒体库平铺顶栏，默认）| sidebar（v0.9.73 的侧栏） */
   reduceMotion: false,    /* 动效：减弱过渡与动画 */
   hardwareAcceleration: "auto",
   /* 容器版默认经同源 Caddy 代理；外部浏览器无需直连家庭内网地址 */
@@ -1083,6 +1084,7 @@ function loadSettings() {
     if (["emerald", "plum", "neon", "clay"].includes(s.palette)) settings.palette = s.palette;
     if (["theme", "teal", "indigo", "rose", "amber", "violet"].includes(s.accent)) settings.accent = s.accent;
     if (s.layout === "sidebar" || s.layout === "topnav") settings.layout = s.layout;
+    if (UI_MODES.includes(s.uiMode)) settings.uiMode = s.uiMode;
     if (s.theme === "custom") settings.customBg = true;
     if (typeof s.customBg === "boolean") settings.customBg = s.customBg;
     settings.reduceMotion = !!s.reduceMotion;

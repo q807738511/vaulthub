@@ -22,25 +22,26 @@ type localMetadataSubtitle struct {
 	URL      string `json:"url"`
 }
 type localMediaMetadata struct {
-	Title     string                  `json:"title,omitempty"`
-	ShowTitle string                  `json:"show_title,omitempty"`
-	Year      string                  `json:"year,omitempty"`
-	Overview  string                  `json:"overview,omitempty"`
-	Runtime   int                     `json:"runtime,omitempty"`
-	Rating    float64                 `json:"rating,omitempty"`
-	Genres    []string                `json:"genres"`
-	Cast      []localMetadataCast     `json:"cast"`
-	TMDBID    string                  `json:"tmdb_id,omitempty"`
-	TVDBID    string                  `json:"tvdb_id,omitempty"`
-	Poster    string                  `json:"poster,omitempty"`
-	Logo      string                  `json:"logo,omitempty"`
-	Fanart    string                  `json:"fanart,omitempty"`
-	Backdrop  string                  `json:"backdrop,omitempty"`
-	Tags      []string                `json:"tags,omitempty"`
-	Watched   bool                    `json:"watched,omitempty"`
-	Subtitles []localMetadataSubtitle `json:"subtitles"`
-	Provider  string                  `json:"provider"`
-	NFO       string                  `json:"nfo,omitempty"`
+	Title      string                  `json:"title,omitempty"`
+	ShowTitle  string                  `json:"show_title,omitempty"`
+	Year       string                  `json:"year,omitempty"`
+	Overview   string                  `json:"overview,omitempty"`
+	Runtime    int                     `json:"runtime,omitempty"`
+	Rating     float64                 `json:"rating,omitempty"`
+	UserRating float64                 `json:"user_rating,omitempty"`
+	Genres     []string                `json:"genres"`
+	Cast       []localMetadataCast     `json:"cast"`
+	TMDBID     string                  `json:"tmdb_id,omitempty"`
+	TVDBID     string                  `json:"tvdb_id,omitempty"`
+	Poster     string                  `json:"poster,omitempty"`
+	Logo       string                  `json:"logo,omitempty"`
+	Fanart     string                  `json:"fanart,omitempty"`
+	Backdrop   string                  `json:"backdrop,omitempty"`
+	Tags       []string                `json:"tags,omitempty"`
+	Watched    bool                    `json:"watched,omitempty"`
+	Subtitles  []localMetadataSubtitle `json:"subtitles"`
+	Provider   string                  `json:"provider"`
+	NFO        string                  `json:"nfo,omitempty"`
 }
 type nfoActor struct {
 	Name string `xml:"name"`

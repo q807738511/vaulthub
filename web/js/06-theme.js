@@ -53,6 +53,42 @@ const THEME_ACCENTS = [
   { id: "violet", css: "", color: "#6D28D9", label: { "zh-CN": "紫罗兰", "zh-TW": "紫羅蘭", en: "Violet" } }
 ];
 const THEME_MODES = ["dark", "light", "auto"];
+
+/* ==================== v0.9.76 UI 设备模式 ====================
+   auto：按视口宽度+指针类型自动识别 Phone / PC / TV；
+   手动指定 phone/tv/pc 时跳过自动识别。
+   模式落在 <html data-uimode> 上，CSS 按档位调整信息密度：
+     phone —— 更大点击目标、收起次要列；
+     pc    —— 默认密度；
+     tv    —— 更大字号/行高、焦点高亮加粗（遥控器场景）。 */
+const UI_MODES = ["auto", "phone", "tv", "pc"];
+const UI_MODE_LABEL = {
+  auto: { "zh-CN": "自动识别", "zh-TW": "自動識別", en: "Auto" },
+  phone: { "zh-CN": "Phone", "zh-TW": "Phone", en: "Phone" },
+  tv: { "zh-CN": "TV", "zh-TW": "TV", en: "TV" },
+  pc: { "zh-CN": "PC", "zh-TW": "PC", en: "PC" }
+};
+function detectUIMode() {
+  const w = window.innerWidth || 1024;
+  let coarse = false;
+  try { coarse = window.matchMedia("(pointer: coarse)").matches; } catch (e) {}
+  if (w <= 700) return "phone";
+  if (coarse && w >= 1200) return "tv";
+  if (typeof navigator !== "undefined" && /TV|SmartTV|AppleTV/i.test(navigator.userAgent || "")) return "tv";
+  return "pc";
+}
+function resolvedUIMode() { return UI_MODES.includes(settings.uiMode) && settings.uiMode !== "auto" ? settings.uiMode : detectUIMode(); }
+function applyUIMode() {
+  const mode = resolvedUIMode();
+  document.documentElement.setAttribute("data-uimode", mode);
+  return mode;
+}
+function setUIMode(mode) {
+  settings.uiMode = UI_MODES.includes(String(mode)) ? String(mode) : "auto";
+  saveSettings();
+  const applied = applyUIMode();
+  toast("🖥 UI 模式：" + themeLabel(UI_MODE_LABEL[settings.uiMode]) + (settings.uiMode === "auto" ? "（当前 " + applied + "）" : ""));
+}
 const THEME_MODE_LABEL = {
   dark: { "zh-CN": "暗色", "zh-TW": "暗色", en: "Dark" },
   light: { "zh-CN": "亮色", "zh-TW": "亮色", en: "Light" },
@@ -172,6 +208,10 @@ function renderThemePanel() {
         <span class="tc-desc">${esc(themeLabel(def.desc))} · ${def.r}px · ${def.dur}ms</span>
       </div>`).join("");
   }
+  const uiSeg = document.getElementById("uiModeSeg");
+  if (uiSeg) {
+    uiSeg.innerHTML = UI_MODES.map(m => `<button type="button" class="seg-btn" data-ui-opt="${m}" onclick="setUIMode('${m}')">${esc(themeLabel(UI_MODE_LABEL[m]))}</button>`).join("");
+  }
   const swatches = document.getElementById("themeAccentSwatches");
   if (swatches) {
     swatches.innerHTML = THEME_ACCENTS.map(a => {
@@ -199,8 +239,10 @@ function syncThemeControls() {
   });
   document.querySelectorAll("[data-theme-accent]").forEach(el => el.classList.toggle("on", el.dataset.themeAccent === accent));
   document.querySelectorAll("#themeModeSeg [data-mode-opt]").forEach(el => el.classList.toggle("on", el.dataset.modeOpt === mode));
+  document.querySelectorAll("#uiModeSeg [data-ui-opt]").forEach(el => el.classList.toggle("on", el.dataset.uiOpt === (settings.uiMode || "auto")));
 }
 function initTheme() {
   renderThemePanel();
   applyTheme();
+  applyUIMode();
 }
