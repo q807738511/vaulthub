@@ -865,7 +865,19 @@ async function saveMovieUserRating(libId, path, value) {
   try {
     const meta = movieMetadataFor(path);
     const data = await saveMovieMetadataOverride(libId, path, { poster: meta.poster || "", logo: meta.logo || "", fanart: meta.fanart || "", backdrop: meta.backdrop || "", tags: meta.tags || [], watched: !!meta.watched, user_rating: Number(value) || 0 });
-    const all = readMovieMetadata(); all[path] = { ...(all[path] || {}), ...meta, user_rating: data.user_rating || 0 }; writeMovieMetadata(all);
+    const saved = Number(data.user_rating);
+    const all = readMovieMetadata();
+    all[path] = { ...(all[path] || {}), ...meta, user_rating: Number.isFinite(saved) && saved > 0 ? saved : Number(value) };
+    writeMovieMetadata(all);
+    /* 详情页正打开着就按服务端返回值刷新控件（多端一致：另一台机器刷新后同分）。 */
+    const widget = [...document.querySelectorAll(".movie-rating-widget")].find(w => String(w.dataset.ratePath) === String(path));
+    if (widget) {
+      const valueNow = Number(all[path].user_rating) || 0;
+      const stars = widget.querySelector(".movie-stars");
+      if (stars) stars.innerHTML = movieStarsFor(valueNow);
+      const label = widget.querySelector(".movie-rating-value");
+      if (label) label.textContent = valueNow ? "我的评分 " + valueNow.toFixed(1) : "未评分";
+    }
   } catch (e) { toast("⚠️ 评分同步失败：" + e.message); }
 }
 async function saveMovieMetadataOverride(libId,path,values){const res=await fetch(`/api/media/metadata/override?id=${encodeURIComponent(libId)}&path=${encodeURIComponent(path)}`,{method:"PUT",headers:sessionWriteHeaders(true),body:JSON.stringify(values)});const data=await res.json();if(!res.ok)throw new Error(data.error||`HTTP ${res.status}`);return data;}
@@ -902,9 +914,24 @@ function movieRecommendationsFor(detail, meta) {
   }
   return out.slice(0, 8);
 }
+/* v0.9.77：把 TMDB 的 status_message 翻成能照着做的中文提示。
+   此前 401（密钥无效）/未刮削 都被 catch(e){} 吞掉，页面只显示「暂无视频推荐」，
+   用户完全看不出是密钥问题还是没刮削 —— 这就是「TMDB 推荐不生效」的可见症状。 */
+function movieTMDBErrorText(err, status) {
+  const msg = String((err && (err.status_message || err.error)) || "");
+  if (status === 401 || /invalid api key|unauthorized/i.test(msg)) {
+    return "TMDB 凭据无效：系统设置 → 刮削里的密钥需为 v3 API Key 或 v4 Read Access Token（v0.9.77 起两种都支持）";
+  }
+  if (status === 404) return "TMDB 没有这条记录（id " + msg + "）";
+  if (!msg) return "TMDB 读取失败（HTTP " + status + "）";
+  return "TMDB 读取失败：" + msg;
+}
 function movieRecStripHTML(meta) {
   const list = meta.recommendations || [];
-  if (!list.length) return '<div class="empty-tip">暂无视频推荐</div>';
+  if (!list.length) {
+    if (meta.tmdb_error) return `<div class="empty-tip movie-rec-error">视频推荐不可用：${esc(meta.tmdb_error)}</div>`;
+    return '<div class="empty-tip">暂无视频推荐</div>';
+  }
   return list.map(x => `<article class="movie-rec-card" title="${esc(movieRecBadge(x, meta))} · ${esc(String(x.rating || 0).slice(0, 3))} 分"><b>${esc(x.title || x.name || "")}</b><small>${esc(String(x.year || ""))}</small><span class="movie-rec-badge">${esc(movieRecBadge(x, meta))}</span></article>`).join("");
 }
 function movieRecBadge(item, meta) {
@@ -963,7 +990,16 @@ function movieStarClick(event, host) {
   const widget = host.parentElement;
   const libId = widget.dataset.rateLib, path = widget.dataset.ratePath;
   const value = movieStarValue(star);
-  try { localStorage.setItem(movieStateKey("rating", libId, path), String(value)); } catch (e) {}
+  /* v0.9.77 修复：先把值写进本机媒体元数据缓存再重绘。
+     此前只写 localStorage 就调 movieStarLeave 重绘，而 movieUserRating 优先读
+     meta.user_rating —— 缓存里还是旧值（或没有），于是星星/文案立刻弹回原样，
+     用户看到的就是「点了只有一声提示、页面上留不住」。 */
+  try {
+    const all = readMovieMetadata();
+    all[path] = { ...movieMetadataFor(path), ...(all[path] || {}), user_rating: value };
+    writeMovieMetadata(all);
+    localStorage.setItem(movieStateKey("rating", libId, path), String(value));
+  } catch (e) { /* 缓存写失败不影响服务端持久化 */ }
   movieStarLeave(host);
   /* v0.9.76：同步写服务端 override，其它设备刷新后也能看到同一评分。 */
   saveMovieUserRating(libId, path, value);
@@ -1056,7 +1092,7 @@ async function shareMovie(libId, path, title) {
   }
   openShareDialog({ libId, path, title, url, external, reachable });
 }
-async function openMovieDetails(libId,path){enterMovieDetailSidebarMode();const lib=findMediaLibrary(libId),viewer=document.getElementById("local-media-viewer-movie");if(!lib||!viewer)return;let meta=movieMetadataFor(path);viewer.innerHTML=renderMovieDetails(lib,path,meta);try{const res=await fetch(`/api/media/metadata?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}`,{cache:"no-store"});if(res.ok){const local=await res.json();if(local.nfo||local.poster||local.logo||local.fanart||local.backdrop||local.tags?.length||local.watched||local.subtitles?.length){meta={...meta,...local,title:local.title||meta.title,year:local.year||meta.year};const all=readMovieMetadata();all[path]=meta;writeMovieMetadata(all);viewer.innerHTML=renderMovieDetails(lib,path,meta);}}}catch(e){}if(meta.tmdb_id&&meta.provider!=="本地 NFO"){try{const res=await fetch(`/api/media/tmdb?id=${encodeURIComponent(meta.tmdb_id)}&type=${encodeURIComponent(meta.media_type||lib.type)}`,{cache:"force-cache"});if(res.ok){const detail=await res.json();meta={...meta,overview:detail.overview||meta.overview,rating:Number(detail.vote_average||meta.rating||0),runtime:detail.runtime||detail.episode_run_time?.[0],genres:(detail.genres||[]).map(x=>x.name),cast:(detail.credits?.cast||[]).slice(0,12),recommendations:movieRecommendationsFor(detail,meta)};viewer.innerHTML=renderMovieDetails(lib,path,meta);}}catch(e){}}scrollViewerIntoView(viewer);}
+async function openMovieDetails(libId,path){enterMovieDetailSidebarMode();const lib=findMediaLibrary(libId),viewer=document.getElementById("local-media-viewer-movie");if(!lib||!viewer)return;let meta=movieMetadataFor(path);viewer.innerHTML=renderMovieDetails(lib,path,meta);try{const res=await fetch(`/api/media/metadata?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}`,{cache:"no-store"});if(res.ok){const local=await res.json();if(local.nfo||local.poster||local.logo||local.fanart||local.backdrop||local.tags?.length||local.watched||local.user_rating||local.subtitles?.length){meta={...meta,...local,title:local.title||meta.title,year:local.year||meta.year};const all=readMovieMetadata();all[path]=meta;writeMovieMetadata(all);viewer.innerHTML=renderMovieDetails(lib,path,meta);}}}catch(e){}if(meta.tmdb_id&&meta.provider!=="本地 NFO"){try{const res=await fetch(`/api/media/tmdb?id=${encodeURIComponent(meta.tmdb_id)}&type=${encodeURIComponent(meta.media_type||lib.type)}`,{cache:"force-cache"});if(res.ok){const detail=await res.json();meta={...meta,overview:detail.overview||meta.overview,rating:Number(detail.vote_average||meta.rating||0),runtime:detail.runtime||detail.episode_run_time?.[0],genres:(detail.genres||[]).map(x=>x.name),cast:(detail.credits?.cast||[]).slice(0,12),recommendations:movieRecommendationsFor(detail,meta),tmdb_error:""};viewer.innerHTML=renderMovieDetails(lib,path,meta);}else{const err=await res.json().catch(()=>({}));meta={...meta,tmdb_error:movieTMDBErrorText(err,res.status)};viewer.innerHTML=renderMovieDetails(lib,path,meta);}}catch(e){meta={...meta,tmdb_error:"TMDB 请求失败："+e.message};viewer.innerHTML=renderMovieDetails(lib,path,meta);}}else if(!meta.tmdb_id){meta={...meta,tmdb_error:"未刮削到 TMDB 条目（provider="+(meta.provider||"文件名")+"），无法取推荐与 TMDB 评分"};}scrollViewerIntoView(viewer);}
 function closeMovieDetails(){seriesEpisodeReturn=null;const viewer=document.getElementById("local-media-viewer-movie");if(viewer)viewer.innerHTML="";leaveMovieDetailSidebarMode();}
 /* esc() 只做 HTML 实体转义，浏览器解析 style 属性时会把 &#39; 还原成单引号，
    足以闭合 url('…') 并注入任意 CSS 声明。海报地址可能来自本地 NFO、TMDB 或豆瓣，
@@ -1263,7 +1299,7 @@ async function requestPlaybackPlan(lib, path, quality = "auto") {
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ library_id: String(lib.id), path: String(path), quality, hardware: settings.hardwareAcceleration || "auto", client: browserPlaybackCapabilities() }),
+      body: JSON.stringify({ library_id: String(lib.id), path: String(path), quality, hardware: settings.hardwareAcceleration || "auto", network_bps: Number(weakNetworkState().speedBps) || 0, client: browserPlaybackCapabilities() }),
       signal: controller.signal
     });
     if (!response.ok) throw new Error(`播放计划 HTTP ${response.status}`);
@@ -2360,7 +2396,6 @@ const AUDIO_QUALITY_KEY = "vaulthub_audio_quality_v1";
 const WEAK_PROBE_TTL = 30 * 60 * 1000;   // 探测结果 30 分钟内复用
 const WEAK_SLOW_BPS = 400 * 1024;        // < 400 KiB/s ≈ 3.2 Mbps 视为弱网
 const WEAK_MEDIUM_BPS = 1500 * 1024;     // < 1.5 MiB/s ≈ 12 Mbps 视为中等
-const AUDIO_QUALITY_LADDER = ["original", "auto", "320", "192", "128", "96"];
 const AUDIO_QUALITY_LABEL = { original: "原文件", auto: "自动" };
 
 function weakNetworkState() {
@@ -2373,17 +2408,15 @@ function saveWeakNetworkState(patch) {
   syncWeakNetworkSettings();
   return next;
 }
+/* v0.9.77：音质档位不再有手动按钮 —— 始终「自动」，由后台测速（当天首次打开 +
+   30 分钟过期重测）决定是否走服务端限码率转码流。保留读取旧值做迁移：旧版本存过
+   320/192/128/96 的用户，落到自动档而不是继续钉在手动档位。 */
 function audioQualityChoice() {
   try {
-    const value = String(localStorage.getItem(AUDIO_QUALITY_KEY) || "auto");
-    return AUDIO_QUALITY_LADDER.includes(value) ? value : "auto";
-  } catch (e) { return "auto"; }
-}
-function saveAudioQualityChoice(value) {
-  const next = AUDIO_QUALITY_LADDER.includes(String(value)) ? String(value) : "auto";
-  try { localStorage.setItem(AUDIO_QUALITY_KEY, next); } catch (e) { console.warn("[weak] 无法写入音质设置（localStorage 受限）", e); }
-  updateAudioQualityButton();
-  return next;
+    const legacy = String(localStorage.getItem(AUDIO_QUALITY_KEY) || "");
+    if (legacy && legacy !== "auto") localStorage.removeItem(AUDIO_QUALITY_KEY);
+  } catch (e) { /* localStorage 受限时忽略 */ }
+  return "auto";
 }
 function weakNetworkLevel(speedBps) {
   if (!speedBps || speedBps <= 0) return "";
@@ -2452,6 +2485,72 @@ async function probeWeakNetwork(options = {}) {
     return weakNetworkState();
   }
 }
+/* ==================== v0.9.77：当日首次打开自动测速 ====================
+   用户诉求：WEBUI 当天第一次打开时自动做一次网络测速（本地网络到容器的延迟 +
+   到容器的下行带宽），结果喂给后台自动切换（音频限码率、漫画省流、视频自动画质）。
+   · 每天只自动跑一次（留当天日期戳）；可在设置页关掉或手动「立即测速」；
+   · 延迟：多次 1 KiB 小请求取中位数（排除首包/抖动单点）；
+   · 带宽：复用 /api/media/weak/probe 的不可压缩样本（1 MiB）；
+   · 结果写入 weakNetworkState（speedBps / level / latencyMs / day / measuredAt）。 */
+const SPEEDTEST_DAY_KEY = "vaulthub_speedtest_day_v1";
+const AUTO_SPEEDTEST_KEY = "vaulthub_auto_speedtest_v1";
+const SPEEDTEST_SAMPLE_KB = 1024;
+
+function todayStamp() {
+  const d = new Date();
+  const pad = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+function autoSpeedTestEnabled() {
+  try { return localStorage.getItem(AUTO_SPEEDTEST_KEY) !== "0"; } catch (e) { return true; }
+}
+function setAutoSpeedTest(on) {
+  try { localStorage.setItem(AUTO_SPEEDTEST_KEY, on ? "1" : "0"); } catch (e) { /* 受限时忽略 */ }
+  toast(on ? "📶 已开启：每天首次打开自动测速" : "📶 已关闭自动测速（可在设置里手动测速）");
+}
+function speedTestDay() {
+  try { return String(localStorage.getItem(SPEEDTEST_DAY_KEY) || ""); } catch (e) { return ""; }
+}
+function markSpeedTestDay(day) {
+  try { localStorage.setItem(SPEEDTEST_DAY_KEY, day); } catch (e) { /* 受限时忽略 */ }
+}
+/* 本地网络 → 容器的往返延迟（ms，中位数）。失败返回 0（不误判）。 */
+async function measureContainerLatency(samples = 4) {
+  if (typeof performance === "undefined" || !performance.now) return 0;
+  const rtts = [];
+  for (let i = 0; i < samples; i++) {
+    const t0 = performance.now();
+    try {
+      const res = await fetch(`/api/media/weak/probe?kb=1&lat=${i}`, { cache: "no-store", credentials: "same-origin" });
+      if (!res.ok) continue;
+      await res.arrayBuffer();
+      rtts.push(performance.now() - t0);
+    } catch (e) { /* 单次失败继续 */ }
+  }
+  if (!rtts.length) return 0;
+  rtts.sort((a, b) => a - b);
+  // 去掉最慢的一次（首包/TLS/代理抖动），其余取中位数
+  const trimmed = rtts.length > 2 ? rtts.slice(0, rtts.length - 1) : rtts;
+  return Math.round(trimmed[Math.floor(trimmed.length / 2)]);
+}
+async function runDailySpeedTest(options = {}) {
+  const today = todayStamp();
+  if (!options.force) {
+    if (!autoSpeedTestEnabled()) return weakNetworkState();
+    if (speedTestDay() === today) return weakNetworkState();
+  }
+  const latencyMs = await measureContainerLatency();
+  const state = await probeWeakNetwork({ kb: options.kb || SPEEDTEST_SAMPLE_KB });
+  const next = saveWeakNetworkState({ latencyMs, day: today, auto: !options.force });
+  markSpeedTestDay(today);
+  if (!options.silent) {
+    const mbps = next.speedBps ? (next.speedBps * 8 / 1000 / 1000).toFixed(1) : "0";
+    toast(`📶 当日测速：延迟 ${latencyMs || "--"} ms · 下行约 ${(next.speedBps / 1024 / 1024).toFixed(2)} MiB/s（${mbps} Mbps）· 档位已按结果自动切换`);
+  }
+  syncWeakNetworkSettings();
+  updateAudioQualityButton();
+  return next;
+}
 /* 自动档位下：没有新鲜探测结果就后台补一次（不阻塞首屏）。 */
 function ensureWeakNetworkProbe() {
   const state = weakNetworkState();
@@ -2461,36 +2560,14 @@ function ensureWeakNetworkProbe() {
   if (typeof requestIdleCallback === "function") requestIdleCallback(run, { timeout: 4000 });
   else setTimeout(run, 1200);
 }
+/* v0.9.77：音质按钮已移除，这里只同步设置页的状态文案（后台档位对外可见）。 */
 function updateAudioQualityButton() {
-  const button = document.getElementById("audioQualityButton");
-  if (!button) return;
+  const status = document.getElementById("audioQualityStatus");
+  if (!status) return;
   const kbps = effectiveAudioKbps();
-  button.dataset.quality = audioQualityChoice();
-  button.dataset.kbps = String(kbps);
-  button.classList.toggle("audio-quality-transcode", !!kbps);
-  const label = audioQualityLabel();
-  button.title = `音质：${label}（点击切换 原文件/自动/320k/192k/128k/96k；弱网模式：${weakNetworkState().mode === "on" ? "始终" : weakNetworkState().mode === "off" ? "关闭" : "自动"}）`;
-  button.setAttribute("aria-label", `音质：${label}`);
-  const text = button.querySelector("[data-audio-quality-label]");
-  if (text) text.textContent = kbps ? `音质·${kbps}k` : "音质·原文件";
-}
-function cycleAudioQuality() {
-  const ladder = AUDIO_QUALITY_LADDER;
-  const current = audioQualityChoice();
-  const next = ladder[(ladder.indexOf(current) + 1) % ladder.length];
-  saveAudioQualityChoice(next);
-  const kbps = effectiveAudioKbps();
-  toast(kbps ? `🎚️ 音质：${audioQualityLabel()}（服务端转码流）` : `🎚️ 音质：${audioQualityLabel()}（原文件直出）`);
-  /* 正在播放时按新档位重载当前曲目（保持播放位置）。 */
-  if (activeAudio) {
-    const player = document.getElementById("audioPlayerElement");
-    const at = player ? player.currentTime : 0;
-    const lib = findMediaLibrary(activeAudio.libId);
-    if (player && lib && player.src) {
-      applyAudioSource(lib, activeAudio.path, player, { keepTime: at });
-      player.play().catch(() => {});
-    }
-  }
+  status.textContent = kbps
+    ? `当前档位：自动限码率 ${kbps}k（后台测速判定，无需手动切换）`
+    : "当前档位：原文件直出（后台测速判定，无需手动切换）";
 }
 /* 选择播放源：弱网/显式档位 → 服务端转码流；其余 → 原文件。
    转码流失败（503 拥塞、ffmpeg 缺失等）自动回落原文件，不让播放卡死。 */
@@ -2527,15 +2604,17 @@ function syncWeakNetworkSettings() {
   if (status) {
     const speed = state.speedBps ? `${(state.speedBps / 1024 / 1024).toFixed(2)} MiB/s` : "未测速";
     const level = state.level === "slow" ? "弱网" : state.level === "medium" ? "中等" : state.level === "fast" ? "良好" : "未知";
-    status.textContent = `最近测速：${speed}（判定 ${level}）· 当前生效：${weakNetworkActive() ? "弱网档位（音频 96k / 省流开启）" : "标准档位（原文件直出）"}`;
+    const lat = state.latencyMs ? `延迟 ${state.latencyMs} ms · ` : "";
+    const day = state.day ? `（${state.day} 自动测速）` : "（未自动测速）";
+    status.textContent = `最近测速：${lat}${speed}（判定 ${level}）${day} · 当前生效：${weakNetworkActive() ? "弱网档位（音频限码率 / 省流开启）" : "标准档位（原文件直出）"}`;
   }
 }
 async function probeWeakNetworkFromSettings() {
   const status = document.getElementById("weakNetworkStatus");
-  if (status) status.textContent = "正在测速…";
-  await probeWeakNetwork({ kb: 512, toast: true });
-  syncWeakNetworkSettings();
-  updateAudioQualityButton();
+  if (status) status.textContent = "正在测速（延迟 + 下行带宽）…";
+  await runDailySpeedTest({ force: true, kb: 512 });
+  const box = document.getElementById("autoSpeedTestToggle");
+  if (box) box.checked = autoSpeedTestEnabled();
 }
 function playAudioFile(libId, path) {
   const lib = findMediaLibrary(libId), player = document.getElementById("audioPlayerElement"); if (!lib || !player) return;
@@ -3153,12 +3232,22 @@ function comicTranscodeWidth() {
 }
 function comicPageUrl(lib, path, entry, width) {
   const raw = String((entry && (entry.raw || entry.name)) || entry || "");
-  let u = "/api/media/archive/zip/page?id=" + encodeURIComponent(lib.id) + "&path=" + encodeURIComponent(path) + "&entry=" + encodeURIComponent(raw);
+  /* v0.9.77：PDF 的「条目」就是页码，服务端渲染成 JPEG 后同样进页缓存。 */
+  const isPDF = !!(entry && entry.pdf);
+  let u = isPDF
+    ? "/api/media/pdf/page?id=" + encodeURIComponent(lib.id) + "&path=" + encodeURIComponent(path) + "&page=" + encodeURIComponent(raw)
+    : "/api/media/archive/zip/page?id=" + encodeURIComponent(lib.id) + "&path=" + encodeURIComponent(path) + "&entry=" + encodeURIComponent(raw);
   if (Number(width) > 0) u += "&w=" + encodeURIComponent(width);
   return u;
 }
 function comicCoverUrl(lib, path, width) {
-  return "/api/media/archive/zip/cover?id=" + encodeURIComponent(lib.id) + "&path=" + encodeURIComponent(path) + "&w=" + (Number(width) || 320);
+  const w = Number(width) || 320;
+  /* v0.9.77：PDF 封面 = 第 1 页小图（服务端渲染），避免书架用浏览器 PDF 缩略图。 */
+  const m = String(path).toLowerCase().match(/\.([^.\\/]+)$/);
+  if (m && m[1] === "pdf") {
+    return "/api/media/pdf/cover?id=" + encodeURIComponent(lib.id) + "&path=" + encodeURIComponent(path) + "&w=" + w;
+  }
+  return "/api/media/archive/zip/cover?id=" + encodeURIComponent(lib.id) + "&path=" + encodeURIComponent(path) + "&w=" + w;
 }
 function comicPageUrlAt(state, page) {
   const entry = state.entries[page - 1];
@@ -3202,10 +3291,12 @@ function comicResumePage(state, saved) {
   if (pct > 0) return Math.max(1, Math.min(total, Math.round(pct * total / 100) || 1));
   return 1;
 }
-function mountComicReader(viewer, lib, path, entries, url) {
+function mountComicReader(viewer, lib, path, entries, url, options = {}) {
   const prefs = comicPrefs();
   const state = {
     viewer, lib, path, entries, total: entries.length,
+    /* v0.9.77：PDF 源（页由服务端 pdftoppm 光栅化），页 URL 走 /api/media/pdf/page。 */
+    pdf: !!options.pdf,
     mode: ["single", "double", "scroll"].includes(prefs.mode) ? prefs.mode : "single",
     rtl: !!prefs.rtl,
     fit: ["width", "height", "native"].includes(prefs.fit) ? prefs.fit : "width",
@@ -4476,6 +4567,26 @@ async function openLocalMedia(group, libId, path) {
       return;
     } catch (err) { viewer.innerHTML = viewerShell(group, lib, path, `<div class="media-error">ZIP 漫画读取失败：${esc(err.message)}</div>`, url, { doc: true }); return; }
   }
+  /* v0.9.77：PDF 改走应用内阅读器（单页/双页/条漫 + 右起/左起 + 省流转码 + 预取 + 进度）。
+     此前是 <iframe src="...pdf">，等于把 PDF 交给浏览器内置 PDF 阅读器 —— 客户反馈的问题。 */
+  if (ext === "pdf" && (group === "comic" || group === "book")) {
+    viewer.innerHTML = viewerShell(group, lib, path, '<div class="empty-tip">正在解析 PDF 页面...</div>', url, { doc: true });
+    try {
+      const res = await fetch(`/api/media/pdf/info?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}`, { cache: "no-store", credentials: "same-origin" });
+      const info = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(info.error || `HTTP ${res.status}`);
+      const total = Number(info.pages) || 0;
+      if (!total) throw new Error("PDF 页数为 0");
+      if (info.encrypted) toast("⚠️ 该 PDF 已加密，部分页面可能无法渲染");
+      const entries = [];
+      for (let i = 1; i <= total; i++) entries.push({ raw: String(i), name: String(i), pdf: true });
+      mountComicReader(viewer, lib, path, entries, url, { pdf: true });
+      return;
+    } catch (err) {
+      viewer.innerHTML = viewerShell(group, lib, path, `<div class="media-error">PDF 读取失败：${esc(err.message)}</div>`, url, { doc: true });
+      return;
+    }
+  }
   if (["mp3","flac","m4a","ogg","wav"].includes(ext)) body = `<div class="media-viewer-body"><audio controls autoplay preload="metadata" src="${esc(url)}"></audio></div>`;
   else if (MEDIA_FORMATS.movie.includes(ext)) body = `<div class="media-viewer-body media-video-body" data-video-controls-visible="true" data-video-engine="native" data-video-chrome-collapsed="false" data-video-repeat="off" data-video-shuffle="off" data-video-quality="auto">
 <video data-movie-player playsinline preload="metadata" onloadedmetadata="this.muted=false;this.volume=1" onvolumechange="this.dataset.volume=String(this.volume)"></video>
@@ -4537,7 +4648,9 @@ async function openLocalMedia(group, libId, path) {
 <div class="video-status-panel"><span class="status-main" data-video-status>准备播放</span><span class="status-detail" data-video-detail>--:-- / --:-- · 媒体元数据待识别</span></div>
 </div>`;
   else if (["jpg","jpeg","png","webp","gif","bmp","avif"].includes(ext)) body = `<img src="${esc(url)}" alt="${esc(path)}">`;
-  else if (ext === "pdf") body = `<iframe src="${esc(url)}#view=FitH" title="${esc(path)}"></iframe>`;
+  /* v0.9.77：PDF 的 iframe 分支已移除 —— 任何库里的 PDF 都由上面的应用内阅读器处理，
+     不再交给浏览器内置 PDF 查看器（客户反馈）。 */
+
   else if (ext === "epub") {
     /* v0.9.70：EPUB 由服务端按 spine 解析成章节纯文本（容器内自解析，无第三方依赖），
        复用 TXT 电子书阅读器的章节下拉与进度恢复；此前只显示「不支持直接解析」。 */

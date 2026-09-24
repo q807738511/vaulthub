@@ -64,7 +64,16 @@ setInterval(tickMetrics, 5000);
    （自动档位 30 分钟内的结果直接复用，不重复打探测接口）。 */
 if (typeof syncWeakNetworkSettings === "function") syncWeakNetworkSettings();
 if (typeof updateAudioQualityButton === "function") updateAudioQualityButton();
-if (typeof ensureWeakNetworkProbe === "function") ensureWeakNetworkProbe();
+/* v0.9.77：当天第一次打开 WEBUI 自动测速（延迟 + 下行带宽），
+   结果直接喂给后台自动切换；同一天重复打开不重复打探测接口。
+   自动测速关掉时退回「30 分钟内复用结果」的老行为。 */
+const autoSpeedBox = document.getElementById("autoSpeedTestToggle");
+if (autoSpeedBox && typeof autoSpeedTestEnabled === "function") autoSpeedBox.checked = autoSpeedTestEnabled();
+if (typeof runDailySpeedTest === "function") {
+  runDailySpeedTest({ silent: true }).catch(() => {
+    if (typeof ensureWeakNetworkProbe === "function") ensureWeakNetworkProbe();
+  });
+} else if (typeof ensureWeakNetworkProbe === "function") ensureWeakNetworkProbe();
 /* 首页四栏（服务器监控 / 正在进行 / 最近入库）在媒体库拉取完成后渲染 */
 refreshMediaLibraries(false).then(initHome);
 }

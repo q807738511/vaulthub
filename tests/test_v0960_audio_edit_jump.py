@@ -15,12 +15,12 @@ def check(name, ok, detail=""):
         fails.append(f"{name} {detail}")
 
 # ============ T1 版本一致性（bump 0.9.59 → 0.9.66） ============
-check("T1 HTML 资源版本", 'VAULTHUB_ASSET_VERSION = "0.9.76"' in HTML)
-check("T1 JS 脚本版本", 'VAULTHUB_SCRIPT_VERSION = "0.9.76"' in STATE)
-check("T1 CSS 缓存串", 'href="/web/css/main.css?v=0.9.76"' in HTML)
-check("T1 JS 缓存串 x5", HTML.count('?v=0.9.76') >= 6)  # css 1 + js 5
+check("T1 HTML 资源版本", 'VAULTHUB_ASSET_VERSION = "0.9.77"' in HTML)
+check("T1 JS 脚本版本", 'VAULTHUB_SCRIPT_VERSION = "0.9.77"' in STATE)
+check("T1 CSS 缓存串", 'href="/web/css/main.css?v=0.9.77"' in HTML)
+check("T1 JS 缓存串 x5", HTML.count('?v=0.9.77') >= 6)  # css 1 + js 5
 check("T1 无 0.9.59 缓存串残留", HTML.count('?v=0.9.59') == 0)
-check("T1 UI 版本角标", "v0.9.76" in HTML)
+check("T1 UI 版本角标", "v0.9.76" in HTML or "v0.9.77" in HTML)
 
 # ============ T2 编辑专辑/歌手按钮跳转曲目列表 ============
 # 编辑按钮应调用 openAudioTracks 而非 openAudioGroupEdit

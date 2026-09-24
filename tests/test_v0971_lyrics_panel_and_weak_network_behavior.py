@@ -208,8 +208,8 @@ sandbox.saveWeakNetworkState = (patch) => ctx.saveWeakNetworkState(patch);
 sandbox.weakNetworkState = () => ctx.weakNetworkState();
 sandbox.weakNetworkActive = () => ctx.weakNetworkActive();
 sandbox.audioQualityChoice = () => ctx.audioQualityChoice();
-sandbox.saveAudioQualityChoice = (v) => ctx.saveAudioQualityChoice(v);
-sandbox.cycleAudioQuality = () => ctx.cycleAudioQuality();
+sandbox.saveAudioQualityChoice = (v) => { /* v0.9.77 移除，保留桩避免历史测试其余引用报错 */ };
+sandbox.cycleAudioQuality = () => { /* v0.9.77 移除 */ };
 sandbox.audioStreamUrl = (lib, path, kbps) => ctx.audioStreamUrl(lib, path, kbps);
 sandbox.probeWeakNetwork = (o) => ctx.probeWeakNetwork(o || {});
 sandbox.applyAudioSource = (lib, path, player, o) => ctx.applyAudioSource(lib, path, player, o || {});
@@ -243,22 +243,10 @@ sandbox.saveWeakNetworkState({ mode: "off", speedBps: 100 * 1024, level: "slow" 
 ok("显式关闭弱网 → 原文件", sandbox.effectiveAudioKbps() === 0 && sandbox.weakNetworkActive() === false);
 sandbox.saveWeakNetworkState({ mode: "auto" });
 
-ok("显式选择 192k 优先于自动判定", (function () {
-  sandbox.saveWeakNetworkState({ mode: "off", speedBps: 100 * 1024, level: "slow" });
-  const prev = sandbox.audioQualityChoice();
-  sandbox.saveAudioQualityChoice("192");
-  const v = sandbox.effectiveAudioKbps();
-  sandbox.saveAudioQualityChoice(prev);
-  return v === 192;
-})(), String(sandbox.effectiveAudioKbps()));
+ok("音质始终由后台判定（v0.9.77 移除手动选择，恒为 auto）",
+  sandbox.audioQualityChoice() === "auto", String(sandbox.audioQualityChoice()));
 
-/* 音质档位循环 */
-const ladderSeen = [];
-sandbox.saveAudioQualityChoice("original");
-for (let i = 0; i < 6; i++) { ladderSeen.push(sandbox.audioQualityChoice()); sandbox.cycleAudioQuality(); }
-ok("音质档位循环覆盖 6 档且回到起点",
-  ladderSeen.join(",") === "original,auto,320,192,128,96" && sandbox.audioQualityChoice() === "original",
-  ladderSeen.join(",") + " → " + sandbox.audioQualityChoice());
+/* 转码流 URL */
 
 /* 转码流 URL */
 const url = sandbox.audioStreamUrl({ id: "lib-1" }, "/YY/夜に駆ける.mp3", 128);
@@ -277,16 +265,16 @@ probePromise.then(() => {
 
   /* 源选择 */
   console.log("== 播放源选择与回落 ==");
-  sandbox.saveAudioQualityChoice("original");
+  sandbox.saveWeakNetworkState({ mode: "off", speedBps: 0, level: "" });
   let kbps = sandbox.applyAudioSource({ id: "lib-1" }, "/YY/a.mp3", player);
   ok("原文件档位 → 直出文件地址",
     kbps === 0 && player.src.startsWith("/api/media/file?") && player.src.includes("id=lib-1")
     && player.src.includes(encodeURIComponent("/YY/a.mp3")), player.src);
-  sandbox.saveAudioQualityChoice("128");
+  sandbox.saveWeakNetworkState({ mode: "on", speedBps: 100 * 1024, level: "slow" });
   kbps = sandbox.applyAudioSource({ id: "lib-1" }, "/YY/a.mp3", player);
-  ok("128k 档位 → 转码流地址 + dataset 记录", kbps === 128 && player.src.includes("bitrate=128k") && player.dataset.streamKbps === "128", player.src);
+  ok("弱网档位 → 转码流地址 + dataset 记录", kbps === 96 && player.src.includes("bitrate=96k") && player.dataset.streamKbps === "96", player.src);
   ok("applyAudioSource 复位回落标记", player.dataset.streamFallback === "");
-  sandbox.saveAudioQualityChoice("original");
+  sandbox.saveWeakNetworkState({ mode: "off", speedBps: 0, level: "" });
 
   /* 漫画省流联动 */
   console.log("== 漫画省流联动 ==");

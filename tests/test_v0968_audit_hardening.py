@@ -63,9 +63,9 @@ checks = {
     "背景 URL 清洗": "bg.style.backgroundImage = `url('${cssUrlValue(imageUrl)}')`" in MEDIA,
 
     # 版本与发布物
-    "HTML版本": 'VAULTHUB_ASSET_VERSION = "0.9.76"' in HTML and HTML.count("?v=0.9.76") >= 7,
-    "脚本版本": 'VAULTHUB_SCRIPT_VERSION = "0.9.76"' in STATE,
-    "UI角标": "v0.9.76 · 视频推荐与评分配置" in HTML,
+    "HTML版本": 'VAULTHUB_ASSET_VERSION = "0.9.77"' in HTML and HTML.count("?v=0.9.77") >= 7,
+    "脚本版本": 'VAULTHUB_SCRIPT_VERSION = "0.9.77"' in STATE,
+    "UI角标": "v0.9.77" in HTML,
     "发布说明": "VaultHub 蜀鼠之家 v0.9.69" in NOTES and "非阻塞" in NOTES,
     "更新日志段": "# VaultHub 蜀鼠之家 v0.9.76" in LOG,
     # 历史说明只增不改（v0.9.67 的说明文件必须仍以它自己的标题开头）

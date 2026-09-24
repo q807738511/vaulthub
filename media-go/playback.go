@@ -113,6 +113,50 @@ func choosePlaybackPlan(m playbackMedia, c playbackClient, quality, hardware str
 	return plan
 }
 
+/*
+==================== v0.9.77：测速辅助视频自动画质 ====================
+
+	当日首次打开 WEBUI 会做一次网络测速（前端），把实测下行带宽随播放计划一起上传。
+	自动档下按带宽给「上限」：超出的源走一次限高转码，避免弱网/远程直接拖 4K 原片。
+	  < 2 Mbps  → 480p
+	  < 6 Mbps  → 720p
+	  < 16 Mbps → 1080p
+	  ≥ 16 Mbps 或未测速、或用户显式选了画质 → 不设上限（保持原判）
+	只在「自动」档生效：显式 720p/1080p/original 永远按用户选择执行。
+*/
+func autoQualityCapForBandwidth(bps int64) int {
+	switch {
+	case bps <= 0:
+		return 0
+	case bps < 2*1000*1000:
+		return 480
+	case bps < 6*1000*1000:
+		return 720
+	case bps < 16*1000*1000:
+		return 1080
+	default:
+		return 0
+	}
+}
+
+func applyNetworkCap(plan playbackPlan, quality string, networkBps int64) playbackPlan {
+	if quality != "" && quality != "auto" {
+		return plan
+	}
+	capHeight := autoQualityCapForBandwidth(networkBps)
+	if capHeight <= 0 || plan.Media.Height == 0 || plan.Media.Height <= capHeight {
+		return plan
+	}
+	if plan.MaxHeight > 0 && plan.MaxHeight <= capHeight {
+		return plan
+	}
+	plan.Layer, plan.Mode = "smart_stream", "full_transcode"
+	plan.VideoAction, plan.AudioAction = "h264", "aac"
+	plan.MaxHeight = capHeight
+	plan.Reason = fmt.Sprintf("测速 %.1f Mbps：自动限制到 %dp，转换为 H.264/AAC", float64(networkBps)/1000/1000, capHeight)
+	return plan
+}
+
 func (a *App) playbackPlan(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		errJSON(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -123,11 +167,13 @@ func (a *App) playbackPlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		LibraryID string         `json:"library_id"`
-		Path      string         `json:"path"`
-		Quality   string         `json:"quality"`
-		Hardware  string         `json:"hardware"`
-		Client    playbackClient `json:"client"`
+		LibraryID string `json:"library_id"`
+		Path      string `json:"path"`
+		Quality   string `json:"quality"`
+		Hardware  string `json:"hardware"`
+		/* v0.9.77：当天测速得到的下行带宽（bit/s），仅用于自动档限高。 */
+		NetworkBps int64          `json:"network_bps"`
+		Client     playbackClient `json:"client"`
 	}
 	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&req) != nil {
 		errJSON(w, 400, "invalid playback request")
@@ -153,6 +199,7 @@ func (a *App) playbackPlan(w http.ResponseWriter, r *http.Request) {
 	hwInfo := detectHardware(ctx, req.Hardware)
 	selected, _ := hwInfo["selected"].(string)
 	plan := choosePlaybackPlan(media, req.Client, req.Quality, selected)
+	plan = applyNetworkCap(plan, req.Quality, req.NetworkBps)
 	q := url.Values{"id": {lib.ID}, "path": {req.Path}}
 	if plan.Mode == "direct" {
 		plan.URL = "/api/media/file?" + q.Encode()

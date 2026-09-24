@@ -701,6 +701,7 @@ func (a *App) runtimeSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, a.runtimeConfigSnapshot(false))
 }
+
 // validSharePublicBase 校验分享外网基址：必须 http(s)://host[:port]，不允许带路径/查询。
 func validSharePublicBase(s string) bool {
 	u, err := url.Parse(s)
@@ -2351,6 +2352,9 @@ func main() {
 	mux.HandleFunc("/api/media/archive/zip", a.archive)
 	mux.HandleFunc("/api/media/archive/zip/register", a.archive)
 	/* v0.9.67：按页转码端点（漫画「省流模式」）。w=0 时行为与 register 完全一致。 */
+	mux.HandleFunc("/api/media/pdf/info", a.pdfInfo)
+	mux.HandleFunc("/api/media/pdf/page", a.pdfPage)
+	mux.HandleFunc("/api/media/pdf/cover", a.pdfCover)
 	mux.HandleFunc("/api/media/archive/zip/page", a.archivePage)
 	/* v0.9.67：归档首页缩略图，供书架卡片当封面（替代慢且易失败的外网封面刮削）。 */
 	mux.HandleFunc("/api/media/archive/zip/cover", a.archiveCover)
@@ -2424,6 +2428,38 @@ func (a *App) subtitle(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, map[string]any{"items": items})
 }
+
+/*
+tmdbIsBearerToken 判定 TMDB v4 Read Access Token（JWT）：三段点分且以 eyJ 开头。
+
+	v3 的 API Key 是 32 位十六进制，两者不会混淆。
+*/
+func tmdbIsBearerToken(key string) bool {
+	k := strings.TrimSpace(key)
+	return strings.HasPrefix(k, "eyJ") && strings.Count(k, ".") == 2
+}
+
+/*
+scrubSecret 从回传文本里剔除配置的密钥（含 URL 转义形态），
+
+	错误响应只用于诊断，绝不能把凭据带回浏览器。
+*/
+func scrubSecret(text, secret string) string {
+	if secret == "" {
+		return text
+	}
+	for _, form := range []string{secret, url.QueryEscape(secret), url.PathEscape(secret)} {
+		if form == "" || form == secret && secret == "" {
+			continue
+		}
+		text = strings.ReplaceAll(text, form, "***")
+	}
+	if len(text) > 300 {
+		text = text[:300]
+	}
+	return text
+}
+
 func (a *App) tmdb(w http.ResponseWriter, r *http.Request) {
 	if !writeAuth(r) {
 		errJSON(w, 401, "login required")
@@ -2452,13 +2488,25 @@ func (a *App) tmdb(w http.ResponseWriter, r *http.Request) {
 		}
 		endpoint = kind + "/" + id
 	}
-	u := base + "/" + endpoint + "?api_key=" + url.QueryEscape(key) + "&language=zh-CN&append_to_response=credits,recommendations"
+	/* v0.9.77：TMDB 有两种凭据形态 —— v3 API Key（32 位十六进制）用 ?api_key=，
+	   v4 Read Access Token（JWT，形如 eyJ…，带两个点）必须用 Authorization: Bearer。
+	   此前一律拼 ?api_key=，用户填的是 v4 Token → TMDB 返回
+	   {"status_code":7,"status_message":"Invalid API key..."}（HTTP 401），
+	   前端 if(res.ok) 整段跳过 → 详情/演职人员/TMDB 评分/影视推荐全部不生效。 */
+	u := base + "/" + endpoint + "?language=zh-CN&append_to_response=credits,recommendations"
+	if !tmdbIsBearerToken(key) {
+		u += "&api_key=" + url.QueryEscape(key)
+	}
 	if strings.HasPrefix(endpoint, "search/") {
 		u += "&query=" + url.QueryEscape(r.URL.Query().Get("query"))
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, "GET", u, nil)
+	if tmdbIsBearerToken(key) {
+		req.Header.Set("Authorization", "Bearer "+key)
+	}
+	req.Header.Set("Accept", "application/json")
 	client, clientErr := outboundHTTPClient(proxy)
 	if clientErr != nil {
 		errJSON(w, 400, clientErr.Error())
@@ -2470,9 +2518,25 @@ func (a *App) tmdb(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer res.Body.Close()
+	body, readErr := io.ReadAll(io.LimitReader(res.Body, 8<<20))
+	if readErr != nil {
+		errJSON(w, 502, "tmdb read failed")
+		return
+	}
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		/* v0.9.77：把 TMDB 的 status_message 原样带回（含 invalid key 之类），
+		   让前端能显示「TMDB 密钥无效/未授权」而不是一片空白。
+		   审查项（配置与密钥）：上游可能把请求 URL/凭据回显在错误体里，
+		   回传前先擦除本机配置的密钥，避免凭据经错误响应外泄。 */
+		msg := scrubSecret(string(body), key)
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(res.StatusCode)
+		_, _ = w.Write([]byte(msg))
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(res.StatusCode)
-	_, _ = io.Copy(w, io.LimitReader(res.Body, 8<<20))
+	_, _ = w.Write(body)
 }
 
 // compatBuilds tracks which cache keys already have a background build running

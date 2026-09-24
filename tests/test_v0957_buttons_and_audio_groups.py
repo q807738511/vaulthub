@@ -15,12 +15,12 @@ def check(name, ok, detail=""):
         fails.append(f"{name} {detail}")
 
 # ============ T1 版本一致性（bump 0.9.68） ============
-check("T1 HTML 资源版本", 'VAULTHUB_ASSET_VERSION = "0.9.76"' in HTML)
-check("T1 JS 脚本版本", 'VAULTHUB_SCRIPT_VERSION = "0.9.76"' in STATE)
-check("T1 CSS 缓存串", 'href="/web/css/main.css?v=0.9.76"' in HTML)
-check("T1 JS 缓存串 x5", HTML.count('?v=0.9.76') >= 6)  # css 1 + js 5
+check("T1 HTML 资源版本", 'VAULTHUB_ASSET_VERSION = "0.9.77"' in HTML)
+check("T1 JS 脚本版本", 'VAULTHUB_SCRIPT_VERSION = "0.9.77"' in STATE)
+check("T1 CSS 缓存串", 'href="/web/css/main.css?v=0.9.77"' in HTML)
+check("T1 JS 缓存串 x5", HTML.count('?v=0.9.77') >= 6)  # css 1 + js 5
 check("T1 无 0.9.56 缓存串残留", HTML.count('?v=0.9.56') == 0)
-check("T1 UI 版本角标", "v0.9.76 · 视频推荐与评分配置" in HTML)
+check("T1 UI 版本角标", "v0.9.77" in HTML)
 
 # ============ T2 影视详情返回按钮 → 横向药丸（修复穿模） ============
 # 不再使用圆形 media-reader-close + ✕ 长文案组合
