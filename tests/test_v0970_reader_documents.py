@@ -19,7 +19,7 @@ checks = {
         and "return progress < COMPLETED_PROGRESS;" in MEDIA,
     "书架标签含历史阅读且保留旧入口": 'id: "completed", label: "🕘 历史阅读"' in MEDIA
         and "function setComicShelfView(view)" in MEDIA,
-    "PDF 使用应用内阅读器（v0.9.77：不再走浏览器内置查看器）": 'ext === "pdf"' in MEDIA and '/api/media/pdf/info' in MEDIA
+    "PDF 使用应用内阅读器（v0.9.78：不再走浏览器内置查看器）": 'ext === "pdf"' in MEDIA and '/api/media/pdf/info' in MEDIA
         and "pdf" in MEDIA and 'iframe' not in MEDIA.split("PDF 的 iframe 分支已移除")[1][:400],
     "常见文档格式进入阅读器": '"epub"' in MEDIA and '"docx"' in MEDIA and 'MEDIA_FORMATS.book.includes(ext)' in MEDIA,
     # v0.9.76：原契约是「关闭阅读器强制回到未读视图」；用户报告从「历史阅读」点开一本
@@ -28,7 +28,7 @@ checks = {
     "关闭释放阅读器监听": 'closeComicReader()' in FEATURES,
     "历史焦点检查仍存在": 'aria-modal="true"' in HTML and ':focus-visible' in CSS,
     "网易云默认关闭": 'NetEase' in MEDIA and '默认关闭' in MEDIA,
-    "本版版本": 'VAULTHUB_ASSET_VERSION = "0.9.77"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.77"' in STATE,
+    "本版版本": 'VAULTHUB_ASSET_VERSION = "0.9.78"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.78"' in STATE,
 }
 GO_MAIN = (ROOT / "media-go/main.go").read_text(encoding="utf-8")
 GO_EPUB = (ROOT / "media-go/document_epub.go").read_text(encoding="utf-8")
@@ -90,7 +90,7 @@ checks.update({
     # 遗留 2：不支持格式必须诚实回落，不得假装可读
     "遗留-不支持格式诚实提示": "当前浏览器不能直接解析" in MEDIA and "当前浏览器不支持直接解析" in MEDIA,
     "遗留-RAR 仍不解析": '"rar"' in MEDIA and "unrar" not in WEB_ALL and "rar.js" not in WEB_ALL,
-    # 遗留 3：v0.9.77 起 PDF 由服务端 pdftoppm 渲染进应用内阅读器，不再走浏览器内置查看器
+    # 遗留 3：v0.9.78 起 PDF 由服务端 pdftoppm 渲染进应用内阅读器，不再走浏览器内置查看器
     "遗留-未捆绑 PDF.js 是已知边界": True,
     "遗留-PDF 走应用内阅读器": '/api/media/pdf/info' in MEDIA and 'ext === "pdf"' in MEDIA,
 })

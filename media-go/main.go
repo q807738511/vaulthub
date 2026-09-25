@@ -2389,6 +2389,7 @@ func main() {
 	mux.HandleFunc("/api/media/subtitles/extract", a.extractSubtitle)
 	mux.HandleFunc("/api/media/subtitles/proxy", a.externalSubtitle)
 	mux.HandleFunc("/api/media/tmdb", a.tmdb)
+	mux.HandleFunc("/api/media/cast/avatar", a.castAvatar)
 	mux.HandleFunc("/api/media/tvdb", a.tvdb)
 	mux.HandleFunc("/api/media/metadata", a.localMetadata)
 	mux.HandleFunc("/api/media/metadata/override", a.metadataOverride)
@@ -2460,6 +2461,54 @@ func scrubSecret(text, secret string) string {
 	return text
 }
 
+func (a *App) castAvatar(w http.ResponseWriter, r *http.Request) {
+	if !readAuth(r) {
+		errJSON(w, 401, "login required")
+		return
+	}
+	person := r.URL.Query().Get("person")
+	if person == "" || strings.HasPrefix(person, "//") || strings.Contains(person, "..") || len(person) > 256 {
+		errJSON(w, 400, "invalid person")
+		return
+	}
+	a.mu.RLock()
+	key, imgBase, proxy := a.tmdbAPIKey, a.tmdbImageBase, a.scraperProxy
+	a.mu.RUnlock()
+	imgURL := strings.TrimRight(imgBase, "/") + "/w185" + person
+	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, imgURL, nil)
+	if tmdbIsBearerToken(key) {
+		req.Header.Set("Authorization", "Bearer "+key)
+	} else if key != "" {
+		q := req.URL.Query()
+		q.Set("api_key", key)
+		req.URL.RawQuery = q.Encode()
+	}
+	client, cerr := outboundHTTPClient(proxy)
+	if cerr != nil {
+		errJSON(w, 400, cerr.Error())
+		return
+	}
+	res, e := client.Do(req)
+	if e != nil {
+		errJSON(w, 502, "avatar fetch failed")
+		return
+	}
+	defer res.Body.Close()
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		errJSON(w, 502, "avatar "+res.Status[:3])
+		return
+	}
+	ct := res.Header.Get("Content-Type")
+	if !strings.HasPrefix(ct, "image/") {
+		errJSON(w, 502, "not an image")
+		return
+	}
+	if _, err := io.Copy(w, io.LimitReader(res.Body, 4<<20)); err != nil {
+		return
+	}
+}
 func (a *App) tmdb(w http.ResponseWriter, r *http.Request) {
 	if !writeAuth(r) {
 		errJSON(w, 401, "login required")

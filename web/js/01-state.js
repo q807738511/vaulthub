@@ -8,7 +8,7 @@ const VAULTHUB_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
    历史故障：v0.8.3→v0.8.5 的前端修改在服务端已生效，但浏览器仍执行缓存里的
    旧 02-media.js，用户看到「没有更新」。现在入口页 no-store、静态资源带 ?v=，
    并在启动时做一次一致性自查，不一致就绕过缓存强制重载一次。 */
-const VAULTHUB_SCRIPT_VERSION = "0.9.77";
+const VAULTHUB_SCRIPT_VERSION = "0.9.78";
 function ensureFreshAssets() {
   /* expected 为空 = 浏览器执行的 index.html 早于 v0.8.6（旧版本入口页没有声明
      版本号），同样属于"页面是旧的"，也需要换 URL 重新取一次。 */
@@ -1171,6 +1171,19 @@ function saveHardwareAcceleration() {
   refreshHardwareStatus();
   toast("✅ 显卡加速设置已保存");
 }
+/* v0.9.78：演职人员图像刮削插件（内置，无需额外容器）——Metashark（豆瓣/TMDB 适配、
+   中文文件名解析、演员头像下载器，随镜像内置）与 Plex NFO Agent（XBMCnfo 导入 +
+   NFO 导出器生成带 <thumb> 头像字段）。属「刮削配置」。 */
+function saveCastScraperPlugin(val) {
+  const v = ["metashark","plex","tmdb","off"].includes(val) ? val : "metashark";
+  const all = readMovieMetadata();
+  const meta = { ...(all.__cast_plugin || {}), plugin: v, setAt: Date.now() };
+  all["__cast_plugin"] = meta; writeMovieMetadata(all);
+  try { localStorage.setItem("vaulthub_cast_scraper_plugin", v); } catch (e) {}
+  toast("👤 演职人员头像刮削插件：已设为 " + v);
+  const st = document.getElementById("castPluginStatus");
+  if (st) st.textContent = "内置：" + v;
+}
 /* 显卡检测：后端会枚举 /dev/dri、NVIDIA 设备节点和 ffmpeg 实际编译进的编码器，
    这里把结果显示成"当前 / 可用 / 设备"三段，并在 notify 时给出 toast 反馈，
    避免点了「检测显卡」看不出任何变化。 */
@@ -1582,6 +1595,7 @@ function switchSetTab(key) {
   document.querySelectorAll(".settab[data-settab]").forEach(el => el.classList.toggle("on", el.dataset.settab === key));
   document.querySelectorAll(".setpanel").forEach(el => el.classList.toggle("on", el.id === "setpanel-" + key));
   if (key === "scrape") { refreshHardwareStatus(); if (typeof loadMediaRuntimeSettings === "function") loadMediaRuntimeSettings(false); }
+  if (key === "hardware") { refreshHardwareStatus(); if (typeof loadMediaRuntimeSettings === "function") loadMediaRuntimeSettings(false); }
   /* v0.9.17：账户与登录页同时承载登录状态、Caddy 反向代理入口和关于，
      所以进入该页时既要刷新会话状态，也要把 Caddyfile 读回来更新路由计数。 */
   if (key === "account") { refreshSessionStatus(false); loadCaddyConfig(); loadAccountCredentialsUI(); }

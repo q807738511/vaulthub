@@ -4,10 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VaultHub 蜀鼠之家</title>
-<link rel="stylesheet" href="/web/css/main.css?v=0.9.77">
+<link rel="stylesheet" href="/web/css/main.css?v=0.9.78">
 <script>
 /* 资源版本号：index.html 用它给所有静态资源打查询串。 */
-window.VAULTHUB_ASSET_VERSION = "0.9.77";
+window.VAULTHUB_ASSET_VERSION = "0.9.78";
 </script>
 <script>
 /* v0.9.73 主题防闪：调色板/明暗/强调色必须在首帧渲染前落到 <html> 上，
@@ -157,7 +157,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.77";
   <div class="sidebar-foot">
     <button class="rail-btn rail-settings" id="sidebarSettingsButton" type="button" onclick="openSettingsModalFromSidebar()" title="系统设置" aria-label="系统设置"><span class="ic">⚙</span><span class="txt" data-i18n="settingsTitle">系统设置</span></button>
     <div class="sidebar-foot-row">
-      <span class="ver">v0.9.77 · 自动测速 / PDF 应用内阅读 / 自动画质</span>
+      <span class="ver">v0.9.78 · 自动测速 / PDF 应用内阅读 / 自动画质</span>
       <button class="rail-btn rail-collapse" id="sidebarCollapseButton" type="button" onclick="toggleBars()" title="折叠 / 展开侧栏" aria-label="折叠或展开侧栏">⇤</button>
     </div>
   </div>
@@ -435,7 +435,8 @@ window.VAULTHUB_ASSET_VERSION = "0.9.77";
       <div class="settabs">
         <div class="settab on" data-settab="library" onclick="switchSetTab('library')">🗂 <span data-i18n="setLibrary">媒体库</span></div>
         <div class="settab" data-settab="look" onclick="switchSetTab('look')">🎨 <span data-i18n="setLook">外观主题</span></div>
-        <div class="settab" data-settab="scrape" onclick="switchSetTab('scrape')">🔍 <span data-i18n="setScrape">刮削与硬件</span></div>
+        <div class="settab" data-settab="scrape" onclick="switchSetTab('scrape')">🔍 <span data-i18n="setScrape">刮削配置</span></div>
+        <div class="settab" data-settab="hardware" onclick="switchSetTab('hardware')">🖥 <span data-i18n="setHw">硬件配置</span></div>
         <div class="settab" data-settab="account" onclick="switchSetTab('account')">👤 <span data-i18n="setAccount">账户与登录</span></div>
       </div>
 
@@ -624,13 +625,41 @@ window.VAULTHUB_ASSET_VERSION = "0.9.77";
           </div>
           <div class="media-actions"><span class="badge" id="mediaRuntimeStatus">读取中…</span><button class="btn btn-primary" type="button" onclick="saveMediaRuntimeSettings()">💾 保存刮削与缓存设置</button><button class="btn" type="button" onclick="loadMediaRuntimeSettings(true)">↻ 重新载入</button><button class="btn" type="button" onclick="rebuildAllLibraries()">🔄 <span data-i18n="libRescanAll">全部重新扫描</span></button></div>
         </div>
-        <div class="setblock">
+<div class="setblock">
           <h4>🌐 API 网络链接测速</h4>
           <p>并发测试固定白名单中的 TMDB、TVDB、通知与 GitHub API；配置代理后测速和刮削均走该代理。</p>
           <div class="media-actions"><button class="btn btn-primary" id="networkSpeedButton" type="button" onclick="testScraperNetworks()">测速全部链接</button><span class="badge" id="networkSpeedSummary">尚未测速</span></div>
           <div class="network-speed-grid" id="networkSpeedResults"></div>
         </div>
-        <div class="setblock">
+<div class="setblock">
+          <h4>📶 网络能效（弱网 / 自动测速）</h4>
+          <div class="cfg-field"><label for="weakNetworkMode">弱网模式</label><select id="weakNetworkMode" onchange="saveWeakNetworkMode()"><option value="auto">自动（按测速结果决定）</option><option value="on">始终开启（音频 96k 转码 / 省流）</option><option value="off">关闭（原文件直出）</option></select></div>
+          <div class="cfg-field"><label>自动测速</label><label class="toggle-row"><input type="checkbox" id="autoSpeedTestToggle" onchange="setAutoSpeedTest(this.checked)"><span>当天首次打开 WEBUI 时自动测速</span><small>测本地网络到容器的延迟与下行带宽，结果用于音频限码率、漫画省流与视频自动画质</small></label></div>
+          <div class="cfg-field"><label>网络测速</label><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn" type="button" onclick="probeWeakNetworkFromSettings()">📶 立即测速（延迟 + 带宽）</button><span id="weakNetworkStatus" style="font-size:11px;color:var(--text2);line-height:1.7">最近测速：未测速</span><span id="audioQualityStatus" style="font-size:11px;color:var(--text2);line-height:1.7"></span></div></div>
+        </div>
+<div class="setblock">
+          <h4>👤 演职人员图像刮削插件（内置，无需额外容器）</h4>
+          <p>内置插件生态：<b>Metashark</b>（Jellyfin 生态开源：豆瓣/TMDB适配、中文文件名解析、演员头像下载器，源码随镜像内置）与 <b>Plex NFO Agent</b>（XBMCnfoImporter 导入 + NFO 导出器生成带 <code>&lt;thumb&gt;</code> 头像字段）。均为容器内置依赖，不额外安装容器。头像回调到本地 <code>/data/</code> 供书架/详情页使用；TMDB/豆瓣刮削的 actor profile_path 头像走 Metashark 适配器抓取。</p>
+          <div class="cfg-field"><label for="castScraperPlugin">头像刮削插件</label><select id="castScraperPlugin" onchange="saveCastScraperPlugin(this.value)"><option value="metashark">Metashark（豆瓣/TMDB 适配 + 头像下载，默认）</option><option value="plex">Plex NFO Agent（XBMCnfo 导入 + thumb 头像）</option><option value="tmdb">TMDB profile 直连</option><option value="off">关闭演职人员头像刮削</option></select></div>
+          <div class="cfg-field"><label>内置脚本</label><span class="badge">Metashark 适配器 + xbmcnfo 解析 + plex_nfo_exporter（镜像内置）</span></div>
+          <div class="media-actions"><span class="badge" id="castPluginStatus">内置</span></div>
+        </div>
+id="setpanel-hardware"><div class="setblock">
+          <h4>🎞 <span data-i18n="setHw">显卡加速</span></h4>
+          <div class="cfg-field"><label for="hardwareAcceleration" data-i18n="setHwLbl">视频兼容流硬件加速</label><select id="hardwareAcceleration" onchange="saveHardwareAcceleration()"><option value="auto" data-i18n="hwAuto">自动选择（推荐）</option><option value="cpu" data-i18n="hwCpu">CPU</option><option value="vaapi" data-i18n="hwVaapi">VAAPI（Intel/AMD）</option><option value="qsv" data-i18n="hwQsv">Intel QSV</option><option value="cuda" data-i18n="hwCuda">NVIDIA CUDA/NVENC</option></select></div>
+          <!-- v0.9.72：弱网与省流 —— 面向远程访问/移动网络的可用性设置（音频限码率 + 漫画省流 + 下行测速）。 -->
+          <div class="cfg-field"><label for="weakNetworkMode">弱网模式</label><select id="weakNetworkMode" onchange="saveWeakNetworkMode()"><option value="auto">自动（按测速结果决定）</option><option value="on">始终开启（音频 96k 转码 / 省流）</option><option value="off">关闭（原文件直出）</option></select></div>
+          <!-- v0.9.78：当天首次打开自动测速（延迟 + 带宽），结果驱动后台自动切换。 -->
+          <div class="cfg-field"><label>自动测速</label><label class="toggle-row"><input type="checkbox" id="autoSpeedTestToggle" onchange="setAutoSpeedTest(this.checked)"><span>当天首次打开 WEBUI 时自动测速</span><small>测本地网络到容器的延迟与下行带宽，结果用于音频限码率、漫画省流与视频自动画质</small></label></div>
+          <div class="cfg-field"><label>网络测速</label><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn" type="button" onclick="probeWeakNetworkFromSettings()">📶 立即测速（延迟 + 带宽）</button><span id="weakNetworkStatus" style="font-size:11px;color:var(--text2);line-height:1.7">最近测速：未测速</span><span id="audioQualityStatus" style="font-size:11px;color:var(--text2);line-height:1.7"></span></div></div>
+          <div class="media-actions"><span class="badge" id="hardwareStatus">正在检测…</span><button class="btn" type="button" onclick="refreshHardwareStatus(true)" data-i18n="setHwDetect">检测显卡</button></div>
+          <div class="hint" id="hardwareDetail" data-i18n="setHwHint">需要在 Docker Compose 中透传 /dev/dri 或配置 NVIDIA Container Toolkit。硬件不可用时会自动回退 CPU，不影响播放。</div>
+        </div>
+<div class="setblock">
+          <h4>🖥 <span data-i18n="monitoringLbl">NAS 监控（内置读取）</span></h4>
+          <p data-i18n="monitoringHint">监控数据由 VaultHub 读取只读挂载的系统信息；配置请在 Compose 环境变量中修改。</p>
+        </div>
+<div class="setblock">
           <h4>💾 转码缓存</h4>
           <p>请填写容器内绝对路径，并在 Compose 中把该路径映射到容量充足的数据盘。保存后新缓存立即使用该目录。</p>
           <div class="form-2col">
@@ -640,27 +669,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.77";
             <div class="cfg-field"><label for="mediaCacheCleanup">清理周期（小时）</label><input id="mediaCacheCleanup" type="number" min="1" value="24" data-env="MEDIA_CACHE_CLEANUP_INTERVAL_HOURS"></div>
             <div class="cfg-field cfg-field-wide"><label for="sharePublicBase">影视分享外网地址（可选）</label><input id="sharePublicBase" type="url" placeholder="https://vh.example.com 或 http://1.2.3.4:8088" title="配置后影视分享链接用该地址；需保证对方能访问。留空则用内网 IP:端口"><small class="cfg-hint">内网分享默认用当前访问的 IP:端口；配置外网 IP/域名后分享走外网，保存前会校验可达性。</small></div>
           </div>
-        </div>
-        <div class="setblock">
-          <h4>🖥 <span data-i18n="monitoringLbl">NAS 监控（内置读取）</span></h4>
-          <p data-i18n="monitoringHint">监控数据由 VaultHub 读取只读挂载的系统信息；配置请在 Compose 环境变量中修改。</p>
-        </div>
-        <div class="setblock">
-          <h4>🎞 <span data-i18n="setHw">显卡加速</span></h4>
-          <div class="cfg-field"><label for="hardwareAcceleration" data-i18n="setHwLbl">视频兼容流硬件加速</label><select id="hardwareAcceleration" onchange="saveHardwareAcceleration()"><option value="auto" data-i18n="hwAuto">自动选择（推荐）</option><option value="cpu" data-i18n="hwCpu">CPU</option><option value="vaapi" data-i18n="hwVaapi">VAAPI（Intel/AMD）</option><option value="qsv" data-i18n="hwQsv">Intel QSV</option><option value="cuda" data-i18n="hwCuda">NVIDIA CUDA/NVENC</option></select></div>
-          <!-- v0.9.72：弱网与省流 —— 面向远程访问/移动网络的可用性设置（音频限码率 + 漫画省流 + 下行测速）。 -->
-          <div class="cfg-field"><label for="weakNetworkMode">弱网模式</label><select id="weakNetworkMode" onchange="saveWeakNetworkMode()"><option value="auto">自动（按测速结果决定）</option><option value="on">始终开启（音频 96k 转码 / 省流）</option><option value="off">关闭（原文件直出）</option></select></div>
-          <!-- v0.9.77：当天首次打开自动测速（延迟 + 带宽），结果驱动后台自动切换。 -->
-          <div class="cfg-field"><label>自动测速</label><label class="toggle-row"><input type="checkbox" id="autoSpeedTestToggle" onchange="setAutoSpeedTest(this.checked)"><span>当天首次打开 WEBUI 时自动测速</span><small>测本地网络到容器的延迟与下行带宽，结果用于音频限码率、漫画省流与视频自动画质</small></label></div>
-          <div class="cfg-field"><label>网络测速</label><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn" type="button" onclick="probeWeakNetworkFromSettings()">📶 立即测速（延迟 + 带宽）</button><span id="weakNetworkStatus" style="font-size:11px;color:var(--text2);line-height:1.7">最近测速：未测速</span><span id="audioQualityStatus" style="font-size:11px;color:var(--text2);line-height:1.7"></span></div></div>
-          <div class="media-actions"><span class="badge" id="hardwareStatus">正在检测…</span><button class="btn" type="button" onclick="refreshHardwareStatus(true)" data-i18n="setHwDetect">检测显卡</button></div>
-          <div class="hint" id="hardwareDetail" data-i18n="setHwHint">需要在 Docker Compose 中透传 /dev/dri 或配置 NVIDIA Container Toolkit。硬件不可用时会自动回退 CPU，不影响播放。</div>
-        </div>
-      </div>
-
-      <!-- 账户与登录面板：v0.9.17 起顶栏账户菜单里的登录状态 / 关于 / 退出登录，
-           以及原「Caddy 配置」标签页的反向代理入口，全部集中在这一页。 -->
-      <div class="setpanel" id="setpanel-account">
+        </div>id="setpanel-account">
         <div class="setblock">
           <h4>👤 <span data-i18n="setAccountTitle">当前登录状态</span></h4>
           <div class="media-actions">
@@ -826,7 +835,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.77";
   <div class="modal">
     <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
     <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
-    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.9.77 · 自动测速 / PDF 应用内阅读 / 自动画质</b></div>
+    <div class="about-row"><span data-i18n="aboutVer">版本</span><b>v0.9.78 · 自动测速 / PDF 应用内阅读 / 自动画质</b></div>
     <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>Go (media/manager/subtitle) · Caddy · FFmpeg · SQLite · HTML/CSS/JS</b></div>
     <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>VaultHub 内置系统监控</b></div>
     <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>
@@ -854,7 +863,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.77";
     <button title="停止" onclick="audioStop()" aria-label="停止"><svg class="vc-svg audio-svg" viewBox="0 0 24 24" aria-hidden="true"><rect x="6.6" y="6.6" width="10.8" height="10.8" rx="2" fill="currentColor"/></svg></button>
     <button title="下一曲" onclick="audioNext()" aria-label="下一曲"><svg class="vc-svg audio-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M18.2 5.4v13.2" stroke="currentColor"/><path d="M5.4 6.3l8.2 5.7-8.2 5.7Z" fill="currentColor"/></svg></button>
     <button id="audioLoopButton" title="播放模式：顺序播放" onclick="cycleAudioLoop()" aria-label="播放模式"><svg class="vc-svg audio-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="m17 2.4 4 4-4 4"/><path d="M21 6.4H8.5a4.5 4.5 0 0 0-4.5 4.5v.6"/><path d="m7 21.6-4-4 4-4"/><path d="M3 17.6h12.5a4.5 4.5 0 0 0 4.5-4.5v-.6"/></svg></button>
-    <!-- v0.9.77：移除「音质」手动转换按钮（用户诉求）——档位不再由用户点选，
+    <!-- v0.9.78：移除「音质」手动转换按钮（用户诉求）——档位不再由用户点选，
          改由后台自动测速决定（见 web/js/02-media.js 的 dailySpeedTest / effectiveAudioKbps）。 -->
     <button id="audioFavoriteButton" title="喜欢" onclick="toggleActiveAudioFavorite()" aria-label="喜欢"><svg class="vc-svg audio-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></button>
     <!-- v0.9.73：原「歌曲详情与歌词」按钮改为播放列表入口（用户诉求），
@@ -970,13 +979,13 @@ window.VAULTHUB_ASSET_VERSION = "0.9.77";
 
 <div class="toast" id="toast"></div>
 
-<script src="/web/js/01-state.js?v=0.9.77"></script>
-<script src="/web/js/02-media.js?v=0.9.77"></script>
-<script src="/web/js/03-features.js?v=0.9.77"></script>
-<script src="/web/js/05-home.js?v=0.9.77"></script>
-<script src="/web/js/06-theme.js?v=0.9.77"></script>
-<script src="/web/js/07-topnav.js?v=0.9.77"></script>
-<script src="/web/js/03-audio-zoom.js?v=0.9.77"></script>
-<script src="/web/js/04-boot.js?v=0.9.77"></script>
+<script src="/web/js/01-state.js?v=0.9.78"></script>
+<script src="/web/js/02-media.js?v=0.9.78"></script>
+<script src="/web/js/03-features.js?v=0.9.78"></script>
+<script src="/web/js/05-home.js?v=0.9.78"></script>
+<script src="/web/js/06-theme.js?v=0.9.78"></script>
+<script src="/web/js/07-topnav.js?v=0.9.78"></script>
+<script src="/web/js/03-audio-zoom.js?v=0.9.78"></script>
+<script src="/web/js/04-boot.js?v=0.9.78"></script>
 </body>
 </html>
