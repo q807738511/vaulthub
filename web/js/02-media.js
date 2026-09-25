@@ -1092,7 +1092,36 @@ async function shareMovie(libId, path, title) {
   }
   openShareDialog({ libId, path, title, url, external, reachable });
 }
-async function openMovieDetails(libId,path){enterMovieDetailSidebarMode();const lib=findMediaLibrary(libId),viewer=document.getElementById("local-media-viewer-movie");if(!lib||!viewer)return;let meta=movieMetadataFor(path);viewer.innerHTML=renderMovieDetails(lib,path,meta);try{const res=await fetch(`/api/media/metadata?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}`,{cache:"no-store"});if(res.ok){const local=await res.json();if(local.nfo||local.poster||local.logo||local.fanart||local.backdrop||local.tags?.length||local.watched||local.user_rating||local.subtitles?.length){meta={...meta,...local,title:local.title||meta.title,year:local.year||meta.year};const all=readMovieMetadata();all[path]=meta;writeMovieMetadata(all);viewer.innerHTML=renderMovieDetails(lib,path,meta);}}}catch(e){}if(meta.tmdb_id&&meta.provider!=="本地 NFO"){try{const res=await fetch(`/api/media/tmdb?id=${encodeURIComponent(meta.tmdb_id)}&type=${encodeURIComponent(meta.media_type||lib.type)}`,{cache:"force-cache"});if(res.ok){const detail=await res.json();meta={...meta,overview:detail.overview||meta.overview,rating:Number(detail.vote_average||meta.rating||0),runtime:detail.runtime||detail.episode_run_time?.[0],genres:(detail.genres||[]).map(x=>x.name),cast:(detail.credits?.cast||[]).slice(0,12),recommendations:movieRecommendationsFor(detail,meta),tmdb_error:""};viewer.innerHTML=renderMovieDetails(lib,path,meta);}else{const err=await res.json().catch(()=>({}));meta={...meta,tmdb_error:movieTMDBErrorText(err,res.status)};viewer.innerHTML=renderMovieDetails(lib,path,meta);}}catch(e){meta={...meta,tmdb_error:"TMDB 请求失败："+e.message};viewer.innerHTML=renderMovieDetails(lib,path,meta);}}else if(!meta.tmdb_id){meta={...meta,tmdb_error:"未刮削到 TMDB 条目（provider="+(meta.provider||"文件名")+"），无法取推荐与 TMDB 评分"};}scrollViewerIntoView(viewer);}
+async function openMovieDetails(libId,path){enterMovieDetailSidebarMode();const lib=findMediaLibrary(libId),viewer=document.getElementById("local-media-viewer-movie");if(!lib||!viewer)return;let meta=movieMetadataFor(path);viewer.innerHTML=renderMovieDetails(lib,path,meta);try{const res=await fetch(`/api/media/metadata?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}`,{cache:"no-store"});if(res.ok){const local=await res.json();if(local.nfo||local.poster||local.logo||local.fanart||local.backdrop||local.tags?.length||local.watched||local.user_rating||local.subtitles?.length){meta={...meta,...local,title:local.title||meta.title,year:local.year||meta.year};const all=readMovieMetadata();all[path]=meta;writeMovieMetadata(all);viewer.innerHTML=renderMovieDetails(lib,path,meta);}}}catch(e){}/* v0.9.78：修复「影视按 TMDB 评分推荐依旧无法生效」——
+   旧逻辑只在 meta.tmdb_id 存在且非「本地 NFO」时才调 TMDB 详情接口，
+   而默认豆瓣/文件名刮削的影片没有 tmdb_id → 推荐与 TMDB 评分整段被跳过，
+   用户看到的就是「推荐永远不生效」。
+   现在无论刮削来源（TMDB/豆瓣/文件名/本地 NFO）都先解析出一个 TMDB id：
+   优先用已存 tmdb_id；没有则按标题搜索拿第一条命中，再取详情
+   （detail 含 vote_average + credits.cast 头像 profile_path + recommendations）。 */
+const tid = meta.tmdb_id || "";
+const tmdbType = encodeURIComponent(meta.media_type||lib.type);
+if (tid || (scraperStatus.tmdb_enabled && (meta.title||meta.name))) {
+  try {
+    let detail = null, tidRes = tid;
+    if (!tidRes) {
+      const q = await fetch(`/api/media/tmdb?query=${encodeURIComponent(meta.title||meta.name||"")}&type=${encodeURIComponent(meta.media_type||lib.type)}`, {cache:"force-cache"});
+      if (q.ok) {
+        const found = (await q.json())?.results || [];
+        const hit = found.find(x => x.poster_path || x.overview || (x.profile_path!==undefined));
+        if (hit) { tidRes = hit.id; meta = {...meta, tmdb_id: hit.id}; }
+      }
+    }
+    if (tidRes) {
+      const res = await fetch(`/api/media/tmdb?id=${encodeURIComponent(tidRes)}&type=${tmdbType}`,{cache:"force-cache"});
+      if (res.ok){const detail=await res.json();meta={...meta,overview:detail.overview||meta.overview,rating:Number(detail.vote_average||meta.rating||0),runtime:detail.runtime||detail.episode_run_time?.[0],genres:(detail.genres||[]).map(x=>x.name),cast:(detail.credits?.cast||[]).slice(0,12),recommendations:movieRecommendationsFor(detail,meta),tmdb_error:""};viewer.innerHTML=renderMovieDetails(lib,path,meta);}
+      else{const err=await res.json().catch(()=>({}));meta={...meta,tmdb_error:movieTMDBErrorText(err,res.status)};viewer.innerHTML=renderMovieDetails(lib,path,meta);}
+    } else {
+      meta={...meta,tmdb_error:"TMDB 未命中《'+(meta.title||meta.name||'')+'》，无法取推荐与 TMDB 评分"};viewer.innerHTML=renderMovieDetails(lib,path,meta);
+    }
+  } catch(e){meta={...meta,tmdb_error:"TMDB 请求失败："+e.message};viewer.innerHTML=renderMovieDetails(lib,path,meta);}
+}
+scrollViewerIntoView(viewer);}
 function closeMovieDetails(){seriesEpisodeReturn=null;const viewer=document.getElementById("local-media-viewer-movie");if(viewer)viewer.innerHTML="";leaveMovieDetailSidebarMode();}
 /* esc() 只做 HTML 实体转义，浏览器解析 style 属性时会把 &#39; 还原成单引号，
    足以闭合 url('…') 并注入任意 CSS 声明。海报地址可能来自本地 NFO、TMDB 或豆瓣，
@@ -1103,7 +1132,7 @@ function renderMovieHero(lib,path,meta) { const heroArt = movieHeroArt(meta); co
 function renderMovieDetails(lib,path,meta){/* v0.9.75：演职人员从文字方框换成圆形头像 + 下方文字（TMDB profile_path，缺图用首字圆形占位）。 */
 const castBase = scraperStatus.tmdb_image_base || "https://image.tmdb.org/t/p";
 const cast=(meta.cast||[]).map(x=>{
-  const face = x.profile_path ? `<img class="movie-cast-avatar" src="${esc(castBase+"/w185"+x.profile_path)}" alt="${esc(x.name||"")}" loading="lazy">` : `<span class="movie-cast-avatar movie-cast-avatar-fallback">${esc((x.name||"?").slice(0,1))}</span>`;
+  const face = x.profile_path ? `<img class="movie-cast-avatar" src="/api/media/cast/avatar?person=${encodeURIComponent(x.profile_path)}" alt="${esc(x.name||"")}" loading="lazy">` : `<span class="movie-cast-avatar movie-cast-avatar-fallback">${esc((x.name||"?").slice(0,1))}</span>`;
   return `<article class="movie-cast-card">${face}<b>${esc(x.name||"")}</b><small>${esc(x.character||"")}</small></article>`;
 }).join("")||'<div class="empty-tip">暂无演职人员信息</div>';const rec=movieRecStripHTML(meta);return `<div class="media-reader-overlay movie-detail-page media-detail-backdrop" style="${esc(detailBackdropStyle(meta))}"><div class="movie-detail-scroll">${movieDetailCloseButton()}${renderMovieHero(lib,path,meta)}<section><h3>演职人员</h3><div class="movie-detail-strip movie-cast-strip">${cast}</div></section><section><h3>视频推荐</h3><div class="movie-detail-strip">${rec}</div></section><section><h3>视频元数据</h3><dl class="movie-meta-list"><dt>文件</dt><dd>${esc(path)}</dd><dt>年份</dt><dd>${esc(meta.year||"--")}</dd><dt>类型</dt><dd>${esc((meta.genres||[]).join(" / ")||"--")}</dd><dt>时长</dt><dd>${meta.runtime?esc(meta.runtime+" 分钟"):"--"}</dd><dt>TMDB 评分</dt><dd>${meta.rating?esc(meta.rating.toFixed(1)):"--"}</dd><dt>来源</dt><dd>${esc(meta.provider||"文件名")}</dd></dl></section></div></div>`;}
 function renderMoviePoster(lib, file) { const path=String(file.path), meta=movieMetadataFor(path), watched=!!meta.watched||movieFlag("watched",lib.id,path), art=meta.poster ? `<img src="${esc(meta.poster)}" alt="${esc(meta.title)}" loading="lazy">` : `<span>${esc(meta.title)}</span>`; return `<article class="media-poster-card ${watched?"is-read":""}" data-media-group="movie" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openMovieDetails(${jsAttrArg(lib.id)},${jsAttrArg(path)})"><div class="media-poster-art" style="${meta.poster ? "" : `background:${coverGradient(meta.title)}`}" >${art}<button class="movie-poster-settings" data-movie-settings title="观看状态" onclick="event.stopPropagation();toggleMovieWatched(${jsAttrArg(lib.id)},${jsAttrArg(path)},this)">${watched?"✓ 已观看":"○ 未观看"}</button></div><div class="media-poster-info"><strong>${esc(meta.title)}</strong><small>${esc([meta.year,meta.provider].filter(Boolean).join(" · ") || fileExt(path).toUpperCase())}</small></div></article>`; }
