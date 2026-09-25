@@ -30,9 +30,9 @@ def check(name, cond, extra=""):
     checks[name] = (bool(cond), extra)
 
 # ============ 版本一致性 ============
-check("本版版本", 'VAULTHUB_ASSET_VERSION = "0.9.78"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.78"' in STATE)
-check("资源缓存串", HTML.count("?v=0.9.78") >= 7, f"实际 {HTML.count('?v=0.9.78')}")
-check("UI 版本角标", "0.9.78" in HTML)
+check("本版版本", 'VAULTHUB_ASSET_VERSION = "0.9.79"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.79"' in STATE)
+check("资源缓存串", HTML.count("?v=0.9.79") >= 7, f"实际 {HTML.count('?v=0.9.79')}")
+check("UI 版本角标", "0.9.79" in HTML)
 
 # ============ 需求 1：刮削识别策略（特殊字符 / 日语 / 全角） ============
 check("归一化：宽度折叠（含半角片假名）",
@@ -127,10 +127,10 @@ check("下行探测端点（禁压缩/禁缓存/大小上限）",
       and 'mux.HandleFunc("/api/media/weak/probe", a.weakProbe)' in GOMAIN
       and 'Content-Encoding", "identity"' in GOSTREAM and '"no-store, no-cache, must-revalidate"' in GOSTREAM
       and "n > 2048" in GOSTREAM)
-check("前端弱网档位与后台判定（v0.9.78 移除手动档位循环，只留后台自动判定）",
+check("前端弱网档位与后台判定（v0.9.79 移除手动档位循环，只留后台自动判定）",
       "function effectiveAudioKbps()" in MEDIA and "function autoAudioKbps()" in MEDIA
       and "AUDIO_QUALITY_KEY" in MEDIA)
-check("音质档位与设置面板（v0.9.78：转换按钮已移除，改后台状态文案）",
+check("音质档位与设置面板（v0.9.79：转换按钮已移除，改后台状态文案）",
       'id="autoSpeedTestToggle"' in HTML and 'id="audioQualityStatus"' in HTML
       and "function updateAudioQualityButton()" in MEDIA
       and "function saveWeakNetworkMode()" in MEDIA
@@ -145,7 +145,7 @@ check("启动时初始化弱网状态与后台测速",
 check("客户向弱网手册", PLAYBOOK.exists() and "Plex" in PLAYBOOK.read_text(encoding="utf-8")
       and "Navidrome" in PLAYBOOK.read_text(encoding="utf-8")
       and "audio/stream" in PLAYBOOK.read_text(encoding="utf-8"))
-# v0.9.76：仓库主在 e97c23f 里精简 README，删掉了「弱网与远程访问」小节（细则以
+# v0.9.79：仓库主在 e97c23f 里精简 README，删掉了「弱网与远程访问」小节（细则以
 # docs/weak-network-playbook.md 为准）。原断言钉死 README 里的「弱网」二字，会被这次
 # 正当的文档精简打红 —— 改为断言「能力有客户向文档可查」，README 提到与否都算通过。
 check("弱网能力有客户向文档（README 或客户手册）",

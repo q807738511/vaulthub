@@ -67,8 +67,7 @@ if (typeof updateAudioQualityButton === "function") updateAudioQualityButton();
 /* v0.9.77：当天第一次打开 WEBUI 自动测速（延迟 + 下行带宽），
    结果直接喂给后台自动切换；同一天重复打开不重复打探测接口。
    自动测速关掉时退回「30 分钟内复用结果」的老行为。 */
-const autoSpeedBox = document.getElementById("autoSpeedTestToggle");
-if (autoSpeedBox && typeof autoSpeedTestEnabled === "function") autoSpeedBox.checked = autoSpeedTestEnabled();
+document.getElementById("autoSpeedTestToggle") && typeof autoSpeedTestEnabled === "function" && (document.getElementById("autoSpeedTestToggle").checked = autoSpeedTestEnabled());
 if (typeof runDailySpeedTest === "function") {
   runDailySpeedTest({ silent: true }).catch(() => {
     if (typeof ensureWeakNetworkProbe === "function") ensureWeakNetworkProbe();

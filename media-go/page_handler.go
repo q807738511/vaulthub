@@ -38,7 +38,7 @@ import (
    缓存键不同 —— singleflight 只合并同键请求，拦不住「同时请求很多不同页」的场景
    （滚轮快速预取、多个客户端、或恶意构造）。没有全局上限时容器内存会被打爆。
    配额：min(3, max(2, NumCPU/2))；队列等待超过 8s 或客户端已断开则放弃转码、回落直出。 */
-const transcodeQueueTimeout = 8 * time.Second
+const transcodeQueueTimeout = 15 * time.Second
 
 func (a *App) acquireTranscode(ctx context.Context) (func(), bool) {
 	a.transcodeSemOnce.Do(func() {
@@ -72,7 +72,7 @@ func (a *App) zipCacheRef() *zipArchiveCache {
 	a.zipCacheMu.Lock()
 	defer a.zipCacheMu.Unlock()
 	if a.zipCache == nil {
-		a.zipCache = newZipArchiveCache(8)
+		a.zipCache = newZipArchiveCache(64)
 	}
 	return a.zipCache
 }
@@ -87,7 +87,14 @@ func (a *App) pageCacheRef() *pageCache {
 		}
 		max := a.pageCacheMaxBytes
 		if max == 0 {
-			max = envInt64("MEDIA_PAGE_CACHE_MAX_BYTES", 4*1024*1024*1024)
+			// v0.9.79：优先用运行时配置里的 cache_max_bytes（Web「硬件配置」可在线改），
+			// 其次环境变量，最后内置默认（16GiB）。不再依赖 vaulthub.env。
+			if a.cacheMaxBytes > 0 {
+				max = a.cacheMaxBytes
+			} else {
+				max = envInt64("MEDIA_PAGE_CACHE_MAX_BYTES", 16*1024*1024*1024)
+			}
+			a.pageCacheMaxBytes = max
 		}
 		a.pageCache = newPageCache(dir, max)
 	}

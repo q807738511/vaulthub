@@ -28,6 +28,19 @@ func scanMaxDepth() int {
 	return int(v)
 }
 
+// effectiveScanMaxDepth returns the online-configurable scan depth (v0.9.79) when
+// set, otherwise falls back to the env value, otherwise the built-in default. This
+// removes the dependence on vaulthub.env for tuning.
+func (a *App) effectiveScanMaxDepth() int {
+	a.mu.RLock()
+	v := a.scanMaxDepth
+	a.mu.RUnlock()
+	if v > 0 {
+		return v
+	}
+	return scanMaxDepth()
+}
+
 // mediaRootBoundary resolves the media mount point used as the symlink boundary.
 // It returns "" when the boundary must not be applied — an empty MEDIA_ROOT, the
 // filesystem root, or an unresolvable path would turn "inside the media tree"

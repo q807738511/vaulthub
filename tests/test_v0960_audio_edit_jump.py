@@ -15,12 +15,12 @@ def check(name, ok, detail=""):
         fails.append(f"{name} {detail}")
 
 # ============ T1 版本一致性（bump 0.9.59 → 0.9.66） ============
-check("T1 HTML 资源版本", 'VAULTHUB_ASSET_VERSION = "0.9.78"' in HTML)
-check("T1 JS 脚本版本", 'VAULTHUB_SCRIPT_VERSION = "0.9.78"' in STATE)
-check("T1 CSS 缓存串", 'href="/web/css/main.css?v=0.9.78"' in HTML)
-check("T1 JS 缓存串 x5", HTML.count('?v=0.9.78') >= 6)  # css 1 + js 5
+check("T1 HTML 资源版本", 'VAULTHUB_ASSET_VERSION = "0.9.79"' in HTML)
+check("T1 JS 脚本版本", 'VAULTHUB_SCRIPT_VERSION = "0.9.79"' in STATE)
+check("T1 CSS 缓存串", 'href="/web/css/main.css?v=0.9.79"' in HTML)
+check("T1 JS 缓存串 x5", HTML.count('?v=0.9.79') >= 6)  # css 1 + js 5
 check("T1 无 0.9.59 缓存串残留", HTML.count('?v=0.9.59') == 0)
-check("T1 UI 版本角标", "v0.9.76" in HTML or "v0.9.78" in HTML)
+check("T1 UI 版本角标", "v0.9.79" in HTML or "v0.9.79" in HTML)
 
 # ============ T2 编辑专辑/歌手按钮跳转曲目列表 ============
 # 编辑按钮应调用 openAudioTracks 而非 openAudioGroupEdit
@@ -41,7 +41,7 @@ check("T3 toggleActiveAudioFavorite 函数", "function toggleActiveAudioFavorite
 check("T3 播放器喜欢按钮居中样式", ".audio-player-controls" in CSS)
 
 # ============ T4 文档一致性 ============
-check("T4 Update Log v0.9.67 段", "# VaultHub 蜀鼠之家 v0.9.76" in UPDATELOG)
+check("T4 Update Log v0.9.67 段", "# VaultHub 蜀鼠之家 v0.9.79" in UPDATELOG)
 check("T4 Update Log 编辑跳转记载", "编辑按钮跳转" in UPDATELOG or "跳转曲目列表" in UPDATELOG)
 check("T4 RELEASE_NOTES 存在", "v0.9.69" in NOTES and "歌词" in NOTES)
 
