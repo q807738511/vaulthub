@@ -72,6 +72,7 @@ type App struct {
 	cacheMaxBytes     int64
 	pageCacheDir      string
 	pageCacheMaxBytes int64
+	scanMaxDepth     int // v0.9.79: Web「媒体库」可在线改的扫描最大深度；0=默认 32
 	cacheMaxAge       time.Duration
 	cacheCleanup      time.Duration
 	cacheWake         chan struct{}
@@ -117,6 +118,10 @@ type RuntimeConfig struct {
 	CacheMaxBytes             int64  `json:"cache_max_bytes"`
 	CacheMaxAgeHours          int64  `json:"cache_max_age_hours"`
 	CacheCleanupIntervalHours int64  `json:"cache_cleanup_interval_hours"`
+	// v0.9.79：下列两项原只能靠环境变量/vaulthub.env，现并入运行时配置，
+	// 使「硬件配置」与「转码缓存」都可在 Web 在线编辑，不再依赖 .env。
+	PageCacheMaxBytes int64 `json:"page_cache_max_bytes,omitempty"` // 归档页缓存配额（字节），0=沿用 cache_max_bytes/默认 16GiB
+	ScanMaxDepth    int   `json:"scan_max_depth,omitempty"`        // 扫描最大深度，0=默认 32
 }
 
 type playbackClient struct {
@@ -299,7 +304,10 @@ func (a *App) cleanCache() {
 func (a *App) openDB() {
 	_ = os.MkdirAll(a.indexDir, 0755)
 	path := filepath.Join(a.indexDir, "index.db")
-	dsn := "file:" + path + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=foreign_keys(ON)"
+	// v0.9.79：SQLite 缓存调优。cache_size 是纯内存参数（与磁盘类型无关），
+	// 对 1 万+ 行的大库排序/搜索收益明显；mmap_size 用内存映射读取减少系统调用；
+	// temp_store=MEMORY 让大排序不落临时文件。cache_size 单位是页（=KiB），16MiB。
+	dsn := "file:" + path + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=foreign_keys(ON)&_pragma=cache_size(-16384)&_pragma=mmap_size(268435456)&_pragma=temp_store(MEMORY)"
 	db, e := sql.Open("sqlite", dsn)
 	if e != nil {
 		fmt.Println("index db open failed:", e)
@@ -315,6 +323,11 @@ CREATE TABLE IF NOT EXISTS files(
   PRIMARY KEY(lib, path)
 );
 CREATE INDEX IF NOT EXISTS idx_files_lib ON files(lib);
+-- v0.9.79：为「全库搜索」加前置通配符 LIKE 用的函数索引。搜索走
+-- lower(path) LIKE '%kw%'，普通 path 索引用不上；函数索引能让 SQLite 对
+-- lower(path) 做范围约束（虽不能直接用前置通配符，但可为到库的候选集预过滤），
+-- 且对「按首字母/browse」这类前缀匹配直接可用。开销：写入时多维护一棵索引。
+CREATE INDEX IF NOT EXISTS idx_files_lib_lower_path ON files(lib, lower(path));
 CREATE TABLE IF NOT EXISTS scan_staging(
   lib        TEXT NOT NULL,
   generation INTEGER NOT NULL,
@@ -466,6 +479,7 @@ func (a *App) runtimeConfigSnapshot(includeSecret bool) map[string]any {
 		"share_public_base": a.sharePublicBase, "share_public_base_set": a.sharePublicBase != "",
 		"cache_max_bytes": a.cacheMaxBytes, "cache_max_age_hours": int64(a.cacheMaxAge / time.Hour),
 		"cache_cleanup_interval_hours": int64(a.cacheCleanup / time.Hour),
+		"page_cache_max_bytes": a.pageCacheMaxBytes, "scan_max_depth": a.scanMaxDepth,
 	}
 	if includeSecret {
 		out["tmdb_api_key"] = a.tmdbAPIKey
@@ -517,6 +531,12 @@ func (a *App) loadRuntimeConfig() {
 	}
 	if c.CacheCleanupIntervalHours > 0 {
 		a.cacheCleanup = time.Duration(c.CacheCleanupIntervalHours) * time.Hour
+	}
+	if c.PageCacheMaxBytes > 0 {
+		a.pageCacheMaxBytes = c.PageCacheMaxBytes
+	}
+	if c.ScanMaxDepth >= 0 {
+		a.scanMaxDepth = c.ScanMaxDepth
 	}
 }
 func validHTTPBase(v string) bool {
@@ -613,6 +633,9 @@ func (a *App) saveRuntimeConfig(c RuntimeConfig) error {
 	if !filepath.IsAbs(c.CacheDir) || c.CacheMaxBytes < 0 || c.CacheMaxAgeHours < 0 || c.CacheCleanupIntervalHours <= 0 {
 		return fmt.Errorf("invalid cache settings")
 	}
+	if c.PageCacheMaxBytes < 0 || c.ScanMaxDepth < 0 {
+		return fmt.Errorf("invalid page cache / scan depth")
+	}
 	if err := os.MkdirAll(c.CacheDir, 0755); err != nil {
 		return fmt.Errorf("cache directory: %w", err)
 	}
@@ -666,6 +689,8 @@ func (a *App) saveRuntimeConfig(c RuntimeConfig) error {
 	a.tvdbAPIKey, a.tvdbAPIBase, a.scraperProxy = c.TVDBAPIKey, strings.TrimRight(c.TVDBAPIBase, "/"), c.ScraperProxy
 	a.cacheDir, a.cacheMaxBytes = c.CacheDir, c.CacheMaxBytes
 	a.cacheMaxAge, a.cacheCleanup = time.Duration(c.CacheMaxAgeHours)*time.Hour, time.Duration(c.CacheCleanupIntervalHours)*time.Hour
+	a.pageCacheMaxBytes = c.PageCacheMaxBytes
+	a.scanMaxDepth = c.ScanMaxDepth
 	a.mu.Unlock()
 	select {
 	case a.cacheWake <- struct{}{}:
@@ -1109,7 +1134,7 @@ func (a *App) start(l Library) {
 		// v0.9.52：多存储路径支持 —— 遍历 l.AllPaths() 全部路径，
 		// 相对路径前添加路径前缀（paths/<root-name>/...）以避免不同路径下同名文件冲突。
 		scanPaths := l.AllPaths()
-		walkErr := walkMultiLibraryFiles(ctx, scanPaths, scanMaxDepth(), func(f scannedFile) {
+		walkErr := walkMultiLibraryFiles(ctx, scanPaths, a.effectiveScanMaxDepth(), func(f scannedFile) {
 			rows = append(rows, row{f.Rel, f.Size, f.MTime})
 			if len(rows)%5000 == 0 {
 				a.setStatusIfCurrent(l.ID, generation, "scanning", len(rows), 0, start, 0, "")
@@ -1638,7 +1663,7 @@ func (a *App) archive(w http.ResponseWriter, r *http.Request) {
 	   漫画逐页请求不再反复 OpenReader + 全量 iconv 解码文件名。 */
 	a.zipCacheMu.Lock()
 	if a.zipCache == nil {
-		a.zipCache = newZipArchiveCache(8)
+		a.zipCache = newZipArchiveCache(64)
 	}
 	zc := a.zipCache
 	a.zipCacheMu.Unlock()

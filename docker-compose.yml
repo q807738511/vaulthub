@@ -21,13 +21,11 @@ services:
     ports:
       - "8088:8088"
 
-    # v0.9.41：env 文件变为「可选覆盖层」——全部默认值已内置进镜像
-    # （Dockerfile ENV 与 vaulthub.env 模板逐键对齐），文件缺失/过期都不影响启动；
-    # 需要覆盖默认值时才放本文件（可配合 scripts/merge-env.sh 补齐新键）。
-    env_file:
-      - path: ./vaulthub.env
-        required: false
-
+    # v0.9.79：vaulthub.env 已停用。所有可调参数默认值内置进镜像，运行时配置
+    # （刮削来源 / 转码缓存 / 扫描深度 / 归档页缓存配额等）统一在 Web「系统设置」
+    # 里在线编辑并写入 /data/media-runtime.json，无需 .env 文件。
+    # v0.9.79：vaulthub.env 已停用，所有参数默认内置镜像，运行时配置统一走 Web 设置并写入
+    # /data/media-runtime.json；vaulthub.env / env_file 不再被读取。
     environment:
       - ADMIN_USERNAME=admin
       # v0.9.58：不再内置 admin123 默认密码。留空 = 首次启动生成一次性随机

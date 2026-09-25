@@ -178,10 +178,10 @@ check("详情页关闭按钮避开顶栏",
 compose = read("docker-compose.yml")
 env_file = read("vaulthub.env")
 
-# compose 必须引用 env_file（v0.9.56 起为可选覆盖层：path + required: false）
-check("compose 通过 env_file 引用 vaulthub.env",
-      re.search(r"env_file:\s*\n\s*-\s*path:\s*\.?/?vaulthub\.env\s*\n\s*required:\s*false", compose) is not None,
-      "compose 未声明可选 env_file")
+# v0.9.79：vaulthub.env 已停用，compose 不再引用 env_file（配置迁移到 Web → /data/media-runtime.json）。
+check("compose 不再通过 env_file 引用 vaulthub.env",
+      re.search("env_file:", compose) is None,
+      "vaulthub.env 已停用，compose 不应再有 env_file")
 
 # compose 里 environment 段必须全是 KEY=value 列表写法，
 # 绝不能出现 `- KEY: "value"`（这正是用户遇到的 unexpected type map 报错）。
