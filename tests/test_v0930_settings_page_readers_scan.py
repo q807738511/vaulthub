@@ -64,7 +64,7 @@ assert 'event.target.closest(".lib-kind-form")' in HOME, "点击卡片内控件�
 
 # ---------------------------------------------------------------- 3. 扫描深度
 assert "func walkLibraryFiles(" in WALK, "缺少深度扫描 walker"
-assert "walkMultiLibraryFiles(ctx, scanPaths, scanMaxDepth()" in GO or "walkMultiLibraryFiles(ctx, scanPaths, a.effectiveScanMaxDepth()" in GO, "扫描必须走多路径 walker（v0.9.56 / v0.9.79）"
+assert "walkMultiLibraryFiles(ctx, scanPaths, scanMaxDepth()" in GO or "walkMultiLibraryFiles(ctx, scanPaths, a.effectiveScanMaxDepth()" in GO, "扫描必须走多路径 walker（v0.9.56 / v0.9.79.1）"
 assert "return walkLibraryFiles(ctx, roots[0], maxDepth, emit)" in WALK, "单路径库必须退化为无前缀扫描"
 assert "filepath.Walk(l.Path" not in GO, "不能再使用 lstat 语义的 filepath.Walk"
 assert "os.Stat(full)" in WALK, "必须用 Stat 穿透符号链接"
@@ -115,9 +115,9 @@ assert ".media-reader-overlay.reader-theme-custom .media-reader-body" in CSS, "�
 assert "readerThemeClass()" in JS, "阅读器必须应用主题类"
 
 # ---------------------------------------------------------------- 版本与发布引用
-assert HTML.count("v0.9.79") >= 1, "关于与侧栏版本必须是 v0.9.79"
-assert 'VAULTHUB_ASSET_VERSION = "0.9.79"' in HTML, "资源版本必须是 0.9.79"
-assert 'VAULTHUB_SCRIPT_VERSION = "0.9.79"' in STATE, "脚本版本必须是 0.9.79"
+assert HTML.count("v0.9.79.1") >= 1, "关于与侧栏版本必须是 v0.9.79.1"
+assert 'VAULTHUB_ASSET_VERSION = "0.9.79.1"' in HTML, "资源版本必须是 0.9.79.1"
+assert 'VAULTHUB_SCRIPT_VERSION = "0.9.79.1"' in STATE, "脚本版本必须是 0.9.79.1"
 assert "ghcr.io/q807738511/vaulthub:latest" in COMPOSE, "v0.9.56 起 Compose 跟随 latest"
 assert (ROOT / ".github/RELEASE_NOTES_0.9.56.md").exists(), "缺少 v0.9.56 release notes"
 

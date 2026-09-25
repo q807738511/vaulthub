@@ -8,7 +8,7 @@ const VAULTHUB_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
    历史故障：v0.8.3→v0.8.5 的前端修改在服务端已生效，但浏览器仍执行缓存里的
    旧 02-media.js，用户看到「没有更新」。现在入口页 no-store、静态资源带 ?v=，
    并在启动时做一次一致性自查，不一致就绕过缓存强制重载一次。 */
-const VAULTHUB_SCRIPT_VERSION = "0.9.79";
+const VAULTHUB_SCRIPT_VERSION = "0.9.79.1";
 function ensureFreshAssets() {
   /* expected 为空 = 浏览器执行的 index.html 早于 v0.8.6（旧版本入口页没有声明
      版本号），同样属于"页面是旧的"，也需要换 URL 重新取一次。 */
@@ -348,7 +348,7 @@ const I18N = {
     navGroupBook: "电子书刊", navGroupVideo: "影视作品", navGroupAudio: "音视作品",
     navGroupSys: "系统",
     navGroupCustom: "自定义",
-    settings: "系统设置", about: "关于", settingsLead: "系统设置现在是独立配置页（不再是弹窗）：媒体库、外观主题、刮削与硬件都在这里；账户与登录页内含登录状态、关于和 Caddy 反向代理入口。",
+    settings: "系统设置", about: "关于", settingsLead: "系统设置现在是独立配置页（不再是弹窗）：媒体库、外观主题、刮削配置与硬件配置分开；账户与登录页内含登录状态、关于和 Caddy 反向代理入口。",
     navMediaSearch: "媒体搜索", searchTitle: "媒体搜索", searchIdle: "输入关键词搜索媒体库",
     searchPlaceholder: "搜索媒体库中的影视、书籍、音乐文件名", searchRun: "搜索", searchClear: "清空",
     searchRunning: "正在搜索媒体库…", searchNoLibrary: "还没有已添加的媒体库，请先在系统设置中添加。",
@@ -404,8 +404,8 @@ const I18N = {
     vpProgress: "播放进度",
     vpTitleLoading: "正在载入…",
     vpFsDenied: "浏览器拒绝了全屏请求",
-    setLook: "外观主题", setScrape: "刮削与硬件", caddyRoutes: "反向代理服务域名",
-    setAccount: "账户与登录", setAccountTitle: "当前登录状态", sessionChecking: "正在检查登录状态…", sessionRefresh: "刷新状态",
+    setLook: "外观主题", setScrape: "刮削与硬件", setScrapeTab: "刮削配置", setHwTab: "硬件配置", caddyRoutes: "反向代理服务域名",
+    setAccount: "账户管理", setAccountTitle: "当前登录状态", sessionChecking: "正在检查登录状态…", sessionRefresh: "刷新状态",
     sessionHint: "会话在最后一次操作后 30 分钟空闲自动失效；增删媒体库等写操作需要有效登录。",
     setLogoutTitle: "退出登录", setLogout: "退出登录", setLogoutHint: "退出后会立即失效服务端会话并返回登录页，本机保存的界面偏好不会被清除。",
     caddyOpenPage: "打开 Caddy 配置页面", caddyPageHint: "Caddyfile 内容较长，单独占用一整页编辑，避免在弹窗里挤成一团。",
@@ -570,7 +570,7 @@ const I18N = {
     navGroupSys: "系統",
     navGroupCustom: "自訂",
     settings: "系統設定", about: "關於",
-    setAccount: "帳戶與登入", setAccountTitle: "目前登入狀態", sessionChecking: "正在檢查登入狀態…", sessionRefresh: "重新檢查",
+    setAccount: "帳戶管理", setAccountTitle: "目前登入狀態", sessionChecking: "正在檢查登入狀態…", sessionRefresh: "重新檢查",
     sessionHint: "工作階段在最後一次操作後 30 分鐘閒置自動失效；新增或刪除媒體庫等寫入操作需要有效登入。",
     setLogoutTitle: "登出", setLogout: "登出", setLogoutHint: "登出後會立即失效伺服器工作階段並回到登入頁，本機儲存的介面偏好不會被清除。",
     caddyOpenPage: "開啟 Caddy 設定頁面", caddyPageHint: "Caddyfile 內容較長，單獨佔用一整頁編輯。",
@@ -652,7 +652,7 @@ const I18N = {
     testConnecting: "⏳ 正在驗證…",
     /* v0.6.30.Branch-update：Plex 風格改版新增的鍵 */ navMore: "更多 ›",
     navGroupBook: "電子書刊", navGroupVideo: "影視作品", navGroupAudio: "音視作品",
-    settingsLead: "系統設定現在是獨立設定頁（不再是彈窗）：媒體庫、外觀主題、刮削與硬體都在這裡；帳戶與登入頁內含登入狀態、關於與 Caddy 反向代理入口。",
+    settingsLead: "系統設定現在是獨立設定頁（不再是彈窗）：媒體庫、外觀主題、刮削設定與硬體設定分開；帳戶與登入頁內含登入狀態、關於與 Caddy 反向代理入口。",
     navMediaSearch: "媒體搜尋", searchTitle: "媒體搜尋", searchIdle: "輸入關鍵字搜尋媒體庫",
     searchPlaceholder: "搜尋媒體庫中的影視、書籍、音樂檔名", searchRun: "搜尋", searchClear: "清空",
     searchRunning: "正在搜尋媒體庫…", searchNoLibrary: "還沒有已新增的媒體庫，請先在系統設定中新增。",
@@ -708,7 +708,7 @@ const I18N = {
     vpProgress: "播放進度",
     vpTitleLoading: "正在載入…",
     vpFsDenied: "瀏覽器拒絕了全螢幕請求",
-    setLook: "外觀主題", setScrape: "刮削與硬體",
+    setLook: "外觀主題", setScrape: "刮削與硬體", setScrapeTab: "刮削設定", setHwTab: "硬體設定",
     caddyRoutes: "反向代理服務網域",
     caddyRoutesHint: "維護服務網域與內網上游位址的對應，儲存後由內建 Caddy 校驗並熱載入，失敗會自動回滾。",
     setSidebar: "側欄", setSidebarMem: "側欄寬度記憶",
@@ -798,7 +798,7 @@ const I18N = {
     navGroupSys: "System",
     navGroupCustom: "Custom",
     settings: "Settings", about: "About",
-    setAccount: "Account & Sign-in", setAccountTitle: "Current session", sessionChecking: "Checking session…", sessionRefresh: "Refresh",
+    setAccount: "Account", setAccountTitle: "Current session", sessionChecking: "Checking session…", sessionRefresh: "Refresh",
     sessionHint: "Sessions expire after 30 minutes of inactivity; adding or removing libraries requires a valid sign-in.",
     setLogoutTitle: "Sign out", setLogout: "Sign out", setLogoutHint: "Signing out invalidates the server session immediately and returns to the login screen. Local UI preferences are kept.",
     caddyOpenPage: "Open Caddy config page", caddyPageHint: "The Caddyfile is long, so it gets a dedicated full page instead of a cramped dialog.",
@@ -880,7 +880,7 @@ const I18N = {
     testConnecting: "⏳ Verifying…",
     /* v0.6.30.Branch-update: keys added by the Plex-style redesign */ navMore: "More ›",
     navGroupBook: "Books & Comics", navGroupVideo: "Movies & TV", navGroupAudio: "Music & MV",
-    settingsLead: "Settings is now a dedicated page (no longer a modal): libraries, appearance and scraping/hardware live here; Account & Sign-in holds the session state, About and the Caddy reverse-proxy entry.",
+    settingsLead: "Settings is now a dedicated page (no longer a modal): libraries, appearance and separate scraping/hardware tabs live here; Account & Sign-in holds the session state, About and the Caddy reverse-proxy entry.",
     navMediaSearch: "Media search", searchTitle: "Media search", searchIdle: "Type a keyword to search your libraries",
     searchPlaceholder: "Search movie, book and music file names in your libraries", searchRun: "Search", searchClear: "Clear",
     searchRunning: "Searching libraries…", searchNoLibrary: "No library added yet — add one in system settings first.",
@@ -936,7 +936,7 @@ const I18N = {
     vpProgress: "Playback progress",
     vpTitleLoading: "Loading…",
     vpFsDenied: "The browser denied fullscreen",
-    setLook: "Appearance", setScrape: "Scraping & hardware",
+    setLook: "Appearance", setScrape: "Scraping & hardware", setScrapeTab: "Scraping", setHwTab: "Hardware",
     caddyRoutes: "Reverse proxy hostnames",
     caddyRoutesHint: "Maintain hostname to LAN upstream mappings. Saving validates and hot-reloads the built-in Caddy; failures roll back automatically.",
     setSidebar: "Sidebar", setSidebarMem: "Sidebar width memory",

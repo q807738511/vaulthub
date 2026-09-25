@@ -1,3 +1,13 @@
+# VaultHub 蜀鼠之家 v0.9.79.1
+
+## 修复：设置页「硬件配置 / 账户管理」面板为空、选项名称不对（v0.9.79 回归）
+- **面板为空根因**：`index.html` 里 `setpanel-scrape` 与 `setpanel-hardware`、`setpanel-account` 之间少了 `</div>`，导致硬件配置、账户管理两个面板被**嵌套**进刮削面板内部；刮削面板 `display:none` 时，其子面板即使加上 `.on` 也一并不可见 → 表现为「页面空白、配置看不到」。现已补齐闭合标签，5 个面板恢复**平级**。
+- **选项名称不对根因**：标签页复用了区块标题的 i18n key（`setScrape` = "刮削与硬件"、`setHw` = "显卡加速"），标签显示成了旧的合并名/区块名。现新增专用 key `setScrapeTab`（刮削配置）/`setHwTab`（硬件配置），并把账户标签统一为**账户管理**，简中/繁中/英三语同步。
+- **配置立即生效核验**：硬件配置面板内的转码缓存、归档页缓存配额、扫描最大深度等参数保存后写入 `/data/media-runtime.json`，实测写入并读回成功（`scan_max_depth`、`page_cache_max_bytes` 均即时生效）。
+- 新增回归守卫测试 `tests/test_v0979_1_panel_structure.py`（34 项）：锁定 div 全闭合、面板平级、专用标签 key 三语齐全、无重复 id。
+
+---
+
 # VaultHub 蜀鼠之家 v0.9.79
 
 ## 硬件配置与账户管理配置重整

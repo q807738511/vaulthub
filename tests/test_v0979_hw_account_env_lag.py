@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""v0.9.79 契约：
+"""v0.9.79.1 契约：
 1) 硬件配置(setpanel-hardware) 包含 显卡加速/NAS监控/转码缓存。
 2) 账户管理(setpanel-account) 包含 当前登录状态/登录凭据与鉴权模式/反向代理服务域名/关于/退出登录。
 3) vaulthub.env 停用：docker-compose.yml 不再引用 env_file。
@@ -54,7 +54,7 @@ check("4.4 RuntimeConfig 含 ScanMaxDepth", "ScanMaxDepth" in rd("media-go/main.
 check("4.5 JS 下发 page_cache_max_bytes", "page_cache_max_bytes" in rd("web/js/02-media.js"))
 
 if FAIL:
-    print(f"FAIL: {FAIL} 项 v0.9.79 未满足")
+    print(f"FAIL: {FAIL} 项 v0.9.79.1 未满足")
     print(f"PASS: {OK} 项通过")
     raise SystemExit(1)
-print(f"PASS: v0.9.79 {OK} 项契约全部通过")
+print(f"PASS: v0.9.79.1 {OK} 项契约全部通过")
