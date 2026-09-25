@@ -51,11 +51,11 @@ checks = {
         and "元数据已改由服务端缓存保存" not in MEDIA,
 
     # 5. 版本与文档自洽
-    "版本串一致": 'VAULTHUB_ASSET_VERSION = "0.9.79"' in (ROOT / "index.html").read_text(encoding="utf-8")
-        and 'VAULTHUB_SCRIPT_VERSION = "0.9.79"' in (ROOT / "web/js/01-state.js").read_text(encoding="utf-8"),
+    "版本串一致": 'VAULTHUB_ASSET_VERSION = "0.9.79.1"' in (ROOT / "index.html").read_text(encoding="utf-8")
+        and 'VAULTHUB_SCRIPT_VERSION = "0.9.79.1"' in (ROOT / "web/js/01-state.js").read_text(encoding="utf-8"),
     "发布说明含加固项": "v0.9.69" in NOTES and "32MB" in NOTES and "truncated" in NOTES
         and "429" in NOTES,
-    "更新日志有本版段": "# VaultHub 蜀鼠之家 v0.9.79" in LOG,
+    "更新日志有本版段": "# VaultHub 蜀鼠之家 v0.9.79.1" in LOG,
     "历史说明未改": (ROOT / ".github/RELEASE_NOTES_0.9.68.md").read_text(encoding="utf-8").startswith(
         "# VaultHub 蜀鼠之家 v0.9.68"),
 }

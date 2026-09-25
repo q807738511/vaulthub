@@ -178,7 +178,7 @@ check("详情页关闭按钮避开顶栏",
 compose = read("docker-compose.yml")
 env_file = read("vaulthub.env")
 
-# v0.9.79：vaulthub.env 已停用，compose 不再引用 env_file（配置迁移到 Web → /data/media-runtime.json）。
+# v0.9.79.1：vaulthub.env 已停用，compose 不再引用 env_file（配置迁移到 Web → /data/media-runtime.json）。
 check("compose 不再通过 env_file 引用 vaulthub.env",
       re.search("env_file:", compose) is None,
       "vaulthub.env 已停用，compose 不应再有 env_file")

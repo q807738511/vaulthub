@@ -724,6 +724,7 @@ function movieMetadataFor(path) { const all = readMovieMetadata(); return { ...m
 async function loadScraperStatus() { try { const res = await fetch("/api/media/scrapers", { cache:"no-store" }); if (res.ok) scraperStatus = await res.json(); } catch(e) {} }
 async function loadMediaRuntimeSettings(notify = false) {
   const status = document.getElementById("mediaRuntimeStatus");
+  const hwStatus = document.getElementById("hardwareRuntimeStatus");
   try {
     const res = await fetch("/api/media/settings", { cache:"no-store" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -737,16 +738,17 @@ async function loadMediaRuntimeSettings(notify = false) {
     const tvdbKey=document.getElementById("tvdbApiKey"); if(tvdbKey){ tvdbKey.value=""; tvdbKey.placeholder=c.tvdb_api_key_masked ? "已设置；留空保留" : "未设置"; }
     const proxy=document.getElementById("scraperProxy"); if(proxy){ proxy.value=""; proxy.placeholder=c.scraper_proxy_configured ? `已配置 ${c.scraper_proxy_display||"代理"}；留空保留` : "例：http://192.0.2.10:7890"; proxy.dataset.configured=c.scraper_proxy_configured?"1":"0"; }
     if(status) status.textContent="✅ 已载入运行配置";
+    if(hwStatus) hwStatus.textContent="✅ 已载入运行配置";
     if(notify) toast("✅ 已重新载入刮削与缓存设置");
-  } catch(e) { if(status) status.textContent=`⚠ ${e.message}`; if(notify) toast("⚠️ 设置读取失败"); }
+  } catch(e) { if(status) status.textContent=`⚠ ${e.message}`; if(hwStatus) hwStatus.textContent=`⚠ ${e.message}`; if(notify) toast("⚠️ 设置读取失败"); }
 }
 async function saveMediaRuntimeSettings() {
   const value=id=>document.getElementById(id)?.value?.trim() || "";
   const proxyEl=document.getElementById("scraperProxy"), proxyValue=value("scraperProxy");
   const payload={ scraper_mode:value("mediaScraperMode")||"auto", tmdb_api_key:value("tmdbApiKey"), tmdb_api_base:value("tmdbApiBase"), tmdb_image_base:value("tmdbImageBase"), tvdb_api_key:value("tvdbApiKey"), tvdb_api_base:value("tvdbApiBase"), scraper_proxy:proxyValue, scraper_proxy_set:!!proxyValue || proxyEl?.dataset.configured!=="1", share_public_base:value("sharePublicBase").trim(), share_public_base_set:true, cache_dir:value("mediaCacheDir"), cache_max_bytes:Number(value("mediaCacheMaxBytes")), cache_max_age_hours:Number(value("mediaCacheMaxAge")), cache_cleanup_interval_hours:Number(value("mediaCacheCleanup")), page_cache_max_bytes:Number(value("mediaPageCacheMaxBytes")||"0"), scan_max_depth:Number(value("mediaScanMaxDepth")||"0") };
-  const status=document.getElementById("mediaRuntimeStatus"); if(status) status.textContent="保存中…";
-  try { const res=await fetch("/api/media/settings",{method:"PUT",headers:sessionWriteHeaders(true),body:JSON.stringify(payload)}); const data=await res.json(); if(!res.ok) throw new Error(data.error||`HTTP ${res.status}`); scraperStatus={...scraperStatus,...data,default:data.scraper_mode}; await loadMediaRuntimeSettings(false); toast("✅ 刮削与缓存设置已立即生效"); }
-  catch(e){ if(status)status.textContent=`⚠ ${e.message}`; toast("⚠️ 保存失败："+e.message); }
+  const status=document.getElementById("mediaRuntimeStatus"); const hwStatus=document.getElementById("hardwareRuntimeStatus"); if(status) status.textContent="保存中…"; if(hwStatus) hwStatus.textContent="保存中…";
+  try { const res=await fetch("/api/media/settings",{method:"PUT",headers:sessionWriteHeaders(true),body:JSON.stringify(payload)}); const data=await res.json(); if(!res.ok) throw new Error(data.error||`HTTP ${res.status}`); scraperStatus={...scraperStatus,...data,default:data.scraper_mode}; await loadMediaRuntimeSettings(false); toast("✅ 运行配置已立即生效"); }
+  catch(e){ if(status)status.textContent=`⚠ ${e.message}`; if(hwStatus)hwStatus.textContent=`⚠ ${e.message}`; toast("⚠️ 保存失败："+e.message); }
 }
 async function clearScraperProxy() {
   const proxy=document.getElementById("scraperProxy"); if(proxy){proxy.value="";proxy.dataset.configured="0";proxy.placeholder="保存后使用直连";} await saveMediaRuntimeSettings();

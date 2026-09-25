@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""v0.9.79 契约测试：播放模式提示遮挡 / 播放列表 / 历史阅读释放 / 主题三层叠加。
+"""v0.9.79.1 契约测试：播放模式提示遮挡 / 播放列表 / 历史阅读释放 / 主题三层叠加。
 
 用户本轮四条需求（原文）：
   1. 音乐播放器，播放模式按钮点击后提示被覆盖，修复参数；
@@ -26,9 +26,9 @@ BOOT = (ROOT / "web/js/04-boot.js").read_text(encoding="utf-8")
 THEME = (ROOT / "web/js/06-theme.js").read_text(encoding="utf-8")
 GO_READING = (ROOT / "media-go/reading_progress.go").read_text(encoding="utf-8")
 UPDATELOG = (ROOT / "Update Log.md").read_text(encoding="utf-8")
-NOTES = (ROOT / ".github/RELEASE_NOTES_0.9.79.md")
+NOTES = (ROOT / ".github/RELEASE_NOTES_0.9.79.1.md")
 
-VERSION = "0.9.79"
+VERSION = "0.9.79.1"
 checks = []
 
 
@@ -190,14 +190,14 @@ for key in ["themeModeLbl", "themePaletteLbl", "themeAccentLbl", "accentTheme", 
 
 
 # ---------------- 版本与发布资料 ----------------
-check("V 入口页资源版本 0.9.79", f'window.VAULTHUB_ASSET_VERSION = "{VERSION}";' in HTML)
-check("V 脚本自校验版本 0.9.79", f'const VAULTHUB_SCRIPT_VERSION = "{VERSION}";' in STATE)
-check("V 所有静态资源带 ?v=0.9.79", HTML.count(f"?v={VERSION}") >= 8, f"命中 {HTML.count(f'?v={VERSION}')}")
+check("V 入口页资源版本 0.9.79.1", f'window.VAULTHUB_ASSET_VERSION = "{VERSION}";' in HTML)
+check("V 脚本自校验版本 0.9.79.1", f'const VAULTHUB_SCRIPT_VERSION = "{VERSION}";' in STATE)
+check("V 所有静态资源带 ?v=0.9.79.1", HTML.count(f"?v={VERSION}") >= 8, f"命中 {HTML.count(f'?v={VERSION}')}")
 check("V 主题脚本被入口页引用", f'/web/js/06-theme.js?v={VERSION}' in HTML)
-# 同一版本内角标文案随本版主功能追加而调整（v0.9.79 收尾加入顶栏导航与书刊页）。
+# 同一版本内角标文案随本版主功能追加而调整（v0.9.79.1 收尾加入顶栏导航与书刊页）。
 check("V 侧栏与关于弹窗角标已升版", HTML.count(f"v{VERSION}") >= 1)
 check("V release notes 文件存在", NOTES.is_file())
-check("V Update Log 有 v0.9.79 段", f"# VaultHub 蜀鼠之家 v{VERSION}" in UPDATELOG)
+check("V Update Log 有 v0.9.79.1 段", f"# VaultHub 蜀鼠之家 v{VERSION}" in UPDATELOG)
 check("V 历史版本号仍钉在历史注释里",
       "v0.9.72：歌词层" in HTML and "let audioMetadataMemory = null; // v0.9.72" in MEDIA)
 
@@ -206,5 +206,5 @@ for name, ok, detail in checks:
     print(("PASS: " if ok else "FAIL: ") + name + (f"  [{detail}]" if detail and not ok else ""))
 print(f"\nSUMMARY {len(checks) - len(failed)}/{len(checks)} PASS")
 if failed:
-    raise SystemExit("FAIL: v0.9.79 契约测试未通过")
-print("PASS: v0.9.79 契约（提示遮挡 / 播放列表 / 历史阅读释放 / 三层主题）全部满足")
+    raise SystemExit("FAIL: v0.9.79.1 契约测试未通过")
+print("PASS: v0.9.79.1 契约（提示遮挡 / 播放列表 / 历史阅读释放 / 三层主题）全部满足")
