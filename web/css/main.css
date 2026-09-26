@@ -750,6 +750,7 @@
   .series-episode-card .media-file-meta { color:var(--text2); font-size:12px; }
   /* v0.9.56：季内单集改为纵向堆叠的图示卡片列表 */
   .series-episode-list { display:flex; flex-direction:column; gap:10px; margin-top:4px; }
+.series-episode-list-items { display:flex; flex-direction:column; gap:10px; }
   @media (max-width: 560px) {
     .series-episode-thumb { flex-basis:110px; height:62px; }
   }
@@ -1937,3 +1938,27 @@ html[data-uimode="tv"] .libtab, html[data-uimode="tv"] .btn { min-height:48px; f
 html[data-uimode="tv"] .movie-rec-badge, html[data-uimode="tv"] .movie-tmdb-rating b { font-size:12px; }
 html[data-uimode="tv"] :focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
 html[data-uimode="pc"] .libtab, html[data-uimode="pc"] .btn { min-height:36px; }
+
+/* ==================== v0.9.80 剧集/季/集/推荐 ==================== */
+.series-season-head { display:flex; align-items:center; gap:8px; cursor:pointer; user-select:none; }
+.series-season-head .series-season-chev { transition:transform .15s; }
+.episode-grid-section { padding:0 clamp(24px,8vw,120px) 10px; }
+.episode-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px; }
+.episode-grid .ep-grid-card { cursor:pointer; border-radius:8px; overflow:hidden; border:1px solid var(--border); background:var(--card); }
+.episode-grid .ep-grid-card img { width:100%; aspect-ratio:16/9; object-fit:cover; display:block; }
+.episode-grid .ep-grid-fallback { display:flex; aspect-ratio:16/9; align-items:center; justify-content:center; background:linear-gradient(145deg,#284b63,#1b2838); color:#fff; font-weight:700; }
+.episode-grid figcaption { padding:6px 8px; font-size:12px; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.movie-rec-card { display:flex; gap:10px; align-items:center; cursor:pointer; padding:8px; border:1px solid var(--border); border-radius:10px; background:var(--card); position:relative; transition:border-color .16s; }
+.movie-rec-card:hover { border-color:var(--accent); }
+.movie-rec-card .movie-rec-poster { flex:0 0 92px; aspect-ratio:16/10; border-radius:6px; overflow:hidden; background:linear-gradient(145deg,#284b63,#1b2838); display:flex; align-items:center; justify-content:center; }
+.movie-rec-card .movie-rec-poster img { width:100%; height:100%; object-fit:cover; }
+.movie-rec-fallback { color:#fff; font-weight:700; }
+.movie-rec-meta { min-width:0; display:flex; flex-direction:column; gap:4px; }
+.movie-rec-meta b { font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.movie-rec-meta small { color:var(--text2); font-size:12px; }
+.movie-rec-play { align-self:flex-start; }
+.movie-rec-badge.is-local { background:var(--accent); color:#fff; border-color:transparent; }
+.rec-info-grid { display:flex; gap:16px; }
+.rec-info-grid img { flex:0 0 180px; max-width:180px; border-radius:8px; }
+.rec-info-title { font-size:18px; font-weight:700; margin-bottom:10px; }
+@media (max-width:520px){ .rec-info-grid{flex-direction:column;} .rec-info-grid img{max-width:120px;} .movie-rec-card .movie-rec-poster{flex-basis:70px;} }

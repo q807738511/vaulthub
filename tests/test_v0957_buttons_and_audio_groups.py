@@ -15,12 +15,12 @@ def check(name, ok, detail=""):
         fails.append(f"{name} {detail}")
 
 # ============ T1 版本一致性（bump 0.9.68） ============
-check("T1 HTML 资源版本", 'VAULTHUB_ASSET_VERSION = "0.9.79.1"' in HTML)
-check("T1 JS 脚本版本", 'VAULTHUB_SCRIPT_VERSION = "0.9.79.1"' in STATE)
-check("T1 CSS 缓存串", 'href="/web/css/main.css?v=0.9.79.1"' in HTML)
-check("T1 JS 缓存串 x5", HTML.count('?v=0.9.79.1') >= 6)  # css 1 + js 5
+check("T1 HTML 资源版本", 'VAULTHUB_ASSET_VERSION = "0.9.80"' in HTML)
+check("T1 JS 脚本版本", 'VAULTHUB_SCRIPT_VERSION = "0.9.80"' in STATE)
+check("T1 CSS 缓存串", 'href="/web/css/main.css?v=0.9.80"' in HTML)
+check("T1 JS 缓存串 x5", HTML.count('?v=0.9.80') >= 6)  # css 1 + js 5
 check("T1 无 0.9.56 缓存串残留", HTML.count('?v=0.9.56') == 0)
-check("T1 UI 版本角标", "v0.9.79.1" in HTML)
+check("T1 UI 版本角标", "v0.9.80" in HTML)
 
 # ============ T2 影视详情返回按钮 → 横向药丸（修复穿模） ============
 # 不再使用圆形 media-reader-close + ✕ 长文案组合
@@ -69,7 +69,7 @@ check("T3 切页签释放锁", "audioGroupLock = null;" in JS)
 # ============ T4 文档一致性 ============
 check("T4 README 药丸按钮", "横向药丸" in README and "← 返回详情" in README)
 check("T4 README 分组一键播放", "▶ 播放全部" in README and "队列即该专辑/歌手" in README)
-check("T4 Update Log v0.9.67 段", "# VaultHub 蜀鼠之家 v0.9.79.1" in UPDATELOG)
+check("T4 Update Log v0.9.67 段", "# VaultHub 蜀鼠之家 v0.9.80" in UPDATELOG)
 check("T4 Update Log 药丸化记载", "药丸化" in UPDATELOG and "穿模" in UPDATELOG)
 check("T4 RELEASE_NOTES 存在", "v0.9.57" in NOTES and "药丸" in NOTES
       and "audioGroupFiles" in JS)  # 发布说明与本实现同源

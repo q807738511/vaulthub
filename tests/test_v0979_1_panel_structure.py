@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""v0.9.79.1 修复版契约（回归守卫）：
+"""v0.9.80 修复版契约（回归守卫）：
 根因：index.html 的 setpanel 面板缺少 </div>（setpanel-scrape 未闭合导致 hardware/account
 被嵌套进 scrape 内部 → display:none 的面板里内容不可见，表现为「页面为空」）；
 同时标签页复用了区块标题的 i18n key（setScrape="刮削与硬件" / setHw="显卡加速"），
@@ -87,6 +87,6 @@ for kw in ["当前登录状态", "登录凭据与鉴权模式", "反向代理服
 check("5.z 账户管理不含显卡加速", "显卡加速" not in acct)
 
 if FAIL:
-    print(f"FAIL: {FAIL} 项 v0.9.79.1 未满足（PASS {OK}）")
+    print(f"FAIL: {FAIL} 项 v0.9.80 未满足（PASS {OK}）")
     raise SystemExit(1)
-print(f"PASS: v0.9.79.1 {OK} 项面板结构/标签契约全部通过")
+print(f"PASS: v0.9.80 {OK} 项面板结构/标签契约全部通过")

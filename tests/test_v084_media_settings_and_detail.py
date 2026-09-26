@@ -32,7 +32,7 @@ assert "bookShelfTab" in media and "历史阅读" in media and "setBookShelfTab"
 assert "📄 电子书</button>" not in media and "📚 漫画</button>" not in media
 
 # Poster opens details; details own playback/share/favorite/rating/cast/recommendations/metadata.
-for marker in ["openMovieDetails", "renderMovieDetails", "movie-detail-page", "电影介绍", "播放", "分享", "收藏", "评分", "演职人员", "视频推荐", "视频元数据"]:
+for marker in ["openMovieDetails", "renderMovieDetails", "movie-detail-page", "电影介绍", "播放", "分享", "收藏", "评分", "演职人员", "视频推荐", "视频信息"]:
     assert marker in media or marker in css, f"movie details missing: {marker}"
 assert "data-movie-settings" in media, "poster settings button missing"
 assert "toggleMovieWatched" in media and "toggleMovieReadState" not in media
