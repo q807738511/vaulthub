@@ -170,7 +170,7 @@ const windowStub = {
   performance: performanceStub, requestIdleCallback: undefined,
   matchMedia: () => ({ matches: false, addEventListener: noop }),
   localStorage, navigator: navigatorStub,
-  innerWidth: 1440, innerHeight: 900, VAULTHUB_ASSET_VERSION: "0.9.79.1"
+  innerWidth: 1440, innerHeight: 900, VAULTHUB_ASSET_VERSION: "0.9.80"
 };
 const ctx = vm.createContext({
   window: windowStub, document, localStorage, navigator: navigatorStub,
@@ -208,8 +208,8 @@ sandbox.saveWeakNetworkState = (patch) => ctx.saveWeakNetworkState(patch);
 sandbox.weakNetworkState = () => ctx.weakNetworkState();
 sandbox.weakNetworkActive = () => ctx.weakNetworkActive();
 sandbox.audioQualityChoice = () => ctx.audioQualityChoice();
-sandbox.saveAudioQualityChoice = (v) => { /* v0.9.79.1 移除，保留桩避免历史测试其余引用报错 */ };
-sandbox.cycleAudioQuality = () => { /* v0.9.79.1 移除 */ };
+sandbox.saveAudioQualityChoice = (v) => { /* v0.9.80 移除，保留桩避免历史测试其余引用报错 */ };
+sandbox.cycleAudioQuality = () => { /* v0.9.80 移除 */ };
 sandbox.audioStreamUrl = (lib, path, kbps) => ctx.audioStreamUrl(lib, path, kbps);
 sandbox.probeWeakNetwork = (o) => ctx.probeWeakNetwork(o || {});
 sandbox.applyAudioSource = (lib, path, player, o) => ctx.applyAudioSource(lib, path, player, o || {});
@@ -243,7 +243,7 @@ sandbox.saveWeakNetworkState({ mode: "off", speedBps: 100 * 1024, level: "slow" 
 ok("显式关闭弱网 → 原文件", sandbox.effectiveAudioKbps() === 0 && sandbox.weakNetworkActive() === false);
 sandbox.saveWeakNetworkState({ mode: "auto" });
 
-ok("音质始终由后台判定（v0.9.79.1 移除手动选择，恒为 auto）",
+ok("音质始终由后台判定（v0.9.80 移除手动选择，恒为 auto）",
   sandbox.audioQualityChoice() === "auto", String(sandbox.audioQualityChoice()));
 
 /* 转码流 URL */

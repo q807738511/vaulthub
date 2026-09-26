@@ -53,8 +53,8 @@ checks = {
     "更新日志记载": "v0.9.69" in LOG,
 
     # 版本
-    "HTML版本": 'VAULTHUB_ASSET_VERSION = "0.9.79.1"' in HTML and HTML.count("?v=0.9.79.1") >= 7,
-    "脚本版本": 'VAULTHUB_SCRIPT_VERSION = "0.9.79.1"' in STATE,
+    "HTML版本": 'VAULTHUB_ASSET_VERSION = "0.9.80"' in HTML and HTML.count("?v=0.9.80") >= 7,
+    "脚本版本": 'VAULTHUB_SCRIPT_VERSION = "0.9.80"' in STATE,
 }
 
 failed = [name for name, ok in checks.items() if not ok]
