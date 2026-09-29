@@ -31,7 +31,8 @@ function clearPlaybackBg() {
 /* v0.9.66：详情背景严格绑定当前查看条目，不复用正在播放媒体的 playbackBg。
    URL 经 cssUrlValue 清洗后才进入 style，避免 CSS 注入。 */
 function detailArtworkUrl(meta) {
-  return cssUrlValue(meta?.fanart || meta?.backdrop || meta?.poster || meta?.cover || "");
+  /* v0.9.82：详情 hero 用 1280 宽的缩略图（本地封面原图可能是 1–3 MB）。 */
+  return cssUrlValue(coverThumbUrl(meta?.fanart || meta?.backdrop || meta?.poster || meta?.cover || "", 1280));
 }
 function detailBackdropStyle(meta) {
   const art = detailArtworkUrl(meta);
@@ -485,6 +486,19 @@ let mediaResourceView = (() => { try { return localStorage.getItem("vaulthub_med
 let mediaPageSize = 20;
 let audioPageSize = 20;
 let audioView = "albums";
+/* v0.9.82：本文件的本地缓存读写统一走 01-state.js 的 vaultStore* 安全通道
+   （生产环境入口页保证 01-state.js 先加载）。行为测试的 Node VM 沙盒通常只加载
+   本文件，这里补一份等价兜底实现：补不上会让「测试环境缺依赖」看起来像功能回归。 */
+var vaultStoreSet = typeof vaultStoreSet === "function" ? vaultStoreSet : function (key, value) {
+  try { localStorage.setItem(key, typeof value === "string" ? value : JSON.stringify(value)); return true; } catch (e) { return false; }
+};
+var vaultStoreGet = typeof vaultStoreGet === "function" ? vaultStoreGet : function (key) {
+  try { return localStorage.getItem(key); } catch (e) { return null; }
+};
+var vaultStoreJSON = typeof vaultStoreJSON === "function" ? vaultStoreJSON : function (key, fallback) {
+  try { const raw = vaultStoreGet(key); if (raw == null) return fallback; const parsed = JSON.parse(raw); return parsed == null ? fallback : parsed; } catch (e) { return fallback; }
+};
+
 let audioFiles = [];
 let audioCursor = 0;
 let audioTrackTitle = "";
@@ -493,13 +507,13 @@ const audioMetadataCache = "vaulthub_audio_metadata_v1";
 let audioMetadataMemory = null; // v0.9.72: 单次载入内存 Map，避免每张卡片重复 JSON.parse
 const audioFavoritesCache = "vaulthub_audio_favorites_v1";
 let activeReader = null;
-function readAudioFavorites() { try { return JSON.parse(localStorage.getItem(audioFavoritesCache) || "[]") || []; } catch (e) { return []; } }
+function readAudioFavorites() { return vaultStoreJSON(audioFavoritesCache, []); }
 function audioFavoriteKey(libId, path) { return `${libId}\n${path}`; }
 function isAudioFavorite(libId, path) { return readAudioFavorites().includes(audioFavoriteKey(libId, path)); }
 function toggleAudioFavorite(libId, path) {
   const key = audioFavoriteKey(libId, path), values = readAudioFavorites(), index = values.indexOf(key);
   if (index >= 0) values.splice(index, 1); else values.push(key);
-  try { localStorage.setItem(audioFavoritesCache, JSON.stringify(values)); } catch (e) {}
+  vaultStoreSet(audioFavoritesCache, values);
   updateAudioFavoriteButton();
   const lib = findMediaLibrary(localMediaSelection.audio); if (lib) loadLocalFiles("audio", lib, audioCursor);
 }
@@ -531,12 +545,10 @@ function renderAudioFavorites(lib) {
 const audioPlaylistsCache = "vaulthub_audio_playlists_v1";
 let audioPlaylistFilter = ""; // 非空 = 当前曲目列表是某歌单（按 audioPlaylistSongSet 过滤）
 function readAudioPlaylists() {
-  try {
-    const list = JSON.parse(localStorage.getItem(audioPlaylistsCache) || "[]");
-    return Array.isArray(list) ? list.filter(p => p && String(p.name || "").trim() && Array.isArray(p.songs)) : [];
-  } catch (e) { return []; }
+  const list = vaultStoreJSON(audioPlaylistsCache, []);
+  return Array.isArray(list) ? list.filter(p => p && String(p.name || "").trim() && Array.isArray(p.songs)) : [];
 }
-function writeAudioPlaylists(list) { try { localStorage.setItem(audioPlaylistsCache, JSON.stringify(list)); } catch (e) {} }
+function writeAudioPlaylists(list) { vaultStoreSet(audioPlaylistsCache, list); }
 function audioPlaylistSongSet(name) {
   const p = readAudioPlaylists().find(x => x.name === String(name));
   return new Set(Array.isArray(p?.songs) ? p.songs : []);
@@ -644,8 +656,26 @@ function openAudioPlaylistTracks(libId, name) {
 
 const movieMetadataCache = "vaulthub_movie_metadata_v1";
 let scraperStatus = { default: "douban", tmdb_enabled: false };
-function readMovieMetadata() { try { return JSON.parse(localStorage.getItem(movieMetadataCache) || "{}") || {}; } catch (e) { return {}; } }
-function writeMovieMetadata(data) { try { localStorage.setItem(movieMetadataCache, JSON.stringify(data)); } catch (e) {} }
+/* v0.9.82：影视元数据是「整库单键」，两万条的库一次 JSON.parse/stringify 就是几十 MB 的
+   主线程工作 —— 旧实现每次点击都在主线程重新序列化整库，是「操作迟缓」的直接来源。
+   现在内存里保留一份权威副本：读取恒为 O(1)（不再重复解析），写入合并到 400ms 窗口内
+   只落盘一次；落盘统一走 vaultStoreSet（配额已满时先清理可重建缓存再重试）。 */
+let movieMetadataMemory = null, movieMetadataFlushTimer = null;
+function readMovieMetadata() {
+  if (movieMetadataMemory) return movieMetadataMemory;
+  movieMetadataMemory = vaultStoreJSON(movieMetadataCache, {});
+  return movieMetadataMemory;
+}
+function flushMovieMetadata() {
+  movieMetadataFlushTimer = null;
+  vaultStoreSet(movieMetadataCache, movieMetadataMemory || {});
+}
+function writeMovieMetadata(data) {
+  movieMetadataMemory = data || {};
+  movieLocalTitleIndexCache = null;
+  if (movieMetadataFlushTimer) return;
+  movieMetadataFlushTimer = setTimeout(flushMovieMetadata, 400);
+}
 /* 影视文件名常见的发布组/规格标记，展示标题时剔除 */
 const MOVIE_NOISE_RE = /\b(2160p|1080p|1080i|720p|480p|4k|8k|uhd|hdr10\+?|hdr|dv|dolby[\s.]?vision|remux|bluray|blu-ray|bdrip|brrip|webrip|web-?dl|hdtv|dvdrip|x264|x265|h\.?264|h\.?265|hevc|avc|aac|ac3|eac3|dts(?:-hd)?|truehd|atmos|flac|10bit|8bit|s\d{1,2}e\d{1,3}|s\d{1,2}|e\d{1,3}|repack|proper|extended|imax|cn|chs|cht|zh|eng)\b/gi;
 
@@ -697,12 +727,14 @@ function seriesShowCacheShape(show) {
   };
 }
 function rememberSeriesShow(libId, show) {
-  try { localStorage.setItem(seriesShowStoreKey(libId, show.key), JSON.stringify(seriesShowCacheShape(show))); }
-  catch(e) { /* 配额不足时退化为内存缓存，详情页仍能从本次渲染的数据打开 */ seriesShowMemory[seriesShowStoreKey(libId, show.key)] = seriesShowCacheShape(show); }
+  /* v0.9.82：先由 vaultStoreSet 判定能否落盘（超过单键上限直接判失败），
+     不能落盘就退化为内存缓存，详情页仍能从本次渲染的数据打开。 */
+  const key = seriesShowStoreKey(libId, show.key), shape = seriesShowCacheShape(show);
+  if (!vaultStoreSet(key, shape)) seriesShowMemory[key] = shape;
 }
 /* JSON.stringify 会把 seasons(Map) 序列化成 {}，因此读回后只有数组 seasonList 与 files 可用；
    openSeriesDetails 必须只依赖这两个字段，并对旧缓存缺字段的情况回落空数组。 */
-function readSeriesShow(libId, showKey) { const key = seriesShowStoreKey(libId, showKey); try { const show = JSON.parse(localStorage.getItem(key) || "null") || seriesShowMemory[key] || null; if (!show) return null; if (!Array.isArray(show.seasonList)) show.seasonList = []; if (!Array.isArray(show.files)) show.files = []; return show; } catch(e) { return null; } }
+function readSeriesShow(libId, showKey) { const key = seriesShowStoreKey(libId, showKey); try { const show = vaultStoreJSON(key, null) || seriesShowMemory[key] || null; if (!show) return null; if (!Array.isArray(show.seasonList)) show.seasonList = []; if (!Array.isArray(show.files)) show.files = []; return show; } catch(e) { return null; } }
 
 function movieTitleFromPath(path) {
   /* 先在原始文件名上剔除年份与发布规格，再做分隔符归一化：
@@ -820,7 +852,7 @@ function renderSeriesLibraryContent(host, lib, files) {
   const body = shows.length ? `<div class="series-show-grid">${shows.map(show => renderSeriesShowCard(lib, show)).join("")}</div>` : '<div class="empty-tip">该电视剧库暂无支持的剧集文件</div>';
   host.innerHTML = `<section class="content-collection">${mediaLibraryHeading(lib, `${shows.length} 部剧 · ${files.length} 集`)}${body}</section>`;
 }
-function renderSeriesShowCard(lib, show) { const art=show.poster?`<img src="${esc(show.poster)}" alt="${esc(show.title)}" loading="lazy">`:`<span>${esc(show.title)}</span>`; const seasons=show.seasonList?.length||0, episodes=show.files?.length||0; return `<article class="media-poster-card series-show-card" data-series-show="${esc(show.key)}" onclick="openSeriesDetails(${jsAttrArg(lib.id)},${jsAttrArg(show.key)})"><div class="media-poster-art" style="${show.poster?"":`background:${coverGradient(show.title)}`}">${art}</div><div class="media-poster-info"><strong>${esc(show.title)}</strong><small>${esc([show.year, `${seasons} 季`, `${episodes} 集`, show.provider].filter(Boolean).join(" · "))}</small></div></article>`; }
+function renderSeriesShowCard(lib, show) { const art=show.poster?`<img src="${esc(coverThumbUrl(show.poster, 320))}" alt="${esc(show.title)}" loading="lazy" decoding="async">`:`<span>${esc(show.title)}</span>`; const seasons=show.seasonList?.length||0, episodes=show.files?.length||0; return `<article class="media-poster-card series-show-card" data-series-show="${esc(show.key)}" onclick="openSeriesDetails(${jsAttrArg(lib.id)},${jsAttrArg(show.key)})"><div class="media-poster-art" style="${show.poster?"":`background:${coverGradient(show.title)}`}">${art}</div><div class="media-poster-info"><strong>${esc(show.title)}</strong><small>${esc([show.year, `${seasons} 季`, `${episodes} 集`, show.provider].filter(Boolean).join(" · "))}</small></div></article>`; }
 /* v0.9.56：影视详情右上角关闭按钮按语境返回 ——
    剧集详情/电影详情下显示「返回媒体库」；单集详情查看时显示「返回详情」（回到剧集详情页）。 */
 let activeSeriesDetail = null;  // 最近一次打开的剧集详情 {libId, showKey}
@@ -982,10 +1014,58 @@ function movieTMDBErrorText(err, status) {
   if (!msg) return "TMDB 读取失败（HTTP " + status + "）";
   return "TMDB 读取失败：" + msg;
 }
-const movieLocalTitleIndex = (() => { try { const all=readMovieMetadata(), m={}; for (const p in all){ const t=String(all[p].title||"").toLowerCase(); if(t){ (m[t]=m[t]||[]).push({path:p}); } } return m; } catch(e){ return {}; } })();
-function movieRecLocalHit(title){ return (movieLocalTitleIndex[String(title||"").toLowerCase()]||[])[0] || null; }
+/* v0.9.82：本地资源标题索引改为「懒加载 + 记忆化」。
+   旧实现在脚本解析阶段就同步遍历整库元数据建索引 —— 库大时首屏白屏/卡顿的来源之一。
+   现在只有真的渲染视频推荐时才建，之后复用同一份；元数据写入后失效重算。 */
+let movieLocalTitleIndexCache = null;
+function movieLocalTitleIndex() {
+  if (movieLocalTitleIndexCache) return movieLocalTitleIndexCache;
+  let map = {};
+  try {
+    const all = readMovieMetadata();
+    for (const path in all) { const title = String(all[path].title || "").toLowerCase(); if (title) (map[title] = map[title] || []).push({ path }); }
+  } catch (e) { map = {}; }
+  movieLocalTitleIndexCache = map;
+  return map;
+}
+function movieRecLocalHit(title){ return (movieLocalTitleIndex()[String(title||"").toLowerCase()]||[])[0] || null; }
 /* v0.9.80 jsObjArg：把任意对象安全地内联进 onclick 引号参数（esc 后 JSON）。 */
 function jsObjArg(value) { return esc(JSON.stringify(value)); }
+/* v0.9.82：本地封面按展示尺寸取缩略图（远程访问提速）。
+   本地 sidecar 封面可能是 1–3 MB 的原图，海报墙一屏几十张时 WAN 带宽被瞬间打满。
+   服务端 /api/media/cover 现在支持 &w=，命中磁盘缓存后是十几 KB 的 JPEG；
+   仅对本站同源封面 URL 追加参数，TMDB 等外链原样返回（它们自带尺寸段）。 */
+function coverThumbUrl(url, width) {
+  const raw = String(url || "");
+  if (!raw || !width || raw.indexOf("/api/media/cover") !== 0) return raw;
+  if (/[?&]w=\d/.test(raw)) return raw;
+  return raw + (raw.indexOf("?") >= 0 ? "&" : "?") + "w=" + Number(width);
+}
+/* v0.9.82：整库索引的会话级缓存。
+   影视/剧集/书刊都要「整库索引」才能正确排序与聚合，旧实现每次切库、切视图、
+   重新进入都把所有分页重新拉一遍（大库是几 MB 的 WAN 流量 + 重新解析 + 重建整墙
+   DOM），这是「资源多了以后操作迟缓」的主因。现在会话内复用整库索引；
+   缓存过期时只发一个 limit=1 的探测请求比对服务端索引版本（行数 + 最大 mtime），
+   版本一致就继续用本地索引，不一致才重新拉全量。 */
+const libraryIndexSession = {};
+const LIBRARY_INDEX_TTL_MS = 120000;
+function libraryIndexSessionGet(libId, group) {
+  const entry = libraryIndexSession[libId];
+  if (!entry || entry.group !== group || !Array.isArray(entry.files) || !entry.files.length) return null;
+  return entry;
+}
+function libraryIndexSessionClear(libId) {
+  if (libId) delete libraryIndexSession[libId];
+  else Object.keys(libraryIndexSession).forEach(key => delete libraryIndexSession[key]);
+}
+async function libraryIndexVersionProbe(lib) {
+  try {
+    const res = await fetch(`/api/media/files?id=${encodeURIComponent(lib.id)}&offset=0&limit=1`, { cache: "no-store" });
+    if (!res.ok) return "";
+    const data = await res.json();
+    return String((data && data.version) || "");
+  } catch (e) { return ""; }
+}
 /* v0.9.80 推荐卡：横版略缩图 + 标题；服务器内有资源时显示播放按钮并可点击，优先排在前面；
    无资源时点击卡片弹「视频信息」窗口，展示 TMDB 信息，失败/日漫回落 Bangumi。 */
 function movieRecStripHTML(meta) {
@@ -998,29 +1078,94 @@ function movieRecStripHTML(meta) {
   withLocal.sort((a, b) => (b.local?1:0) - (a.local?1:0)); /* 有本地资源的优先 */
   return withLocal.slice(0, 8).map(x => {
     const art = x.poster ? `<img src="${esc(x.poster)}" alt="${esc(x.title)}" loading="lazy">` : `<span class="movie-rec-fallback">${esc((x.title||"?").slice(0,1))}</span>`;
-    const play = x.local ? `<button class="btn movie-rec-play" onclick="event.stopPropagation();openMovieDetails(${jsAttrArg(scraperStatus._recLibId||"")},${jsAttrArg(x.local.path)})">▶ 播放</button>` : "";
+    /* v0.9.82：播放按钮移到略缩图之上（hover / 键盘聚焦时显示），不再占一行挤在标题下。 */
+    const play = x.local ? `<button class="movie-rec-play" type="button" title="播放" aria-label="播放 ${esc(x.title)}" onclick="event.stopPropagation();openMovieDetails(${jsAttrArg(scraperStatus._recLibId||"")},${jsAttrArg(x.local.path)})"><span aria-hidden="true">▶</span><em>播放</em></button>` : "";
     const badge = x.local ? '<span class="movie-rec-badge is-local">本地可播</span>' : `<span class="movie-rec-badge">${esc(movieRecBadge(x, meta))}</span>`;
     const onClick = x.local ? `openMovieDetails(${jsAttrArg(scraperStatus._recLibId||"")},${jsAttrArg(x.local.path)})` : `showRecInfo(${jsObjArg(x)})`;
-    return `<article class="movie-rec-card" onclick="${onClick}" title="${esc(x.title)}">${badge}<div class="movie-rec-poster">${art}</div><div class="movie-rec-meta"><b>${esc(x.title)}</b><small>${esc(String(x.year||""))}${x.rating?` · ⭐ ${x.rating.toFixed(1)}`:""}</small>${play}</div></article>`;
+    return `<article class="movie-rec-card" onclick="${onClick}" title="${esc(x.title)}">${badge}<div class="movie-rec-poster">${art}${play}</div><div class="movie-rec-meta"><b>${esc(x.title)}</b><small>${esc(String(x.year||""))}${x.rating?` · ⭐ ${x.rating.toFixed(1)}`:""}</small></div></article>`;
   }).join("");
 }
-/* v0.9.80 无本地资源 → 视频信息弹窗（TMDB 详情；日漫/Bangumi 命中时优先用 Bangumi 信息展示）。 */
-function showRecInfo(item) {
+/* v0.9.82：无本地资源 → 「视频信息」窗口（客户反馈「依旧没有修复」，根因有两层）：
+   1) 旧实现只展示推荐条目自带的 stub（年份/评分/简介），类型、时长等字段全是「--」，
+      看起来就是「信息不全」；
+   2) 16:9 画框里塞的是 TMDB 的 2:3 竖版海报，被裁成一条，视觉上仍是坏的。
+   现在：画框优先用 backdrop（TMDB backdrop 天然 16:9），没有才回退 poster；
+   打开后按 id 异步取 TMDB 完整详情补齐 类型/时长/评分/简介，失败或日漫回落 Bangumi。 */
+function recInfoBase() { return scraperStatus.tmdb_image_base || "https://image.tmdb.org/t/p"; }
+function recInfoArtUrl(item) {
+  const base = recInfoBase();
+  const backdrop = item.backdrop || (item.backdrop_path ? `${base}/w780${item.backdrop_path}` : "");
+  return backdrop || item.poster || "";
+}
+function recInfoBodyHTML(item, opts) {
+  const extra = (opts && opts.extra) || {};
+  const source = (opts && opts.source) || "TMDB";
+  const rows = [
+    ["年份", extra.year || item.year || ""],
+    ["类型", (extra.genres || []).join(" / ")],
+    ["时长", extra.runtime ? `${extra.runtime} 分钟` : ""],
+    ["评分", item.rating ? Number(item.rating).toFixed(1) : ""],
+    ["来源", source],
+  ].filter(row => row[1]);
+  const dl = rows.length ? `<dl class="movie-meta-list">${rows.map(row => `<dt>${esc(row[0])}</dt><dd>${esc(String(row[1]))}</dd>`).join("")}</dl>` : "";
+  return `${dl}<p class="rec-info-overview"><b>简介：</b>${esc(extra.overview || item.overview || "暂无简介")}</p><p class="hint">服务器内暂无该资源；以上信息来自 ${esc(source)}。</p>`;
+}
+async function showRecInfo(item) {
   const win = document.getElementById("recInfoModal") || buildRecInfoModal();
   const poster = document.getElementById("recInfoPoster"), titleEl = document.getElementById("recInfoTitle"), body = document.getElementById("recInfoBody");
-  if (poster) poster.src = item.poster || ""; if (poster) poster.style.display = item.poster ? "" : "none";
+  const art = recInfoArtUrl(item);
+  if (poster) { poster.src = art; poster.style.display = art ? "" : "none"; poster.alt = item.title || ""; }
   if (titleEl) titleEl.textContent = item.title || "";
-  if (body) body.innerHTML = `<p><b>年份：</b>${esc(item.year||"--")}</p><p><b>评分：</b>${item.rating?esc(item.rating.toFixed(1)):"--"}</p><p><b>简介：</b>${esc(item.overview||"暂无简介")}</p><p class="hint">服务器内暂无该资源；以上信息来自 TMDB${item._source==="bangumi"?"（Bangumi）":""}。</p>`;
+  if (body) body.innerHTML = recInfoBodyHTML(item);
   openModal("recInfoModal");
-  /* v0.9.80 无本地资源 → TMDB 无简介或日漫时，异步回落 Bangumi 信息展示。 */
-  if ((item.media_type === "tv" || !item.overview) && item.title) {
-    fetch("https://api.bgm.tv/v0/search/subjects", { method:"POST", headers:{ "Content-Type":"application/json", "User-Agent":"VaultHub/0.9.80 (https://github.com/q807738511/vaulthub)" }, body: JSON.stringify({ keyword: item.title, sort:"match", filter:{ type:[2], nsfw:false } }) })
-      .then(r => r.json()).then(d => { const hit = (d?.data||[]).find(x=>x.name||x.name_cn); if (!hit) return; const b = document.getElementById("recInfoBody"); if (!b) return; const pic = hit.images?.large || hit.images?.common || ""; const p2 = document.getElementById("recInfoPoster"); if (p2 && pic) { p2.src = pic; p2.style.display=""; } const info = hit.summary || hit.infobox ? `<p><b>简介：</b>${esc((hit.summary||"").split("\n")[0])}</p>` : ""; b.innerHTML = `<p><b>年份：</b>${esc(hit.date||"")}</p><p><b>评分：</b>${hit.rating?.score?esc(hit.rating.score):"--"}</p>${info}<p class="hint">以上信息来自 Bangumi（bgm.tv）。</p>`; })
-      .catch(()=>{});
+  const kind = item.media_type === "tv" || item.media_type === "series" ? "tv" : "movie";
+  /* 异步补齐 TMDB 完整详情：让「视频信息」里的类型 / 时长不再是「--」。 */
+  if (item.id) {
+    try {
+      const res = await fetch(`/api/media/tmdb?type=${kind}&id=${encodeURIComponent(item.id)}`, { cache: "no-store", credentials: "same-origin" });
+      if (res.ok) {
+        const detail = await res.json();
+        if (detail && !detail.status_code) {
+          const base = recInfoBase();
+          const full = Object.assign({}, item, {
+            title: detail.title || detail.name || item.title,
+            year: String(detail.release_date || detail.first_air_date || item.year || "").slice(0, 4),
+            rating: Number(detail.vote_average || item.rating || 0),
+            overview: detail.overview || item.overview || "",
+            poster: detail.poster_path ? `${base}/w342${detail.poster_path}` : item.poster,
+            backdrop: detail.backdrop_path ? `${base}/w780${detail.backdrop_path}` : item.backdrop,
+          });
+          const el = document.getElementById("recInfoBody");
+          if (el) el.innerHTML = recInfoBodyHTML(full, { extra: { genres: (detail.genres || []).map(x => x.name), runtime: detail.runtime || (detail.episode_run_time || [])[0] } });
+          const t2 = document.getElementById("recInfoTitle");
+          if (t2) t2.textContent = full.title;
+          const p2 = document.getElementById("recInfoPoster"), art2 = recInfoArtUrl(full);
+          if (p2 && art2) { p2.src = art2; p2.style.display = ""; }
+          return;
+        }
+      }
+    } catch (e) { /* TMDB 详情拉取失败：保留 stub 信息，仍可阅读，不阻塞弹窗 */ }
+  }
+  /* v0.9.80/v0.9.82 兜底：TMDB 不可用、或剧集（日漫多为剧集）时回落 Bangumi。 */
+  if ((kind === "tv" || !item.overview) && item.title) {
+    fetch("https://api.bgm.tv/v0/search/subjects", { method:"POST", headers:{ "Content-Type":"application/json", "User-Agent":"VaultHub/0.9.82 (https://github.com/q807738511/vaulthub)" }, body: JSON.stringify({ keyword: item.title, sort:"match", filter:{ type:[2], nsfw:false } }) })
+      .then(r => r.json()).then(d => {
+        const hit = (d?.data||[]).find(x => x.name || x.name_cn);
+        if (!hit) return;
+        const b = document.getElementById("recInfoBody");
+        if (!b) return;
+        const pic = hit.images?.large || hit.images?.common || "";
+        const p2 = document.getElementById("recInfoPoster");
+        if (p2 && pic) { p2.src = pic; p2.style.display = ""; }
+        b.innerHTML = recInfoBodyHTML({ year: String(hit.date || "").slice(0, 4), rating: Number(hit.rating?.score || 0), overview: String(hit.summary || "").split("\n")[0] }, { source: "Bangumi（bgm.tv）" });
+      })
+      .catch(() => {});
   }
 }
 function buildRecInfoModal() {
-  const div=document.createElement("div"); div.className="modal-mask"; div.id="recInfoModal"; div.innerHTML=`<div class="modal"><h3>视频信息<button class="close" onclick="closeModal('recInfoModal')">✕</button></h3><div class="rec-info-grid"><img id="recInfoPoster" alt=""><div><div id="recInfoTitle" class="rec-info-title"></div><div id="recInfoBody"></div></div></div><button class="btn btn-primary" onclick="closeModal('recInfoModal')">关闭</button></div>`; document.body.appendChild(div); return div;
+  const div=document.createElement("div"); div.className="modal-mask"; div.id="recInfoModal";
+  div.innerHTML=`<div class="modal rec-info-modal"><h3>视频信息<button class="close" onclick="closeModal('recInfoModal')">✕</button></h3><div class="rec-info-grid"><div class="rec-info-art"><img id="recInfoPoster" alt=""></div><div class="rec-info-main"><div id="recInfoTitle" class="rec-info-title"></div><div id="recInfoBody" class="rec-info-body"></div></div></div><button class="btn btn-primary" onclick="closeModal('recInfoModal')">关闭</button></div>`;
+  document.body.appendChild(div); return div;
 }
 function movieRecBadge(item, meta) {
   const cur = Number(meta.rating || 0);
@@ -1215,7 +1360,7 @@ function closeMovieDetails(){seriesEpisodeReturn=null;const viewer=document.getE
    足以闭合 url('…') 并注入任意 CSS 声明。海报地址可能来自本地 NFO、TMDB 或豆瓣，
    都属于外部内容，因此进 CSS 前必须先剔除引号、反斜杠、括号与换行。 */
 function cssUrlValue(url) { return String(url || "").replace(/[\u0000-\u001f"'()\\]/g, "").trim(); }
-function movieHeroArt(meta) { if (meta?.fanart) return { kind:"fanart-art", url:meta.fanart }; if (meta?.backdrop) return { kind:"backdrop-art", url:meta.backdrop }; if (meta?.poster) return { kind:"poster-art", url:meta.poster }; return { kind:"no-art", url:"" }; }
+function movieHeroArt(meta) { const pick = (url) => coverThumbUrl(url, 1280); if (meta?.fanart) return { kind:"fanart-art", url:pick(meta.fanart) }; if (meta?.backdrop) return { kind:"backdrop-art", url:pick(meta.backdrop) }; if (meta?.poster) return { kind:"poster-art", url:pick(meta.poster) }; return { kind:"no-art", url:"" }; }
 /* ==================== v0.9.80 剧集/季/集/推荐 ====================
    1) 剧集 TMDB 评分在进入剧集详情时补齐（search tv 命中后取 vote_average）。
    2) 多季剧集详情默认先展示「季度」卡片（季度信息 + 季度略缩图），点击展开该季集列表。
@@ -1237,7 +1382,7 @@ function episodeGridHTML(lib, meta) {
 function renderSeriesEpisodeRow(lib, ep, artUrl) {
   /* v0.9.81：季度集数改为「网格展示」——删除「详情」按钮，格子内同时显示集号与集标题。 */
   const path = String(ep.path), meta = ep.meta || movieMetadataFor(path), parsed = ep.parsed || parseSeriesEpisode(path);
-  const safeArt = cssUrlValue(ep.thumb || artUrl || meta.poster || "");
+  const safeArt = cssUrlValue(coverThumbUrl(ep.thumb || artUrl || meta.poster || "", 320));
   const style = safeArt ? `style="background-image:url('${esc(safeArt)}')"` : "";
   const label = parsed.label || `S${String(parsed.season||1).padStart(2,"0")}E${String(parsed.episode||0).padStart(2,"0")}`;
   const epTitle = String(meta.title || parsed.title || "").trim();
@@ -1279,10 +1424,10 @@ function renderSeriesInfoPanel(show, rating) {
 function renderMovieDetails(lib,path,meta){try{meta={...meta,__path:path};}catch(e){}
 /* v0.9.81：详情顺序统一为 —— 视频介绍(hero) → 演职人员(网格头像) → 视频推荐(网格略缩图) → 单集网格 → 视频信息(底部)。 */
 return `<div class="media-reader-overlay movie-detail-page movie-detail-backdrop" style="${esc(detailBackdropStyle(meta))}"><div class="movie-detail-scroll">${movieDetailCloseButton()}${renderMovieHero(lib,path,meta)}${renderCastPanel(meta)}${renderRecPanel(meta)}${episodeGridHTML(lib)}${renderVideoInfoPanel(path,meta)}</div></div>`;}
-function renderMoviePoster(lib, file) { const path=String(file.path), meta=movieMetadataFor(path), watched=!!meta.watched||movieFlag("watched",lib.id,path), art=meta.poster ? `<img src="${esc(meta.poster)}" alt="${esc(meta.title)}" loading="lazy">` : `<span>${esc(meta.title)}</span>`; return `<article class="media-poster-card ${watched?"is-read":""}" data-media-group="movie" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openMovieDetails(${jsAttrArg(lib.id)},${jsAttrArg(path)})"><div class="media-poster-art" style="${meta.poster ? "" : `background:${coverGradient(meta.title)}`}" >${art}<button class="movie-poster-settings" data-movie-settings title="观看状态" onclick="event.stopPropagation();toggleMovieWatched(${jsAttrArg(lib.id)},${jsAttrArg(path)},this)">${watched?"✓ 已观看":"○ 未观看"}</button></div><div class="media-poster-info"><strong>${esc(meta.title)}</strong><small>${esc([meta.year,meta.provider].filter(Boolean).join(" · ") || fileExt(path).toUpperCase())}</small></div></article>`; }
+function renderMoviePoster(lib, file) { const path=String(file.path), meta=movieMetadataFor(path), watched=!!meta.watched||movieFlag("watched",lib.id,path), art=meta.poster ? `<img src="${esc(coverThumbUrl(meta.poster, 320))}" alt="${esc(meta.title)}" loading="lazy" decoding="async">` : `<span>${esc(meta.title)}</span>`; return `<article class="media-poster-card ${watched?"is-read":""}" data-media-group="movie" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openMovieDetails(${jsAttrArg(lib.id)},${jsAttrArg(path)})"><div class="media-poster-art" style="${meta.poster ? "" : `background:${coverGradient(meta.title)}`}" >${art}<button class="movie-poster-settings" data-movie-settings title="观看状态" onclick="event.stopPropagation();toggleMovieWatched(${jsAttrArg(lib.id)},${jsAttrArg(path)},this)">${watched?"✓ 已观看":"○ 未观看"}</button></div><div class="media-poster-info"><strong>${esc(meta.title)}</strong><small>${esc([meta.year,meta.provider].filter(Boolean).join(" · ") || fileExt(path).toUpperCase())}</small></div></article>`; }
 function scrapeSeriesMetadata(host, lib, files) { return scrapeMovieMetadata(host, lib, files); }
 function toggleMediaResourceView(group) { mediaResourceView = mediaResourceView === "poster" ? "list" : "poster"; try { localStorage.setItem("vaulthub_media_resource_view",mediaResourceView); } catch(e) {} const lib=findMediaLibrary(localMediaSelection[group]); if(lib) loadLocalFiles(group,lib,group === "audio" ? audioCursor : 0); }
-function refreshMovieMetadata() { try { localStorage.removeItem(movieMetadataCache); } catch(e) {} const lib=findMediaLibrary(localMediaSelection.movie); if(lib) loadLocalFiles("movie", lib, 0); toast("🔄 正在重新刮削影视信息"); }
+function refreshMovieMetadata() { movieMetadataMemory = null; movieLocalTitleIndexCache = null; vaultStoreRemove(movieMetadataCache); libraryIndexSessionClear(); const lib=findMediaLibrary(localMediaSelection.movie); if(lib) loadLocalFiles("movie", lib, 0); toast("🔄 正在重新刮削影视信息"); }
 
 function mediaStateKey(libId, path) { return `vaulthub_reading_${libId}_${path}`; }
 /* v0.9.30：阅读进度改为服务端持久化（/api/media/reading/progress）。
@@ -1671,13 +1816,32 @@ async function loadLocalFiles(group, lib, offset = 0) {
        重新打开后偶尔显示空白且无法展开。先按正常分页游标拉完，再在本地筛选，
        同时让两种视图共享同一份完整索引。 */
     const pageSize = group === "comic" ? mediaPageSize : group === "audio" ? audioPageSize : group === "movie" ? 500 : 100;
-    const res = await fetch(`/api/media/files?id=${encodeURIComponent(lib.id)}&offset=${offset}&limit=${pageSize}`, { cache: "no-store" });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    let files = normalizeFilePayload(data);
-    if (group === "comic" && data.status !== "indexing") {
-      files = await fetchAllLibraryFiles(lib.id, data, offset);
-      data.has_more = false;
+    /* v0.9.82：整库索引的会话级复用（远程访问提速的关键）。
+       命中缓存时不再请求任何分页；缓存过期只发一个 limit=1 的小请求比对服务端索引版本。 */
+    let data = null, files = null, fromSession = false;
+    const session = libraryIndexSessionGet(lib.id, group);
+    if (session) {
+      let reuse = (Date.now() - Number(session.at || 0)) <= LIBRARY_INDEX_TTL_MS;
+      if (!reuse) {
+        const version = await libraryIndexVersionProbe(lib);
+        reuse = !!version && version === session.version;
+      }
+      if (reuse) {
+        session.at = Date.now();
+        data = { status: session.status, total: session.total, version: session.version, has_more: false, files: [] };
+        files = session.files.slice();
+        fromSession = true;
+      }
+    }
+    if (!files) {
+      const res = await fetch(`/api/media/files?id=${encodeURIComponent(lib.id)}&offset=${offset}&limit=${pageSize}`, { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      data = await res.json();
+      files = normalizeFilePayload(data);
+      if (group === "comic" && data.status !== "indexing") {
+        files = await fetchAllLibraryFiles(lib.id, data, offset);
+        data.has_more = false;
+      }
     }
     files = files.sort((a, b) => String(a.path).localeCompare(String(b.path), "zh-CN"));
     files = files.filter(file => supportedLocalMediaFile(group, lib, String(file.path)));
@@ -1694,12 +1858,16 @@ async function loadLocalFiles(group, lib, offset = 0) {
     if (group === "comic") await loadReadingProgress(lib.id);
     /* 影视库统一补齐全部索引，电影和电视剧均不再显示分页或截断提示。 */
     let mediaTruncated = false;
-    if (group === "movie" && data.has_more) {
+    if (group === "movie" && data.has_more && !fromSession) {
       const rest = await fetchRemainingLibraryFiles(lib.id, offset + normalizeFilePayload(data).length);
       const extra = rest.files.filter(file => supportedLocalMediaFile(group, lib, String(file.path)));
       files = files.concat(extra).sort((a, b) => String(a.path).localeCompare(String(b.path), "zh-CN"));
       mediaTruncated = rest.truncated;
       data.has_more = false;
+    }
+    /* v0.9.82：影视 / 书刊都是「整库索引」语义 —— 缓存给本会话后续切库、切视图复用。 */
+    if (!fromSession && (group === "movie" || group === "comic") && data.status !== "indexing") {
+      libraryIndexSession[lib.id] = { at: Date.now(), group, version: String(data.version || ""), total: Number(data.total) || files.length, status: data.status, files: files.slice() };
     }
     let bookPageFiles = null, bookTotal = 0;
     if (group === "comic") {
@@ -1833,6 +2001,8 @@ function startBuildProgressWatch(group, lib) {
       stopBuildProgressWatch(group);
       if (st.state === "ready") toast("✅ " + t("buildDone"));
       else if (st.state === "cancelled") toast("■ " + t("buildCancelled"));
+      /* v0.9.82：扫描刚写入/取消过索引 —— 必须丢掉会话缓存再重载，否则会显示旧索引。 */
+      libraryIndexSessionClear(lib.id);
       loadLocalFiles(group, lib, 0);
       return;
     }
@@ -1863,22 +2033,15 @@ function formatFileSize(size) {
 }
 function readAudioMetadata() {
   if (audioMetadataMemory) return audioMetadataMemory;
-  try { audioMetadataMemory = JSON.parse(localStorage.getItem(audioMetadataCache) || "{}") || {}; } catch (e) { audioMetadataMemory = {}; }
+  audioMetadataMemory = vaultStoreJSON(audioMetadataCache, {});
   return audioMetadataMemory;
 }
 function writeAudioMetadata(data) {
   audioMetadataMemory = data || {};
-  try { localStorage.setItem(audioMetadataCache, JSON.stringify(audioMetadataMemory)); }
-  catch (e) {
-    /* v0.9.70：写入失败此前被静默吞掉（表现为「刮削过但下次打开又没了」）。
-       只提示一次；服务端 sqlite 缓存仍是权威来源，重开页面会自动回灌。 */
-    if (!writeAudioMetadata.warned) {
-      writeAudioMetadata.warned = true;
-      /* 措辞要准确：并非所有调用点都会写服务端缓存（专辑/歌手批量编辑只写本地），
-         且 Safari 隐私模式抛的是 SecurityError 而不一定是「已满」。 */
-      try { toast("⚠️ 浏览器本地缓存写入失败（可能已满或被隐私模式限制），本次修改可能仅在本会话有效"); } catch (err) {}
-    }
-  }
+  /* v0.9.82：统一走 vaultStoreSet —— 失败时先清理可重建缓存再重试一次，仍失败才退化为
+     内存缓存，并按真实原因（配额已满 / 站点禁止写入）提示一次。服务端 sqlite 缓存仍是
+     权威来源，重开页面会自动回灌。 */
+  vaultStoreSet(audioMetadataCache, audioMetadataMemory);
 }
 /* v0.9.56：封面写入媒体库持久化 —— 刮削/手动设置封面后自动 POST 到后端，
    存成媒体文件同目录 sidecar（<名>.cover.jpg/png/webp/gif），展示走同源本地 URL，
@@ -1951,12 +2114,8 @@ function audioMetadataFor(path, cache) {
    会话内已尝试过的歌手不再重复请求；刮削失败（无 provider）保持文字/渐变占位。 */
 const audioArtistCache = "vaulthub_audio_artists_v1";
 const audioArtistAttemptedSession = new Set();
-function readAudioArtistCache() {
-  try { return JSON.parse(localStorage.getItem(audioArtistCache) || "{}") || {}; } catch (e) { return {}; }
-}
-function writeAudioArtistCache(data) {
-  try { localStorage.setItem(audioArtistCache, JSON.stringify(data)); } catch (e) {}
-}
+function readAudioArtistCache() { return vaultStoreJSON(audioArtistCache, {}); }
+function writeAudioArtistCache(data) { vaultStoreSet(audioArtistCache, data); }
 function audioArtistInfoFor(artist) {
   const all = readAudioArtistCache();
   return all[String(artist)] || null;
@@ -2182,7 +2341,7 @@ function audioCoverData(meta, title) {
   /* v0.9.56 修复：onerror 里原来直接插 JSON.stringify(title)，其双引号会提前闭合
      HTML 属性 —— 封面加载失败时抛 SyntaxError: Unexpected end of input，
      文字占位反而不生效。改用 jsAttrArg（JSON 串再做 HTML 转义）。 */
-  return meta.cover ? `<img src="${esc(meta.cover)}" alt="${esc(title)}" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:${jsAttrArg(title)}}))">` : esc(title);
+  return meta.cover ? `<img src="${esc(coverThumbUrl(meta.cover, 320))}" alt="${esc(title)}" loading="lazy" decoding="async" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:${jsAttrArg(title)}}))">` : esc(title);
 }
 function renderAudioAlbums(lib, files) {
   const groups = new Map();
@@ -2200,7 +2359,7 @@ function renderAudioArtists(lib, files) {
      未刮削/失败时回落渐变首字。
      v0.9.57：新增「▶ 播放」—— 直接播放该歌手全部歌曲（队列即歌手）。
      v0.9.66：同专辑卡片，移除重复的 ✎ 编辑按钮。 */
-  return `<div class="audio-album-grid audio-artist-grid">${[...groups.entries()].map(([artist, songs]) => { const artistMeta = audioArtistInfoFor(artist); const cover = artistMeta && artistMeta.cover ? `<img class="audio-artist-avatar" src="${esc(artistMeta.cover)}" alt="${esc(artist)}" loading="lazy" onerror="this.parentElement.classList.add('audio-artist-avatar-fallback');this.remove()">` : ""; return `<article class="audio-album-card audio-artist-card" onclick="openAudioTracks('${esc(lib.id)}','artist',${esc(JSON.stringify(artist))})"><div class="audio-album-cover audio-artist-cover" style="${cover ? "" : `background:${coverGradient(artist)}`}">${cover || esc(artist)}</div><div class="audio-album-info"><strong>${esc(artist)}</strong><small>${songs.length} 首歌曲${artistMeta && artistMeta.collaborators && artistMeta.collaborators.length > 1 ? " · 合作演唱" : ""}</small><div class="media-actions"><button class="btn" title="直接播放该歌手全部歌曲" onclick="event.stopPropagation();playAudioGroup('${esc(lib.id)}','artist',${esc(JSON.stringify(artist))})">▶ 播放</button><button class="btn" title="喜欢歌手" onclick="event.stopPropagation();toggleAudioFavorite(${jsAttrArg(lib.id)},${jsAttrArg(songs[0].path)})">${isAudioFavorite(lib.id, songs[0].path) ? "♥" : "♡"}</button></div></article>`; }).join("")}</div>`;
+  return `<div class="audio-album-grid audio-artist-grid">${[...groups.entries()].map(([artist, songs]) => { const artistMeta = audioArtistInfoFor(artist); const cover = artistMeta && artistMeta.cover ? `<img class="audio-artist-avatar" src="${esc(coverThumbUrl(artistMeta.cover, 320))}" alt="${esc(artist)}" loading="lazy" onerror="this.parentElement.classList.add('audio-artist-avatar-fallback');this.remove()">` : ""; return `<article class="audio-album-card audio-artist-card" onclick="openAudioTracks('${esc(lib.id)}','artist',${esc(JSON.stringify(artist))})"><div class="audio-album-cover audio-artist-cover" style="${cover ? "" : `background:${coverGradient(artist)}`}">${cover || esc(artist)}</div><div class="audio-album-info"><strong>${esc(artist)}</strong><small>${songs.length} 首歌曲${artistMeta && artistMeta.collaborators && artistMeta.collaborators.length > 1 ? " · 合作演唱" : ""}</small><div class="media-actions"><button class="btn" title="直接播放该歌手全部歌曲" onclick="event.stopPropagation();playAudioGroup('${esc(lib.id)}','artist',${esc(JSON.stringify(artist))})">▶ 播放</button><button class="btn" title="喜欢歌手" onclick="event.stopPropagation();toggleAudioFavorite(${jsAttrArg(lib.id)},${jsAttrArg(songs[0].path)})">${isAudioFavorite(lib.id, songs[0].path) ? "♥" : "♡"}</button></div></article>`; }).join("")}</div>`;
 }
 let audioArtistFilter = "";
 /* v0.9.56：点击专辑/歌手卡片 → 展示该专辑/歌手全部曲目。
@@ -2888,12 +3047,8 @@ function coverGradient(title) {
   return `linear-gradient(145deg,hsl(${hue} 58% 38%),hsl(${hue2} 68% 24%))`;
 }
 const coverScrapeCache = "vaulthub_cover_scrape_v1";
-function readCoverCache() {
-  try { return JSON.parse(localStorage.getItem(coverScrapeCache)) || {}; } catch (e) { return {}; }
-}
-function writeCoverCache(cache) {
-  try { localStorage.setItem(coverScrapeCache, JSON.stringify(cache)); } catch (e) {}
-}
+function readCoverCache() { return vaultStoreJSON(coverScrapeCache, {}); }
+function writeCoverCache(cache) { vaultStoreSet(coverScrapeCache, cache); }
 function coverSearchTitle(title) {
   /* v0.9.56：封面搜索词清洗增强 —— 除「全本/卷册部」外再清尾部 v01/Vol.3/第1话 等编号，
      提升 Bangumi/AniList 命中率（One Piece v01 → One Piece）。 */

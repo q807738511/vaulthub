@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -201,24 +202,22 @@ func (a *App) coverGet(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, 404, "library not found")
 		return
 	}
-	p, _, err := safeFile(l, q.Get("path"))
-	if err != nil {
+	rel := q.Get("path")
+	p, fi, err := safeFile(l, rel)
+	if err != nil || fi == nil || fi.IsDir() {
 		errJSON(w, 404, "cover not found")
 		return
 	}
-	data, err := os.ReadFile(p)
-	if err != nil {
+	/* v0.9.82：海报墙按展示尺寸取缩略图（w=320 等），远程访问时把单张封面从 MB 级
+	   降到十几 KB（命中磁盘缓存后 0 成本）；w 缺失或不可转码时流式直出原图。
+	   注意顺序：先试缩略，失败必须回落原图 —— 封面永远可读。 */
+	if width, _ := strconv.Atoi(q.Get("w")); width > 0 {
+		if a.serveCoverThumb(w, r, l, rel, p, fi, width) {
+			return
+		}
+	}
+	if !serveCoverOriginal(w, r, p) {
 		errJSON(w, 404, "cover not found")
 		return
 	}
-	ext := sniffImageExt(data)
-	if ext == "" {
-		errJSON(w, 404, "cover not found")
-		return
-	}
-	w.Header().Set("Content-Type", imageContentType(ext))
-	w.Header().Set("Cache-Control", "public, max-age=86400")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.WriteHeader(200)
-	_, _ = w.Write(data)
 }

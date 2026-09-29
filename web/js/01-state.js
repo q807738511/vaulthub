@@ -8,7 +8,7 @@ const VAULTHUB_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
    历史故障：v0.8.3→v0.8.5 的前端修改在服务端已生效，但浏览器仍执行缓存里的
    旧 02-media.js，用户看到「没有更新」。现在入口页 no-store、静态资源带 ?v=，
    并在启动时做一次一致性自查，不一致就绕过缓存强制重载一次。 */
-const VAULTHUB_SCRIPT_VERSION = "0.9.81";
+const VAULTHUB_SCRIPT_VERSION = "0.9.82";
 function ensureFreshAssets() {
   /* expected 为空 = 浏览器执行的 index.html 早于 v0.8.6（旧版本入口页没有声明
      版本号），同样属于"页面是旧的"，也需要换 URL 重新取一次。 */
@@ -1100,6 +1100,122 @@ function loadSettings() {
 }
 function saveSettings() {
   try { localStorage.setItem(LS_SETTINGS, JSON.stringify(settings)); } catch (e) {}
+}
+
+/* ==================== v0.9.82 浏览器本地缓存的安全写入 ====================
+   症状（客户反馈）：用久了会弹「浏览器本地缓存写入失败（可能已满或被隐私模式限制）」，
+   而且必须刷新页面甚至重开浏览器才能继续用；资源越多越频繁。
+   根因：本站把媒体元数据 / 封面 / 歌手 / 剧集结构等**整份 JSON** 写进 localStorage。
+   浏览器给每个源 5 MB 左右配额，一旦写满，setItem 就抛 QuotaExceededError；旧实现
+   直接 catch(e){} 或提示一句就放弃 —— 之后每次刮削、收藏、改名都在同一个「已经满了」
+   的配额上失败，表现就是「越用越卡、越用越容易失败」。
+   服务端始终是权威数据源，本地缓存只是加速层，因此这里统一：
+     1) 单键过大（> 1.2 MB）：只保留内存副本，不去挤本就紧张的配额；
+     2) 写失败时先清理「可重建」缓存（封面刮削 / 剧集结构 / 播放进度）再重试一次；
+     3) 仍失败才退化为内存缓存，并按真实原因提示一次（配额已满 / 站点禁止写入）。
+   提示只出现一次，避免每写一次就弹一次把界面刷爆。 */
+
+/* 单键上限 3 MB：localStorage 配额约 5 MB，留出余量给设置/收藏等小键。
+   超过上限的键（大库的整份元数据）注定写不进去，直接只留内存副本，
+   避免每次操作都抛一次 QuotaExceededError 并弹提示。 */
+const VAULTHUB_LS_SINGLE_LIMIT = 3 * 1024 * 1024;
+/* 可重建缓存：丢掉的代价只是「下次要重新拉/重新刮」，不会丢用户的收藏与评分。 */
+const VAULTHUB_EVICTABLE_PATTERNS = [
+  /^vaulthub_cover_scrape_v1$/,
+  /^vaulthub_series_show_/,
+  /^vaulthub_video_/,
+  /^vaulthub_audio_artists_v1$/,
+  /^vaulthub_audio_metadata_v1$/,
+  /^vaulthub_movie_metadata_v1$/,
+];
+const vaulthubMemoryStore = new Map();
+let vaulthubStorageWarned = false;
+
+function vaulthubStorageBytes() {
+  let total = 0;
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i) || "";
+      total += key.length + String(localStorage.getItem(key) || "").length;
+    }
+  } catch (e) { return 0; }
+  return total;
+}
+
+/* 只清理可重建缓存（protectKey 绝不清理），返回释放出的字符数。 */
+function vaulthubReclaimStorage(protectKey) {
+  const victims = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i) || "";
+      if (!key || key === protectKey) continue;
+      if (VAULTHUB_EVICTABLE_PATTERNS.some(re => re.test(key))) victims.push(key);
+    }
+  } catch (e) { return 0; }
+  let freed = 0;
+  victims.forEach(key => {
+    freed += key.length + String(localStorage.getItem(key) || "").length;
+    try { localStorage.removeItem(key); } catch (e) {}
+  });
+  return freed;
+}
+
+function vaulthubStorageNotice(err) {
+  if (vaulthubStorageWarned) return;
+  vaulthubStorageWarned = true;
+  const quota = !!err && (err.name === "QuotaExceededError" || err.name === "NS_ERROR_DOM_QUOTA_REACHED" || err.code === 22 || err.code === 1014);
+  const used = vaulthubStorageBytes();
+  const usedText = used ? `（本站已用约 ${(used / 1048576).toFixed(1)} MB）` : "";
+  if (typeof toast === "function") {
+    toast(quota
+      ? `⚠️ 浏览器本地缓存已满${usedText}：本次改动已暂存内存，服务端数据不受影响；建议清理一次浏览器缓存`
+      : `⚠️ 浏览器禁止本站写入本地缓存${usedText}（隐私模式或站点设置）：本次改动仅在当前页面有效`);
+  }
+  console.warn("[vault-store] 本地缓存写入失败，已退化为内存缓存", err);
+}
+
+/* 统一入口：所有「整份 JSON」的本地缓存写入都走这里。返回是否真的写进 localStorage。 */
+function vaultStoreSet(key, value) {
+  let text;
+  try { text = typeof value === "string" ? value : JSON.stringify(value); } catch (e) { return false; }
+  if (text == null) return false;
+  if (text.length > VAULTHUB_LS_SINGLE_LIMIT) {
+    vaulthubMemoryStore.set(key, text);
+    return false;
+  }
+  try {
+    localStorage.setItem(key, text);
+    vaulthubMemoryStore.delete(key);
+    return true;
+  } catch (e) {
+    if (vaulthubReclaimStorage(key) > 0) {
+      try { localStorage.setItem(key, text); vaulthubMemoryStore.delete(key); return true; } catch (e2) { /* 仍然写不进 */ }
+    }
+    vaulthubMemoryStore.set(key, text);
+    vaulthubStorageNotice(e);
+    return false;
+  }
+}
+
+/* 读取：localStorage 优先，写不进去时回落到内存副本（同一会话仍然一致）。 */
+function vaultStoreGet(key) {
+  try {
+    const stored = localStorage.getItem(key);
+    if (stored !== null) return stored;
+  } catch (e) { /* 隐私模式读取也可能抛异常 */ }
+  return vaulthubMemoryStore.has(key) ? vaulthubMemoryStore.get(key) : null;
+}
+function vaultStoreJSON(key, fallback) {
+  try {
+    const raw = vaultStoreGet(key);
+    if (raw == null) return fallback;
+    const parsed = JSON.parse(raw);
+    return parsed == null ? fallback : parsed;
+  } catch (e) { return fallback; }
+}
+function vaultStoreRemove(key) {
+  vaulthubMemoryStore.delete(key);
+  try { localStorage.removeItem(key); } catch (e) {}
 }
 
 let customBoards = [];

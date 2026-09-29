@@ -62,14 +62,12 @@ function renderTopLibTabs() {
   const libs = (typeof localMediaLibraries !== "undefined" && localMediaLibraries) || [];
   libs.forEach(lib => {
     const group = homeGroupOfType(lib.type);
-    const st = (typeof homeIndexStatus !== "undefined" && homeIndexStatus && homeIndexStatus[lib.id]) || null;
-    const count = Number((st && st.total) || 0);
+    /* v0.9.82：顶栏标签只保留库名（客户要求去掉后缀的媒体数量展示）。 */
     rows.push(`<button class="libtab" type="button" role="tab" aria-current="false"`
       + ` data-view="${esc(group)}" data-lib-id="${esc(lib.id)}" data-nav-key="${esc(group + ":" + lib.id)}"`
       + ` title="${esc(lib.name)}${lib.path ? " · " + esc(lib.path) : ""}"`
       + ` onclick="openHomeLibrary('${esc(group)}',${jsAttrArg(lib.id)})">`
       + `<span class="ic">${topNavIconForType(lib.type)}</span>${esc(lib.name)}`
-      + (count ? `<span class="cnt">${esc(formatHomeCount(count))}</span>` : "")
       + `</button>`);
   });
   if (typeof externalServices !== "undefined" && externalServices) {

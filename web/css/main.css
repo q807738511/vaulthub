@@ -1947,18 +1947,39 @@ html[data-uimode="pc"] .libtab, html[data-uimode="pc"] .btn { min-height:36px; }
 .movie-rec-grid .empty-tip { grid-column:1 / -1; }
 .movie-rec-card { display:flex; gap:10px; align-items:center; cursor:pointer; padding:8px; border:1px solid var(--border); border-radius:10px; background:var(--card); position:relative; transition:border-color .16s; min-width:0; overflow:hidden; }
 .movie-rec-card:hover { border-color:var(--accent); }
-.movie-rec-card .movie-rec-poster { flex:0 0 108px; aspect-ratio:16/9; border-radius:6px; overflow:hidden; background:linear-gradient(145deg,#284b63,#1b2838); display:flex; align-items:center; justify-content:center; }
+.movie-rec-card .movie-rec-poster { flex:0 0 108px; aspect-ratio:16/9; border-radius:6px; overflow:hidden; background:linear-gradient(145deg,#284b63,#1b2838); display:flex; align-items:center; justify-content:center; position:relative; }
 .movie-rec-card .movie-rec-poster img { width:100%; height:100%; object-fit:cover; }
 .movie-rec-fallback { color:#fff; font-weight:700; }
 .movie-rec-meta { min-width:0; flex:1; display:flex; flex-direction:column; gap:4px; overflow:hidden; }
 .movie-rec-meta b { font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%; }
 .movie-rec-meta small { color:var(--text2); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.movie-rec-play { align-self:flex-start; }
+/* v0.9.82：播放按钮移到略缩图之上 —— 默认隐藏，鼠标滑过（或键盘聚焦）才显示；
+   触屏设备没有 hover，常显以免点不到。 */
+.movie-rec-play { position:absolute; inset:0; z-index:3; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; border:0; cursor:pointer; background:rgba(6,12,20,.55); color:#fff; font-size:22px; line-height:1; opacity:0; transition:opacity .16s; }
+.movie-rec-play em { font-style:normal; font-size:12px; font-weight:600; letter-spacing:.08em; }
+.movie-rec-card:hover .movie-rec-play, .movie-rec-card:focus-within .movie-rec-play, .movie-rec-play:focus-visible { opacity:1; }
+@media (hover:none) { .movie-rec-play { opacity:1; } }
 /* v0.9.81：推荐徽标移到略缩图左上角，避免压住右侧标题文字（原 top/right 会与标题穿模）。 */
 .movie-rec-badge { top:10px; left:10px; right:auto; z-index:2; }
 .movie-rec-badge.is-local { background:var(--accent); color:#fff; border-color:transparent; }
-/* v0.9.81：无资源推荐「视频信息」弹窗海报按 16:9 查看比例展示。 */
+/* v0.9.81/v0.9.82：无资源推荐「视频信息」弹窗 —— 画框按 16:9 展示（优先用 backdrop，
+   它本身就是 16:9，因此不会像竖版海报那样被裁成一条），右侧补齐类型/时长/评分/简介。 */
+/* 弹窗按宽版展示：默认 .modal 只有 440px，减去内边距后留给右侧文字列不到 60px，
+   中文会被拆成每行两三个字并溢出横向滚动条（实测）。这里给足宽度并允许窄屏堆叠。 */
+.rec-info-modal { width:720px; max-width:92vw; }
 .rec-info-grid { display:flex; gap:16px; align-items:flex-start; }
-.rec-info-grid img { flex:0 0 auto; width:100%; max-width:320px; aspect-ratio:16/9; object-fit:cover; border-radius:8px; background:linear-gradient(145deg,#284b63,#1b2838); }
+.rec-info-grid img { width:100%; aspect-ratio:16/9; object-fit:cover; border-radius:8px; background:linear-gradient(145deg,#284b63,#1b2838); }
+.rec-info-art { flex:0 0 320px; max-width:min(320px,100%); }
+.rec-info-main { min-width:0; flex:1 1 auto; }
 .rec-info-title { font-size:18px; font-weight:700; margin-bottom:10px; }
-@media (max-width:520px){ .rec-info-grid{flex-direction:column;} .rec-info-grid img{max-width:100%;} .movie-rec-grid{grid-template-columns:1fr;} }
+.rec-info-overview { margin:10px 0 0; line-height:1.65; }
+.rec-info-body .movie-meta-list { margin:0 0 4px; }
+@media (max-width:640px){ .rec-info-grid{flex-direction:column;} .rec-info-grid img{max-width:100%;} .rec-info-art{flex:1 1 auto; max-width:100%;} .rec-info-modal{width:92vw;} .movie-rec-grid{grid-template-columns:1fr;} }
+
+/* ==================== v0.9.82 渲染性能 ====================
+   客户反馈：资源多时（大库）操作迟缓。除了网络与解析开销，一次性渲染上千个卡片也会
+   让布局/绘制占满主线程。这里：
+     · 列表行（行高一致）用 content-visibility 跳过视口外的布局与绘制，滚动更顺；
+     · 网格卡片用 contain:content 隔离布局与绘制影响面（不改尺寸，避免滚动条跳动）。 */
+.media-file-list .media-file-row { content-visibility:auto; contain-intrinsic-size:auto 64px; }
+.media-poster-card, .book-card, .audio-album-card, .series-episode-card, .movie-rec-card, .movie-cast-card, .episode-grid .ep-grid-card { contain:content; }
