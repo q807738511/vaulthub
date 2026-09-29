@@ -1522,7 +1522,16 @@ func (a *App) files(w http.ResponseWriter, r *http.Request) {
 		if busy {
 			status = "indexing"
 		}
-		writeJSON(w, 200, map[string]any{"status": status, "total": total, "offset": off, "limit": lim, "query": q, "has_more": off+len(files) < total, "files": files})
+		/* v0.9.82：与默认分支同样下发索引版本 + ETag（带 q 时按命中集计算）。 */
+		version := ""
+		if !busy {
+			var maxMtime int64
+			if e := a.db.QueryRow(`SELECT coalesce(max(mtime),0) FROM files WHERE lib=? AND lower(path) LIKE ? ESCAPE '\'`, id, like).Scan(&maxMtime); e != nil {
+				maxMtime = 0
+			}
+			version = libraryIndexVersion(id, order, q, total, maxMtime)
+		}
+		writeIndexJSON(w, r, version, off, lim, map[string]any{"status": status, "total": total, "offset": off, "limit": lim, "query": q, "has_more": off+len(files) < total, "files": files, "version": version})
 		return
 	}
 	rows, e := a.db.Query(`SELECT path,size,mtime FROM files WHERE lib=? ORDER BY `+order+` LIMIT ? OFFSET ?`, id, lim, off)
@@ -1538,7 +1547,17 @@ func (a *App) files(w http.ResponseWriter, r *http.Request) {
 	if busy {
 		status = "indexing"
 	}
-	writeJSON(w, 200, map[string]any{"status": status, "total": total, "offset": off, "limit": lim, "has_more": off+len(files) < total, "files": files})
+	/* v0.9.82：索引版本 —— 行数 + 最大 mtime 足以刻画「这库的索引变没变」。
+	   扫描进行中（busy）时不下发版本/ETag，强制客户端拿最新结果。 */
+	version := ""
+	if !busy {
+		var maxMtime int64
+		if e := a.db.QueryRow(`SELECT coalesce(max(mtime),0) FROM files WHERE lib=?`, id).Scan(&maxMtime); e != nil {
+			maxMtime = 0
+		}
+		version = libraryIndexVersion(id, order, "", total, maxMtime)
+	}
+	writeIndexJSON(w, r, version, off, lim, map[string]any{"status": status, "total": total, "offset": off, "limit": lim, "has_more": off+len(files) < total, "files": files, "version": version})
 }
 
 func (a *App) serve(w http.ResponseWriter, r *http.Request) {

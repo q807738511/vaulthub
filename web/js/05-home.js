@@ -233,7 +233,7 @@ function renderNowPlaying() {
   }
   host.innerHTML = rows.map(r => `<div class="now-row ${r.cls}">
     <div class="now-th" style="background:${r.cover ? "#1b1f28" : r.grad}">
-      ${r.cover ? `<img src="${esc(r.cover)}" alt="" onerror="this.remove()">` : `<span>${r.icon}</span>`}
+      ${r.cover ? `<img src="${esc(typeof coverThumbUrl === "function" ? coverThumbUrl(r.cover, 320) : r.cover)}" alt="" loading="lazy" decoding="async" onerror="this.remove()">` : `<span>${r.icon}</span>`}
       ${r.pct ? `<div class="prog"><i style="width:${r.pct.toFixed(1)}%"></i></div>` : ""}
     </div>
     <div class="now-body">
@@ -292,7 +292,7 @@ function homePosterCard(group, item, square) {
   const prog = Number(readingState(lib.id, path).progress || 0);
   return `<div class="hp ${square ? "sq" : ""}" onclick="openHomeMediaItem('${esc(group)}',${jsAttrArg(lib.id)},${jsAttrArg(path)})" title="${esc(path)}">
     <div class="img" style="${cover ? "" : "background:" + coverGradient(title)}">
-      ${cover ? `<img src="${esc(cover)}" alt="" loading="lazy" onerror="this.remove()">` : `<div class="fake">${icon}</div>`}
+      ${cover ? `<img src="${esc(typeof coverThumbUrl === "function" ? coverThumbUrl(cover, 320) : cover)}" alt="" loading="lazy" decoding="async" onerror="this.remove()">` : `<div class="fake">${icon}</div>`}
       <div class="tag">${esc(ext)}</div>
       <div class="lib">${esc(lib.name)}</div>
       <div class="play">▶</div>
@@ -417,6 +417,8 @@ async function rebuildAllLibraries() {
     const res = await fetch("/api/media/index/rebuild", { method: "POST", headers: sessionWriteHeaders(), credentials: "same-origin" });
     if (!await handleProtectedResponse(res)) { toast("⚠️ 会话已过期，请重新登录"); return; }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    /* v0.9.82：重新扫描会改变索引 —— 立即失效会话级整库索引缓存。 */
+    if (typeof libraryIndexSessionClear === "function") libraryIndexSessionClear();
     toast("🔄 已触发全部媒体库重新扫描");
     setTimeout(refreshHomeData, 1500);
   } catch (err) { toast("⚠️ 触发失败：" + err.message); }
@@ -426,6 +428,7 @@ async function rebuildOneLibrary(id) {
     const res = await fetch(`/api/media/index/rebuild?id=${encodeURIComponent(id)}`, { method: "POST", headers: sessionWriteHeaders(), credentials: "same-origin" });
     if (!await handleProtectedResponse(res)) { toast("⚠️ 会话已过期，请重新登录"); return; }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (typeof libraryIndexSessionClear === "function") libraryIndexSessionClear(id);
     toast("🔄 已触发重新扫描");
     setTimeout(refreshHomeData, 1500);
   } catch (err) { toast("⚠️ 触发失败：" + err.message); }
