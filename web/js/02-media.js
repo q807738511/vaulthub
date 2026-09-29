@@ -852,7 +852,24 @@ function renderSeriesLibraryContent(host, lib, files) {
   const body = shows.length ? `<div class="series-show-grid">${shows.map(show => renderSeriesShowCard(lib, show)).join("")}</div>` : '<div class="empty-tip">该电视剧库暂无支持的剧集文件</div>';
   host.innerHTML = `<section class="content-collection">${mediaLibraryHeading(lib, `${shows.length} 部剧 · ${files.length} 集`)}${body}</section>`;
 }
-function renderSeriesShowCard(lib, show) { const art=show.poster?`<img src="${esc(coverThumbUrl(show.poster, 320))}" alt="${esc(show.title)}" loading="lazy" decoding="async">`:`<span>${esc(show.title)}</span>`; const seasons=show.seasonList?.length||0, episodes=show.files?.length||0; return `<article class="media-poster-card series-show-card" data-series-show="${esc(show.key)}" onclick="openSeriesDetails(${jsAttrArg(lib.id)},${jsAttrArg(show.key)})"><div class="media-poster-art" style="${show.poster?"":`background:${coverGradient(show.title)}`}">${art}</div><div class="media-poster-info"><strong>${esc(show.title)}</strong><small>${esc([show.year, `${seasons} 季`, `${episodes} 集`, show.provider].filter(Boolean).join(" · "))}</small></div></article>`; }
+/* v0.9.83：剧集详情读的是缓存态结构（seriesShowCacheShape 只保留首个文件用于定位），
+   因此集数、集路径一律以 seasonList 汇总，避免详情里出现「共1集」这种明显错数，
+   也避免只给第一集写评分 / 简介元数据。 */
+function seriesShowEpisodePaths(show) {
+  const out = [];
+  ((show && Array.isArray(show.seasonList)) ? show.seasonList : []).forEach(s => {
+    ((s && Array.isArray(s.episodes)) ? s.episodes : []).forEach(ep => { const p = ep && ep.path ? String(ep.path) : ""; if (p) out.push(p); });
+  });
+  if (!out.length) ((show && Array.isArray(show.files)) ? show.files : []).forEach(f => { const p = f && f.path ? String(f.path) : ""; if (p) out.push(p); });
+  return out;
+}
+function seriesShowEpisodeCount(show) { return seriesShowEpisodePaths(show).length; }
+function seriesShowSeasonCount(show) {
+  const n = (show && Array.isArray(show.seasonList)) ? show.seasonList.length : 0;
+  if (n) return n;
+  return seriesShowEpisodePaths(show).length ? 1 : 0;
+}
+function renderSeriesShowCard(lib, show) { const art=show.poster?`<img src="${esc(coverThumbUrl(show.poster, 320))}" alt="${esc(show.title)}" loading="lazy" decoding="async">`:`<span>${esc(show.title)}</span>`; const seasons=show.seasonList?.length||0, episodes=show.files?.length||0; return `<article class="media-poster-card series-show-card" data-series-show="${esc(show.key)}" onclick="openSeriesDetails(${jsAttrArg(lib.id)},${jsAttrArg(show.key)})"><div class="media-poster-art" style="${show.poster?"":`background:${coverGradient(show.title)}`}">${art}</div><div class="media-poster-info"><strong>${esc(show.title)}</strong><small>${esc([show.year, `${seasons} 季`, `共${episodes}集`, show.provider].filter(Boolean).join(" · "))}</small></div></article>`; }
 /* v0.9.56：影视详情右上角关闭按钮按语境返回 ——
    剧集详情/电影详情下显示「返回媒体库」；单集详情查看时显示「返回详情」（回到剧集详情页）。 */
 let activeSeriesDetail = null;  // 最近一次打开的剧集详情 {libId, showKey}
@@ -898,7 +915,7 @@ async function openSeriesDetails(libId, showKey) { enterMovieDetailSidebarMode()
   const renderPage = (extras) => {
     const meta = { ...hero, ...(extras||{}) };
     const seasons = (show.seasonList||[]).map(season => renderSeriesSeasonCard(lib, show, season)).join("");
-    viewer.innerHTML = `<div class="media-reader-overlay movie-detail-page series-detail-page media-detail-backdrop" style="${esc(detailBackdropStyle(meta))}"><div class="movie-detail-scroll">${movieDetailCloseButton()}${renderMovieHero(lib,firstPath,meta)}${renderCastPanel(meta)}${renderRecPanel(meta)}<section><h3>季度</h3><div class="hint">点击季度标题展开/收起该季集列表；集数按网格展示（集号 + 集标题），点击任意一集即播放。多季剧集会为每一季生成独立季度卡片。</div></section>${seasons}${renderSeriesInfoPanel(show, meta.rating)}</div></div>`;
+    viewer.innerHTML = `<div class="media-reader-overlay movie-detail-page series-detail-page media-detail-backdrop" style="${esc(detailBackdropStyle(meta))}"><div class="movie-detail-scroll">${movieDetailCloseButton()}${renderMovieHero(lib,firstPath,meta)}${renderCastPanel(meta)}${renderRecPanel(meta)}<section><h3>季度</h3></section>${seasons}${renderSeriesInfoPanel(show, meta.rating)}</div></div>`;
     scrollViewerIntoView(viewer);
   };
   renderPage();
@@ -929,7 +946,7 @@ async function openSeriesDetails(libId, showKey) { enterMovieDetailSidebarMode()
     }
     if (Object.keys(extras).length) {
       show.rating = Number(extras.rating) || show.rating;
-      try { const all=readMovieMetadata(); show.files.forEach(f=>{ const p=String(f.path); all[p]={...(all[p]||{}), rating:show.rating, overview:extras.overview||(all[p]&&all[p].overview)||""}; }); writeMovieMetadata(all); } catch(e) {}
+      try { const all=readMovieMetadata(); seriesShowEpisodePaths(show).forEach(p=>{ all[p]={...(all[p]||{}), rating:show.rating, overview:extras.overview||(all[p]&&all[p].overview)||""}; }); writeMovieMetadata(all); } catch(e) {}
       renderPage(extras);
     }
   } catch(e){}
@@ -1097,6 +1114,32 @@ function recInfoArtUrl(item) {
   const backdrop = item.backdrop || (item.backdrop_path ? `${base}/w780${item.backdrop_path}` : "");
   return backdrop || item.poster || "";
 }
+/* v0.9.83：左侧图集 —— 主图（优先 backdrop，16:9）+ 若干张剧照。
+   简介较长时右侧文字很高，只放一张图会让左栏显得空，这里多渲染几张图自适应填充。 */
+function recInfoShotUrls(item) {
+  const out = [];
+  const push = u => { if (u && out.indexOf(u) < 0) out.push(u); };
+  push(recInfoArtUrl(item));
+  const extras = Array.isArray(item.shots) ? item.shots : [];
+  extras.forEach(push);
+  return out.slice(0, 4);
+}
+function recInfoShotHTML(url, alt) {
+  return `<img class="rec-info-shot" src="${esc(url)}" alt="${esc(alt)}" loading="lazy" decoding="async">`;
+}
+function fillRecInfoShots(item) {
+  const shots = recInfoShotUrls(item);
+  const main = document.getElementById("recInfoPoster");
+  if (main) { main.src = shots[0] || ""; main.style.display = shots[0] ? "" : "none"; main.alt = item.title || ""; }
+  const wrap = document.getElementById("recInfoShots");
+  if (!wrap) return;
+  const rest = shots.slice(1, 4);
+  wrap.innerHTML = rest.map((u, i) => recInfoShotHTML(u, `${item.title || ""} 剧照 ${i + 2}`)).join("");
+  wrap.hidden = !rest.length;
+  /* 只有一张图时让主图撑满左栏高度（简介很长时不再留一片空白）。 */
+  const art = document.getElementById("recInfoArt");
+  if (art) art.classList.toggle("has-shots", rest.length > 0);
+}
 function recInfoBodyHTML(item, opts) {
   const extra = (opts && opts.extra) || {};
   const source = (opts && opts.source) || "TMDB";
@@ -1112,9 +1155,8 @@ function recInfoBodyHTML(item, opts) {
 }
 async function showRecInfo(item) {
   const win = document.getElementById("recInfoModal") || buildRecInfoModal();
-  const poster = document.getElementById("recInfoPoster"), titleEl = document.getElementById("recInfoTitle"), body = document.getElementById("recInfoBody");
-  const art = recInfoArtUrl(item);
-  if (poster) { poster.src = art; poster.style.display = art ? "" : "none"; poster.alt = item.title || ""; }
+  const titleEl = document.getElementById("recInfoTitle"), body = document.getElementById("recInfoBody");
+  fillRecInfoShots(item);
   if (titleEl) titleEl.textContent = item.title || "";
   if (body) body.innerHTML = recInfoBodyHTML(item);
   openModal("recInfoModal");
@@ -1134,13 +1176,15 @@ async function showRecInfo(item) {
             overview: detail.overview || item.overview || "",
             poster: detail.poster_path ? `${base}/w342${detail.poster_path}` : item.poster,
             backdrop: detail.backdrop_path ? `${base}/w780${detail.backdrop_path}` : item.backdrop,
+            shots: ((detail.images && detail.images.backdrops) || [])
+            .filter(x => x.file_path && x.width && x.height && x.width / x.height >= 1.5 && x.width / x.height <= 1.9)
+            .map(x => `${base}/w780${x.file_path}`),
           });
           const el = document.getElementById("recInfoBody");
           if (el) el.innerHTML = recInfoBodyHTML(full, { extra: { genres: (detail.genres || []).map(x => x.name), runtime: detail.runtime || (detail.episode_run_time || [])[0] } });
           const t2 = document.getElementById("recInfoTitle");
           if (t2) t2.textContent = full.title;
-          const p2 = document.getElementById("recInfoPoster"), art2 = recInfoArtUrl(full);
-          if (p2 && art2) { p2.src = art2; p2.style.display = ""; }
+          fillRecInfoShots(full);
           return;
         }
       }
@@ -1148,7 +1192,7 @@ async function showRecInfo(item) {
   }
   /* v0.9.80/v0.9.82 兜底：TMDB 不可用、或剧集（日漫多为剧集）时回落 Bangumi。 */
   if ((kind === "tv" || !item.overview) && item.title) {
-    fetch("https://api.bgm.tv/v0/search/subjects", { method:"POST", headers:{ "Content-Type":"application/json", "User-Agent":"VaultHub/0.9.82 (https://github.com/q807738511/vaulthub)" }, body: JSON.stringify({ keyword: item.title, sort:"match", filter:{ type:[2], nsfw:false } }) })
+    fetch("https://api.bgm.tv/v0/search/subjects", { method:"POST", headers:{ "Content-Type":"application/json", "User-Agent":"VaultHub/0.9.83 (https://github.com/q807738511/vaulthub)" }, body: JSON.stringify({ keyword: item.title, sort:"match", filter:{ type:[2], nsfw:false } }) })
       .then(r => r.json()).then(d => {
         const hit = (d?.data||[]).find(x => x.name || x.name_cn);
         if (!hit) return;
@@ -1157,6 +1201,9 @@ async function showRecInfo(item) {
         const pic = hit.images?.large || hit.images?.common || "";
         const p2 = document.getElementById("recInfoPoster");
         if (p2 && pic) { p2.src = pic; p2.style.display = ""; }
+        /* Bangumi 只给一张封面：清空剧照网格，避免留下上一部作品的多图。 */
+        const sw = document.getElementById("recInfoShots");
+        if (sw) { sw.innerHTML = ""; sw.hidden = true; }
         b.innerHTML = recInfoBodyHTML({ year: String(hit.date || "").slice(0, 4), rating: Number(hit.rating?.score || 0), overview: String(hit.summary || "").split("\n")[0] }, { source: "Bangumi（bgm.tv）" });
       })
       .catch(() => {});
@@ -1164,7 +1211,7 @@ async function showRecInfo(item) {
 }
 function buildRecInfoModal() {
   const div=document.createElement("div"); div.className="modal-mask"; div.id="recInfoModal";
-  div.innerHTML=`<div class="modal rec-info-modal"><h3>视频信息<button class="close" onclick="closeModal('recInfoModal')">✕</button></h3><div class="rec-info-grid"><div class="rec-info-art"><img id="recInfoPoster" alt=""></div><div class="rec-info-main"><div id="recInfoTitle" class="rec-info-title"></div><div id="recInfoBody" class="rec-info-body"></div></div></div><button class="btn btn-primary" onclick="closeModal('recInfoModal')">关闭</button></div>`;
+  div.innerHTML=`<div class="modal rec-info-modal"><h3>视频信息<button class="close" onclick="closeModal('recInfoModal')">✕</button></h3><div class="rec-info-grid"><div class="rec-info-art" id="recInfoArt"><img id="recInfoPoster" alt=""><div class="rec-info-shots" id="recInfoShots" hidden></div></div><div class="rec-info-main"><div id="recInfoTitle" class="rec-info-title"></div><div id="recInfoBody" class="rec-info-body"></div></div></div></div>`;
   document.body.appendChild(div); return div;
 }
 function movieRecBadge(item, meta) {
@@ -1377,7 +1424,7 @@ function episodeGridHTML(lib, meta) {
   const eps = (ctx.episodes || []).filter(e => String(e.path) !== String(meta && meta.__path || ctx.path));
   if (!eps.length) return "";
   const cards = eps.map(e => `<figure class="ep-grid-card" onclick="openLocalMedia('movie',${jsAttrArg(lib.id)},${jsAttrArg(e.path)})" title="${esc(e.title||e.label)}">${e.thumb?`<img src="${esc(e.thumb)}" alt="${esc(e.label)}" loading="lazy">`:`<span class="ep-grid-fallback">${esc(e.label)}</span>`}<figcaption>${esc(e.label)}</figcaption></figure>`).join("");
-  return `<section class="episode-grid-section"><h3>${esc(ctx.showTitle||"")} · 第 ${esc(ctx.seasonNum)} 季 · 单集</h3><div class="episode-grid">${cards}</div></section>`;
+  return `<section class="episode-grid-section"><h3>${esc(ctx.showTitle||"")} 第${esc(ctx.seasonNum)}季 · 单集</h3><div class="episode-grid">${cards}</div></section>`;
 }
 function renderSeriesEpisodeRow(lib, ep, artUrl) {
   /* v0.9.81：季度集数改为「网格展示」——删除「详情」按钮，格子内同时显示集号与集标题。 */
@@ -1395,7 +1442,7 @@ function renderSeriesSeasonCard(lib, show, season) {
   const epBody = (season.episodes||[]).map(ep => renderSeriesEpisodeRow(lib, ep, ep.thumb || show.poster || show.fanart || "")).join("");
   const listClass = isFirst ? 'class="series-episode-list"' : 'class="series-episode-list is-collapsed"';
   const listStyle = isFirst ? "" : "display:none";
-  return `<section class="series-season-block" data-season="${esc(season.season)}"><h3 class="series-season-head" onclick="toggleSeriesSeason(this)"><span class="series-season-chev">${isFirst?"▾":"▸"}</span>${esc(show.title)} · 第 ${esc(season.season)} 季 <small>${epCount} 集</small></h3><div ${listClass} style="${listStyle}">${epBody}</div></section>`;
+  return `<section class="series-season-block" data-season="${esc(season.season)}"><h3 class="series-season-head" onclick="toggleSeriesSeason(this)"><span class="series-season-chev">${isFirst?"▾":"▸"}</span>${esc(show.title)} 第${esc(season.season)}季 <small>共${epCount}集</small></h3><div ${listClass} style="${listStyle}">${epBody}</div></section>`;
 }
 function toggleSeriesSeason(head){ const list=head.parentElement.querySelector(".series-episode-list"); if(!list)return; const open=list.classList.contains("is-collapsed"); list.classList.toggle("is-collapsed",!open); list.style.display=open?"":"none"; const ch=head.querySelector(".series-season-chev"); if(ch)ch.textContent=open?"▾":"▸"; }
 
@@ -1418,7 +1465,7 @@ function renderVideoInfoPanel(path, meta) {
 /* v0.9.81：剧集版「视频信息」（移至详情底部）。 */
 function renderSeriesInfoPanel(show, rating) {
   const r = Number(rating || show.rating) || 0;
-  return `<section><h3>视频信息</h3><dl class="movie-meta-list"><dt>剧名</dt><dd>${esc(show.title)}</dd><dt>年份</dt><dd>${esc(show.year||"--")}</dd><dt>季度</dt><dd>${esc(show.seasonList?.length||0)} 季 · ${esc(show.files?.length||0)} 集</dd><dt>TMDB 评分</dt><dd>${r?esc(r.toFixed(1)):"--"}</dd><dt>来源</dt><dd>${esc(show.provider||"文件名")}</dd></dl></section>`;
+  return `<section><h3>视频信息</h3><dl class="movie-meta-list"><dt>剧名</dt><dd>${esc(show.title)}</dd><dt>年份</dt><dd>${esc(show.year||"--")}</dd><dt>季度</dt><dd>${esc(seriesShowSeasonCount(show))} 季 · 共${esc(seriesShowEpisodeCount(show))}集</dd><dt>TMDB 评分</dt><dd>${r?esc(r.toFixed(1)):"--"}</dd><dt>来源</dt><dd>${esc(show.provider||"文件名")}</dd></dl></section>`;
 }
 
 function renderMovieDetails(lib,path,meta){try{meta={...meta,__path:path};}catch(e){}

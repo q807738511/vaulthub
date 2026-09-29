@@ -82,6 +82,6 @@ assert "已加载全部 ${files.length} / ${total} 项" in JS
 # 剧集缓存只存详情页真正读的字段，避免 localStorage 配额溢出后静默丢失
 assert "function seriesShowCacheShape(show)" in JS
 assert "seriesShowMemory" in JS
-# v0.9.82：不再直接 setItem 整份 JSON，而是走配额安全的 vaultStoreSet（失败退化为内存缓存）
+# v0.9.83：不再直接 setItem 整份 JSON，而是走配额安全的 vaultStoreSet（失败退化为内存缓存）
 assert "const key = seriesShowStoreKey(libId, show.key), shape = seriesShowCacheShape(show);" in JS
 assert "if (!vaultStoreSet(key, shape)) seriesShowMemory[key] = shape;" in JS

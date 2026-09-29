@@ -8,7 +8,7 @@ const VAULTHUB_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
    历史故障：v0.8.3→v0.8.5 的前端修改在服务端已生效，但浏览器仍执行缓存里的
    旧 02-media.js，用户看到「没有更新」。现在入口页 no-store、静态资源带 ?v=，
    并在启动时做一次一致性自查，不一致就绕过缓存强制重载一次。 */
-const VAULTHUB_SCRIPT_VERSION = "0.9.82";
+const VAULTHUB_SCRIPT_VERSION = "0.9.83";
 function ensureFreshAssets() {
   /* expected 为空 = 浏览器执行的 index.html 早于 v0.8.6（旧版本入口页没有声明
      版本号），同样属于"页面是旧的"，也需要换 URL 重新取一次。 */
@@ -328,6 +328,11 @@ const I18N = {
     setLibExistingHint: "侧边栏只展示这里创建时填写的库名称。每个库都可以单独重新扫描、打开或删除。",
     setLibAdd: "媒体库增加",
     setLibAddHint: "先选来源：本地媒体库使用容器内已挂载的绝对路径；外连服务接入 Emby / Navidrome / Komga 等现成服务器。",
+    setLibCustomModule: "自定义模块",
+    setLibCustomModuleHint: "自定义模块用于添加媒体库：选「通用网页」接入任意 Web 服务；选漫画 / 影视 / 音频则等价于新增一个对应大类的媒体库。",
+    setLibCustomModuleOpen: "打开自定义模块",
+    setLibCustomModuleTip: "模块的显示 / 隐藏与删除都在模块设置里管理。",
+    footerAboutHint: "版本与「系统设置 → 账户与登录 → 关于」中的版本参数保持一致",
     libSrcLocal: "本地媒体库", libSrcExternal: "外连服务",
     libPathHint: "路径必须是容器内已挂载且存在的绝对目录；库名称会直接作为侧边栏与刮削标识。",
     extLibName: "服务名称", extLibLan: "内网地址", extLibProxy: "反代 / 外网域名（可选）",
@@ -550,6 +555,11 @@ const I18N = {
     setLibExistingHint: "側邊欄只顯示這裡建立時填寫的庫名稱。每個庫都可以單獨重新掃描、開啟或刪除。",
     setLibAdd: "媒體庫新增",
     setLibAddHint: "先選來源：本地媒體庫使用容器內已掛載的絕對路徑；外連服務接入 Emby / Navidrome / Komga 等現成伺服器。",
+    setLibCustomModule: "自訂模組",
+    setLibCustomModuleHint: "自訂模組用於新增媒體庫：選「通用網頁」接入任意 Web 服務；選漫畫 / 影視 / 音訊則等同於新增一個對應大類的媒體庫。",
+    setLibCustomModuleOpen: "開啟自訂模組",
+    setLibCustomModuleTip: "模組的顯示 / 隱藏與刪除都在模組設定裡管理。",
+    footerAboutHint: "版本與「系統設定 → 帳戶與登入 → 關於」中的版本參數保持一致",
     libSrcLocal: "本地媒體庫", libSrcExternal: "外連服務",
     libPathHint: "路徑必須是容器內已掛載且存在的絕對目錄；庫名稱會直接作為側邊欄與刮削識別。",
     extLibName: "服務名稱", extLibLan: "內網位址", extLibProxy: "反代 / 外網網域（可選）",
@@ -778,6 +788,11 @@ const I18N = {
     setLibExistingHint: "The sidebar shows only the library names you enter here. Each library can be rescanned, opened or removed.",
     setLibAdd: "Add a library",
     setLibAddHint: "Pick a source: local libraries use absolute paths mounted inside the container; external services connect to Emby / Navidrome / Komga and friends.",
+    setLibCustomModule: "Custom modules",
+    setLibCustomModuleHint: "Custom modules add libraries: pick Web page for any site, or comic / movie / audio to add a library in that category.",
+    setLibCustomModuleOpen: "Open custom modules",
+    setLibCustomModuleTip: "Show / hide and delete modules in the module settings.",
+    footerAboutHint: "Version is kept in sync with 系统设置 → 账户与登录 → 关于",
     libSrcLocal: "Local library", libSrcExternal: "External service",
     libPathHint: "The path must be an absolute directory mounted inside the container; the library name is used in the sidebar and for scraping.",
     extLibName: "Service name", extLibLan: "LAN address", extLibProxy: "Reverse-proxy / public domain (optional)",
@@ -1419,6 +1434,13 @@ function openSettingsPage(tab) {
   const current = document.querySelector(".view.active");
   if (current && current.id !== "view-settings") settingsReturnView = current.id.replace(/^view-/, "");
   switchView("settings");
+  /* v0.9.83：自定义模块入口并入「系统设置 → 媒体库」，旧的 custom 入口
+     仍可用（书签 / 旧链接），打开媒体库面板并直接弹出模块设置。 */
+  if (tab === "custom") {
+    switchSetTab("library");
+    if (typeof openModuleModal === "function") openModuleModal();
+    return;
+  }
   switchSetTab(tab || currentSetTab || "library");
 }
 function closeSettingsPage() {
@@ -1426,6 +1448,30 @@ function closeSettingsPage() {
   switchView(back);
 }
 function settingsPageOpen() { return !!document.getElementById("view-settings")?.classList.contains("active"); }
+
+/* ---------- 页脚版本（v0.9.83） ----------
+   版本参数只在「系统设置 → 账户与登录 → 关于」维护一处，页面最下端的
+   页脚启动时读取同一份文本，避免两处各写一份、发版时漏改一处。 */
+function appVersionLabel() {
+  const about = document.querySelector(".about-row[data-about-ver] b");
+  const text = ((about && about.textContent) || "").trim();
+  return text || ("v" + VAULTHUB_SCRIPT_VERSION);
+}
+function syncAppFooterVersion() {
+  const foot = document.getElementById("appFooterVer");
+  if (!foot) return;
+  const label = appVersionLabel();
+  if (label && foot.textContent.trim() !== label) foot.textContent = label;
+  foot.title = label;
+}
+/* 媒体库面板的自定义模块计数：模块本身就是可添加的媒体库入口。 */
+function renderLibCustomModuleCount() {
+  const el = document.getElementById("libCustomModuleCount");
+  if (!el) return;
+  const n = (typeof customBoards !== "undefined" && Array.isArray(customBoards)) ? customBoards.length : 0;
+  el.textContent = n ? ("已添加 " + n + " 个模块") : "暂无自定义模块";
+  el.title = "自定义模块可以像媒体库一样接入站点或资源";
+}
 
 /* ---------- 头像设置：文字 / 颜色 / 上传图片，仅存本浏览器 ---------- */
 const LS_AVATAR = "vaulthub_avatar_v1";
@@ -1717,6 +1763,7 @@ function switchSetTab(key) {
   if (key === "account") { refreshSessionStatus(false); loadCaddyConfig(); loadAccountCredentialsUI(); }
   /* 媒体库标签页：把已添加的库和外连服务都刷新一遍，避免看到上一次的旧列表。 */
   if (key === "library") {
+    if (typeof renderLibCustomModuleCount === "function") renderLibCustomModuleCount();
     if (typeof refreshMediaLibraries === "function") refreshMediaLibraries(false);
     if (typeof renderHomeLibTable === "function") renderHomeLibTable();
     if (typeof renderHomeCount === "function") renderHomeCount();

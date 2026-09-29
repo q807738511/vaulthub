@@ -2586,7 +2586,9 @@ func (a *App) tmdb(w http.ResponseWriter, r *http.Request) {
 	   此前一律拼 ?api_key=，用户填的是 v4 Token → TMDB 返回
 	   {"status_code":7,"status_message":"Invalid API key..."}（HTTP 401），
 	   前端 if(res.ok) 整段跳过 → 详情/演职人员/TMDB 评分/影视推荐全部不生效。 */
-	u := base + "/" + endpoint + "?language=zh-CN&append_to_response=credits,recommendations"
+	/* v0.9.83：详情接口追加 images —— 推荐「视频信息」弹窗在简介较长时用
+	   多张横版剧照填充左侧图集（前端只保留 1.5~1.9 宽高比的图）。 */
+	u := base + "/" + endpoint + "?language=zh-CN&append_to_response=credits,recommendations,images"
 	if !tmdbIsBearerToken(key) {
 		u += "&api_key=" + url.QueryEscape(key)
 	}
