@@ -31,7 +31,7 @@ const appendedEls = [];
 const sandbox = {
   console, Date, Number, Math, String,
   URL: class { constructor(p, b){ this.href = "http://x" + p; } },
-  /* v0.9.82：writeMovieMetadata 改为「内存权威副本 + 合并落盘」，需要定时器桩。 */
+  /* v0.9.83：writeMovieMetadata 改为「内存权威副本 + 合并落盘」，需要定时器桩。 */
   setTimeout, clearTimeout,
   localStorage: store,
   toast: m => toasts.push(m),

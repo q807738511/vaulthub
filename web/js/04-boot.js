@@ -41,6 +41,8 @@ else {
 /* v0.9.74：顶栏导航（媒体库标签 / 全局搜索 / 头像菜单 / 布局模式）初始化。
    同样用 typeof 守卫：升级瞬间新 04-boot.js 可能配着缓存里的旧脚本集。 */
 if (typeof initTopNav === "function") initTopNav();
+/* v0.9.83：启动时把「关于」里的版本参数同步到页面最下端的页脚。 */
+if (typeof syncAppFooterVersion === "function") syncAppFooterVersion();
 
 document.getElementById("mpUrl").value = settings.mp.mpUrl || "";
 document.getElementById("mpUser").value = settings.mp.username || "";
