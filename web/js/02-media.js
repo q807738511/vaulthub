@@ -861,25 +861,44 @@ function closeEpisodeDetail() {
 async function openSeriesDetails(libId, showKey) { enterMovieDetailSidebarMode(); const lib=findMediaLibrary(libId), viewer=document.getElementById("local-media-viewer-movie"); if(!lib||!viewer)return; const show=readSeriesShow(libId,showKey); if(!show)return; activeSeriesDetail={libId, showKey}; seriesEpisodeReturn=null; const hero={title:show.title,overview:show.overview||"已按 Plex / Emby 风格根据根目录、Season 01 和 S01E01 规则聚合到同一剧集。",poster:show.poster,logo:show.logo,fanart:show.fanart,backdrop:show.backdrop,year:show.year,provider:show.provider,watched:show.watched,media_type:"series"}; /* v0.9.51：进入剧集详情即把该剧的分集按季/集顺序设为播放队列，
      这样播放器的「上一个 / 下一个 / 播放列表」走的是同一部剧而不是整库。 */
   setVideoPlaylist(libId, (show.seasonList||[]).flatMap(season=>(season.episodes||[]).map(ep=>({path:ep.path}))));
-  const episodeArt = show.poster || show.fanart || show.backdrop || "";
-  const seasons=(show.seasonList||[]).map(season=>renderSeriesSeasonCard(lib, show, season)).join(""); viewer.innerHTML=`<div class="media-reader-overlay movie-detail-page series-detail-page media-detail-backdrop" style="${esc(detailBackdropStyle(hero))}"><div class="movie-detail-scroll">${movieDetailCloseButton()}${renderMovieHero(lib,show.files?.[0]?.path||"",hero)}<section><h3>视频信息</h3><dl class="movie-meta-list"><dt>剧名</dt><dd>${esc(show.title)}</dd><dt>年份</dt><dd>${esc(show.year||"--")}</dd><dt>季度</dt><dd>${esc(show.seasonList?.length||0)} 季 · ${esc(show.files?.length||0)} 集</dd><dt>TMDB 评分</dt><dd>${show.rating?esc(Number(show.rating).toFixed(1)):"--"}</dd><dt>来源</dt><dd>${esc(show.provider||"文件名")}</dd></dl></section><section><h3>季度</h3><div class="hint">点击季度标题展开/收起该季集列表；点击集卡片直接播放。多季剧集会为每一季生成独立季度卡片。</div></section>${seasons}</div></div>`; scrollViewerIntoView(viewer);
-  /* v0.9.80 剧集 TMDB 评分补齐：进入剧集详情即按标题解析出 TMDB 剧集 id 并取 vote_average
-     （剧集刮削时 search/tv 的结果可能没带评分，这里补上并回写缓存）。 */
+  const firstPath = show.files?.[0]?.path || "";
+  /* v0.9.81：剧集详情顺序 —— 视频介绍(hero) → 演职人员(网格头像) → 视频推荐(网格略缩图) → 季度(网格集数) → 视频信息(底部)。 */
+  const renderPage = (extras) => {
+    const meta = { ...hero, ...(extras||{}) };
+    const seasons = (show.seasonList||[]).map(season => renderSeriesSeasonCard(lib, show, season)).join("");
+    viewer.innerHTML = `<div class="media-reader-overlay movie-detail-page series-detail-page media-detail-backdrop" style="${esc(detailBackdropStyle(meta))}"><div class="movie-detail-scroll">${movieDetailCloseButton()}${renderMovieHero(lib,firstPath,meta)}${renderCastPanel(meta)}${renderRecPanel(meta)}<section><h3>季度</h3><div class="hint">点击季度标题展开/收起该季集列表；集数按网格展示（集号 + 集标题），点击任意一集即播放。多季剧集会为每一季生成独立季度卡片。</div></section>${seasons}${renderSeriesInfoPanel(show, meta.rating)}</div></div>`;
+    scrollViewerIntoView(viewer);
+  };
+  renderPage();
+  /* v0.9.81：异步补齐剧集 TMDB 评分 / 演职人员 / 视频推荐，并回写元数据缓存。 */
   try {
-    const srv = await fetch(`/api/media/metadata?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(show.files?.[0]?.path||"")}`,{cache:"no-store"});
+    const srv = await fetch(`/api/media/metadata?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(firstPath)}`,{cache:"no-store"});
     const sdata = srv.ok ? await srv.json() : null;
+    const extras = {};
     const sRating = Number(sdata && (sdata.rating||sdata.vote_average)) || 0;
-    let h = (await readSeriesShow(lib.id, showKey)) || hero;
-    if (sRating && !show.rating) { h = {...h, rating:sRating}; }
-    if (scraperStatus.tmdb_enabled && show.title && !show.rating) {
+    if (sRating) extras.rating = sRating;
+    let tid = show.tmdb_id || (sdata && sdata.tmdb_id) || "";
+    const imgBase = scraperStatus.tmdb_image_base || "https://image.tmdb.org/t/p";
+    if (!tid && scraperStatus.tmdb_enabled && show.title) {
       const q = await fetch(`/api/media/tmdb?query=${encodeURIComponent(show.title)}&type=series`,{cache:"force-cache"});
-      if (q.ok) { const found=(await q.json())?.results||[]; const hit=found.find(x=>x.poster_path||x.overview||x.name); if(hit && hit.vote_average){ h={...h, rating:Number(hit.vote_average)||0, poster:h.poster||(hit.poster_path?`${scraperStatus.tmdb_image_base||"https://image.tmdb.org/t/p"}/w342${hit.poster_path}`:""), overview:h.overview||hit.overview||"" }; } }
+      if (q.ok) { const found=(await q.json())?.results||[]; const hit=found.find(x=>x.poster_path||x.overview||x.name); if (hit) { tid=hit.id; if(Number(hit.vote_average)) extras.rating=Number(hit.vote_average); if(!hero.overview && hit.overview) extras.overview=hit.overview; if(!hero.poster && hit.poster_path) extras.poster=`${imgBase}/w342${hit.poster_path}`; } }
     }
-    if (h !== hero) { show.rating = h.rating; try{const all=readMovieMetadata(); show.files.forEach(f=>{ all[String(f.path)] = {...(all[String(f.path)]||{}), rating:h.rating, overview:h.overview}; }); writeMovieMetadata(all);}catch(e){} }
-    if (h.rating && !show.rating) show.rating = h.rating;
-    if (show.rating) {
-      const cur = viewer.querySelector('.movie-detail-hero .movie-tmdb-rating');
-      if (cur) { cur.innerHTML = `<b>⭐ ${Number(show.rating).toFixed(1)}</b><small>TMDB</small>`; }
+    if (tid) {
+      let d = null;
+      try { const dres = await fetch(`/api/media/tmdb?id=${encodeURIComponent(tid)}&type=tv`,{cache:"force-cache"}); if (dres.ok) d = await dres.json(); } catch(e) {}
+      if (d) {
+        if (!extras.overview && d.overview) extras.overview = d.overview;
+        if (Number(d.vote_average)) extras.rating = Number(d.vote_average);
+        if (!hero.poster && d.poster_path) extras.poster = `${imgBase}/w342${d.poster_path}`;
+        extras.genres = (d.genres||[]).map(x=>x.name);
+        extras.cast = (d.credits?.cast||[]).slice(0,12);
+        extras.recommendations = movieRecommendationsFor(d, { ...hero, rating: extras.rating || Number(hero.rating) || 0 });
+      }
+    }
+    if (Object.keys(extras).length) {
+      show.rating = Number(extras.rating) || show.rating;
+      try { const all=readMovieMetadata(); show.files.forEach(f=>{ const p=String(f.path); all[p]={...(all[p]||{}), rating:show.rating, overview:extras.overview||(all[p]&&all[p].overview)||""}; }); writeMovieMetadata(all); } catch(e) {}
+      renderPage(extras);
     }
   } catch(e){}
 }
@@ -1215,25 +1234,51 @@ function episodeGridHTML(lib, meta) {
   const cards = eps.map(e => `<figure class="ep-grid-card" onclick="openLocalMedia('movie',${jsAttrArg(lib.id)},${jsAttrArg(e.path)})" title="${esc(e.title||e.label)}">${e.thumb?`<img src="${esc(e.thumb)}" alt="${esc(e.label)}" loading="lazy">`:`<span class="ep-grid-fallback">${esc(e.label)}</span>`}<figcaption>${esc(e.label)}</figcaption></figure>`).join("");
   return `<section class="episode-grid-section"><h3>${esc(ctx.showTitle||"")} · 第 ${esc(ctx.seasonNum)} 季 · 单集</h3><div class="episode-grid">${cards}</div></section>`;
 }
-function renderSeriesEpisodeRow(lib, ep, artUrl) { const path=String(ep.path), meta=ep.meta||movieMetadataFor(path), parsed=ep.parsed||parseSeriesEpisode(path); const safeArt=cssUrlValue(artUrl||meta.poster||""); const style=safeArt?`style="background-image:url('${esc(safeArt)}')"`:""; const label=parsed.label||`S${String(parsed.season||1).padStart(2,"0")}E${String(parsed.episode||0).padStart(2,"0")}`; return `<article class="series-episode-row series-episode-card" data-series-episode="${esc(path)}" onclick="openLocalMedia('movie',${jsAttrArg(lib.id)},${jsAttrArg(path)})"><div class="series-episode-thumb" ${style}><span class="series-episode-label">${esc(label)}</span></div><div class="series-episode-body"><div class="series-episode-title" title="${esc(path)}"><b>${esc(meta.title||parsed.title||label)}</b><small>${esc([meta.year,meta.provider].filter(Boolean).join(" · "))}</small></div><span class="media-file-meta">${esc(fileExt(path).toUpperCase())} · ${esc(formatFileSize(ep.size))}</span><div class="media-actions"><button class="btn" onclick="event.stopPropagation();openLocalMedia('movie',${jsAttrArg(lib.id)},${jsAttrArg(path)})">▶ 播放</button><button class="btn" onclick="event.stopPropagation();openEpisodeDetails(${jsAttrArg(lib.id)},${jsAttrArg(path)})">详情</button></div></div></article>`; }
+function renderSeriesEpisodeRow(lib, ep, artUrl) {
+  /* v0.9.81：季度集数改为「网格展示」——删除「详情」按钮，格子内同时显示集号与集标题。 */
+  const path = String(ep.path), meta = ep.meta || movieMetadataFor(path), parsed = ep.parsed || parseSeriesEpisode(path);
+  const safeArt = cssUrlValue(ep.thumb || artUrl || meta.poster || "");
+  const style = safeArt ? `style="background-image:url('${esc(safeArt)}')"` : "";
+  const label = parsed.label || `S${String(parsed.season||1).padStart(2,"0")}E${String(parsed.episode||0).padStart(2,"0")}`;
+  const epTitle = String(meta.title || parsed.title || "").trim();
+  return `<article class="series-episode-row series-episode-card" data-series-episode="${esc(path)}" onclick="openLocalMedia('movie',${jsAttrArg(lib.id)},${jsAttrArg(path)})" title="${esc(path)}"><div class="series-episode-thumb" ${style}><span class="series-episode-label">${esc(label)}</span></div><div class="series-episode-title"><b>${esc(label)}</b>${epTitle ? `<small title="${esc(epTitle)}">${esc(epTitle)}</small>` : ""}</div></article>`;
+}
 function renderSeriesSeasonCard(lib, show, season) {
   const idx = show.seasonList.findIndex(s => s.season === season.season);
   const isFirst = idx === 0;
   const epCount = (season.episodes||[]).length;
-  const epBody = (season.episodes||[]).map(ep => renderSeriesEpisodeRow(lib, ep, show.poster||show.fanart||"")).join("");
+  const epBody = (season.episodes||[]).map(ep => renderSeriesEpisodeRow(lib, ep, ep.thumb || show.poster || show.fanart || "")).join("");
   const listClass = isFirst ? 'class="series-episode-list"' : 'class="series-episode-list is-collapsed"';
   const listStyle = isFirst ? "" : "display:none";
-  return `<section class="series-season-block" data-season="${esc(season.season)}"><h3 class="series-season-head" onclick="toggleSeriesSeason(this)"><span class="series-season-chev">${isFirst?"▾":"▸"}</span>${esc(show.title)} · 第 ${esc(season.season)} 季 <small>${epCount} 集</small></h3><div ${listClass} style="${listStyle}"><div class="series-episode-list-items">${epBody}</div></div></section>`;
+  return `<section class="series-season-block" data-season="${esc(season.season)}"><h3 class="series-season-head" onclick="toggleSeriesSeason(this)"><span class="series-season-chev">${isFirst?"▾":"▸"}</span>${esc(show.title)} · 第 ${esc(season.season)} 季 <small>${epCount} 集</small></h3><div ${listClass} style="${listStyle}">${epBody}</div></section>`;
 }
 function toggleSeriesSeason(head){ const list=head.parentElement.querySelector(".series-episode-list"); if(!list)return; const open=list.classList.contains("is-collapsed"); list.classList.toggle("is-collapsed",!open); list.style.display=open?"":"none"; const ch=head.querySelector(".series-season-chev"); if(ch)ch.textContent=open?"▾":"▸"; }
 
 function renderMovieHero(lib,path,meta) { const heroArt = movieHeroArt(meta); const safeArt = cssUrlValue(heroArt.url); const style = safeArt ? `--movie-hero-art:url('${esc(safeArt)}')` : ""; const logo=meta.logo?`<img class="movie-detail-logo" src="${esc(meta.logo)}" alt="${esc(meta.title)} Logo">`:`<h1>${esc(meta.title)}</h1>`; return `<header class="movie-detail-hero ${heroArt.kind}" style="${style}">${logo}<p>${esc(meta.overview||"暂无电影介绍；可在系统设置中配置 TMDB API 进行刮削。")}</p><div class="movie-detail-actions"><button class="btn btn-primary" onclick="openLocalMedia('movie',${jsAttrArg(lib.id)},${jsAttrArg(path)})">▶ 播放</button><button class="btn" onclick="shareMovie(${jsAttrArg(lib.id)},${jsAttrArg(path)},${jsAttrArg(meta.title)})">↗ 分享</button><button class="btn" onclick="toggleMovieFavorite(${jsAttrArg(lib.id)},${jsAttrArg(path)},this)">${movieFlag("favorite",lib.id,path)?"♥ 已收藏":"♡ 收藏"}</button>${movieRatingWidget(lib.id,path)}<span class="movie-tmdb-rating" title="TMDB 评分">${meta.rating ? `<b>⭐ ${meta.rating.toFixed(1)}</b><small>TMDB</small>` : ""}</span><button class="btn" onclick="toggleMovieWatched(${jsAttrArg(lib.id)},${jsAttrArg(path)},this)">${meta.watched||movieFlag("watched",lib.id,path)?"✓ 已观看":"○ 未观看"}</button><button class="btn" onclick="openMediaMetadataEditor(${jsAttrArg(lib.id)},${jsAttrArg(path)})">✎ 编辑</button></div></header>`; }
-function renderMovieDetails(lib,path,meta){try{meta={...meta,__path:path};}catch(e){}/* v0.9.75：演职人员从文字方框换成圆形头像 + 下方文字（TMDB profile_path，缺图用首字圆形占位）。 */
-const castBase = scraperStatus.tmdb_image_base || "https://image.tmdb.org/t/p";
-const cast=(meta.cast||[]).map(x=>{
-  const face = x.profile_path ? `<img class="movie-cast-avatar" src="/api/media/cast/avatar?person=${encodeURIComponent(x.profile_path)}" alt="${esc(x.name||"")}" loading="lazy">` : `<span class="movie-cast-avatar movie-cast-avatar-fallback">${esc((x.name||"?").slice(0,1))}</span>`;
-  return `<article class="movie-cast-card">${face}<b>${esc(x.name||"")}</b><small>${esc(x.character||"")}</small></article>`;
-}).join("")||'<div class="empty-tip">暂无演职人员信息</div>';const rec=movieRecStripHTML(meta);return `<div class="media-reader-overlay movie-detail-page media-detail-backdrop" style="${esc(detailBackdropStyle(meta))}"><div class="movie-detail-scroll">${movieDetailCloseButton()}${renderMovieHero(lib,path,meta)}${episodeGridHTML(lib)}<section><h3>演职人员</h3><div class="movie-detail-strip movie-cast-strip">${cast}</div></section><section><h3>视频推荐</h3><div class="movie-detail-strip">${rec}</div></section><section><h3>视频信息</h3><dl class="movie-meta-list"><dt>文件</dt><dd>${esc(path)}</dd><dt>年份</dt><dd>${esc(meta.year||"--")}</dd><dt>类型</dt><dd>${esc((meta.genres||[]).join(" / ")||"--")}</dd><dt>时长</dt><dd>${meta.runtime?esc(meta.runtime+" 分钟"):"--"}</dd><dt>TMDB 评分</dt><dd>${meta.rating?esc(meta.rating.toFixed(1)):"--"}</dd><dt>来源</dt><dd>${esc(meta.provider||"文件名")}</dd></dl></section></div></div>`;}
+/* v0.9.81：演职人员改为「网格排序的头像展示」（auto-fill 网格，头像 + 名称 + 角色，长文本省略防穿模）。 */
+function renderCastPanel(meta) {
+  const cast = (meta.cast||[]).map(x => {
+    const face = x.profile_path ? `<img class="movie-cast-avatar" src="/api/media/cast/avatar?person=${encodeURIComponent(x.profile_path)}" alt="${esc(x.name||"")}" loading="lazy">` : `<span class="movie-cast-avatar movie-cast-avatar-fallback">${esc((x.name||"?").slice(0,1))}</span>`;
+    return `<article class="movie-cast-card">${face}<b title="${esc(x.name||"")}">${esc(x.name||"")}</b><small title="${esc(x.character||"")}">${esc(x.character||"")}</small></article>`;
+  }).join("") || '<div class="empty-tip">暂无演职人员信息</div>';
+  return `<section><h3>演职人员</h3><div class="movie-detail-strip movie-cast-strip">${cast}</div></section>`;
+}
+/* v0.9.81：视频推荐改为「网格展示」，限制文字穿模并优化观看（宽卡横排略缩图 + 标题/年份/评分）。 */
+function renderRecPanel(meta) {
+  return `<section><h3>视频推荐</h3><div class="movie-rec-grid">${movieRecStripHTML(meta)}</div></section>`;
+}
+function renderVideoInfoPanel(path, meta) {
+  return `<section><h3>视频信息</h3><dl class="movie-meta-list"><dt>文件</dt><dd>${esc(path)}</dd><dt>年份</dt><dd>${esc(meta.year||"--")}</dd><dt>类型</dt><dd>${esc((meta.genres||[]).join(" / ")||"--")}</dd><dt>时长</dt><dd>${meta.runtime?esc(meta.runtime+" 分钟"):"--"}</dd><dt>TMDB 评分</dt><dd>${meta.rating?esc(Number(meta.rating).toFixed(1)):"--"}</dd><dt>来源</dt><dd>${esc(meta.provider||"文件名")}</dd></dl></section>`;
+}
+/* v0.9.81：剧集版「视频信息」（移至详情底部）。 */
+function renderSeriesInfoPanel(show, rating) {
+  const r = Number(rating || show.rating) || 0;
+  return `<section><h3>视频信息</h3><dl class="movie-meta-list"><dt>剧名</dt><dd>${esc(show.title)}</dd><dt>年份</dt><dd>${esc(show.year||"--")}</dd><dt>季度</dt><dd>${esc(show.seasonList?.length||0)} 季 · ${esc(show.files?.length||0)} 集</dd><dt>TMDB 评分</dt><dd>${r?esc(r.toFixed(1)):"--"}</dd><dt>来源</dt><dd>${esc(show.provider||"文件名")}</dd></dl></section>`;
+}
+
+function renderMovieDetails(lib,path,meta){try{meta={...meta,__path:path};}catch(e){}
+/* v0.9.81：详情顺序统一为 —— 视频介绍(hero) → 演职人员(网格头像) → 视频推荐(网格略缩图) → 单集网格 → 视频信息(底部)。 */
+return `<div class="media-reader-overlay movie-detail-page movie-detail-backdrop" style="${esc(detailBackdropStyle(meta))}"><div class="movie-detail-scroll">${movieDetailCloseButton()}${renderMovieHero(lib,path,meta)}${renderCastPanel(meta)}${renderRecPanel(meta)}${episodeGridHTML(lib)}${renderVideoInfoPanel(path,meta)}</div></div>`;}
 function renderMoviePoster(lib, file) { const path=String(file.path), meta=movieMetadataFor(path), watched=!!meta.watched||movieFlag("watched",lib.id,path), art=meta.poster ? `<img src="${esc(meta.poster)}" alt="${esc(meta.title)}" loading="lazy">` : `<span>${esc(meta.title)}</span>`; return `<article class="media-poster-card ${watched?"is-read":""}" data-media-group="movie" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openMovieDetails(${jsAttrArg(lib.id)},${jsAttrArg(path)})"><div class="media-poster-art" style="${meta.poster ? "" : `background:${coverGradient(meta.title)}`}" >${art}<button class="movie-poster-settings" data-movie-settings title="观看状态" onclick="event.stopPropagation();toggleMovieWatched(${jsAttrArg(lib.id)},${jsAttrArg(path)},this)">${watched?"✓ 已观看":"○ 未观看"}</button></div><div class="media-poster-info"><strong>${esc(meta.title)}</strong><small>${esc([meta.year,meta.provider].filter(Boolean).join(" · ") || fileExt(path).toUpperCase())}</small></div></article>`; }
 function scrapeSeriesMetadata(host, lib, files) { return scrapeMovieMetadata(host, lib, files); }
 function toggleMediaResourceView(group) { mediaResourceView = mediaResourceView === "poster" ? "list" : "poster"; try { localStorage.setItem("vaulthub_media_resource_view",mediaResourceView); } catch(e) {} const lib=findMediaLibrary(localMediaSelection[group]); if(lib) loadLocalFiles(group,lib,group === "audio" ? audioCursor : 0); }
