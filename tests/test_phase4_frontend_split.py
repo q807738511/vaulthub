@@ -19,7 +19,7 @@ for f in ["01-state.js", "03-quality.js", "02-media.js", "03-features.js", "04-b
 # The split assets must exist.
 css = ROOT / "web" / "css" / "main.css"
 assert css.exists() and css.stat().st_size > 0
-# v0.9.85：03-quality.js（画面清晰度与色彩档位）插入 01-state.js 与 02-media.js 之间，
+# v0.9.86：03-quality.js（画面清晰度与色彩档位）插入 01-state.js 与 02-media.js 之间，
 # 后面的顺序断言按同一顺序校验。
 js_files = ["01-state.js", "03-quality.js", "02-media.js", "03-features.js", "04-boot.js"]
 for f in js_files:

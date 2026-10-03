@@ -160,7 +160,7 @@ const chk = (name, cond, extra) => {
   api.readingProgressCache["c1"] = {};
   api.setComicShelfView("shelf");   // 回到未读视图，1200 本全部应可见
   await wait();
-  /* 重新扫描后应用会主动失效会话索引缓存（v0.9.85），这里还原同一步骤。 */
+  /* 重新扫描后应用会主动失效会话索引缓存（v0.9.86），这里还原同一步骤。 */
   api.libraryIndexSessionClear("c1");
   requests.length = 0;
   await api.loadLocalFiles("comic", lib, 0);

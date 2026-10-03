@@ -14,7 +14,7 @@ dockerfile = (ROOT / "Dockerfile").read_text()
 
 assert "sessionIdleTimeout = 30 * time.Minute" in manager
 # v0.9.58：会话从 map[string]time.Time 改为 map[string]sessionEntry（含 mustChange 受限会话标记）
-# v0.9.85：会话 TTL 按会话自身的保持天数（30 天默认 / 60 天勾选），cookie 为持久 cookie。
+# v0.9.86：会话 TTL 按会话自身的保持天数（30 天默认 / 60 天勾选），cookie 为持久 cookie。
 assert "m.sessions[sid] = sessionEntry{expires: time.Now().Add(ttl), mustChange: forceChange, days: days}" in manager
 assert "MaxAge: int(ttl.Seconds()), Expires: time.Now().Add(ttl)" in manager
 assert "handle /api/logout" in manager

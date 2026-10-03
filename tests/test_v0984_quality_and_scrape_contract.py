@@ -16,6 +16,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 HTML = (ROOT / "index.html").read_text(encoding="utf-8")
 STATE = (ROOT / "web/js/01-state.js").read_text(encoding="utf-8")
 MEDIA = (ROOT / "web/js/02-media.js").read_text(encoding="utf-8")
+HOME = (ROOT / "web/js/05-home.js").read_text(encoding="utf-8")
 QUALITY = (ROOT / "web/js/03-quality.js").read_text(encoding="utf-8")
 FEATURES = (ROOT / "web/js/03-features.js").read_text(encoding="utf-8")
 BOOT = (ROOT / "web/js/04-boot.js").read_text(encoding="utf-8")
@@ -101,9 +102,15 @@ check("4i 服务端扫描跳过原盘结构文件（.mpls/.clpi/.bdmv…）",
       "bluRayStructuralExt" in SCAN and "func skipIndexFile(" in SCAN and "func inBluRayStructure(" in SCAN)
 check("4j 两个遍历函数都做了拦截", SCAN.count("if skipIndexFile(rel) {") == 2)
 check("4k 保留原盘真实视频片段（.m2ts 不跳过）", '".m2ts": true' not in SCAN and '".mpls": true' in SCAN)
-check("4l 库标题提供「重新刮削 / 重试失败项」入口",
-      "function movieScrapeControls(" in MEDIA and 'refreshMovieMetadata(\'all\')' in MEDIA and 'refreshMovieMetadata(\'failed\')' in MEDIA)
+# v0.9.86（客户要求）：整库「重新刮削 / 重试失败项」按钮从影视页迁走 ——
+# 入口统一在「系统设置 → 媒体库 → 已添加的媒体库」的自动 / 逐项扫描。
+check("4l 影视页只保留状态与指路按钮（大刮削按钮已迁出）",
+      "function movieScrapeControls(" in MEDIA and "openSettingsPage('library')" in MEDIA
+      and "🔄 重新刮削" not in MEDIA.split("function movieScrapeControls(")[1][:400])
 check("4m 电影库与剧集库标题都挂上入口", MEDIA.count("movieScrapeControls(files)") >= 2)
+check("4m2 系统设置内提供自动扫描与逐项扫描",
+      "function autoScanLibrary(" in MEDIA and "function openLibraryItemScan(" in MEDIA
+      and "autoScanLibrary('${esc(lib.id)}')" in HOME and "openLibraryItemScan('${esc(lib.id)}')" in HOME)
 check("4n 旧的死代码签名已替换（带 scope 参数）", "function refreshMovieMetadata(scope)" in MEDIA)
 check("4o 刮削状态可见（刮削 n/m · x 待重试）", "function movieScrapeSummary(" in MEDIA and 'id="movieScrapeStatus"' in MEDIA)
 check("4p 失败原因可诊断（凭据/未命中/请求失败）",
@@ -112,11 +119,11 @@ check("4q 渲染改节流（不再每条整库重绘）", "function scheduleMovi
 check("4r 原盘片段数在卡片上可见", "原盘 · ${file.disc_fragments} 个片段" in MEDIA)
 
 print("5. 版本与文档")
-check("5a 版本号已升至 0.9.85", 'VAULTHUB_ASSET_VERSION = "0.9.85"' in HTML and 'const VAULTHUB_SCRIPT_VERSION = "0.9.85"' in STATE)
-check("5b 关于 / 侧栏 / 页脚标语一致", HTML.count("v0.9.85 · ") == 3)
-check("5c 脚本引用带新版本号", 'web/js/03-quality.js?v=0.9.85' in HTML and 'web/js/02-media.js?v=0.9.85' in HTML)
-check("5d Update Log 顶部为 v0.9.85", LOG.startswith("# VaultHub 蜀鼠之家 v0.9.85"))
-check("5e Release Notes 存在", (ROOT / ".github/RELEASE_NOTES_0.9.85.md").exists())
+check("5a 版本号已升至 0.9.86", 'VAULTHUB_ASSET_VERSION = "0.9.86"' in HTML and 'const VAULTHUB_SCRIPT_VERSION = "0.9.86"' in STATE)
+check("5b 关于 / 侧栏 / 页脚标语一致", HTML.count("v0.9.86 · ") == 3)
+check("5c 脚本引用带新版本号", 'web/js/03-quality.js?v=0.9.86' in HTML and 'web/js/02-media.js?v=0.9.86' in HTML)
+check("5d Update Log 顶部为 v0.9.86", LOG.startswith("# VaultHub 蜀鼠之家 v0.9.86"))
+check("5e Release Notes 存在", (ROOT / ".github/RELEASE_NOTES_0.9.86.md").exists())
 
 if FAILS:
     print(f"\nFAIL: {len(FAILS)} 项未通过：")

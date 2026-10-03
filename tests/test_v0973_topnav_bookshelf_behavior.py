@@ -161,7 +161,9 @@ const chk = (name, cond, extra) => {
   await api.loadLocalFiles("comic", lib, 0);
   const html = () => target.innerHTML;
   chk("页头显示库名", html().includes("<h1>漫画</h1>"));
-  chk("页头元信息含本视图/全库与路径", html().includes("本视图 <b>25</b> 本") && html().includes("全库 <b>45</b> 本") && html().includes("<code>/MH</code>"));
+  /* v0.9.86（客户要求）：漫画 / 电子书的副标题不再展示媒体库映射的空间位置，
+     页头只保留「本视图 / 全库 / 本页」这些阅读相关信息。 */
+  chk("页头元信息含本视图/全库且不再展示映射路径", html().includes("本视图 <b>25</b> 本") && html().includes("全库 <b>45</b> 本") && !html().includes("<code>/MH</code>"));
   chk("页头含扫描时间", html().includes("上次扫描"));
   chk("三个书架标签齐备（书架/喜欢/历史阅读，无全部）", ["书架", "喜欢", "🕘 历史阅读"].every(x => html().includes(">" + x) || html().includes(x)) && !html().includes(">全部"));
   chk("标签带计数", html().includes("书架 25") && html().includes("喜欢 0") && html().includes("历史阅读 20"));

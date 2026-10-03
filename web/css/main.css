@@ -2009,7 +2009,16 @@ html[data-uimode="pc"] .libtab, html[data-uimode="pc"] .btn { min-height:36px; }
 /* ---------- v0.9.85：通知喇叭 / 硬盘与网络合并卡 / 正在播放续播 / 音乐外观色彩档位补全 ---------- */
 
 /* 搜索框右侧的通知喇叭（功能通知 + 刮削信息明细） */
-.tn-notify-wrap { position: relative; display: flex; align-items: center; }
+/* v0.9.86（客户要求）：通知喇叭放在搜索框右侧、账户/系统设置按钮（.tn-avatar）左侧，
+   并且「两者中间」—— 两侧给对称间距，视觉上正落在两者正中。
+   旧实现 .tn-actions 没有任何样式（块级容器），喇叭与头像会各占一行、并不并排。 */
+.tn-actions { display: flex; align-items: center; flex: 0 0 auto; }
+/* 左侧间距要减掉顶栏自身的 flex gap（8px）—— 否则实测左 24px / 右 14px，
+   视觉上会偏右；补成左右各 14px 才是真正的「两者中间」。 */
+.tn-notify-wrap { position: relative; display: flex; align-items: center; margin: 0 14px 0 6px; }
+@media (max-width: 760px) {
+  .tn-notify-wrap { margin: 0 6px 0 0; }
+}
 .tn-bell { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--border2); background: var(--card2); color: var(--text2);
   display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; position: relative; transition: border-color .15s, transform .15s; }
 .tn-bell:hover, .tn-bell[aria-expanded="true"] { border-color: var(--accent); color: var(--text); transform: translateY(-1px); }
@@ -2081,3 +2090,16 @@ html:not([data-quality="original"]):not([data-quality="high"]) .audio-lyrics-pag
 html[data-quality="minimal"] .audio-lyrics-page img { filter: blur(26px) brightness(.82) saturate(0); }
 html:not([data-quality="original"]):not([data-quality="high"]) :is(.audio-expand, .audio-fullscreen, .audio-player, .audio-latest-grid, .audio-album-grid) :is(.audio-poster-frame, .audio-fullscreen-poster, .audio-album-cover, .audio-latest-cover, .audio-artist-cover, .audio-player-cover, .audio-player-cover-wrap, .audio-lyrics-page) { filter: saturate(var(--vh-quality-color, 1)); }
 html[data-quality="minimal"] :is(.audio-expand, .audio-fullscreen, .audio-player, .audio-latest-grid, .audio-album-grid) :is(.audio-poster-frame, .audio-fullscreen-poster, .audio-album-cover, .audio-latest-cover, .audio-artist-cover, .audio-player-cover, .audio-player-cover-wrap, .audio-lyrics-page) { filter: saturate(0) contrast(1.04); }
+
+/* ---------- v0.9.86：影视刮削迁入系统设置 / 逐项扫描弹窗 ---------- */
+.lib-scan-list { display:flex; flex-direction:column; gap:6px; max-height:min(56vh,460px); overflow:auto; }
+.lib-scan-row { display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid var(--border);
+  border-radius:9px; background:var(--card2); }
+.lib-scan-row.busy { border-color:var(--accent); background:color-mix(in srgb,var(--accent) 12%,var(--card2)); }
+.lib-scan-row[data-scan-state="failed"] { border-left:3px solid var(--red); }
+.lib-scan-row[data-scan-state="skip"] { border-left:3px solid var(--amber,#d29922); }
+.lib-scan-row[data-scan-state="ok"] { border-left:3px solid var(--accent); }
+.lib-scan-name { min-width:0; flex:1 1 auto; }
+.lib-scan-name b { display:block; font-size:13.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.lib-scan-name small { display:block; margin-top:3px; color:var(--text3); font-size:11.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.lib-scan-row .row-acts { flex:0 0 auto; }

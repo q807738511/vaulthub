@@ -30,9 +30,9 @@ def check(name, cond, extra=""):
     checks[name] = (bool(cond), extra)
 
 # ============ 版本一致性 ============
-check("本版版本", 'VAULTHUB_ASSET_VERSION = "0.9.85"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.85"' in STATE)
-check("资源缓存串", HTML.count("?v=0.9.85") >= 7, f"实际 {HTML.count('?v=0.9.85')}")
-check("UI 版本角标", "0.9.85" in HTML)
+check("本版版本", 'VAULTHUB_ASSET_VERSION = "0.9.86"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.86"' in STATE)
+check("资源缓存串", HTML.count("?v=0.9.86") >= 7, f"实际 {HTML.count('?v=0.9.86')}")
+check("UI 版本角标", "0.9.86" in HTML)
 
 # ============ 需求 1：刮削识别策略（特殊字符 / 日语 / 全角） ============
 check("归一化：宽度折叠（含半角片假名）",
