@@ -108,7 +108,8 @@ chk("C6 失败 → 扫描失败胶囊", run(media, `libraryScanPillHtml({id:"m1"
 const controls = run(media, `movieScrapeControls([{path:"/M/a.mkv"}])`);
 chk("D1 库页刮削区无「重新刮削 / 重试失败项」按钮", !controls.includes("重新刮削") && !controls.includes("重试失败项"), controls);
 chk("D2 库页给指路按钮（系统设置）", controls.includes("openSettingsPage('library')"), controls);
-chk("D3 仍展示刮削状态徽标", controls.includes("movieScrapeStatus"), controls);
+/* v0.9.87：队列徽标从库页移除（改由顶栏通知中心展示），这里反向断言。 */
+chk("D3 库页不再展示刮削队列徽标", !controls.includes("movieScrapeStatus"), controls);
 
 /* ============ 五、音乐库不再分页 ============ */
 const audioHtml = run(media, `(() => { const host = { innerHTML: "", querySelector: () => null, querySelectorAll: () => [] }; renderAudioLibraryContent(host, {id:"a1",name:"音乐"}, [{path:"/M/a.mp3"}], {total:1}); return host.innerHTML; })()`);

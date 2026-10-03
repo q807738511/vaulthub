@@ -18,7 +18,7 @@ let vaultHubSessionPingedAt = 0;
    历史故障：v0.8.3→v0.8.5 的前端修改在服务端已生效，但浏览器仍执行缓存里的
    旧 02-media.js，用户看到「没有更新」。现在入口页 no-store、静态资源带 ?v=，
    并在启动时做一次一致性自查，不一致就绕过缓存强制重载一次。 */
-const VAULTHUB_SCRIPT_VERSION = "0.9.86";
+const VAULTHUB_SCRIPT_VERSION = "0.9.87";
 function ensureFreshAssets() {
   /* expected 为空 = 浏览器执行的 index.html 早于 v0.8.6（旧版本入口页没有声明
      版本号），同样属于"页面是旧的"，也需要换 URL 重新取一次。 */
@@ -350,6 +350,14 @@ const I18N = {
     setLibrary: "媒体库", setLibExisting: "已添加的媒体库",
     /* v0.9.86：影视刮削迁入系统设置 + 媒体名称/年份编辑 */
     scrapeGoSettings: "刮削设置",
+    /* v0.9.87：刮削地区（中/日/美）—— 决定 TMDB 请求 language。 */
+    scrapeRegionLabel: "刮削地区（TMDB 语言）",
+    scrapeRegionAuto: "跟随界面语言",
+    scrapeRegionCn: "中国（中文简体 · zh-CN）",
+    scrapeRegionJp: "日本（日文 · ja-JP）",
+    scrapeRegionUs: "美国（英文 · en-US）",
+    scrapeRegionHint: "刮削与详情页的 TMDB 请求按该地区语言查询：选「日本」查日文原名、选「美国」查英文原名，可避免中文界面下查不到日/美作品而回落成资源名（文件名展示）。",
+    notifyScrapeQueue: "刮削队列 {ok}/{total}",
     libScanAuto: "自动扫描（整库逐项刮削）",
     libScanItem: "逐项扫描（手动选择条目）",
     libScanTitle: "逐项扫描",
@@ -607,6 +615,13 @@ const I18N = {
     setLibrary: "媒體庫", setLibExisting: "已新增的媒體庫",
     /* v0.9.86 */
     scrapeGoSettings: "刮削設定",
+    scrapeRegionLabel: "刮削地區（TMDB 語言）",
+    scrapeRegionAuto: "跟隨介面語言",
+    scrapeRegionCn: "中國（中文簡體 · zh-CN）",
+    scrapeRegionJp: "日本（日文 · ja-JP）",
+    scrapeRegionUs: "美國（英文 · en-US）",
+    scrapeRegionHint: "刮削與詳情頁的 TMDB 請求依該地區語言查詢：選「日本」查日文原名、選「美國」查英文原名，可避免中文介面查不到日/美作品而回落成資源名（檔名展示）。",
+    notifyScrapeQueue: "刮削隊列 {ok}/{total}",
     libScanAuto: "自動掃描（整庫逐項刮削）",
     libScanItem: "逐項掃描（手動選擇條目）",
     libScanTitle: "逐項掃描",
@@ -870,6 +885,13 @@ const I18N = {
     setLibrary: "Libraries", setLibExisting: "Existing libraries",
     /* v0.9.86 */
     scrapeGoSettings: "Scrape settings",
+    scrapeRegionLabel: "Scrape region (TMDB language)",
+    scrapeRegionAuto: "Follow interface language",
+    scrapeRegionCn: "China (Simplified Chinese · zh-CN)",
+    scrapeRegionJp: "Japan (Japanese · ja-JP)",
+    scrapeRegionUs: "United States (English · en-US)",
+    scrapeRegionHint: "TMDB requests for scraping and detail pages use this region's language, so Japanese/US titles are found by their original names instead of falling back to the raw file name.",
+    notifyScrapeQueue: "Scrape queue {ok}/{total}",
     libScanAuto: "Auto scan (scrape every item)",
     libScanItem: "Item-by-item scan",
     libScanTitle: "Item-by-item scan",

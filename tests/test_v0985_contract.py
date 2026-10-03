@@ -88,7 +88,11 @@ check("空态与标题走 i18n", 't("castEmpty")' in MEDIA and 't("castTitle")' 
 check("三语都有 castAs/castVoiceAs/castTitle", all(STATE.count(k) >= 3 for k in ["castAs:", "castVoiceAs:", "castTitle:"]))
 check("TMDB 请求带界面语言", MEDIA.count("&lang=${tmdbLangTag()}") >= 5 and "function tmdbLangTag(" in MEDIA)
 check("语言切换后重取演职人员", "function refreshDetailLanguage(" in MEDIA and "refreshDetailLanguage" in FEATURES)
-check("media-go 支持 lang 白名单", "func tmdbLanguage(q string) string" in MGOTEST and 'lang := tmdbLanguage(r.URL.Query().Get("lang"))' in MGOTEST)
+# v0.9.87：语言解析改为「显式 lang > region 参数 > 已配置刮削地区 > zh-CN」，仍是白名单。
+check("media-go 支持 lang 白名单",
+      "func tmdbLanguage(q string) string" in MGOTEST
+      and 'if q := strings.TrimSpace(r.URL.Query().Get("lang")); q != "" {' in MGOTEST
+      and "lang = tmdbLanguage(q)" in MGOTEST)
 
 print("== 8. 硬件监控压缩（硬盘和网络） ==")
 check("卡片标题改为「硬盘和网络」", 'data-i18n="netDisksTitle"' in HTML and "netDisksTitle" in STATE)

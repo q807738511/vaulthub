@@ -112,18 +112,23 @@ check("4m2 系统设置内提供自动扫描与逐项扫描",
       "function autoScanLibrary(" in MEDIA and "function openLibraryItemScan(" in MEDIA
       and "autoScanLibrary('${esc(lib.id)}')" in HOME and "openLibraryItemScan('${esc(lib.id)}')" in HOME)
 check("4n 旧的死代码签名已替换（带 scope 参数）", "function refreshMovieMetadata(scope)" in MEDIA)
-check("4o 刮削状态可见（刮削 n/m · x 待重试）", "function movieScrapeSummary(" in MEDIA and 'id="movieScrapeStatus"' in MEDIA)
+# v0.9.87：库页的刮削队列徽标（#movieScrapeStatus）整体移除，队列状态改由顶栏通知中心承载。
+check("4o 刮削状态经通知中心可见（库页不再有队列徽标）",
+      "function movieScrapeSummary(" in MEDIA
+      and 'id="movieScrapeStatus"' not in MEDIA
+      and "function scrapeQueueNotice(" in MEDIA
+      and "scrape-queue-" in MEDIA)
 check("4p 失败原因可诊断（凭据/未命中/请求失败）",
       '"TMDB 凭据无效' in MEDIA and '"TMDB 未命中该标题"' in MEDIA and '"未配置 TMDB 凭据"' in MEDIA)
 check("4q 渲染改节流（不再每条整库重绘）", "function scheduleMovieRender(" in MEDIA and "clearTimeout(movieRenderTimer)" in MEDIA)
 check("4r 原盘片段数在卡片上可见", "原盘 · ${file.disc_fragments} 个片段" in MEDIA)
 
 print("5. 版本与文档")
-check("5a 版本号已升至 0.9.86", 'VAULTHUB_ASSET_VERSION = "0.9.86"' in HTML and 'const VAULTHUB_SCRIPT_VERSION = "0.9.86"' in STATE)
-check("5b 关于 / 侧栏 / 页脚标语一致", HTML.count("v0.9.86 · ") == 3)
-check("5c 脚本引用带新版本号", 'web/js/03-quality.js?v=0.9.86' in HTML and 'web/js/02-media.js?v=0.9.86' in HTML)
-check("5d Update Log 顶部为 v0.9.86", LOG.startswith("# VaultHub 蜀鼠之家 v0.9.86"))
-check("5e Release Notes 存在", (ROOT / ".github/RELEASE_NOTES_0.9.86.md").exists())
+check("5a 版本号已升至 0.9.87", 'VAULTHUB_ASSET_VERSION = "0.9.87"' in HTML and 'const VAULTHUB_SCRIPT_VERSION = "0.9.87"' in STATE)
+check("5b 关于 / 侧栏 / 页脚标语一致", HTML.count("v0.9.87 · ") == 3)
+check("5c 脚本引用带新版本号", 'web/js/03-quality.js?v=0.9.87' in HTML and 'web/js/02-media.js?v=0.9.87' in HTML)
+check("5d Update Log 顶部为 v0.9.87", LOG.startswith("# VaultHub 蜀鼠之家 v0.9.87"))
+check("5e Release Notes 存在", (ROOT / ".github/RELEASE_NOTES_0.9.87.md").exists())
 
 if FAILS:
     print(f"\nFAIL: {len(FAILS)} 项未通过：")
