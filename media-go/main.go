@@ -79,14 +79,18 @@ type App struct {
 	runtimeConfig     string
 	metadataOverrides string
 	scraperMode       string
-	tmdbAPIKey        string
-	tmdbAPIBase       string
-	tmdbImageBase     string
-	tvdbAPIKey        string
-	tvdbAPIBase       string
-	scraperProxy      string
-	sharePublicBase   string
-	configTrusted     bool // false when config exists but cannot be read/decoded
+	/* v0.9.87：刮削地区（auto/cn/jp/us）—— 决定 TMDB 请求 language，
+	   让「按地区刮削」覆盖 TMDB 默认语言，避免中文界面下用中文查不到
+	   日/美资源的原名而回落到资源名（文件名展示）。 */
+	scrapeRegion    string
+	tmdbAPIKey      string
+	tmdbAPIBase     string
+	tmdbImageBase   string
+	tvdbAPIKey      string
+	tvdbAPIBase     string
+	scraperProxy    string
+	sharePublicBase string
+	configTrusted   bool // false when config exists but cannot be read/decoded
 	// Hooks are test-only fault/interleaving instrumentation, nil in production.
 	scanWriteHook     func(string, int)
 	removeHook        func(string)
@@ -104,13 +108,15 @@ type FileEntry struct {
 	Mtime int64  `json:"mtime"`
 }
 type RuntimeConfig struct {
-	ScraperMode               string `json:"scraper_mode"`
-	TMDBAPIKey                string `json:"tmdb_api_key,omitempty"`
-	TMDBAPIBase               string `json:"tmdb_api_base"`
-	TMDBImageBase             string `json:"tmdb_image_base"`
-	TVDBAPIKey                string `json:"tvdb_api_key,omitempty"`
-	TVDBAPIBase               string `json:"tvdb_api_base"`
-	ScraperProxy              string `json:"scraper_proxy,omitempty"`
+	ScraperMode   string `json:"scraper_mode"`
+	TMDBAPIKey    string `json:"tmdb_api_key,omitempty"`
+	TMDBAPIBase   string `json:"tmdb_api_base"`
+	TMDBImageBase string `json:"tmdb_image_base"`
+	TVDBAPIKey    string `json:"tvdb_api_key,omitempty"`
+	TVDBAPIBase   string `json:"tvdb_api_base"`
+	ScraperProxy  string `json:"scraper_proxy,omitempty"`
+	/* v0.9.87：刮削地区 —— auto（跟随界面语言）/ cn（zh-CN）/ jp（ja-JP）/ us（en-US）。 */
+	ScrapeRegion              string `json:"scrape_region,omitempty"`
 	ScraperProxySet           bool   `json:"scraper_proxy_set,omitempty"`
 	SharePublicBase           string `json:"share_public_base,omitempty"`
 	SharePublicBaseSet        bool   `json:"share_public_base_set,omitempty"`
@@ -200,6 +206,7 @@ func (a *App) load() {
 	a.runtimeConfig = env("MEDIA_RUNTIME_CONFIG", "/data/media-runtime.json")
 	a.metadataOverrides = env("MEDIA_METADATA_OVERRIDES", "/data/media-metadata-overrides.json")
 	a.scraperMode = env("MEDIA_SCRAPER_MODE", "auto")
+	a.scrapeRegion = normalizeScrapeRegion(os.Getenv("SCRAPE_REGION"))
 	a.tmdbAPIKey = os.Getenv("TMDB_API_KEY")
 	a.tmdbAPIBase = strings.TrimRight(env("TMDB_API_BASE", "https://api.themoviedb.org/3"), "/")
 	a.tmdbImageBase = strings.TrimRight(env("TMDB_IMAGE_BASE", "https://image.tmdb.org/t/p"), "/")
@@ -472,6 +479,8 @@ func (a *App) runtimeConfigSnapshot(includeSecret bool) map[string]any {
 	defer a.mu.RUnlock()
 	out := map[string]any{
 		"scraper_mode": a.scraperMode, "tmdb_enabled": a.tmdbAPIKey != "",
+		"scrape_region":       a.scrapeRegion,
+		"scrape_region_lang":  scrapeRegionLanguage(a.scrapeRegion),
 		"tmdb_api_key_masked": a.tmdbAPIKey != "", "tmdb_api_base": a.tmdbAPIBase,
 		"tmdb_image_base": a.tmdbImageBase, "cache_dir": a.cacheDir,
 		"tvdb_enabled": a.tvdbAPIKey != "", "tvdb_api_key_masked": a.tvdbAPIKey != "", "tvdb_api_base": a.tvdbAPIBase,
@@ -498,6 +507,9 @@ func (a *App) loadRuntimeConfig() {
 	}
 	if c.ScraperMode != "" {
 		a.scraperMode = c.ScraperMode
+	}
+	if c.ScrapeRegion != "" {
+		a.scrapeRegion = normalizeScrapeRegion(c.ScrapeRegion)
 	}
 	if c.TMDBAPIKey != "" {
 		a.tmdbAPIKey = c.TMDBAPIKey
@@ -639,6 +651,20 @@ func (a *App) saveRuntimeConfig(c RuntimeConfig) error {
 	if err := os.MkdirAll(c.CacheDir, 0755); err != nil {
 		return fmt.Errorf("cache directory: %w", err)
 	}
+	/* v0.9.87：刮削地区白名单。空值沿用原值（表单总带值），非法值直接报错，
+	   不做静默回落 —— 否则用户以为切了地区而实际没生效。 */
+	if strings.TrimSpace(c.ScrapeRegion) == "" {
+		a.mu.RLock()
+		c.ScrapeRegion = a.scrapeRegion
+		a.mu.RUnlock()
+		if strings.TrimSpace(c.ScrapeRegion) == "" {
+			c.ScrapeRegion = "auto"
+		}
+	}
+	if !validScrapeRegion(c.ScrapeRegion) {
+		return fmt.Errorf("invalid scrape region")
+	}
+	c.ScrapeRegion = normalizeScrapeRegion(c.ScrapeRegion)
 	if c.TMDBAPIKey == "" {
 		a.mu.RLock()
 		c.TMDBAPIKey = a.tmdbAPIKey
@@ -687,6 +713,8 @@ func (a *App) saveRuntimeConfig(c RuntimeConfig) error {
 	a.scraperMode, a.tmdbAPIKey = c.ScraperMode, c.TMDBAPIKey
 	a.tmdbAPIBase, a.tmdbImageBase = strings.TrimRight(c.TMDBAPIBase, "/"), strings.TrimRight(c.TMDBImageBase, "/")
 	a.tvdbAPIKey, a.tvdbAPIBase, a.scraperProxy = c.TVDBAPIKey, strings.TrimRight(c.TVDBAPIBase, "/"), c.ScraperProxy
+	/* v0.9.87：刮削地区立即生效（前端下次 TMDB 请求即用新语言，无需重启）。 */
+	a.scrapeRegion = normalizeScrapeRegion(c.ScrapeRegion)
 	a.cacheDir, a.cacheMaxBytes = c.CacheDir, c.CacheMaxBytes
 	a.cacheMaxAge, a.cacheCleanup = time.Duration(c.CacheMaxAgeHours)*time.Hour, time.Duration(c.CacheCleanupIntervalHours)*time.Hour
 	a.pageCacheMaxBytes = c.PageCacheMaxBytes
@@ -2557,15 +2585,68 @@ func (a *App) castAvatar(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-/* v0.9.85：TMDB 语言白名单 —— 界面语言 → TMDB language 代码。非法值回落 zh-CN。 */
+/*
+v0.9.85：TMDB 语言白名单 —— 界面语言 → TMDB language 代码。非法值回落 zh-CN。
+
+	v0.9.87：加入 ja-JP（刮削地区「日本」）。
+*/
 func tmdbLanguage(q string) string {
 	switch strings.ToLower(strings.TrimSpace(q)) {
 	case "en", "en-us":
 		return "en-US"
 	case "zh-tw", "zh-hk":
 		return "zh-TW"
+	case "ja", "ja-jp":
+		return "ja-JP"
 	}
 	return "zh-CN"
+}
+
+/*
+v0.9.87：刮削地区 —— 客户要求「增加刮削地区配置（中/日/美）并在后续的信息刮削中同步」。
+
+	地区决定 TMDB 请求的 language：日文界面查美剧会拿到日文条目，若该条目没有日文翻译，
+	TMDB 回落原名（对刮削无害）；反之用中文去查纯日文原名的作品会直接 0 结果，
+	前端随即回落「文件名展示」—— 也就是客户看到的「直接使用资源名称」。
+*/
+func normalizeScrapeRegion(v string) string {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "cn", "zh", "zh-cn", "china", "中国", "中國":
+		return "cn"
+	case "jp", "ja", "ja-jp", "japan", "日本":
+		return "jp"
+	case "us", "en", "en-us", "usa", "america", "美国", "美國":
+		return "us"
+	}
+	return "auto"
+}
+
+/*
+白名单校验必须看「原始输入」—— 归一化会把未知值静默变成 auto，
+
+	那样任何输入都会被判为合法，客户切错地区也不会得到提示。
+*/
+func validScrapeRegion(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "", "auto":
+		return true
+	case "cn", "zh", "zh-cn", "china", "中国", "中國",
+		"jp", "ja", "ja-jp", "japan", "日本",
+		"us", "en", "en-us", "usa", "america", "美国", "美國":
+		return true
+	}
+	return false
+}
+func scrapeRegionLanguage(region string) string {
+	switch normalizeScrapeRegion(region) {
+	case "cn":
+		return "zh-CN"
+	case "jp":
+		return "ja-JP"
+	case "us":
+		return "en-US"
+	}
+	return ""
 }
 
 func (a *App) tmdb(w http.ResponseWriter, r *http.Request) {
@@ -2606,7 +2687,22 @@ func (a *App) tmdb(w http.ResponseWriter, r *http.Request) {
 	/* v0.9.85：language 跟随界面语言（前端传 lang=zh-CN/zh-TW/en-US）——
 	   演职人员姓名与角色名、简介、剧集名都随系统语言本地化。白名单校验，
 	   非法值一律回落 zh-CN（历史默认）。 */
-	lang := tmdbLanguage(r.URL.Query().Get("lang"))
+	lang := ""
+	if q := strings.TrimSpace(r.URL.Query().Get("lang")); q != "" {
+		lang = tmdbLanguage(q)
+	} else if rq := strings.TrimSpace(r.URL.Query().Get("region")); rq != "" {
+		lang = scrapeRegionLanguage(rq)
+	}
+	if lang == "" {
+		/* 前端未显式带语言时按已配置的刮削地区（auto → 历史默认 zh-CN）。 */
+		a.mu.RLock()
+		region := a.scrapeRegion
+		a.mu.RUnlock()
+		lang = scrapeRegionLanguage(region)
+	}
+	if lang == "" {
+		lang = "zh-CN"
+	}
 	u := base + "/" + endpoint + "?language=" + url.QueryEscape(lang) + "&append_to_response=credits,recommendations,images"
 	if !tmdbIsBearerToken(key) {
 		u += "&api_key=" + url.QueryEscape(key)

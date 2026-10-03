@@ -766,6 +766,24 @@ function rememberSeriesShow(libId, show) {
 }
 /* JSON.stringify 会把 seasons(Map) 序列化成 {}，因此读回后只有数组 seasonList 与 files 可用；
    openSeriesDetails 必须只依赖这两个字段，并对旧缓存缺字段的情况回落空数组。 */
+/* v0.9.87：是否已有刮削信息 —— 「文件名展示」是解析回落态，不算刮削结果。
+   没有刮削信息时不再显示「已按 Plex / Emby 风格…聚合到同一剧集」这类说明，
+   因为此时剧名只是目录名，说明只会造成误读。 */
+function hasScrapedInfo(meta) {
+  if (!meta) return false;
+  const provider = String(meta.provider || "").trim();
+  if (provider && !/文件名/.test(provider)) return true;
+  if (meta.tmdb_id || meta.poster || meta.logo || meta.fanart || meta.backdrop) return true;
+  if (String(meta.overview || "").trim()) return true;
+  return Number(meta.rating || 0) > 0;
+}
+/* v0.9.87：剧集首屏介绍文案的判定集中在这一处，便于「无刮削信息不显示聚合说明」被单测直接驱动。
+   已有真实简介 → 用简介；已刮削但无简介 → 保留聚合说明（有信息价值）；完全没刮削 → 空（不渲染段落）。 */
+function seriesHeroOverview(show) {
+  const own = String((show && show.overview) || "").trim();
+  if (own) return own;
+  return hasScrapedInfo(show) ? "已按 Plex / Emby 风格根据根目录、Season 01 和 S01E01 规则聚合到同一剧集。" : "";
+}
 function readSeriesShow(libId, showKey) { const key = seriesShowStoreKey(libId, showKey); try { const show = vaultStoreJSON(key, null) || seriesShowMemory[key] || null; if (!show) return null; if (!Array.isArray(show.seasonList)) show.seasonList = []; if (!Array.isArray(show.files)) show.files = []; return show; } catch(e) { return null; } }
 
 /* v0.9.84：蓝光原盘目录判定（BDMV / CERTIFICATE 结构的上一级目录即「一部片子」）。 */
@@ -809,7 +827,7 @@ async function loadMediaRuntimeSettings(notify = false) {
     /* v0.9.75：读设置时同步刷新本机缓存的运行时配置（外网分享地址/TMDB 图片基址等），
        否则服务端改了配置而页面未重载时，分享仍用旧地址。 */
     scraperStatus = { ...scraperStatus, ...c, default: c.scraper_mode || scraperStatus.default };
-    const values = { mediaScraperMode:c.scraper_mode, tmdbApiBase:c.tmdb_api_base, tmdbImageBase:c.tmdb_image_base, tvdbApiBase:c.tvdb_api_base, mediaCacheDir:c.cache_dir, mediaCacheMaxBytes:c.cache_max_bytes, mediaCacheMaxAge:c.cache_max_age_hours, mediaCacheCleanup:c.cache_cleanup_interval_hours, mediaPageCacheMaxBytes:c.page_cache_max_bytes, mediaScanMaxDepth:c.scan_max_depth, sharePublicBase:c.share_public_base || "" }; 
+    const values = { scrapeRegion:c.scrape_region || "auto", mediaScraperMode:c.scraper_mode, tmdbApiBase:c.tmdb_api_base, tmdbImageBase:c.tmdb_image_base, tvdbApiBase:c.tvdb_api_base, mediaCacheDir:c.cache_dir, mediaCacheMaxBytes:c.cache_max_bytes, mediaCacheMaxAge:c.cache_max_age_hours, mediaCacheCleanup:c.cache_cleanup_interval_hours, mediaPageCacheMaxBytes:c.page_cache_max_bytes, mediaScanMaxDepth:c.scan_max_depth, sharePublicBase:c.share_public_base || "" }; 
     Object.entries(values).forEach(([id,value]) => { const el=document.getElementById(id); if(el && value !== undefined) el.value=String(value); });
     const key=document.getElementById("tmdbApiKey"); if(key){ key.value=""; key.placeholder=c.tmdb_api_key_masked ? "已设置；留空保留" : "未设置"; }
     const tvdbKey=document.getElementById("tvdbApiKey"); if(tvdbKey){ tvdbKey.value=""; tvdbKey.placeholder=c.tvdb_api_key_masked ? "已设置；留空保留" : "未设置"; }
@@ -822,7 +840,7 @@ async function loadMediaRuntimeSettings(notify = false) {
 async function saveMediaRuntimeSettings() {
   const value=id=>document.getElementById(id)?.value?.trim() || "";
   const proxyEl=document.getElementById("scraperProxy"), proxyValue=value("scraperProxy");
-  const payload={ scraper_mode:value("mediaScraperMode")||"auto", tmdb_api_key:value("tmdbApiKey"), tmdb_api_base:value("tmdbApiBase"), tmdb_image_base:value("tmdbImageBase"), tvdb_api_key:value("tvdbApiKey"), tvdb_api_base:value("tvdbApiBase"), scraper_proxy:proxyValue, scraper_proxy_set:!!proxyValue || proxyEl?.dataset.configured!=="1", share_public_base:value("sharePublicBase").trim(), share_public_base_set:true, cache_dir:value("mediaCacheDir"), cache_max_bytes:Number(value("mediaCacheMaxBytes")), cache_max_age_hours:Number(value("mediaCacheMaxAge")), cache_cleanup_interval_hours:Number(value("mediaCacheCleanup")), page_cache_max_bytes:Number(value("mediaPageCacheMaxBytes")||"0"), scan_max_depth:Number(value("mediaScanMaxDepth")||"0") };
+  const payload={ scraper_mode:value("mediaScraperMode")||"auto", scrape_region:value("scrapeRegion")||"auto", tmdb_api_key:value("tmdbApiKey"), tmdb_api_base:value("tmdbApiBase"), tmdb_image_base:value("tmdbImageBase"), tvdb_api_key:value("tvdbApiKey"), tvdb_api_base:value("tvdbApiBase"), scraper_proxy:proxyValue, scraper_proxy_set:!!proxyValue || proxyEl?.dataset.configured!=="1", share_public_base:value("sharePublicBase").trim(), share_public_base_set:true, cache_dir:value("mediaCacheDir"), cache_max_bytes:Number(value("mediaCacheMaxBytes")), cache_max_age_hours:Number(value("mediaCacheMaxAge")), cache_cleanup_interval_hours:Number(value("mediaCacheCleanup")), page_cache_max_bytes:Number(value("mediaPageCacheMaxBytes")||"0"), scan_max_depth:Number(value("mediaScanMaxDepth")||"0") };
   const status=document.getElementById("mediaRuntimeStatus"); const hwStatus=document.getElementById("hardwareRuntimeStatus"); if(status) status.textContent="保存中…"; if(hwStatus) hwStatus.textContent="保存中…";
   try { const res=await fetch("/api/media/settings",{method:"PUT",headers:sessionWriteHeaders(true),body:JSON.stringify(payload)}); const data=await res.json(); if(!res.ok) throw new Error(data.error||`HTTP ${res.status}`); scraperStatus={...scraperStatus,...data,default:data.scraper_mode}; await loadMediaRuntimeSettings(false); toast("✅ 运行配置已立即生效"); }
   catch(e){ if(status)status.textContent=`⚠ ${e.message}`; if(hwStatus)hwStatus.textContent=`⚠ ${e.message}`; toast("⚠️ 保存失败："+e.message); }
@@ -890,16 +908,43 @@ function movieScrapeSummary(files) {
   if (s.skip) parts.push(`${s.skip} 无可识别标题`);
   return parts.join(" · ");
 }
+/* v0.9.87（客户要求「刮削队列提示放到通知栏里面，不展示到媒体库中」）：
+   队列状态只写通知中心（顶栏喇叭），库页不再有 #movieScrapeStatus 徽标。
+   同一媒体库共用一个 key → 进度刷新只更新那一条，不刷屏。 */
+function scrapeQueueKey(lib) {
+  return `scrape-queue-${lib && lib.id != null ? lib.id : "all"}`;
+}
+function scrapeQueueNotice(files) {
+  const list = files || (movieScrapeContext && movieScrapeContext.files) || [];
+  if (!list.length) return;
+  const lib = movieScrapeContext && movieScrapeContext.lib;
+  const s = movieScrapeStats(list);
+  const bits = [];
+  if (s.ok) bits.push(`已刮削 ${s.ok}`);
+  if (s.pending) bits.push(`排队中 ${s.pending}`);
+  if (s.failed) bits.push(`待重试 ${s.failed}`);
+  if (s.skip) bits.push(`无可识别标题 ${s.skip}`);
+  const entry = {
+    key: scrapeQueueKey(lib),
+    level: s.failed ? "warn" : (s.pending ? "info" : "ok"),
+    title: typeof tf === "function" ? tf("notifyScrapeQueue", { ok: s.ok, total: s.total }) : `刮削队列 ${s.ok}/${s.total}`,
+    detail: [(lib && lib.name) || "", bits.join(" · ")].filter(Boolean).join(" · "),
+    action: { view: "movie" }
+  };
+  if (typeof upsertNotification === "function") upsertNotification(entry);
+  else if (typeof pushNotification === "function") pushNotification(entry);
+}
 function updateMovieScrapeStatus(files) {
-  const el = document.getElementById("movieScrapeStatus");
-  if (el) el.textContent = movieScrapeSummary(files || (movieScrapeContext && movieScrapeContext.files) || []);
+  scrapeQueueNotice(files);
 }
 /* 库标题右侧的刮削状态（v0.9.84 新增）。
    v0.9.86（客户要求）：整库「重新刮削 / 重试失败项」这两个大按钮从影视页迁走 ——
    刮削入口统一放在「系统设置 → 媒体库 → 已添加的媒体库」（自动 / 逐项扫描）。
    这里只保留状态与一个指路按钮，不再出现大块操作区。 */
 function movieScrapeControls(files) {
-  return `<div class="media-actions" style="gap:6px;flex-wrap:wrap"><span class="badge" id="movieScrapeStatus">${esc(movieScrapeSummary(files))}</span><button class="btn" type="button" onclick="openSettingsPage('library')" title="刮削入口已迁至系统设置">⚙ <span data-i18n="scrapeGoSettings">刮削设置</span></button></div>`;
+  /* v0.9.87：库页里的刮削队列徽标整体移除（队列状态改由顶栏喇叭的通知栏承载），
+     只保留一个进入系统设置的入口按钮。 */
+  return `<div class="media-actions" style="gap:6px;flex-wrap:wrap"><button class="btn" type="button" onclick="openSettingsPage('library')" title="刮削入口在系统设置 → 媒体库 → 已添加的媒体库"><span data-i18n="scrapeGoSettings">刮削设置</span></button></div>`;
 }
 
 /* ==================== v0.9.86：影视刮削入口（系统设置内） ====================
@@ -1306,7 +1351,7 @@ function closeEpisodeDetail() {
   closeMovieDetails();
   if (target) openSeriesDetails(target.libId, target.showKey);
 }
-async function openSeriesDetails(libId, showKey) { enterMovieDetailSidebarMode(); const lib=findMediaLibrary(libId), viewer=document.getElementById("local-media-viewer-movie"); if(!lib||!viewer)return; const show=readSeriesShow(libId,showKey); if(!show)return; activeSeriesDetail={libId, showKey}; seriesEpisodeReturn=null; const hero={title:show.title,overview:show.overview||"已按 Plex / Emby 风格根据根目录、Season 01 和 S01E01 规则聚合到同一剧集。",poster:show.poster,logo:show.logo,fanart:show.fanart,backdrop:show.backdrop,year:show.year,provider:show.provider,watched:show.watched,media_type:"series"}; /* v0.9.51：进入剧集详情即把该剧的分集按季/集顺序设为播放队列，
+async function openSeriesDetails(libId, showKey) { enterMovieDetailSidebarMode(); const lib=findMediaLibrary(libId), viewer=document.getElementById("local-media-viewer-movie"); if(!lib||!viewer)return; const show=readSeriesShow(libId,showKey); if(!show)return; activeSeriesDetail={libId, showKey}; seriesEpisodeReturn=null; const hero={title:show.title,overview:seriesHeroOverview(show),scrape_ok:hasScrapedInfo(show),poster:show.poster,logo:show.logo,fanart:show.fanart,backdrop:show.backdrop,year:show.year,provider:show.provider,watched:show.watched,media_type:"series"}; /* v0.9.51：进入剧集详情即把该剧的分集按季/集顺序设为播放队列，
      这样播放器的「上一个 / 下一个 / 播放列表」走的是同一部剧而不是整库。 */
   setVideoPlaylist(libId, (show.seasonList||[]).flatMap(season=>(season.episodes||[]).map(ep=>({path:ep.path}))));
   const firstPath = show.files?.[0]?.path || "";
@@ -1946,11 +1991,24 @@ function renderSeriesSeasonCard(lib, show, season) {
 }
 function toggleSeriesSeason(head){ const list=head.parentElement.querySelector(".series-episode-list"); if(!list)return; const open=list.classList.contains("is-collapsed"); list.classList.toggle("is-collapsed",!open); list.style.display=open?"":"none"; const ch=head.querySelector(".series-season-chev"); if(ch)ch.textContent=open?"▾":"▸"; }
 
-function renderMovieHero(lib,path,meta) { const heroArt = movieHeroArt(meta); const safeArt = cssUrlValue(heroArt.url); const style = safeArt ? `--movie-hero-art:url('${esc(safeArt)}')` : ""; const logo=meta.logo?`<img class="movie-detail-logo" src="${esc(meta.logo)}" alt="${esc(meta.title)} Logo">`:`<h1>${esc(meta.title)}</h1>`; return `<header class="movie-detail-hero ${heroArt.kind}" style="${style}">${logo}<p>${esc(meta.overview||"暂无电影介绍；可在系统设置中配置 TMDB API 进行刮削。")}</p><div class="movie-detail-actions"><button class="btn btn-primary" onclick="openLocalMedia('movie',${jsAttrArg(lib.id)},${jsAttrArg(path)})">▶ 播放</button><button class="btn" onclick="shareMovie(${jsAttrArg(lib.id)},${jsAttrArg(path)},${jsAttrArg(meta.title)})">↗ 分享</button><button class="btn" onclick="toggleMovieFavorite(${jsAttrArg(lib.id)},${jsAttrArg(path)},this)">${movieFlag("favorite",lib.id,path)?"♥ 已收藏":"♡ 收藏"}</button>${movieRatingWidget(lib.id,path)}<span class="movie-tmdb-rating" title="TMDB 评分">${meta.rating ? `<b>⭐ ${meta.rating.toFixed(1)}</b><small>TMDB</small>` : ""}</span><button class="btn" onclick="toggleMovieWatched(${jsAttrArg(lib.id)},${jsAttrArg(path)},this)">${meta.watched||movieFlag("watched",lib.id,path)?"✓ 已观看":"○ 未观看"}</button><button class="btn" onclick="openMediaMetadataEditor(${jsAttrArg(lib.id)},${jsAttrArg(path)})">✎ 编辑</button></div></header>`; }
+function renderMovieHero(lib,path,meta) { const heroArt = movieHeroArt(meta); const safeArt = cssUrlValue(heroArt.url); const style = safeArt ? `--movie-hero-art:url('${esc(safeArt)}')` : ""; const logo=meta.logo?`<img class="movie-detail-logo" src="${esc(meta.logo)}" alt="${esc(meta.title)} Logo">`:`<h1>${esc(meta.title)}</h1>`; /* v0.9.87：剧集在「无刮削信息且无简介」时整段不渲染（客户要求）；电影保持原有兜底文案。 */
+  const heroText = String(meta.overview || "").trim() || (meta.media_type === "series" ? "" : "暂无电影介绍；可在系统设置中配置 TMDB API 进行刮削。");
+  return `<header class="movie-detail-hero ${heroArt.kind}" style="${style}">${logo}${heroText ? `<p>${esc(heroText)}</p>` : ""}<div class="movie-detail-actions"><button class="btn btn-primary" onclick="openLocalMedia('movie',${jsAttrArg(lib.id)},${jsAttrArg(path)})">▶ 播放</button><button class="btn" onclick="shareMovie(${jsAttrArg(lib.id)},${jsAttrArg(path)},${jsAttrArg(meta.title)})">↗ 分享</button><button class="btn" onclick="toggleMovieFavorite(${jsAttrArg(lib.id)},${jsAttrArg(path)},this)">${movieFlag("favorite",lib.id,path)?"♥ 已收藏":"♡ 收藏"}</button>${movieRatingWidget(lib.id,path)}<span class="movie-tmdb-rating" title="TMDB 评分">${meta.rating ? `<b>⭐ ${meta.rating.toFixed(1)}</b><small>TMDB</small>` : ""}</span><button class="btn" onclick="toggleMovieWatched(${jsAttrArg(lib.id)},${jsAttrArg(path)},this)">${meta.watched||movieFlag("watched",lib.id,path)?"✓ 已观看":"○ 未观看"}</button><button class="btn" onclick="openMediaMetadataEditor(${jsAttrArg(lib.id)},${jsAttrArg(path)})">✎ 编辑</button></div></header>`; }
 /* v0.9.81：演职人员改为「网格排序的头像展示」（auto-fill 网格，头像 + 名称 + 角色，长文本省略防穿模）。 */
 /* v0.9.85：TMDB 请求语言跟随界面语言（演职人员姓名/角色名随之本地化）。
    zh-CN 是 media-go 的历史默认值，保持兼容。 */
+/* v0.9.87：刮削地区优先于界面语言 —— 中/日/美 决定 TMDB language。
+   auto（默认）时沿用 v0.9.85 的「跟随界面语言」。 */
+function scrapeRegionLangTag(region) {
+  const r = String(region || "").toLowerCase();
+  if (r === "cn") return "zh-CN";
+  if (r === "jp") return "ja-JP";
+  if (r === "us") return "en-US";
+  return "";
+}
 function tmdbLangTag() {
+  const byRegion = scrapeRegionLangTag((typeof scraperStatus === "object" && scraperStatus) ? scraperStatus.scrape_region : "");
+  if (byRegion) return byRegion;
   if (curLang === "en") return "en-US";
   if (curLang === "zh-TW") return "zh-TW";
   return "zh-CN";

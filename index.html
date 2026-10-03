@@ -4,10 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VaultHub 蜀鼠之家</title>
-<link rel="stylesheet" href="/web/css/main.css?v=0.9.86">
+<link rel="stylesheet" href="/web/css/main.css?v=0.9.87">
 <script>
 /* 资源版本号：index.html 用它给所有静态资源打查询串。 */
-window.VAULTHUB_ASSET_VERSION = "0.9.86";
+window.VAULTHUB_ASSET_VERSION = "0.9.87";
 </script>
 <script>
 /* v0.9.73 主题防闪：调色板/明暗/强调色必须在首帧渲染前落到 <html> 上，
@@ -178,7 +178,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.86";
   <div class="sidebar-foot">
     <button class="rail-btn rail-settings" id="sidebarSettingsButton" type="button" onclick="openSettingsModalFromSidebar()" title="系统设置" aria-label="系统设置"><span class="ic">⚙</span><span class="txt" data-i18n="settingsTitle">系统设置</span></button>
     <div class="sidebar-foot-row">
-      <span class="ver">v0.9.86 · 刮削归位·封面修复·音乐去分页</span>
+      <span class="ver">v0.9.87 · 刮削地区·队列进通知·聚合提示精简</span>
       <button class="rail-btn rail-collapse" id="sidebarCollapseButton" type="button" onclick="toggleBars()" title="折叠 / 展开侧栏" aria-label="折叠或展开侧栏">⇤</button>
     </div>
   </div>
@@ -641,6 +641,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.86";
           <h4>🔍 <span data-i18n="setScrapeSrc">刮削来源</span></h4>
           <p>环境变量作为首次启动默认值；在这里保存后写入 <code>/data/media-runtime.json</code> 并立即生效。API Key 留空会保留已保存的密钥。</p>
           <div class="form-2col">
+            <div class="cfg-field"><label for="scrapeRegion" data-i18n="scrapeRegionLabel">刮削地区（TMDB 语言）</label><select id="scrapeRegion" data-env="SCRAPE_REGION"><option value="auto" data-i18n="scrapeRegionAuto">跟随界面语言</option><option value="cn" data-i18n="scrapeRegionCn">中国（中文简体 · zh-CN）</option><option value="jp" data-i18n="scrapeRegionJp">日本（日文 · ja-JP）</option><option value="us" data-i18n="scrapeRegionUs">美国（英文 · en-US）</option></select><p class="hint" data-i18n="scrapeRegionHint">刮削与详情页的 TMDB 请求按该地区语言查询。</p></div>
             <div class="cfg-field"><label for="mediaScraperMode">刮削方式</label><select id="mediaScraperMode" data-env="MEDIA_SCRAPER_MODE"><option value="auto">自动：电视剧 TVDB → TMDB → 豆瓣 → 文件名</option><option value="tmdb">仅 TMDB（失败回文件名）</option><option value="douban">仅豆瓣（失败回文件名）</option><option value="filename">仅使用文件名</option></select></div>
             <div class="cfg-field"><label for="tmdbApiKey">TMDB API Key</label><input id="tmdbApiKey" type="password" autocomplete="new-password" placeholder="未设置；留空保留已有值" data-env="TMDB_API_KEY"></div>
             <div class="cfg-field"><label for="tmdbApiBase">TMDB API 调用链接</label><input id="tmdbApiBase" type="url" value="https://api.themoviedb.org/3" data-env="TMDB_API_BASE"></div>
@@ -754,7 +755,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.86";
          页脚在启动时由 syncAppFooterVersion() 读取并同步，发版不会漏改。 -->
     <footer class="app-footer" id="appFooter">
       <span class="af-name">VaultHub 蜀鼠之家</span>
-      <span id="appFooterVer" class="ver">v0.9.86 · 刮削归位·封面修复·音乐去分页</span>
+      <span id="appFooterVer" class="ver">v0.9.87 · 刮削地区·队列进通知·聚合提示精简</span>
       <span class="af-note" data-i18n="footerAboutHint">版本与「系统设置 → 账户与登录 → 关于」中的版本参数保持一致</span>
     </footer>
 
@@ -875,7 +876,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.86";
   <div class="modal">
     <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
     <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
-    <div class="about-row" data-about-ver="1"><span data-i18n="aboutVer">版本</span><b>v0.9.86 · 刮削归位·封面修复·音乐去分页</b></div>
+    <div class="about-row" data-about-ver="1"><span data-i18n="aboutVer">版本</span><b>v0.9.87 · 刮削地区·队列进通知·聚合提示精简</b></div>
     <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>Go (media/manager/subtitle) · Caddy · FFmpeg · SQLite · HTML/CSS/JS</b></div>
     <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>VaultHub 内置系统监控</b></div>
     <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>
@@ -1036,14 +1037,14 @@ window.VAULTHUB_ASSET_VERSION = "0.9.86";
 
 <div class="toast" id="toast"></div>
 
-<script src="/web/js/01-state.js?v=0.9.86"></script>
-<script src="/web/js/03-quality.js?v=0.9.86"></script>
-<script src="/web/js/02-media.js?v=0.9.86"></script>
-<script src="/web/js/03-features.js?v=0.9.86"></script>
-<script src="/web/js/05-home.js?v=0.9.86"></script>
-<script src="/web/js/06-theme.js?v=0.9.86"></script>
-<script src="/web/js/07-topnav.js?v=0.9.86"></script>
-<script src="/web/js/03-audio-zoom.js?v=0.9.86"></script>
-<script src="/web/js/04-boot.js?v=0.9.86"></script>
+<script src="/web/js/01-state.js?v=0.9.87"></script>
+<script src="/web/js/03-quality.js?v=0.9.87"></script>
+<script src="/web/js/02-media.js?v=0.9.87"></script>
+<script src="/web/js/03-features.js?v=0.9.87"></script>
+<script src="/web/js/05-home.js?v=0.9.87"></script>
+<script src="/web/js/06-theme.js?v=0.9.87"></script>
+<script src="/web/js/07-topnav.js?v=0.9.87"></script>
+<script src="/web/js/03-audio-zoom.js?v=0.9.87"></script>
+<script src="/web/js/04-boot.js?v=0.9.87"></script>
 </body>
 </html>

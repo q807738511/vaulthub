@@ -84,10 +84,10 @@ check("5l 封面缓存头仍是公开长缓存", 'Cache-Control", "public, max-a
 check("5m 入口 Caddy 仍启用压缩", "encode zstd gzip" in CADDY)
 
 # ---------- 版本一致性 ----------
-check("V1 HTML 资源版本", 'VAULTHUB_ASSET_VERSION = "0.9.86"' in HTML)
-check("V2 脚本版本", 'VAULTHUB_SCRIPT_VERSION = "0.9.86"' in STATE)
-check("V3 静态缓存串", HTML.count("?v=0.9.86") >= 7)
-check("V4 UI 角标", "v0.9.86" in HTML)
+check("V1 HTML 资源版本", 'VAULTHUB_ASSET_VERSION = "0.9.87"' in HTML)
+check("V2 脚本版本", 'VAULTHUB_SCRIPT_VERSION = "0.9.87"' in STATE)
+check("V3 静态缓存串", HTML.count("?v=0.9.87") >= 7)
+check("V4 UI 角标", "v0.9.87" in HTML)
 
 print(f"v0.9.85 checks: {OK} passed, {FAIL} failed")
 import sys

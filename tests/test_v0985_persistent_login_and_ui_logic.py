@@ -59,6 +59,7 @@ NOTIFY_BLOCK = extract_slice(TOPNAV, "const VH_NOTIFY_KEY", "/* v0.9.85：搜索
 PIECES = [
     extract_function(MEDIA, "displayBookTitle"),
     extract_function(MEDIA, "discFolderOf"),
+    extract_function(MEDIA, "scrapeRegionLangTag"),
     extract_function(MEDIA, "tmdbLangTag"),
     extract_function(MEDIA, "castRoleLabel"),
     extract_function(MEDIA, "moviePosterSubtitle"),
@@ -117,6 +118,16 @@ sb.curLang = "zh-TW";
 chk("繁体 → zh-TW", api.tmdbLangTag() === "zh-TW");
 sb.curLang = "en";
 chk("英文 → en-US", api.tmdbLangTag() === "en-US");
+/* v0.9.87：刮削地区优先于界面语言（中/日/美 → zh-CN / ja-JP / en-US）。 */
+sb.scraperStatus = { scrape_region: "jp" };
+chk("地区=日本 → ja-JP（覆盖界面语言）", api.tmdbLangTag() === "ja-JP");
+sb.scraperStatus = { scrape_region: "us" };
+chk("地区=美国 → en-US", api.tmdbLangTag() === "en-US");
+sb.scraperStatus = { scrape_region: "cn" };
+chk("地区=中国 → zh-CN", api.tmdbLangTag() === "zh-CN");
+sb.scraperStatus = { scrape_region: "auto" };
+chk("地区=auto → 回落界面语言", api.tmdbLangTag() === "en-US");
+sb.scraperStatus = {};
 sb.curLang = "zh-CN";
 chk("动画作品 → 配音", api.castRoleLabel({ genres: ["动画", "冒险"] }) === "配音");
 chk("普通影片 → 饰演", api.castRoleLabel({ genres: ["剧情"] }) === "饰演");
@@ -184,7 +195,9 @@ console.log("RESULT " + JSON.stringify({ pass, fail }));
 with tempfile.TemporaryDirectory() as tmp:
     payload = pathlib.Path(tmp) / "payload.json"
     harness = pathlib.Path(tmp) / "harness.js"
-    payload.write_text(json.dumps({"media": "\n".join(PIECES[:5]), "features": PIECES[5], "notify": PIECES[6]}), encoding="utf-8")
+    # 末两项固定是「温度渲染」与「通知块」，其余都算 media —— 不再写死下标，
+    # 否则往 PIECES 中间插入函数（如 v0.9.87 的 scrapeRegionLangTag）会静默错位。
+    payload.write_text(json.dumps({"media": "\n".join(PIECES[:-2]), "features": PIECES[-2], "notify": PIECES[-1]}), encoding="utf-8")
     harness.write_text(HARNESS, encoding="utf-8")
     proc = subprocess.run(["node", str(harness), str(payload)], capture_output=True, text=True)
 

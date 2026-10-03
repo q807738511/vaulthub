@@ -262,6 +262,29 @@ function pushNotification(entry) {
   if (entry && entry.toast && typeof toast === "function") toast(`${notifyIconFor(item.level)} ${item.title}`);
   return item;
 }
+/* v0.9.87：队列类通知「就地更新」—— 同一个 key 只保留一条（刮削队列每刮一条都会刷新，
+   若每条都 push 会瞬间刷屏，并把未读徽标顶到 60 上限）。
+   已读状态沿用上一条，不因进度刷新而重新变未读。 */
+function upsertNotification(entry) {
+  const key = String((entry && entry.key) || "");
+  if (!key || typeof pushNotification !== "function") return typeof pushNotification === "function" ? pushNotification(entry) : null;
+  const existing = vhNotifications.find(n => n && n.key === key);
+  if (!existing) {
+    const created = pushNotification(entry);
+    if (created) { created.key = key; vhNotifyPersist(); }
+    return created;
+  }
+  existing.title = String(entry.title || existing.title || "");
+  if (entry.detail !== undefined) existing.detail = String(entry.detail || "");
+  existing.level = String(entry.level || existing.level || "info");
+  if (entry.action) existing.action = entry.action;
+  existing.ts = Date.now();
+  if (entry.unread === true) existing.read = false;
+  vhNotifications = [existing].concat(vhNotifications.filter(n => n !== existing));
+  vhNotifyPersist();
+  renderNotifications();
+  return existing;
+}
 function renderNotifications() {
   renderNotifyBadge();
   const host = document.getElementById("tnNotifyList");

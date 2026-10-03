@@ -20,7 +20,7 @@ FEATURES = (ROOT / "web/js/03-features.js").read_text(encoding="utf-8")
 BOOT = (ROOT / "web/js/04-boot.js").read_text(encoding="utf-8")
 HOME = (ROOT / "web/js/05-home.js").read_text(encoding="utf-8")
 TOPNAV = (ROOT / "web/js/07-topnav.js").read_text(encoding="utf-8")
-NOTES = (ROOT / ".github/RELEASE_NOTES_0.9.86.md").read_text(encoding="utf-8")
+NOTES = (ROOT / ".github/RELEASE_NOTES_0.9.87.md").read_text(encoding="utf-8")
 LOG = (ROOT / "Update Log.md").read_text(encoding="utf-8")
 
 checks: list[tuple[str, bool, str]] = []
@@ -52,7 +52,7 @@ check("A6 品牌与信息区仍在（旧契约不破）",
       'id="accountWrap"' in HEADER and 'id="topScanStat"' in HEADER
       and HEADER.index('id="accountWrap"') < HEADER.index('class="tb-info"'))
 check("A7 独立脚本 07-topnav.js 已挂载且在主题引擎之后",
-      "/web/js/07-topnav.js?v=0.9.86" in HTML
+      "/web/js/07-topnav.js?v=0.9.87" in HTML
       and HTML.index("06-theme.js") < HTML.index("07-topnav.js") < HTML.index("03-audio-zoom.js"))
 check("A8 顶栏渲染器读真实媒体库并保序渲染",
       "function renderTopLibTabs()" in TOPNAV and "localMediaLibraries" in TOPNAV
@@ -168,14 +168,13 @@ check("C 侧栏模式下顶栏不重复媒体库与主导航",
       "否则侧栏 + 顶栏会出现两套一样的入口")
 
 # ---------------------------------------------------------------- D. 文档与版本
-check("D1 发布说明存在且包含本版七项修正（发布说明随版本推进）",
-      "通知喇叭" in NOTES and ("容器所在硬盘" in NOTES or "硬盘" in NOTES)
-      and "刮削" in NOTES and "系统设置" in NOTES and "发绿" in NOTES
-      and "分页" in NOTES and ("名称" in NOTES and "年份" in NOTES))
-check("D2 Update Log 有对应条目", "持续登录" in LOG and "通知喇叭" in LOG and "硬盘和网络" in LOG and "v0.9.86" in LOG)
-check("D3 版本号为 0.9.86",
-      'VAULTHUB_ASSET_VERSION = "0.9.86"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.86"' in STATE
-      and "?v=0.9.86" in HTML and "?v=0.9.78" not in HTML)
+check("D1 发布说明存在且包含本版三项修正（发布说明随版本推进）",
+      "刮削队列" in NOTES and "通知" in NOTES and "地区" in NOTES and "TMDB" in NOTES
+      and ("聚合" in NOTES or "Plex" in NOTES))
+check("D2 Update Log 有对应条目", "持续登录" in LOG and "通知喇叭" in LOG and "硬盘和网络" in LOG and "v0.9.87" in LOG)
+check("D3 版本号为 0.9.87",
+      'VAULTHUB_ASSET_VERSION = "0.9.87"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.87"' in STATE
+      and "?v=0.9.87" in HTML and "?v=0.9.78" not in HTML)
 
 fails = [(n, d) for n, ok, d in checks if not ok]
 for n, ok, d in checks:
