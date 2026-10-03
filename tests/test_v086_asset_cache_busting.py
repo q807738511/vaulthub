@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.9.85"
+VERSION = "0.9.86"
 
 failures = []
 
@@ -53,7 +53,7 @@ for name in ("01-state.js", "03-quality.js", "02-media.js", "03-features.js", "0
 js_order = [ref for ref in asset_refs if ref.endswith(f"?v={VERSION}") and "/js/" in ref]
 expected_order = [
     "/web/js/01-state.js",
-    # v0.9.85：画面清晰度与色彩档位模块 —— 02-media.js 的阅读页宽度、封面取图宽度、
+    # v0.9.86：画面清晰度与色彩档位模块 —— 02-media.js 的阅读页宽度、封面取图宽度、
     # 音频码率都要读它，因此紧跟在 01-state.js 之后、02-media.js 之前。
     "/web/js/03-quality.js",
     "/web/js/02-media.js",

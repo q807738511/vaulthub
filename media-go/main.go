@@ -2022,6 +2022,9 @@ func systemMetrics(w http.ResponseWriter, r *http.Request) {
 		"filesystems":       fslist,
 		"disk_temperatures": diskTemps,
 		"temperatures":      allSensors,
+		/* v0.9.86：容器所在硬盘（容量 + 能对上传感器时的温度）。
+		   前端在「没有映射空间」时用它替代温度/容量显示。 */
+		"container_disk": containerDisk(env("SYSTEM_MONITOR_CONTAINER_PATH", "/data"), diskTemps),
 	})
 }
 func probe(w http.ResponseWriter, r *http.Request, a *App) {

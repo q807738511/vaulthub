@@ -102,8 +102,11 @@ async function tickMetrics() {
     const netLabel = document.getElementById("netInterface");
     /* v0.9.85：网卡名与下行/上行并排展示，无网卡信息时给占位符而不是空白。 */
     if (netLabel) netLabel.textContent = net.interface ? net.interface : "--";
-    renderDiskTemps(data.disk_temperatures, data.temperatures);
     const disks = data.filesystems || [];
+    /* v0.9.86：把「有没有映射空间」和「容器所在硬盘」一起交给渲染层 ——
+       有映射空间时容量只在 VHDATA 卷列表展示一次，温度取硬盘传感器；
+       没有映射空间时温度与容量都取容器所在硬盘。 */
+    renderDiskTemps(data.disk_temperatures, data.temperatures, { mapped: disks.length, containerDisk: data.container_disk || null });
     document.getElementById("diskCard").innerHTML = disks.map(d => {
       const p = Math.min(Number(d.percent || 0), 100);
       const free = Math.max(0, Number(d.total || 0) - Number(d.used || 0));
@@ -111,14 +114,14 @@ async function tickMetrics() {
     }).join("") || `<div class="empty-tip">${esc(t("noVolumes"))}</div>`;
     const diskSourceBadge = document.getElementById("diskSource"); if (diskSourceBadge) diskSourceBadge.textContent = t("diskSourceReal");
     /* 首页第一栏「硬盘使用率」卡内的容量剩余汇总 */
-    if (typeof renderHomeDiskSummary === "function") renderHomeDiskSummary(disks);
+    if (typeof renderHomeDiskSummary === "function") renderHomeDiskSummary(disks, data.container_disk || null);
     ok = true;
   } catch (e) {
     setCpu(0, "--", "--", "--");
     setMem(0, "--", "--", "--");
     setNet(0, 0);
-    renderDiskTemps([], []);
-    if (typeof renderHomeDiskSummary === "function") renderHomeDiskSummary([]);
+    renderDiskTemps([], [], { mapped: 0, containerDisk: null });
+    if (typeof renderHomeDiskSummary === "function") renderHomeDiskSummary([], null);
     const diskSourceBadge = document.getElementById("diskSource"); if (diskSourceBadge) diskSourceBadge.textContent = t("diskSourceOffline");
   }
 
@@ -129,22 +132,37 @@ async function tickMetrics() {
 // sensors; when the host exposes none (common on NAS boxes without drivetemp),
 // it falls back to the hottest available sensor (usually the CPU package) so
 // the card shows a live reading instead of a permanent "--".
-function renderDiskTemps(diskTemps, allTemps) {
+function renderDiskTemps(diskTemps, allTemps, opts) {
   const main = document.getElementById("tempMain");
   const list = document.getElementById("tempList");
   if (!main || !list) return;
+  const ctx = opts || {};
+  const mapped = Number(ctx.mapped || 0);
+  const cdisk = ctx.containerDisk || null;
   let entries = Array.isArray(diskTemps) ? diskTemps.slice() : [];
   let usingFallback = false;
+  /* v0.9.86：没有映射空间时优先用「容器所在硬盘」的温度 ——
+     客户要求「如果不映射空间则展示容器所在硬盘位置的温度」。
+     容器盘温度能对上传感器时，标题里明确标注是哪块盘。 */
+  let containerLabel = "";
+  if (!mapped && cdisk && Number(cdisk.temp) > 0) {
+    entries = [{ name: cdisk.device || cdisk.path || "container", temp: Number(cdisk.temp) }];
+    containerLabel = String(cdisk.device || cdisk.path || "");
+  }
   if (!entries.length && Array.isArray(allTemps) && allTemps.length) {
     entries = allTemps.slice().sort((a, b) => Number(b.temp) - Number(a.temp));
     usingFallback = true;
   }
-  if (!entries.length) { main.textContent = "--"; list.innerHTML = ""; return; }
+  if (!entries.length) { main.textContent = "--"; main.title = ""; list.innerHTML = ""; return; }
   const hottest = entries.reduce((m, x) => Number(x.temp) > Number(m.temp) ? x : m, entries[0]);
   main.textContent = Number(hottest.temp).toFixed(0);
-  /* v0.9.85：传感器明细压缩到 3 条（温度已压缩进「硬盘和网络」卡，空间优先）；
-     回落读数的说明移到标题上，不再多占一行。 */
-  list.title = usingFallback ? (curLang === "en" ? "No dedicated drive sensor; showing system sensors." : "未检测到独立硬盘温度传感器，显示系统传感器读数。") : "";
+  /* 标题（悬浮说明）：容器盘 / 回落系统传感器 / 正常硬盘传感器 三种情况分开说。 */
+  let hint = "";
+  if (containerLabel) hint = (curLang === "en" ? "Container disk " : "容器所在硬盘 ") + containerLabel;
+  else if (usingFallback) hint = curLang === "en" ? "No dedicated drive sensor; showing system sensors." : "未检测到独立硬盘温度传感器，显示系统传感器读数。";
+  else if (!mapped) hint = curLang === "en" ? "No mapped space; showing available drive sensors." : "未映射空间，显示可用硬盘传感器。";
+  main.title = hint;
+  list.title = hint;
   list.innerHTML = entries.slice(0, 3).map(x => `<div class="temp-item"><span>${esc(x.name)}</span><b>${Number(x.temp).toFixed(0)}°C</b></div>`).join("");
 }
 

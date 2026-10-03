@@ -19,7 +19,7 @@ const sandbox = {
   movieMetadataFor: () => ({}),
   saveMovieMetadataOverride: async () => ({ user_rating: 0 }),
   toast: m => {},
-  /* v0.9.85：演职人员标签/空态与通知文案走 t()/tf()，行为桩给出最小实现。 */
+  /* v0.9.86：演职人员标签/空态与通知文案走 t()/tf()，行为桩给出最小实现。 */
   t: k => k, tf: (k, v) => k + JSON.stringify(v),
   fetch: async () => ({ ok: true, json: async () => ({}) }),
   window: { innerWidth: 1280, matchMedia: () => ({ matches: false }) },

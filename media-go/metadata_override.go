@@ -10,10 +10,16 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 )
 
 type mediaMetadataOverride struct {
+	/* v0.9.86（客户要求「增加影视媒体编辑功能辅助完成刮削（媒体名称、年份）」）：
+	   手工指定的名称与年份进 override 文件，既直接作为展示名，也作为刮削搜索词，
+	   而且跨设备/跨浏览器一致（不依赖 localStorage）。 */
+	Title      string   `json:"title,omitempty"`
+	Year       string   `json:"year,omitempty"`
 	UserRating float64  `json:"user_rating,omitempty"`
 	Poster     string   `json:"poster,omitempty"`
 	Logo       string   `json:"logo,omitempty"`
@@ -120,6 +126,10 @@ func sanitizeOverride(lib Library, in mediaMetadataOverride) (mediaMetadataOverr
 		}
 	}
 	in.Poster, in.Logo, in.Fanart, in.Backdrop = strings.TrimSpace(in.Poster), strings.TrimSpace(in.Logo), strings.TrimSpace(in.Fanart), strings.TrimSpace(in.Backdrop)
+	/* v0.9.86：名称 / 年份 —— 名称去掉控制字符并限长（搜索词，别让请求被玩坏），
+	   年份只接受 4 位数字，其它一律当空（宁可不写，也不写坏）。 */
+	in.Title = sanitizeOverrideTitle(in.Title)
+	in.Year = sanitizeOverrideYear(in.Year)
 	/* v0.9.76：手动十分制评分（1–10，0 = 未评分）。存进 override 文件，
 	   走的是同一份 /data 持久化，所以换设备/换浏览器打开同一部影片看到的
 	   都是自己上次打的分 —— 多端同步就靠它，localStorage 只做缓存回退。 */
@@ -194,6 +204,13 @@ func (a *App) mergeMetadataOverride(lib Library, mediaPath string, m *localMedia
 	if !ok {
 		return
 	}
+	/* v0.9.86：手工名称/年份优先于文件名解析结果。 */
+	if in.Title != "" {
+		m.Title = in.Title
+	}
+	if in.Year != "" {
+		m.Year = in.Year
+	}
 	if in.Poster != "" {
 		m.Poster = in.Poster
 	}
@@ -254,4 +271,46 @@ func (a *App) artworkCandidates(w http.ResponseWriter, r *http.Request) {
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i]["name"] < items[j]["name"] })
 	writeJSON(w, 200, map[string]any{"items": items})
+}
+
+/*
+sanitizeOverrideTitle 清洗手工名称：去控制字符、压空白、限 120 字符（按 rune）。
+
+	空字符串表示「不覆盖」—— 保持文件名解析出来的名称。
+*/
+func sanitizeOverrideTitle(raw string) string {
+	var b strings.Builder
+	for _, r := range raw {
+		if r == '\n' || r == '\r' || r == '\t' {
+			b.WriteRune(' ')
+			continue
+		}
+		if r < 0x20 || r == 0x7f {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	out := strings.Join(strings.Fields(b.String()), " ")
+	if len([]rune(out)) > 120 {
+		out = string([]rune(out)[:120])
+	}
+	return out
+}
+
+/* sanitizeOverrideYear 只接受 4 位数字年份（1800–2200），其余按空处理。 */
+func sanitizeOverrideYear(raw string) string {
+	y := strings.TrimSpace(raw)
+	if len(y) != 4 {
+		return ""
+	}
+	for i := 0; i < len(y); i++ {
+		if y[i] < '0' || y[i] > '9' {
+			return ""
+		}
+	}
+	n, err := strconv.Atoi(y)
+	if err != nil || n < 1800 || n > 2200 {
+		return ""
+	}
+	return y
 }

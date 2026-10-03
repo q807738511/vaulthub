@@ -18,7 +18,7 @@ let vaultHubSessionPingedAt = 0;
    历史故障：v0.8.3→v0.8.5 的前端修改在服务端已生效，但浏览器仍执行缓存里的
    旧 02-media.js，用户看到「没有更新」。现在入口页 no-store、静态资源带 ?v=，
    并在启动时做一次一致性自查，不一致就绕过缓存强制重载一次。 */
-const VAULTHUB_SCRIPT_VERSION = "0.9.85";
+const VAULTHUB_SCRIPT_VERSION = "0.9.86";
 function ensureFreshAssets() {
   /* expected 为空 = 浏览器执行的 index.html 早于 v0.8.6（旧版本入口页没有声明
      版本号），同样属于"页面是旧的"，也需要换 URL 重新取一次。 */
@@ -348,6 +348,16 @@ const I18N = {
     avatarUpload: "上传头像图片（可选）", avatarReset: "恢复默认", avatarSaved: "头像已保存",
     avatarTooLarge: "图片过大，无法保存到 localStorage", avatarResetDone: "头像已恢复默认",
     setLibrary: "媒体库", setLibExisting: "已添加的媒体库",
+    /* v0.9.86：影视刮削迁入系统设置 + 媒体名称/年份编辑 */
+    scrapeGoSettings: "刮削设置",
+    libScanAuto: "自动扫描（整库逐项刮削）",
+    libScanItem: "逐项扫描（手动选择条目）",
+    libScanTitle: "逐项扫描",
+    libScanAll: "自动扫描整库",
+    libScanRetryFailed: "仅重试失败项",
+    editTitleLabel: "媒体名称（用于刮削搜索）",
+    editYearLabel: "年份",
+    editScrapeHint: "名称与年份会作为刮削搜索词：保存后立即按新名称重刮一次，跨设备一致。",
     setLibExistingHint: "侧边栏只展示这里创建时填写的库名称。每个库都可以单独重新扫描、打开或删除。",
     setLibAdd: "媒体库增加",
     setLibAddHint: "先选来源：本地媒体库使用容器内已挂载的绝对路径；外连服务接入 Emby / Navidrome / Komga 等现成服务器。",
@@ -595,6 +605,16 @@ const I18N = {
     avatarUpload: "上傳頭像圖片（可選）", avatarReset: "恢復預設", avatarSaved: "頭像已保存",
     avatarTooLarge: "圖片過大，無法保存到 localStorage", avatarResetDone: "頭像已恢復預設",
     setLibrary: "媒體庫", setLibExisting: "已新增的媒體庫",
+    /* v0.9.86 */
+    scrapeGoSettings: "刮削設定",
+    libScanAuto: "自動掃描（整庫逐項刮削）",
+    libScanItem: "逐項掃描（手動選擇條目）",
+    libScanTitle: "逐項掃描",
+    libScanAll: "自動掃描整庫",
+    libScanRetryFailed: "僅重試失敗項",
+    editTitleLabel: "媒體名稱（用於刮削搜尋）",
+    editYearLabel: "年份",
+    editScrapeHint: "名稱與年份會作為刮削搜尋詞：儲存後立即依新名稱重刮一次，跨裝置一致。",
     setLibExistingHint: "側邊欄只顯示這裡建立時填寫的庫名稱。每個庫都可以單獨重新掃描、開啟或刪除。",
     setLibAdd: "媒體庫新增",
     setLibAddHint: "先選來源：本地媒體庫使用容器內已掛載的絕對路徑；外連服務接入 Emby / Navidrome / Komga 等現成伺服器。",
@@ -848,6 +868,16 @@ const I18N = {
     avatarUpload: "Upload avatar image (optional)", avatarReset: "Reset to default", avatarSaved: "Avatar saved",
     avatarTooLarge: "Image too large for localStorage", avatarResetDone: "Avatar reset to default",
     setLibrary: "Libraries", setLibExisting: "Existing libraries",
+    /* v0.9.86 */
+    scrapeGoSettings: "Scrape settings",
+    libScanAuto: "Auto scan (scrape every item)",
+    libScanItem: "Item-by-item scan",
+    libScanTitle: "Item-by-item scan",
+    libScanAll: "Auto scan whole library",
+    libScanRetryFailed: "Retry failed only",
+    editTitleLabel: "Title (used as the scrape query)",
+    editYearLabel: "Year",
+    editScrapeHint: "Title and year are used as the scrape query: saving re-scrapes this item by the new title.",
     setLibExistingHint: "The sidebar shows only the library names you enter here. Each library can be rescanned, opened or removed.",
     setLibAdd: "Add a library",
     setLibAddHint: "Pick a source: local libraries use absolute paths mounted inside the container; external services connect to Emby / Navidrome / Komga and friends.",

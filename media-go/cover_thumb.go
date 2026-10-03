@@ -29,13 +29,18 @@ import (
  *   封面比漫画页更「可牺牲」，排队超时就直出原图，绝不让海报墙卡住。
  */
 
-const coverCacheKeyVersion = "ch1"
+/*
+v0.9.86：键版本 ch1 → ch2 —— 转码器修掉了「色度平面只写上半部分」的缺陷，
+
+	磁盘上已缓存的旧缩略图（下截发绿）必须整体失效重算，否则修复对老缓存无效。
+*/
+const coverCacheKeyVersion = "ch2"
 
 const (
 	// maxCoverSourceBytes 超过该体积不做缩略（避免并发解码叠加大内存），直接流式直出原图。
 	maxCoverSourceBytes = 24 << 20
 	// coverMaxWidth 允许的最大缩略宽度，防止任意 w 值把缓存刷满。
-	coverMaxWidth = 1280
+	coverMaxWidth    = 1280
 	coverJPEGQuality = 82
 	// coverThumbQueueTimeout 封面转码排队上限：宁可直出原图，也不让请求排队等太久。
 	coverThumbQueueTimeout = 3 * time.Second

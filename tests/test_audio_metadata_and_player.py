@@ -12,9 +12,8 @@ media = (root / "tests" / "fixtures" / "media-api_legacy.c").read_text()
 required = [
     'audioPageSize',
     'setAudioPageSize',
-    '<option value="20"',
-    '<option value="50"',
-    '<option value="100"',
+    # v0.9.86：音乐库取消分页 —— 每页数量选择器整体移除，改为整库一次展开
+    '已展开全部',
     'scrapeAudioMetadata',
     'audioMetadataCache',
     'renderAudioAlbums',
@@ -58,7 +57,9 @@ for marker in required:
     assert marker in html, f"missing audio feature: {marker}"
 
 assert 'loadLocalFiles("audio"' in html
-assert 'group === "audio" ? audioPageSize' in html, "audio list still uses fixed page size"
+assert 'group === "audio" ? audioPageSize' not in html, "音频分页游标已废弃（v0.9.86 整库展开）"
+assert '音乐库不再分页' in html, "音乐库需要明确提示不再分页"
+assert 'audioPageSize" onchange' not in html, "每页数量选择器应已移除"
 assert 'Bangumi' in html and 'api.bgm.tv' in html, "comic cover scraper lacks Bangumi source"
 assert 'graphql.anilist.co' in html, "comic cover scraper lacks AniList source"
 assert 'AbortController' in html and 'COMIC_COVER_TIMEOUT' in html, "cover sources must time out per source"

@@ -124,19 +124,33 @@ function renderHomeCount() {
   });
 }
 
-/* ---------- 第一栏补充：硬盘剩余容量（复用 /api/system/metrics 的 disks） ---------- */
-function renderHomeDiskSummary(disks) {
+/* ---------- 第一栏补充：硬盘剩余容量（复用 /api/system/metrics 的 disks） ----------
+   v0.9.86（客户反馈「硬盘信息展示了两遍容量」）：
+   有映射空间时，容量只在下方 VHDATA 卷列表里出现一次，这里改成「已映射 N 处」
+   （进度条取占用最高的卷，只做视觉提示，不再重复数字）；
+   没有映射空间时，才在这里展示容器所在硬盘的剩余/总量。 */
+function renderHomeDiskSummary(disks, containerDisk) {
   const text = document.getElementById("diskFreeText");
   const bar = document.getElementById("diskFreeBar");
   if (!text || !bar) return;
   const list = Array.isArray(disks) ? disks : [];
-  if (!list.length) { text.textContent = "--"; bar.style.width = "0%"; return; }
-  let total = 0, used = 0;
-  list.forEach(d => { total += Number(d.total || 0); used += Number(d.used || 0); });
-  if (total <= 0) { text.textContent = "--"; bar.style.width = "0%"; return; }
-  const free = total - used;
-  const pct = Math.round(used / total * 100);
-  text.textContent = `${formatHomeBytes(free)} / ${formatHomeBytes(total)}`;
+  list.forEach(d => { d.__pct = Number(d.total || 0) > 0 ? Number(d.used || 0) / Number(d.total) * 100 : 0; });
+  if (list.length) {
+    const peak = list.reduce((m, d) => Math.max(m, d.__pct), 0);
+    text.textContent = curLang === "en" ? `${list.length} mapped` : `已映射 ${list.length} 处`;
+    text.title = curLang === "en"
+      ? "Capacity is listed once per volume below"
+      : "容量在下方卷列表逐项展示，不在这里重复";
+    bar.style.width = Math.min(100, Math.round(peak)) + "%";
+    bar.className = peak >= 90 ? "hot" : peak >= 75 ? "warn" : "";
+    return;
+  }
+  /* 未映射空间：展示容器所在硬盘（容器数据目录那块盘）。 */
+  const cd = containerDisk && Number(containerDisk.total) > 0 ? containerDisk : null;
+  if (!cd) { text.textContent = "--"; text.title = ""; bar.style.width = "0%"; bar.className = ""; return; }
+  text.textContent = `${formatHomeBytes(cd.free)} / ${formatHomeBytes(cd.total)}`;
+  text.title = (curLang === "en" ? "Container disk " : "容器所在硬盘 ") + (cd.device || cd.path || "");
+  const pct = Math.min(100, Number(cd.percent || 0));
   bar.style.width = pct + "%";
   bar.className = pct >= 90 ? "hot" : pct >= 75 ? "warn" : "";
 }
@@ -489,6 +503,8 @@ async function loadHomeScrapeStatus() {
   homeScrapeStatus=Object.fromEntries(rows);
 }
 function homeScrapePill(lib) {
+  /* v0.9.86：影视库的刮削状态改由「自动 / 逐项扫描」驱动，胶囊显示上一次扫描结果。 */
+  if (typeof libraryScanPillHtml === "function" && (lib.type === "movie" || lib.type === "series")) return libraryScanPillHtml(lib);
   if(lib.type!=="audio") return `<span class="pill info">按需读取</span>`;
   const st=homeScrapeStatus[lib.id]; if(!st) return `<span class="pill info">待读取</span>`;
   const c=st.counts||{}, done=Number(st.complete||0), total=Number(st.total||0), failures=Number(c.failed||0)+Number(c.not_found||0);
@@ -527,6 +543,7 @@ function renderHomeLibTable() {
       <td>${homeLibStatePill(st)}</td>
       <td>${homeScrapePill(lib)}</td>
       <td><div class="row-acts">
+        ${(lib.type === "movie" || lib.type === "series") ? `<button class="icon-btn" title="${esc(t("libScanAuto"))}" onclick="autoScanLibrary('${esc(lib.id)}')">⚡</button><button class="icon-btn" title="${esc(t("libScanItem"))}" onclick="openLibraryItemScan('${esc(lib.id)}')">▤</button>` : ""}
         <button class="icon-btn" title="${esc(t("actRescan"))}" onclick="rebuildOneLibrary('${esc(lib.id)}')">🔄</button>
         <button class="icon-btn" title="${esc(t("actOpenLib"))}" onclick="openHomeLibrary('${esc(group)}','${esc(lib.id)}')">↗</button>
         <button class="icon-btn" title="${esc(t("actRemove"))}" onclick="deleteMediaLibrary('${esc(lib.id)}')">✕</button>

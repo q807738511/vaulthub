@@ -26,9 +26,9 @@ BOOT = (ROOT / "web/js/04-boot.js").read_text(encoding="utf-8")
 THEME = (ROOT / "web/js/06-theme.js").read_text(encoding="utf-8")
 GO_READING = (ROOT / "media-go/reading_progress.go").read_text(encoding="utf-8")
 UPDATELOG = (ROOT / "Update Log.md").read_text(encoding="utf-8")
-NOTES = (ROOT / ".github/RELEASE_NOTES_0.9.85.md")
+NOTES = (ROOT / ".github/RELEASE_NOTES_0.9.86.md")
 
-VERSION = "0.9.85"
+VERSION = "0.9.86"
 checks = []
 
 
@@ -190,9 +190,9 @@ for key in ["themeModeLbl", "themePaletteLbl", "themeAccentLbl", "accentTheme", 
 
 
 # ---------------- 版本与发布资料 ----------------
-check("V 入口页资源版本 0.9.85", f'window.VAULTHUB_ASSET_VERSION = "{VERSION}";' in HTML)
-check("V 脚本自校验版本 0.9.85", f'const VAULTHUB_SCRIPT_VERSION = "{VERSION}";' in STATE)
-check("V 所有静态资源带 ?v=0.9.85", HTML.count(f"?v={VERSION}") >= 8, f"命中 {HTML.count(f'?v={VERSION}')}")
+check("V 入口页资源版本 0.9.86", f'window.VAULTHUB_ASSET_VERSION = "{VERSION}";' in HTML)
+check("V 脚本自校验版本 0.9.86", f'const VAULTHUB_SCRIPT_VERSION = "{VERSION}";' in STATE)
+check("V 所有静态资源带 ?v=0.9.86", HTML.count(f"?v={VERSION}") >= 8, f"命中 {HTML.count(f'?v={VERSION}')}")
 check("V 主题脚本被入口页引用", f'/web/js/06-theme.js?v={VERSION}' in HTML)
 # 同一版本内角标文案随本版主功能追加而调整（v0.9.83 收尾加入顶栏导航与书刊页）。
 check("V 侧栏与关于弹窗角标已升版", HTML.count(f"v{VERSION}") >= 1)

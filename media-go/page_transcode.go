@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"image"
 	"image/color"
-	"image/jpeg"
 	_ "image/gif"
+	"image/jpeg"
 	_ "image/png"
 )
 
@@ -138,27 +138,33 @@ func scaleYCbCrPage(src *image.YCbCr, dstW, dstH int) *image.YCbCr {
 		}
 	}
 
-	dstCW, dstCH := dstW, dstH
-	switch src.SubsampleRatio {
-	case image.YCbCrSubsampleRatio420:
-		dstCW, dstCH = (dstW+1)/2, (dstH+1)/2
-	case image.YCbCrSubsampleRatio422:
-		dstCW = (dstW + 1) / 2
-	}
-	for cy := 0; cy < dstCH; cy++ {
-		y0 := sb.Min.Y + cy*2*sh/dstH
-		y1 := sb.Min.Y + (cy+1)*2*sh/dstH
+	/* v0.9.86（客户反馈「音乐专辑海报上层是图、下层发绿」）：
+	   旧实现用 dst.COffset(0, cy) 定位目标色度行，但 cy 已经是「色度行号」，
+	   而 COffset 会按采样比再对 y 做一次除法（4:2:0 除以 2）——
+	   结果只能写到色度平面的上半部分，下半部分始终是 0。
+	   JPEG 里 Cb=Cr=0 渲染出来就是饱和的纯绿（Y 正常 → 亮绿），
+	   于是封面「上截正常、下截发绿」。现在直接按「色度行号 × 平面行距」定位，
+	   行距与采样比无关，恒为正确行。 */
+	chromaW, chromaH := ycbcrChromaSize(src.SubsampleRatio, dstW, dstH)
+	hFactor, vFactor := ycbcrChromaFactors(src.SubsampleRatio)
+	for cy := 0; cy < chromaH; cy++ {
+		y0 := sb.Min.Y + cy*vFactor*sh/dstH
+		y1 := sb.Min.Y + (cy+1)*vFactor*sh/dstH
 		if y1 <= y0 {
 			y1 = y0 + 1
 		}
 		if y1 > sb.Max.Y {
 			y1 = sb.Max.Y
 		}
-		rowCb := dst.Cb[dst.COffset(0, cy):]
-		rowCr := dst.Cr[dst.COffset(0, cy):]
-		for cx := 0; cx < dstCW; cx++ {
-			x0 := sb.Min.X + cx*2*sw/dstW
-			x1 := sb.Min.X + (cx+1)*2*sw/dstW
+		rowStart := cy * dst.CStride
+		if rowStart < 0 || rowStart >= len(dst.Cb) {
+			break
+		}
+		rowCb := dst.Cb[rowStart:]
+		rowCr := dst.Cr[rowStart:]
+		for cx := 0; cx < chromaW; cx++ {
+			x0 := sb.Min.X + cx*hFactor*sw/dstW
+			x1 := sb.Min.X + (cx+1)*hFactor*sw/dstW
 			if x1 <= x0 {
 				x1 = x0 + 1
 			}
@@ -175,12 +181,48 @@ func scaleYCbCrPage(src *image.YCbCr, dstW, dstH int) *image.YCbCr {
 				}
 			}
 			if n > 0 {
-				rowCb[cx] = uint8((s1 + n/2) / n)
-				rowCr[cx] = uint8((s2 + n/2) / n)
+				if cx < len(rowCb) {
+					rowCb[cx] = uint8((s1 + n/2) / n)
+				}
+				if cx < len(rowCr) {
+					rowCr[cx] = uint8((s2 + n/2) / n)
+				}
 			}
 		}
 	}
 	return dst
+}
+
+/* ycbcrChromaSize 返回目标 YCbCr 的色度平面宽高，与 image.NewYCbCr 的分配规则一致。 */
+func ycbcrChromaSize(ratio image.YCbCrSubsampleRatio, w, h int) (int, int) {
+	switch ratio {
+	case image.YCbCrSubsampleRatio420:
+		return (w + 1) / 2, (h + 1) / 2
+	case image.YCbCrSubsampleRatio422:
+		return (w + 1) / 2, h
+	case image.YCbCrSubsampleRatio440:
+		return w, (h + 1) / 2
+	default: /* 444 与其余（Go 解码器只会给出 444/422/420/440） */
+		return w, h
+	}
+}
+
+/*
+ycbcrChromaFactors 返回每种采样比下「一个色度样本覆盖多少亮度像素」，
+
+	与 image.YCbCr.COffset 的取整方式保持一致。
+*/
+func ycbcrChromaFactors(ratio image.YCbCrSubsampleRatio) (int, int) {
+	switch ratio {
+	case image.YCbCrSubsampleRatio420:
+		return 2, 2
+	case image.YCbCrSubsampleRatio422:
+		return 2, 1
+	case image.YCbCrSubsampleRatio440:
+		return 1, 2
+	default:
+		return 1, 1
+	}
 }
 
 // scaleRGBAPage 面积平均降采样到 RGBA（扫白了 alpha 通道，白底合成）。

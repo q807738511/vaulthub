@@ -462,7 +462,8 @@ function bookShelfPageHtml(lib, pageFiles, counts, total) {
       <div class="pn-meta">
         <span>${esc(kind)} · 本视图 <b>${Number(total) || 0}</b> ${unit}</span>
         <span>全库 <b>${Number((counts && counts.all) || 0)}</b> ${unit}</span>
-        ${lib.path ? `<span>路径 <code>${esc(lib.path)}</code></span>` : ""}
+        ${/* v0.9.86：客户要求漫画 / 电子书的副标题不再展示媒体库映射的空间位置
+             （路径属于配置信息，放系统设置里看即可，不该占副标题）。 */ ''}
         <span>本页 <b>${pageFiles.length}</b> ${unit}</span>
         ${scan ? `<span>${esc(scan)}</span>` : ""}
       </div>
@@ -893,9 +894,167 @@ function updateMovieScrapeStatus(files) {
   const el = document.getElementById("movieScrapeStatus");
   if (el) el.textContent = movieScrapeSummary(files || (movieScrapeContext && movieScrapeContext.files) || []);
 }
-/* 库标题右侧的刮削状态与手动入口（v0.9.84 新增，解决「没有重试入口」）。 */
+/* 库标题右侧的刮削状态（v0.9.84 新增）。
+   v0.9.86（客户要求）：整库「重新刮削 / 重试失败项」这两个大按钮从影视页迁走 ——
+   刮削入口统一放在「系统设置 → 媒体库 → 已添加的媒体库」（自动 / 逐项扫描）。
+   这里只保留状态与一个指路按钮，不再出现大块操作区。 */
 function movieScrapeControls(files) {
-  return `<div class="media-actions" style="gap:6px;flex-wrap:wrap"><span class="badge" id="movieScrapeStatus">${esc(movieScrapeSummary(files))}</span><button class="btn" type="button" onclick="refreshMovieMetadata('all')" title="清空本库元数据缓存后整库重刮">🔄 重新刮削</button><button class="btn" type="button" onclick="refreshMovieMetadata('failed')" title="只重试上次失败/未命中的条目">↻ 重试失败项</button></div>`;
+  return `<div class="media-actions" style="gap:6px;flex-wrap:wrap"><span class="badge" id="movieScrapeStatus">${esc(movieScrapeSummary(files))}</span><button class="btn" type="button" onclick="openSettingsPage('library')" title="刮削入口已迁至系统设置">⚙ <span data-i18n="scrapeGoSettings">刮削设置</span></button></div>`;
+}
+
+/* ==================== v0.9.86：影视刮削入口（系统设置内） ====================
+   客户要求：「影视界面中展示了很大的一个刮削按钮，给他迁移到
+   系统设置 / 媒体库 / 已添加的媒体库 中进行自动 / 手动逐项扫描」。
+   实现：
+     · ⚡ 自动扫描 —— 整库逐项走既有刮削状态机（已成功/已放弃的项自动跳过）；
+     · ▤ 逐项扫描 —— 弹窗列出条目，可单条刮削，或编辑名称 / 年份后重刮。
+   进度写进 libraryScanState，库列表与弹窗都读它。
+   ============================================================================ */
+const libraryScanState = {};
+function libraryScanStateOf(libId) { return libraryScanState[String(libId)] || null; }
+function isScannableLibrary(lib) { return !!lib && (lib.type === "movie" || lib.type === "series"); }
+/* 库列表「刮削」列的胶囊：影视库显示真实扫描状态，其它库保持原样。 */
+function libraryScanPillHtml(lib) {
+  if (!isScannableLibrary(lib)) return `<span class="pill info">按需读取</span>`;
+  const st = libraryScanStateOf(lib.id);
+  if (!st) return `<span class="pill info">待扫描</span>`;
+  if (st.running) return `<span class="pill warn">扫描中 ${Number(st.done || 0)}/${Number(st.total || 0) || "?"}</span>`;
+  if (st.message) return `<span class="pill bad" title="${esc(st.message)}">扫描失败</span>`;
+  const parts = [`成功 ${Number(st.ok || 0)}`];
+  if (st.failed) parts.push(`失败 ${st.failed}`);
+  if (st.skip) parts.push(`跳过 ${st.skip}`);
+  return `<span class="pill ${st.failed ? "warn" : "ok"}" title="共 ${Number(st.total || 0)} 项">${parts.join(" · ")}</span>`;
+}
+/* 取整库文件：影视库的刮削对象（含原盘片段合并）。 */
+async function libraryScanLoadFiles(libId) {
+  const lib = findMediaLibrary(libId);
+  const res = await fetch(`/api/media/files?id=${encodeURIComponent(libId)}&offset=0&limit=500`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const first = await res.json();
+  let files = await fetchAllLibraryFiles(libId, first, 0);
+  files = files.filter(file => supportedLocalMediaFile("movie", lib, String(file.path)));
+  if (lib && lib.type !== "series") files = collapseDiscFragments(files);
+  return files;
+}
+async function autoScanLibrary(libId) {
+  const lib = findMediaLibrary(libId);
+  if (!lib) { toast("⚠️ 媒体库不存在"); return; }
+  if (!isScannableLibrary(lib)) { toast("该媒体库不是影视库，暂不支持刮削扫描"); return; }
+  const prev = libraryScanStateOf(libId);
+  if (prev && prev.running) { toast("该媒体库正在扫描中，请稍候"); return; }
+  libraryScanState[libId] = { running: true, done: 0, total: 0, ok: 0, failed: 0, skip: 0, at: Date.now() };
+  if (typeof renderHomeLibTable === "function") renderHomeLibTable();
+  const savedCtx = movieScrapeContext;
+  try {
+    const files = await libraryScanLoadFiles(libId);
+    const st = libraryScanState[libId];
+    st.total = files.length;
+    if (!files.length) { st.running = false; st.message = ""; toast("该媒体库暂无支持的影视文件"); return; }
+    if (typeof renderHomeLibTable === "function") renderHomeLibTable();
+    toast(`⚡ 自动扫描开始：${lib.name} · ${files.length} 项`);
+    /* host 传 null：不在库页渲染，只走状态机 + 顶栏通知。 */
+    await scrapeMovieMetadata(null, lib, files);
+    const s = movieScrapeStats(files);
+    Object.assign(libraryScanState[libId], { running: false, done: files.length, total: files.length, ok: s.ok, failed: s.failed, skip: s.skip, message: "" });
+    toast(`✅ ${lib.name} 扫描完成：成功 ${s.ok} · 失败 ${s.failed} · 跳过 ${s.skip}`);
+  } catch (e) {
+    libraryScanState[libId] = { ...(libraryScanState[libId] || {}), running: false, message: e.message || "扫描失败" };
+    toast("⚠️ 扫描失败：" + (e.message || e));
+  } finally {
+    movieScrapeContext = savedCtx;
+    if (typeof renderHomeLibTable === "function") renderHomeLibTable();
+    if (libraryItemScan.libId && String(libraryItemScan.libId) === String(libId)) renderLibraryItemScanBody();
+    if (typeof refreshHomeData === "function") setTimeout(refreshHomeData, 800);
+  }
+}
+/* ---------- 逐项扫描弹窗 ---------- */
+const libraryItemScan = { libId: "", files: [], busy: "" };
+function libraryItemScanTitle(path) {
+  const meta = movieMetadataFor(path);
+  return (meta && (meta.user_title || meta.title)) || movieTitleFromPath(path) || String(path).split("/").pop();
+}
+function libraryItemScanStateLabel(path) {
+  const state = movieMetaState(movieMetadataFor(path));
+  if (state === "ok") return "已刮削";
+  if (state === "failed") return "上次未命中";
+  if (state === "skip") return "文件名无可用标题";
+  return "待刮削";
+}
+async function openLibraryItemScan(libId) {
+  const lib = findMediaLibrary(libId);
+  if (!lib) { toast("⚠️ 媒体库不存在"); return; }
+  if (!isScannableLibrary(lib)) { toast("该媒体库不是影视库，暂不支持逐项扫描"); return; }
+  libraryItemScan.libId = String(libId);
+  libraryItemScan.files = [];
+  libraryItemScan.busy = "";
+  const host = document.getElementById("libItemScanList");
+  if (host) host.innerHTML = `<div class="empty-tip">正在读取媒体条目…</div>`;
+  const hint = document.getElementById("libItemScanHint");
+  if (hint) hint.textContent = `${lib.name} · 读取中…`;
+  openModal("libItemScanModal");
+  try {
+    libraryItemScan.files = await libraryScanLoadFiles(libId);
+  } catch (e) {
+    if (host) host.innerHTML = `<div class="media-error">读取失败：${esc(e.message)}</div>`;
+    return;
+  }
+  renderLibraryItemScanBody();
+}
+function renderLibraryItemScanBody() {
+  const host = document.getElementById("libItemScanList");
+  if (!host) return;
+  const lib = findMediaLibrary(libraryItemScan.libId);
+  const files = libraryItemScan.files || [];
+  const hint = document.getElementById("libItemScanHint");
+  if (hint) hint.textContent = `${lib ? lib.name : ""} · 共 ${files.length} 项 · 可单条「刮削」，或「✎ 编辑名称/年份」后重刮`;
+  const stat = document.getElementById("libItemScanStat");
+  if (stat) stat.textContent = movieScrapeSummary(files);
+  if (!files.length) { host.innerHTML = `<div class="empty-tip">该媒体库暂无支持的影视文件</div>`; return; }
+  host.innerHTML = files.map(file => {
+    const path = String(file.path);
+    const meta = movieMetadataFor(path);
+    const state = movieMetaState(meta);
+    const sub = [meta.year || "", libraryItemScanStateLabel(path)].filter(Boolean).join(" · ");
+    const busy = libraryItemScan.busy === path;
+    return `<div class="lib-scan-row${busy ? " busy" : ""}" data-scan-path="${esc(path)}" data-scan-state="${esc(state)}">
+      <div class="lib-scan-name"><b>${esc(libraryItemScanTitle(path))}</b><small>${esc(sub)} · ${esc(path)}</small></div>
+      <div class="row-acts">
+        <button class="icon-btn" type="button" title="刮削此项" ${busy ? "disabled" : ""} onclick="scanLibraryEntry(${jsAttrArg(libraryItemScan.libId)},${jsAttrArg(path)})">${busy ? "…" : "🔍"}</button>
+        <button class="icon-btn" type="button" title="编辑名称 / 年份后重刮" onclick="editLibraryEntry(${jsAttrArg(libraryItemScan.libId)},${jsAttrArg(path)})">✎</button>
+      </div>
+    </div>`;
+  }).join("");
+}
+/* 单条刮削：清掉该条的刮削状态，保证用最新名称重走一遍。 */
+async function scanLibraryEntry(libId, path) {
+  const lib = findMediaLibrary(libId);
+  if (!lib) return;
+  const files = libraryItemScan.files || [];
+  const file = files.find(f => String(f.path) === String(path)) || { path };
+  const all = readMovieMetadata();
+  if (all[path]) {
+    all[path].scrape_attempts = 0;
+    all[path].last_attempt = 0;
+    delete all[path].scrape_state;
+    delete all[path].reason;
+    writeMovieMetadata(all);
+  }
+  libraryItemScan.busy = String(path);
+  renderLibraryItemScanBody();
+  try {
+    await scrapeOneMovie(lib, files, file);
+    if (typeof flushMovieMetadata === "function") flushMovieMetadata();
+  } catch (e) {
+    toast("⚠️ 刮削失败：" + (e.message || e));
+  } finally {
+    libraryItemScan.busy = "";
+    renderLibraryItemScanBody();
+  }
+}
+/* 编辑名称 / 年份（复用媒体信息编辑弹窗），保存后自动按新名称重刮一次。 */
+function editLibraryEntry(libId, path) {
+  closeModal("libItemScanModal");
+  openMediaMetadataEditor(libId, path);
 }
 /* v0.9.85：刮削信息进顶栏喇叭（通知中心）—— 开始 / 结果汇总 + 失败明细。 */
 function notifyScrapeStart(lib, files, queued) {
@@ -952,7 +1111,9 @@ async function scrapeOneMovie(lib, files, file) {
   const all = readMovieMetadata();
   const path = String(file.path);
   const base = all[path] || movieBaseMetadata(path);
-  const title = base.title || movieTitleFromPath(path);
+  /* v0.9.86：用户在「编辑媒体信息」里填的名称优先当搜索词（辅助刮削），
+     没有手工名称时才回落到解析/刮削出来的标题。 */
+  const title = base.user_title || base.title || movieTitleFromPath(path);
   const mediaType = lib && lib.type === "series" ? "series" : "movie";
   const attempts = Number(base.scrape_attempts || 0) + 1;
   const mode = scraperStatus.scraper_mode || scraperStatus.default || "auto";
@@ -1222,9 +1383,78 @@ async function saveMovieUserRating(libId, path, value) {
 }
 async function saveMovieMetadataOverride(libId,path,values){const res=await fetch(`/api/media/metadata/override?id=${encodeURIComponent(libId)}&path=${encodeURIComponent(path)}`,{method:"PUT",headers:sessionWriteHeaders(true),body:JSON.stringify(values)});const data=await res.json();if(!res.ok)throw new Error(data.error||`HTTP ${res.status}`);return data;}
 async function toggleMovieWatched(libId,path,button){const meta=movieMetadataFor(path),next=!(meta.watched||movieFlag("watched",libId,path));try{const data=await saveMovieMetadataOverride(libId,path,{poster:meta.poster||"",logo:meta.logo||"",fanart:meta.fanart||"",backdrop:meta.backdrop||"",tags:meta.tags||[],watched:next});meta.watched=!!data.watched;const all=readMovieMetadata();all[path]=meta;writeMovieMetadata(all);localStorage.setItem(movieStateKey("watched",libId,path),next?"1":"0");if(button)button.textContent=next?"✓ 已观看":"○ 未观看";}catch(e){toast("⚠️ 状态保存失败："+e.message);}}
-async function openMediaMetadataEditor(libId,path){const meta=movieMetadataFor(path);document.getElementById("mediaEditLibId").value=libId;document.getElementById("mediaEditPath").value=path;for(const role of ["Poster","Logo","Fanart","Backdrop"])document.getElementById(`mediaEdit${role}Url`).value=meta[role.toLowerCase()]||"";document.getElementById("mediaEditTags").value=(meta.tags||[]).join(", ");const host=document.getElementById("mediaEditArtworkChoices");host.innerHTML="正在读取媒体目录图片…";openModal("mediaMetadataEditorModal");try{const res=await fetch(`/api/media/metadata/artwork?id=${encodeURIComponent(libId)}&path=${encodeURIComponent(path)}`,{cache:"no-store"});const data=await res.json();if(!res.ok)throw new Error(data.error||`HTTP ${res.status}`);host.innerHTML=(data.items||[]).map(item=>`<button class="artwork-choice" type="button" onclick="chooseMediaArtwork(${jsAttrArg(item.url)})"><img src="${esc(item.url)}" alt=""><span>${esc(item.name)}</span></button>`).join("")||"该目录没有可选图片";}catch(e){host.textContent="图片读取失败："+e.message;}}
+async function openMediaMetadataEditor(libId,path){const meta=movieMetadataFor(path);document.getElementById("mediaEditLibId").value=libId;document.getElementById("mediaEditPath").value=path;
+  /* v0.9.86（客户要求「增加影视媒体编辑功能辅助完成刮削（媒体名称、年份）」）：
+     名称回填优先级 —— 手工设置过的名称 > 当前展示名；年份同理。 */
+  const titleInput=document.getElementById("mediaEditTitle"),yearInput=document.getElementById("mediaEditYear");
+  if(titleInput)titleInput.value=meta.user_title||meta.title||"";
+  if(yearInput)yearInput.value=meta.year||"";for(const role of ["Poster","Logo","Fanart","Backdrop"])document.getElementById(`mediaEdit${role}Url`).value=meta[role.toLowerCase()]||"";document.getElementById("mediaEditTags").value=(meta.tags||[]).join(", ");const host=document.getElementById("mediaEditArtworkChoices");host.innerHTML="正在读取媒体目录图片…";openModal("mediaMetadataEditorModal");try{const res=await fetch(`/api/media/metadata/artwork?id=${encodeURIComponent(libId)}&path=${encodeURIComponent(path)}`,{cache:"no-store"});const data=await res.json();if(!res.ok)throw new Error(data.error||`HTTP ${res.status}`);host.innerHTML=(data.items||[]).map(item=>`<button class="artwork-choice" type="button" onclick="chooseMediaArtwork(${jsAttrArg(item.url)})"><img src="${esc(item.url)}" alt=""><span>${esc(item.name)}</span></button>`).join("")||"该目录没有可选图片";}catch(e){host.textContent="图片读取失败："+e.message;}}
 function chooseMediaArtwork(url){const role=document.getElementById("mediaEditArtworkRole").value;document.getElementById(`mediaEdit${role}Url`).value=url;}
-async function saveMediaMetadataEditor(){const libId=document.getElementById("mediaEditLibId").value,path=document.getElementById("mediaEditPath").value,meta=movieMetadataFor(path);const values={poster:document.getElementById("mediaEditPosterUrl").value.trim(),logo:document.getElementById("mediaEditLogoUrl").value.trim(),fanart:document.getElementById("mediaEditFanartUrl").value.trim(),backdrop:document.getElementById("mediaEditBackdropUrl").value.trim(),tags:document.getElementById("mediaEditTags").value.split(/[,，]/).map(x=>x.trim()).filter(Boolean),watched:!!meta.watched};try{const saved=await saveMovieMetadataOverride(libId,path,values),all=readMovieMetadata();all[path]={...meta,...saved};writeMovieMetadata(all);closeModal("mediaMetadataEditorModal");await openMovieDetails(libId,path);toast("✅ 媒体信息已保存");}catch(e){toast("⚠️ 保存失败："+e.message);}}
+async function saveMediaMetadataEditor(){
+  const libId=document.getElementById("mediaEditLibId").value,path=document.getElementById("mediaEditPath").value,meta=movieMetadataFor(path);
+  const titleInput=document.getElementById("mediaEditTitle");
+  const userTitle=titleInput?titleInput.value.trim():"";
+  const values={title:userTitle,year:(document.getElementById("mediaEditYear")||{}).value?document.getElementById("mediaEditYear").value.trim():"",poster:document.getElementById("mediaEditPosterUrl").value.trim(),logo:document.getElementById("mediaEditLogoUrl").value.trim(),fanart:document.getElementById("mediaEditFanartUrl").value.trim(),backdrop:document.getElementById("mediaEditBackdropUrl").value.trim(),tags:document.getElementById("mediaEditTags").value.split(/[,，]/).map(x=>x.trim()).filter(Boolean),watched:!!meta.watched};
+  const titleChanged=!!userTitle&&userTitle!==(meta.user_title||meta.title||"");
+  try{
+    const saved=await saveMovieMetadataOverride(libId,path,values),all=readMovieMetadata();
+    /* v0.9.86：手工名称/年份写进缓存，并把刮削状态复位 —— 下一次刮削（手动或自动）
+       就会用新名称去搜，这就是「辅助完成刮削」。 */
+    all[path]={...meta,...saved,
+      title:saved.title||meta.title,
+      user_title:saved.title||"",
+      year:saved.year||meta.year||"",
+      scrape_attempts:0,last_attempt:0,scrape_state:"pending",reason:""};
+    writeMovieMetadata(all);
+    if(typeof flushMovieMetadata==="function")flushMovieMetadata();
+    closeModal("mediaMetadataEditorModal");
+    if(typeof libraryItemScan!=="undefined"&&libraryItemScan.libId&&String(libraryItemScan.libId)===String(libId)){
+      /* 从逐项扫描弹窗进来：保存后直接按新名称重刮这一条，再刷回弹窗列表。 */
+      const lib=findMediaLibrary(libId),file={path};
+      libraryItemScan.busy=String(path);
+      await openLibraryItemScanFresh(libId,path,lib,file);
+      toast("✅ 已保存名称/年份，并按新名称重刮");
+      return;
+    }
+    await openMovieDetails(libId,path);
+    if(titleChanged&&findMediaLibrary(libId)){
+      const lib=findMediaLibrary(libId);
+      libraryScanState[libId]={...(libraryScanState[libId]||{}),running:false};
+      toast("✅ 已保存，正在按新名称重刮…");
+      scrapeOneMovie(lib,[{path}],{path}).then(()=>{if(typeof flushMovieMetadata==="function")flushMovieMetadata();openMovieDetails(libId,path);}).catch(()=>{});
+      return;
+    }
+    toast("✅ 媒体信息已保存");
+  }catch(e){toast("⚠️ 保存失败："+e.message);}
+}
+/* 逐项扫描弹窗内的「保存后重刮」：重刮单条并把结果刷回弹窗。 */
+async function openLibraryItemScanFresh(libId,path,lib,file){
+  try{
+    if(lib)await scrapeOneMovie(lib,libraryItemScan.files&&libraryItemScan.files.length?libraryItemScan.files:[file],file);
+  }catch(e){toast("⚠️ 重刮失败："+(e.message||e));}
+  libraryItemScan.busy="";
+  openLibraryItemScan(libId);
+}
+/* 逐项扫描弹窗的「仅重试失败项」：对这些条目复位刮削状态后逐条重刮。 */
+async function libraryItemScanRetryFailed(){
+  const libId=libraryItemScan.libId,lib=findMediaLibrary(libId);
+  const files=libraryItemScan.files||[];
+  if(!lib||!files.length)return;
+  const targets=files.filter(file=>{const st=movieMetaState(movieMetadataFor(String(file.path)));return st==="failed"||st==="pending";});
+  if(!targets.length){toast("没有需要重试的条目");return;}
+  const all=readMovieMetadata();
+  targets.forEach(file=>{const path=String(file.path);if(all[path]){all[path].scrape_attempts=0;all[path].last_attempt=0;delete all[path].scrape_state;delete all[path].reason;}});
+  writeMovieMetadata(all);
+  toast(`↻ 重试失败项：${targets.length} 项`);
+  for(const file of targets){
+    libraryItemScan.busy=String(file.path);
+    renderLibraryItemScanBody();
+    try{await scrapeOneMovie(lib,files,file);}catch(e){}
+  }
+  libraryItemScan.busy="";
+  if(typeof flushMovieMetadata==="function")flushMovieMetadata();
+  renderLibraryItemScanBody();
+}
 /* v0.9.75：十分制五星图示评分（半星步进 0.5），鼠标悬停跟踪预览、点击落定；
    不再用 prompt 输入。评分存 localStorage（vaulthub_movie_rating_*）。 */
 /* ==================== v0.9.76 视频推荐 ====================
@@ -2187,7 +2417,9 @@ async function loadLocalFiles(group, lib, offset = 0) {
        旧实现给已读视图发送 limit=100000，服务端会按安全上限截断，导致已读书籍
        重新打开后偶尔显示空白且无法展开。先按正常分页游标拉完，再在本地筛选，
        同时让两种视图共享同一份完整索引。 */
-    const pageSize = group === "comic" ? mediaPageSize : group === "audio" ? audioPageSize : group === "movie" ? 500 : 100;
+    /* v0.9.86：音乐库改为整库展开（不再分页），首屏请求直接按 500 一页取，
+   其余分页在下面一次性补完 —— 大库少打几个来回。 */
+    const pageSize = group === "comic" ? mediaPageSize : group === "audio" ? 500 : group === "movie" ? 500 : 100;
     /* v0.9.82：整库索引的会话级复用（远程访问提速的关键）。
        命中缓存时不再请求任何分页；缓存过期只发一个 limit=1 的小请求比对服务端索引版本。 */
     let data = null, files = null, fromSession = false;
@@ -2230,6 +2462,15 @@ async function loadLocalFiles(group, lib, offset = 0) {
     if (group === "comic") await loadReadingProgress(lib.id);
     /* 影视库统一补齐全部索引，电影和电视剧均不再显示分页或截断提示。 */
     let mediaTruncated = false;
+    /* v0.9.86（客户要求）：音乐库取消分页限制 —— 与影视一样一次拉完整库索引，
+       页面上不再出现「上一页 / 下一页 / 每页 N」。追加时保持服务端返回顺序，
+       不做二次排序，避免打乱「最近入库」的既有次序。 */
+    if (group === "audio" && data.has_more && !fromSession) {
+      const rest = await fetchRemainingLibraryFiles(lib.id, offset + normalizeFilePayload(data).length);
+      files = files.concat(rest.files.filter(file => supportedLocalMediaFile(group, lib, String(file.path))));
+      data.has_more = false;
+      audioCursor = 0;
+    }
     if (group === "movie" && data.has_more && !fromSession) {
       const rest = await fetchRemainingLibraryFiles(lib.id, offset + normalizeFilePayload(data).length);
       const extra = rest.files.filter(file => supportedLocalMediaFile(group, lib, String(file.path)));
@@ -2245,7 +2486,7 @@ async function loadLocalFiles(group, lib, offset = 0) {
       if (files.length !== beforeCollapse) { data.total = files.length; mediaTruncated = false; }
     }
     /* v0.9.82：影视 / 书刊都是「整库索引」语义 —— 缓存给本会话后续切库、切视图复用。 */
-    if (!fromSession && (group === "movie" || group === "comic") && data.status !== "indexing") {
+    if (!fromSession && (group === "movie" || group === "comic" || group === "audio") && data.status !== "indexing") {
       libraryIndexSession[lib.id] = { at: Date.now(), group, version: String(data.version || ""), total: Number(data.total) || files.length, status: data.status, files: files.slice() };
     }
     let bookPageFiles = null, bookTotal = 0;
@@ -2807,13 +3048,16 @@ function renderAudioTrackList(lib, files) {
     : "";
   return `<div class="audio-track-head">${groupPlay}${groupEdit}<button class="btn" onclick="audioTrackTitle='';audioArtistFilter='';audioPlaylistFilter='';setAudioView('${back}')">← 返回</button><strong>${esc(audioTrackTitle)}</strong><span class="media-file-meta">${files.length} 首</span></div>${files.length ? `<div class="media-file-list">${files.map(file => renderAudioRow(lib, file)).join("")}</div>` : '<div class="empty-tip">该列表下暂无歌曲</div>'}`;
 }
-function renderAudioLibraryContent(host, lib, files) {
+function renderAudioLibraryContent(host, lib, files, data) {
   const latest = [...files].sort((a, b) => Number(b.mtime || 0) - Number(a.mtime || 0)).slice(0, 8);
-  const pager = `<div class="media-actions"><button class="btn" ${audioCursor <= 0 ? "disabled" : ""} onclick="loadLocalFiles('audio',findMediaLibrary('${esc(lib.id)}'),${Math.max(0,audioCursor-audioPageSize)})">← 上一页</button><span class="media-file-meta">${audioCursor + 1}-${audioCursor + files.length}</span><button class="btn" onclick="loadLocalFiles('audio',findMediaLibrary('${esc(lib.id)}'),${audioCursor + audioPageSize})">下一页 →</button></div>`;
+  /* v0.9.86：音乐库取消「上一页 / 下一页 / 每页 N」——
+     整库一次展示，这里只留一行「已展开全部 N 首」的统计。 */
+  const total = Number((data && data.total) || files.length) || files.length;
+  const pager = `<div class="media-actions"><span class="media-file-meta">已展开全部 ${files.length} 首${total > files.length ? ` / ${total}` : ""} · 音乐库不再分页</span></div>`;
   const visibleFiles = audioPlaylistFilter ? files : audioArtistFilter ? files.filter(file => { const meta = audioMetadataFor(String(file.path)); return meta.artist === audioArtistFilter || meta.album === audioArtistFilter; }) : files;
   let body = audioView === "tracks" ? renderAudioTrackList(lib, visibleFiles) : audioView === "artists" ? renderAudioArtists(lib, files) : audioView === "playlists" ? renderAudioPlaylists(lib) : audioView === "favorites" ? renderAudioFavorites(lib) : renderAudioAlbums(lib, files);
   const latestGrid = audioView === "albums" && latest.length ? `<section class="content-collection latest-music"><div class="content-section-heading"><div><span class="eyebrow">最新音乐</span><h3>最近识别与入库</h3></div></div><div class="audio-latest-grid">${latest.map(file => renderAudioLatestCard(lib, file)).join("")}</div></section>` : "";
-  const audioTabs = `<div class="audio-view-tabs"><button class="${audioView === "albums" ? "active" : ""}" onclick="setAudioView('albums')">专辑</button><button class="${audioView === "artists" ? "active" : ""}" onclick="setAudioView('artists')">歌手</button><button class="${audioView === "playlists" || (audioView === "tracks" && audioPlaylistFilter) ? "active" : ""}" onclick="setAudioView('playlists')">♫ 歌单</button><button class="${audioView === "favorites" ? "active" : ""}" onclick="setAudioView('favorites')">♥ 喜欢</button><label class="page-size-picker">每页 <select id="audioPageSize" onchange="setAudioPageSize(this.value)"><option value="20"${audioPageSize===20?' selected':''}>20</option><option value="50"${audioPageSize===50?' selected':''}>50</option><option value="100"${audioPageSize===100?' selected':''}>100</option></select></label></div>`;
+  const audioTabs = `<div class="audio-view-tabs"><button class="${audioView === "albums" ? "active" : ""}" onclick="setAudioView('albums')">专辑</button><button class="${audioView === "artists" ? "active" : ""}" onclick="setAudioView('artists')">歌手</button><button class="${audioView === "playlists" || (audioView === "tracks" && audioPlaylistFilter) ? "active" : ""}" onclick="setAudioView('playlists')">♫ 歌单</button><button class="${audioView === "favorites" ? "active" : ""}" onclick="setAudioView('favorites')">♥ 喜欢</button></div>`;
   host.innerHTML = `<section class="content-collection">${mediaLibraryHeading(lib, "", audioTabs)}${body}${audioView === "favorites" || audioView === "tracks" || audioView === "playlists" ? "" : pager}</section>${latestGrid}`;
   /* v0.9.56：歌手视图渲染后异步刮削歌手头像（成功后自动重渲染刷新封面）。
    刮削失败（两源都没命中）时把 provider 留空写进缓存，卡片走「文件名/歌手名文字占位」，
@@ -2821,7 +3065,7 @@ function renderAudioLibraryContent(host, lib, files) {
   if (audioView === "artists") scrapeAudioArtists(host, lib, files);
 }
 function renderAudioLatestCard(lib, file) { const path=String(file.path), meta=audioMetadataFor(path); return `<article class="audio-latest-card" onclick="playAudioFile(${jsAttrArg(lib.id)},${jsAttrArg(path)})"><div class="audio-latest-cover" style="background:${coverGradient(meta.title)}">${audioCoverData(meta, meta.title)}</div><div><strong>${esc(meta.title)}</strong><small>${esc(meta.artist)}</small></div><button class="btn" title="喜欢" onclick="event.stopPropagation();toggleAudioFavorite(${jsAttrArg(lib.id)},${jsAttrArg(path)})">${isAudioFavorite(lib.id,path)?"♥":"♡"}</button></article>`; }
-function renderAudioLibrary(lib, files) { const host = document.createElement("div"); renderAudioLibraryContent(host, lib, files); return host.innerHTML; }
+function renderAudioLibrary(lib, files, data) { const host = document.createElement("div"); renderAudioLibraryContent(host, lib, files, data); return host.innerHTML; }
 function renderAudioRow(lib, file) { const path = String(file.path), meta = audioMetadataFor(path); return `<div class="media-file-row audio-row-click" data-audio-path="${esc(path)}" onclick="playAudioFile(${jsAttrArg(lib.id)},${jsAttrArg(path)})"><div class="media-file-name" title="${esc(path)}"><b>${esc(meta.title)}</b><small>${esc(meta.artist)} · ${esc(meta.album)}</small></div><span class="media-file-meta">${esc(fileExt(path).toUpperCase())}</span><div class="media-actions"><button class="btn" title="播放" onclick="event.stopPropagation();playAudioFile(${jsAttrArg(lib.id)},${jsAttrArg(path)})">▶</button><button class="btn" title="喜欢" onclick="event.stopPropagation();toggleAudioFavorite(${jsAttrArg(lib.id)},${jsAttrArg(path)})">${isAudioFavorite(lib.id, path) ? "♥" : "♡"}</button><button class="btn" title="加入歌单" onclick="event.stopPropagation();openAudioPlaylistPicker(${jsAttrArg(lib.id)},${jsAttrArg(path)})">♫</button><button class="btn" title="编辑歌曲信息" onclick="event.stopPropagation();openAudioMetadata(${jsAttrArg(path)})">✎</button></div></div>`; }
 function refreshAudioMetadata() { audioMetadataMemory=null; try { localStorage.removeItem(audioMetadataCache); } catch (e) {} audioScrapeAttemptedSession.clear(); const lib = findMediaLibrary(localMediaSelection.audio); if (lib) loadLocalFiles("audio", lib, 0); toast("🔄 正在重新刮削音乐信息"); }
 function openAudioMetadata(path) {

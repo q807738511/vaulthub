@@ -35,7 +35,7 @@ const sandbox = {
   setTimeout, clearTimeout,
   localStorage: store,
   toast: m => toasts.push(m),
-  /* v0.9.85：演职人员标签/空态与通知文案走 t()/tf()，行为桩给出最小实现。 */
+  /* v0.9.86：演职人员标签/空态与通知文案走 t()/tf()，行为桩给出最小实现。 */
   t: k => ({ castAs: "饰演", castVoiceAs: "配音", castEmpty: "暂无演职人员信息", castTitle: "演职人员" })[k] || k,
   tf: (k, v) => k + JSON.stringify(v),
   document: {
@@ -105,7 +105,7 @@ chk("B9 移出后恢复已存 5 分显示", w1.valueEl.textContent === "我的�
   const html = vm.runInContext("renderMovieDetails({id:'m1',type:'movie'}, '/M/a.mkv', {cast:[{name:'张三',character:'主角',profile_path:'/p.jpg'},{name:'李四',character:'配角'}]})", sandbox);
   chk("E1 头像 img + 圆形卡片", html.includes('class="movie-cast-avatar" src=') && html.includes('class="movie-cast-card"'));
   chk("E2 缺 profile_path 用首字占位", html.includes("movie-cast-avatar-fallback") && html.includes(">李<"));
-  /* v0.9.85：角色行改为「饰演 角色」（动画作品为「配音 角色」）。 */
+  /* v0.9.86：角色行改为「饰演 角色」（动画作品为「配音 角色」）。 */
   chk("E3 姓名/角色在头像下方（第一行姓名，第二行饰演角色）", html.includes(">张三</b>") && html.includes(">饰演 主角</small>") && html.includes(">饰演 配角</small>"));
   chk("E4 TMDB 评分徽标在 hero", vm.runInContext("renderMovieHero({id:'m1'},{},{rating:7.8,title:'x',cast:[]})", sandbox).includes("movie-tmdb-rating"));
   console.log("\nSUMMARY pass=" + passed + " fail=" + failed);

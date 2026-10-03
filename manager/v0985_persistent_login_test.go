@@ -76,7 +76,7 @@ func newAuthManager(t *testing.T, sessionsFile string) *manager {
 func loginRequest(t *testing.T, m *manager, body string) (*httptest.ResponseRecorder, http.Cookie) {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/api/login", strings.NewReader(body))
-	req.RemoteAddr = "192.168.112.9:41234"
+	req.RemoteAddr = "203.0.113.9:41234"
 	rec := httptest.NewRecorder()
 	m.login(rec, req)
 	if rec.Code != 200 {
@@ -128,7 +128,7 @@ func TestV0985LoginCookieIsPersistent(t *testing.T) {
 func TestV0985LoginRejectsWeakPassword(t *testing.T) {
 	m := newAuthManager(t, filepath.Join(t.TempDir(), "sessions.json"))
 	req := httptest.NewRequest(http.MethodPost, "/api/login", strings.NewReader(`{"username":"ADMIN","password":"wrong-password"}`))
-	req.RemoteAddr = "192.168.112.9:41234"
+	req.RemoteAddr = "203.0.113.9:41234"
 	rec := httptest.NewRecorder()
 	m.login(rec, req)
 	if rec.Code == 200 {
