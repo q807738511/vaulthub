@@ -61,7 +61,7 @@ async function fetch(url) {
     const offset = Number(q.searchParams.get("offset") || 0);
     const limit = Number(q.searchParams.get("limit") || 20);
     const slice = FILES.slice(offset, offset + limit);
-    /* v0.9.83：/api/media/files 会下发与分页无关的索引版本（行数 + 最大 mtime），
+    /* v0.9.84：/api/media/files 会下发与分页无关的索引版本（行数 + 最大 mtime），
        前端用它判断「整库索引是否变过」以复用会话内已拉取的全量索引。 */
     return { ok: true, status: 200, json: async () => ({ files: slice, total: FILES.length, has_more: offset + slice.length < FILES.length, status: "ready", version: "v" + FILES.length }) };
   }
@@ -146,7 +146,7 @@ const chk = (name, cond, extra) => {
   /* 首屏按 limit=20 取一页，剩余用 limit=500 游标续拉 —— 45 本恰好 2 次请求。 */
   chk("按游标分页拉取完整索引", fileReqs.length >= 2, "请求数 " + fileReqs.length);
   chk("分页请求均为常规上限", fileReqs.every(u => /limit=(20|500)/.test(u)), fileReqs.join(" "));
-  /* v0.9.83：整库索引在会话内复用 —— 反复切换书架页签不应再重新拉取索引
+  /* v0.9.84：整库索引在会话内复用 —— 反复切换书架页签不应再重新拉取索引
      （远程访问时这正是「操作迟缓」的主要来源）。 */
   requests.length = 0;
   await api.loadLocalFiles("comic", lib, 0);
@@ -160,7 +160,7 @@ const chk = (name, cond, extra) => {
   api.readingProgressCache["c1"] = {};
   api.setComicShelfView("shelf");   // 回到未读视图，1200 本全部应可见
   await wait();
-  /* 重新扫描后应用会主动失效会话索引缓存（v0.9.83），这里还原同一步骤。 */
+  /* 重新扫描后应用会主动失效会话索引缓存（v0.9.84），这里还原同一步骤。 */
   api.libraryIndexSessionClear("c1");
   requests.length = 0;
   await api.loadLocalFiles("comic", lib, 0);

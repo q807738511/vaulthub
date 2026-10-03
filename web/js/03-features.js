@@ -108,7 +108,7 @@ async function tickMetrics() {
       const free = Math.max(0, Number(d.total || 0) - Number(d.used || 0));
       return `<div class="disk-row"><div class="disk-top"><span class="name">${esc(d.path)}</span><span>${fmtSize(d.used)} / ${fmtSize(d.total)} · ${esc(t("diskFreeShort"))} ${fmtSize(free)} · ${p}%</span></div><div class="bar"><i class="${p > 90 ? "hot" : p > 75 ? "warn" : ""}" style="width:${p}%"></i></div></div>`;
     }).join("") || `<div class="empty-tip">${esc(t("noVolumes"))}</div>`;
-    document.getElementById("diskSource").textContent = t("diskSourceReal");
+    const diskSourceBadge = document.getElementById("diskSource"); if (diskSourceBadge) diskSourceBadge.textContent = t("diskSourceReal");
     /* 首页第一栏「硬盘使用率」卡内的容量剩余汇总 */
     if (typeof renderHomeDiskSummary === "function") renderHomeDiskSummary(disks);
     ok = true;
@@ -118,7 +118,7 @@ async function tickMetrics() {
     setNet(0, 0);
     renderDiskTemps([], []);
     if (typeof renderHomeDiskSummary === "function") renderHomeDiskSummary([]);
-    document.getElementById("diskSource").textContent = t("diskSourceOffline");
+    const diskSourceBadge = document.getElementById("diskSource"); if (diskSourceBadge) diskSourceBadge.textContent = t("diskSourceOffline");
   }
 
   setNasBadge(ok);
@@ -182,7 +182,10 @@ function setNet(down, up) {
   spark.appendChild(b);
 }
 function setNasBadge(online) {
+  /* v0.9.84：首页各栏右侧的小字提示徽标已移除（用户诉求），
+     这里改为可选元素 —— 元素不存在时静默跳过，也不再新建。 */
   const badge = document.getElementById("nasBadge");
+  if (!badge) return;
   badge.textContent = online ? t("nasOnline") : t("nasOffline");
   badge.className = "badge" + (online ? " green" : " red");
 }

@@ -4,10 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VaultHub 蜀鼠之家</title>
-<link rel="stylesheet" href="/web/css/main.css?v=0.9.83">
+<link rel="stylesheet" href="/web/css/main.css?v=0.9.84">
 <script>
 /* 资源版本号：index.html 用它给所有静态资源打查询串。 */
-window.VAULTHUB_ASSET_VERSION = "0.9.83";
+window.VAULTHUB_ASSET_VERSION = "0.9.84";
 </script>
 <script>
 /* v0.9.73 主题防闪：调色板/明暗/强调色必须在首帧渲染前落到 <html> 上，
@@ -156,7 +156,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.83";
   <div class="sidebar-foot">
     <button class="rail-btn rail-settings" id="sidebarSettingsButton" type="button" onclick="openSettingsModalFromSidebar()" title="系统设置" aria-label="系统设置"><span class="ic">⚙</span><span class="txt" data-i18n="settingsTitle">系统设置</span></button>
     <div class="sidebar-foot-row">
-      <span class="ver">v0.9.83 · 页脚版本同步·模块归位·季度规范·剧照填充</span>
+      <span class="ver">v0.9.84 · 刮削状态机·画质档位·首页文案</span>
       <button class="rail-btn rail-collapse" id="sidebarCollapseButton" type="button" onclick="toggleBars()" title="折叠 / 展开侧栏" aria-label="折叠或展开侧栏">⇤</button>
     </div>
   </div>
@@ -173,7 +173,6 @@ window.VAULTHUB_ASSET_VERSION = "0.9.83";
       <div class="section-title">
         <span class="idx">1</span>
         <span data-i18n="secServer">服务器监控</span>
-        <span class="badge" id="nasBadge">内置监控 · 每 5s 刷新</span>
       </div>
       <div class="grid g-4">
         <div class="card k-metric">
@@ -232,14 +231,13 @@ window.VAULTHUB_ASSET_VERSION = "0.9.83";
         </div>
       </div>
 
-      <div class="section-title"><span data-i18n="secDisk">硬盘容量</span><span class="badge" id="diskSource">内置监控 · statvfs</span></div>
+      <div class="section-title"><span data-i18n="secDisk">硬盘容量</span></div>
       <div class="card" id="diskCard"></div>
 
       <!-- ---- 第二栏：正在进行中的操作 ---- -->
       <div class="section-title">
         <span class="idx">2</span>
-        <span data-i18n="secNow">正在进行中的操作</span>
-        <span class="badge" id="nowBadge" data-i18n="nowBadge">视频 / 音乐播放 · 含刮削信息</span>
+        <span data-i18n="secNow">正在播放</span>
       </div>
       <div id="nowPlayingList"></div>
 
@@ -247,14 +245,12 @@ window.VAULTHUB_ASSET_VERSION = "0.9.83";
       <div class="section-title">
         <span class="idx">3</span>
         <span data-i18n="secRecentBook">最近入库 · 电子书刊</span>
-        <span class="badge" data-i18n="secRecentBookSub">电子书 / 漫画</span>
         <span class="more" onclick="switchView('comic')" data-i18n="navMore">更多 ›</span>
       </div>
       <div class="home-poster-grid" id="recentBook"></div>
 
       <div class="section-title">
         <span data-i18n="secRecentVideo">最近入库 · 影视作品</span>
-        <span class="badge" data-i18n="secRecentVideoSub">电视剧集 / 电影</span>
         <span class="more" onclick="switchView('movie')" data-i18n="navMore">更多 ›</span>
       </div>
       <div class="home-poster-grid" id="recentVideo"></div>
@@ -263,7 +259,6 @@ window.VAULTHUB_ASSET_VERSION = "0.9.83";
       <div class="section-title">
         <span class="idx">4</span>
         <span data-i18n="secRecentAudio">最近入库 · 音视作品</span>
-        <span class="badge" data-i18n="secRecentAudioSub">音乐 / 音乐 MV</span>
         <span class="more" onclick="switchView('audio')" data-i18n="navMore">更多 ›</span>
       </div>
       <div class="home-poster-grid sq" id="recentAudio"></div>
@@ -644,7 +639,9 @@ window.VAULTHUB_ASSET_VERSION = "0.9.83";
           <div class="network-speed-grid" id="networkSpeedResults"></div>
         </div>
 <div class="setblock">
-          <h4>📶 网络能效（弱网 / 自动测速）</h4>
+          <h4>🖼 画面清晰度与省流（弱网 / 自动测速）</h4>
+          <div class="cfg-field"><label for="qualityLevel">画面清晰度与色彩</label><select id="qualityLevel" onchange="saveQualityLevelFromSettings()"><option value="auto">自动（弱网/省流时按高清档）</option><option value="original">原画 · 原图直出 · 完整色彩</option><option value="high">高清 · 转码 1600px · 完整色彩</option><option value="smooth">流畅 · 转码 1200px · 色彩 70%</option><option value="minimal">极省 · 转码 900px · 无色彩（灰度）</option></select><small class="cfg-hint">清晰度与色彩一起调：档位越高越清晰、色彩越完整；最低档为无色彩（灰度）。随时可切回。</small></div>
+          <div class="cfg-field"><label>当前生效</label><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span id="qualityLevelStatus" style="font-size:11px;color:var(--text2);line-height:1.7">—</span><button class="btn" type="button" onclick="resetQualityLevel()">🎨 恢复原画（完整色彩）</button></div></div>
           <div class="cfg-field"><label for="weakNetworkMode">弱网模式</label><select id="weakNetworkMode" onchange="saveWeakNetworkMode()"><option value="auto">自动（按测速结果决定）</option><option value="on">始终开启（音频 96k 转码 / 省流）</option><option value="off">关闭（原文件直出）</option></select></div>
           <div class="cfg-field"><label>自动测速</label><label class="toggle-row"><input type="checkbox" id="autoSpeedTestToggle" onchange="setAutoSpeedTest(this.checked)"><span>当天首次打开 WEBUI 时自动测速</span><small>测本地网络到容器的延迟与下行带宽，结果用于音频限码率、漫画省流与视频自动画质</small></label></div>
           <div class="cfg-field"><label>网络测速</label><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn" type="button" onclick="probeWeakNetworkFromSettings()">📶 立即测速（延迟 + 带宽）</button><span id="weakNetworkStatus" style="font-size:11px;color:var(--text2);line-height:1.7">最近测速：未测速</span><span id="audioQualityStatus" style="font-size:11px;color:var(--text2);line-height:1.7"></span></div></div>
@@ -738,7 +735,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.83";
          页脚在启动时由 syncAppFooterVersion() 读取并同步，发版不会漏改。 -->
     <footer class="app-footer" id="appFooter">
       <span class="af-name">VaultHub 蜀鼠之家</span>
-      <span id="appFooterVer" class="ver">v0.9.83 · 页脚版本同步·模块归位·季度规范·剧照填充</span>
+      <span id="appFooterVer" class="ver">v0.9.84 · 刮削状态机·画质档位·首页文案</span>
       <span class="af-note" data-i18n="footerAboutHint">版本与「系统设置 → 账户与登录 → 关于」中的版本参数保持一致</span>
     </footer>
 
@@ -859,7 +856,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.83";
   <div class="modal">
     <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
     <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
-    <div class="about-row" data-about-ver="1"><span data-i18n="aboutVer">版本</span><b>v0.9.83 · 页脚版本同步·模块归位·季度规范·剧照填充</b></div>
+    <div class="about-row" data-about-ver="1"><span data-i18n="aboutVer">版本</span><b>v0.9.84 · 刮削状态机·画质档位·首页文案</b></div>
     <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>Go (media/manager/subtitle) · Caddy · FFmpeg · SQLite · HTML/CSS/JS</b></div>
     <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>VaultHub 内置系统监控</b></div>
     <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>
@@ -1003,13 +1000,14 @@ window.VAULTHUB_ASSET_VERSION = "0.9.83";
 
 <div class="toast" id="toast"></div>
 
-<script src="/web/js/01-state.js?v=0.9.83"></script>
-<script src="/web/js/02-media.js?v=0.9.83"></script>
-<script src="/web/js/03-features.js?v=0.9.83"></script>
-<script src="/web/js/05-home.js?v=0.9.83"></script>
-<script src="/web/js/06-theme.js?v=0.9.83"></script>
-<script src="/web/js/07-topnav.js?v=0.9.83"></script>
-<script src="/web/js/03-audio-zoom.js?v=0.9.83"></script>
-<script src="/web/js/04-boot.js?v=0.9.83"></script>
+<script src="/web/js/01-state.js?v=0.9.84"></script>
+<script src="/web/js/03-quality.js?v=0.9.84"></script>
+<script src="/web/js/02-media.js?v=0.9.84"></script>
+<script src="/web/js/03-features.js?v=0.9.84"></script>
+<script src="/web/js/05-home.js?v=0.9.84"></script>
+<script src="/web/js/06-theme.js?v=0.9.84"></script>
+<script src="/web/js/07-topnav.js?v=0.9.84"></script>
+<script src="/web/js/03-audio-zoom.js?v=0.9.84"></script>
+<script src="/web/js/04-boot.js?v=0.9.84"></script>
 </body>
 </html>

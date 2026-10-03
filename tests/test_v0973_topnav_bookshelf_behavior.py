@@ -247,7 +247,7 @@ const chk = (name, cond, extra) => {
   chk("标签带唯一 data-nav-key", tabs.includes('data-nav-key="comic:c1"') && tabs.includes('data-nav-key="comic:b1"'));
   chk("同组媒体库可区分（漫画/电子书）", tabs.includes('data-nav-key="comic:b1"') && tabs.includes('data-view="comic"'));
   chk("外连服务带外链标记", tabs.includes("🔗"));
-  /* v0.9.83：顶栏标签按要求去掉后缀的媒体数量展示，只保留库名与图标。 */
+  /* v0.9.84：顶栏标签按要求去掉后缀的媒体数量展示，只保留库名与图标。 */
   chk("标签不再带条目计数", !tabs.includes('<span class="cnt">45</span>') && tabs.includes("漫画"));
   chk("默认无高亮", tabs.includes('aria-current="false"'));
   api.syncTopLibTabs("comic:b1");

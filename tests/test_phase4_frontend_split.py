@@ -12,14 +12,16 @@ index = (ROOT / "index.html").read_text(encoding="utf-8")
 # match the path prefix instead of the exact bare URL.
 assert re.search(r'<link rel="stylesheet" href="/web/css/main\.css\?v=[0-9.]+">', index), \
     "main.css must be referenced with a ?v= cache-busting query"
-for f in ["01-state.js", "02-media.js", "03-features.js", "04-boot.js"]:
+for f in ["01-state.js", "03-quality.js", "02-media.js", "03-features.js", "04-boot.js"]:
     assert re.search(rf'<script src="/web/js/{re.escape(f)}\?v=[0-9.]+"></script>', index), \
         f"missing versioned script tag {f}"
 
 # The split assets must exist.
 css = ROOT / "web" / "css" / "main.css"
 assert css.exists() and css.stat().st_size > 0
-js_files = ["01-state.js", "02-media.js", "03-features.js", "04-boot.js"]
+# v0.9.84：03-quality.js（画面清晰度与色彩档位）插入 01-state.js 与 02-media.js 之间，
+# 后面的顺序断言按同一顺序校验。
+js_files = ["01-state.js", "03-quality.js", "02-media.js", "03-features.js", "04-boot.js"]
 for f in js_files:
     p = ROOT / "web" / "js" / f
     assert p.exists() and p.stat().st_size > 0, f"missing {f}"

@@ -970,6 +970,14 @@
   .audio-album-info { padding:9px 10px; }
   .audio-album-info strong { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .audio-album-info small { display:block; margin-top:4px; color:var(--text2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  /* ---------- v0.9.84：画面清晰度与色彩档位（原「省流」） ----------
+     清晰度 = 取图/转码宽度（web/js/03-quality.js 按档位决定），
+     色彩 = 这里的 saturate 倍率：原画/高清 1（完整色彩）、流畅 0.7、极省 0（无色彩/灰度）。
+     只作用于图片与视频元素本身，换档即时生效、随时可逆 —— 不会把海报颜色改坏。
+     最低档（极省）保留画面内容与清晰度，仅去掉色彩，符合「画面色彩最大限度展示，
+     最低是无色彩状态」的要求。 */
+  html:not([data-quality="original"]):not([data-quality="high"]) :is(img[src*="/api/media/cover"], img[src*="/api/media/archive/zip/cover"], img[src*="/api/media/pdf/cover"], img[src*="/api/media/archive/zip/page"], img[src*="/api/media/pdf/page"], .media-poster-art img, .movie-rec-poster, .hp .img img, .series-episode-thumb, .audio-album-cover img, .audio-latest-cover img, .audio-artist-avatar, .audio-player-cover, .audio-poster-frame img, .audio-fullscreen-poster img, .audio-lyrics-page img, img.comic-img, img.book-cover-image, img.audio-player-cover, video[data-movie-player], .media-poster-art, .audio-album-cover, .audio-latest-cover, .hp .img, .book-cover, .book-cover-image, .series-episode-thumb) { filter: saturate(var(--vh-quality-color, 1)); }
+  html[data-quality="minimal"] :is(img[src*="/api/media/cover"], img[src*="/api/media/archive/zip/cover"], img[src*="/api/media/pdf/cover"], img[src*="/api/media/archive/zip/page"], img[src*="/api/media/pdf/page"], .media-poster-art img, .movie-rec-poster, .hp .img img, .series-episode-thumb, .audio-album-cover img, .audio-latest-cover img, .audio-artist-avatar, .audio-player-cover, .audio-poster-frame img, .audio-fullscreen-poster img, .audio-lyrics-page img, img.comic-img, img.book-cover-image, img.audio-player-cover, video[data-movie-player], .media-poster-art, .audio-album-cover, .audio-latest-cover, .hp .img, .book-cover, .book-cover-image, .series-episode-thumb) { filter: saturate(0) contrast(1.04); }
   .audio-player { position:fixed; z-index:250; left:50%; top:auto; right:auto; bottom:18px; transform:translateX(-50%); width:min(700px,calc(100vw - var(--sidebar-w) - 28px)); display:none; align-items:center; gap:12px; min-height:86px; padding:14px 16px; border:1px solid var(--border); border-radius:12px; background:color-mix(in srgb,var(--bg2) 94%,var(--text)); box-shadow:0 14px 40px color-mix(in srgb,var(--text) 24%,transparent), 0 2px 0 color-mix(in srgb,var(--bg) 70%,transparent) inset; backdrop-filter:blur(14px); }
   .audio-player.show { display:flex; }
   .audio-player .audio-expand { display:none; }

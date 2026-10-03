@@ -676,6 +676,37 @@ function writeMovieMetadata(data) {
   if (movieMetadataFlushTimer) return;
   movieMetadataFlushTimer = setTimeout(flushMovieMetadata, 400);
 }
+/* v0.9.84：把「一部蓝光原盘」从 600+ 个片段合并成 1 条库条目。
+   原盘目录（含 BDMV/ 的目录，例如 /MO/黑鹰坠落.../BDMV/STREAM/00011.m2ts）在库里
+   只会出现一次，保留体积最大的那个片段作为可播放文件，标题用原盘目录名。
+   幂等：已经合并过的条目（disc: true）原样返回，因此会话索引缓存复用不会重复计数。 */
+function collapseDiscFragments(files) {
+  const groups = new Map();
+  const out = [];
+  let merged = 0;
+  (files || []).forEach((file) => {
+    if (file && file.disc) { out.push(file); return; }
+    const path = String((file && file.path) || "");
+    const disc = discFolderOf(path);
+    if (!disc) { out.push(file); return; }
+    const current = groups.get(disc);
+    if (!current) {
+      const entry = { ...file, disc: true, disc_folder: disc, disc_fragments: 1 };
+      groups.set(disc, entry);
+      out.push(entry);
+      return;
+    }
+    current.disc_fragments = Number(current.disc_fragments || 1) + 1;
+    merged++;
+    if (Number(file.size || 0) > Number(current.size || 0)) {
+      current.path = file.path;
+      current.size = file.size;
+      current.mtime = file.mtime;
+    }
+  });
+  if (merged) console.info(`[scrape] 蓝光原盘片段合并：${files.length} → ${out.length} 条（合并 ${merged} 个片段）`);
+  return out;
+}
 /* 影视文件名常见的发布组/规格标记，展示标题时剔除 */
 const MOVIE_NOISE_RE = /\b(2160p|1080p|1080i|720p|480p|4k|8k|uhd|hdr10\+?|hdr|dv|dolby[\s.]?vision|remux|bluray|blu-ray|bdrip|brrip|webrip|web-?dl|hdtv|dvdrip|x264|x265|h\.?264|h\.?265|hevc|avc|aac|ac3|eac3|dts(?:-hd)?|truehd|atmos|flac|10bit|8bit|s\d{1,2}e\d{1,3}|s\d{1,2}|e\d{1,3}|repack|proper|extended|imax|cn|chs|cht|zh|eng)\b/gi;
 
@@ -736,10 +767,23 @@ function rememberSeriesShow(libId, show) {
    openSeriesDetails 必须只依赖这两个字段，并对旧缓存缺字段的情况回落空数组。 */
 function readSeriesShow(libId, showKey) { const key = seriesShowStoreKey(libId, showKey); try { const show = vaultStoreJSON(key, null) || seriesShowMemory[key] || null; if (!show) return null; if (!Array.isArray(show.seasonList)) show.seasonList = []; if (!Array.isArray(show.files)) show.files = []; return show; } catch(e) { return null; } }
 
+/* v0.9.84：蓝光原盘目录判定（BDMV / CERTIFICATE 结构的上一级目录即「一部片子」）。 */
+function discFolderOf(path) {
+  const m = String(path).match(/^(.*)\/(?:BDMV|CERTIFICATE)\//i);
+  return m ? m[1] : "";
+}
 function movieTitleFromPath(path) {
   /* 先在原始文件名上剔除年份与发布规格，再做分隔符归一化：
      displayBookTitle 会把 WEB-DL 这类连字符换成空格，先跑它会导致噪声词漏匹配。 */
-  const raw = String(path).split("/").pop().replace(/\.[^.]+$/, "");
+  const raw = (() => {
+    const name = String(path).split("/").pop().replace(/\.[^.]+$/, "");
+    /* v0.9.84：蓝光原盘里的文件名是 00001.m2ts / MovieObject.bdmv 这类片段编号，
+       拿它去刮削必然查不到。原盘条目的标题一律取 BDMV 的上一级目录名
+       （例如 [黑鹰坠落]Black.Hawk.Down.2001.Blu-ray... → 可被 TMDB 命中）。 */
+    const disc = discFolderOf(path);
+    const folder = disc ? String(disc).split("/").pop() : "";
+    return folder || name;
+  })();
   const base = raw
     .replace(/\b(19|20)\d{2}\b/g, " ")
     .replace(MOVIE_NOISE_RE, " ")
@@ -791,50 +835,209 @@ async function testScraperNetworks() {
   try { const res=await fetch("/api/media/network/speed",{method:"POST",headers:sessionWriteHeaders(true),body:"{}"}); const data=await res.json(); if(!res.ok)throw new Error(data.error||`HTTP ${res.status}`); const ok=(data.results||[]).filter(x=>x.ok).length; if(summary)summary.textContent=`${data.proxy_enabled?"代理":"直连"} · ${ok}/${data.results.length} 可达`; if(host)host.innerHTML=(data.results||[]).map(x=>`<div class="network-speed-item ${x.ok?"ok":"bad"}"><b>${esc(x.host)}</b><span>${x.ok?`${x.latency_ms} ms · HTTP ${x.status_code}`:esc(x.error||"失败")}</span></div>`).join(""); }
   catch(e){if(summary)summary.textContent=`⚠ ${e.message}`;toast("⚠️ 网络测速失败："+e.message);} finally {if(button)button.disabled=false;}
 }
+/* ==================== v0.9.84：影视刮削状态机 ====================
+   客户反馈：「新增了部分不带元数据的视频文件，无法进行刮削」。
+   旧实现的三个真实缺陷（已逐条实测确认）：
+     1) 进库时就把所有待刮条目预写成「文件名展示（等待豆瓣刮削）」并落盘，
+        随后才真正刮削；这一轮只要没刮到（TMDB 未命中 / 代理抖动 / 页面切走 /
+        localStorage 写失败），路径已经进了缓存 → 下次进库 pending 为空 →
+        永远不会再试，用户看到的就是「怎么点都不刮」。且没有任何重试入口
+        （旧的 refreshMovieMetadata 是死代码，没绑到任何按钮）。
+     2) 每刮到一条就整库重渲染一次：687 条就是 O(n²) 次海报墙重建，界面实质卡死。
+     3) 刮削请求用 cache:"force-cache" —— 一次空结果会被浏览器缓存住，
+        同一标题后续直接读缓存，永久失败。
+   现在的做法：
+     · 每条记录带 scrape_state：pending / ok / failed / skip，并记 attempts / last_attempt / reason；
+     · failed 条目在下次进库自动重试（attempts < 3 且距上次 ≥ 10 分钟）；
+     · 请求改 no-store；并发 3；渲染节流 400ms（只重建海报网格，不重建整页）；
+     · 标题无意义的资源（纯数字片段等）标记 skip，不浪费请求；
+     · 库标题右侧显示「刮削 n/m · x 待重试」，并提供「重新刮削 / 重试失败项」按钮。 */
+const MOVIE_SCRAPE_MAX_ATTEMPTS = 3;
+const MOVIE_SCRAPE_RETRY_MS = 10 * 60 * 1000;
+const MOVIE_RENDER_THROTTLE_MS = 400;
+const MOVIE_SCRAPE_CONCURRENCY = 3;
+let movieRenderTimer = null;
+let movieScrapeContext = null;
+
+/* 文件名/目录名能否作为刮削查询词：纯数字或纯符号（蓝光片段 00011、音轨 01 等）不可能命中。 */
+function scrapableMovieTitle(title) {
+  const compact = String(title || "").replace(/[\s._\-—–·\[\]()（）【】]+/g, "");
+  return compact.length >= 2 && /[A-Za-z\u4e00-\u9fff]/.test(compact);
+}
+function movieMetaState(meta) {
+  if (!meta) return "pending";
+  return String(meta.scrape_state || (meta.provider && meta.provider !== "文件名展示" ? "ok" : "pending"));
+}
+function movieScrapeStats(files) {
+  const all = readMovieMetadata();
+  const stats = { total: 0, ok: 0, failed: 0, pending: 0, skip: 0 };
+  (files || []).forEach((file) => {
+    stats.total++;
+    const state = movieMetaState(all[String((file && file.path) || file)]);
+    if (state === "ok") stats.ok++;
+    else if (state === "failed") stats.failed++;
+    else if (state === "skip") stats.skip++;
+    else stats.pending++;
+  });
+  return stats;
+}
+function movieScrapeSummary(files) {
+  const s = movieScrapeStats(files);
+  const parts = [`刮削 ${s.ok}/${s.total}`];
+  if (s.pending) parts.push(`${s.pending} 排队中`);
+  if (s.failed) parts.push(`${s.failed} 待重试`);
+  if (s.skip) parts.push(`${s.skip} 无可识别标题`);
+  return parts.join(" · ");
+}
+function updateMovieScrapeStatus(files) {
+  const el = document.getElementById("movieScrapeStatus");
+  if (el) el.textContent = movieScrapeSummary(files || (movieScrapeContext && movieScrapeContext.files) || []);
+}
+/* 库标题右侧的刮削状态与手动入口（v0.9.84 新增，解决「没有重试入口」）。 */
+function movieScrapeControls(files) {
+  return `<div class="media-actions" style="gap:6px;flex-wrap:wrap"><span class="badge" id="movieScrapeStatus">${esc(movieScrapeSummary(files))}</span><button class="btn" type="button" onclick="refreshMovieMetadata('all')" title="清空本库元数据缓存后整库重刮">🔄 重新刮削</button><button class="btn" type="button" onclick="refreshMovieMetadata('failed')" title="只重试上次失败/未命中的条目">↻ 重试失败项</button></div>`;
+}
+/* 节流渲染：只重建海报网格，保留分页与库标题（旧实现每条都重建整页）。 */
+function scheduleMovieRender(delay) {
+  if (movieRenderTimer) return;
+  movieRenderTimer = setTimeout(() => {
+    movieRenderTimer = null;
+    renderMovieScrapeProgress();
+  }, Number(delay) || MOVIE_RENDER_THROTTLE_MS);
+}
+function renderMovieScrapeProgress() {
+  const ctx = movieScrapeContext;
+  if (!ctx) return;
+  const { host, lib, files } = ctx;
+  if (!host) return;
+  const grid = host.querySelector ? host.querySelector(".media-poster-grid") : null;
+  if (grid && lib && lib.type !== "series") grid.innerHTML = files.map(file => renderMoviePoster(lib, file)).join("");
+  else renderMovieLibraryContent(host, lib, files);
+  updateMovieScrapeStatus(files);
+}
+/* 单条刮削：返回是否成功。所有请求用 no-store —— 空结果不再被浏览器缓存成永久失败。 */
+async function scrapeOneMovie(lib, files, file) {
+  const all = readMovieMetadata();
+  const path = String(file.path);
+  const base = all[path] || movieBaseMetadata(path);
+  const title = base.title || movieTitleFromPath(path);
+  const mediaType = lib && lib.type === "series" ? "series" : "movie";
+  const attempts = Number(base.scrape_attempts || 0) + 1;
+  const mode = scraperStatus.scraper_mode || scraperStatus.default || "auto";
+  const mark = (patch) => {
+    all[path] = { ...base, ...patch, scrape_attempts: attempts, last_attempt: Date.now() };
+    writeMovieMetadata(all);
+    return patch.scrape_state === "ok";
+  };
+  /* 文件名没有任何可识别标题（原盘片段、音轨编号等）→ 不发请求，标记 skip，
+     但要把它列为「无可识别标题」而不是假装刮过。 */
+  if (!scrapableMovieTitle(title)) {
+    return mark({ provider: base.provider || "文件名展示", scrape_state: "skip", reason: "文件名无可用标题" });
+  }
+  const note = (reason) => { const c = readMovieMetadata(); c[path] = { ...(c[path] || base), reason, scrape_attempts: attempts, last_attempt: Date.now() }; writeMovieMetadata(c); };
+  if (mediaType === "series" && mode === "auto" && scraperStatus.tvdb_enabled) {
+    try {
+      const tvdb = await fetch(`/api/media/tvdb?query=${encodeURIComponent(title)}`, { cache: "no-store", credentials: "same-origin" });
+      if (tvdb.status === 401 || tvdb.status === 403) note("TVDB 凭据无效");
+      const item = tvdb.ok ? (await tvdb.json())?.results?.[0] : null;
+      if (item) {
+        return mark({
+          tvdb_id: item.id, media_type: mediaType, title: item.name || title,
+          year: String(item.first_air_date || base.year).slice(0, 4),
+          poster: item.poster_path || "", overview: item.overview || "",
+          provider: "TVDB · 剧集", checkedAt: Date.now(), scrape_state: "ok", reason: "",
+        });
+      }
+    } catch (e) { note("TVDB 请求失败"); }
+  }
+  if ((mode === "auto" || mode === "tmdb") && scraperStatus.tmdb_enabled) {
+    try {
+      const tmdb = await fetch(`/api/media/tmdb?query=${encodeURIComponent(title)}&type=${encodeURIComponent(mediaType)}`, { cache: "no-store", credentials: "same-origin" });
+      if (tmdb.status === 401 || tmdb.status === 403) note("TMDB 凭据无效（系统设置 → 刮削里换成 v3 Key 或 v4 Token）");
+      const data = tmdb.ok ? await tmdb.json() : null;
+      const item = data && Array.isArray(data.results) ? data.results.find(x => x.poster_path || x.overview || x.title || x.name) : null;
+      if (item) {
+        const imgBase = scraperStatus.tmdb_image_base || "https://image.tmdb.org/t/p";
+        return mark({
+          tmdb_id: item.id, media_type: mediaType, title: item.title || item.name || title,
+          year: String(item.release_date || item.first_air_date || base.year).slice(0, 4),
+          poster: item.poster_path ? `${imgBase}/w342${item.poster_path}` : "",
+          backdrop: item.backdrop_path ? `${imgBase}/w1280${item.backdrop_path}` : "",
+          overview: item.overview || "", rating: Number(item.vote_average || 0),
+          provider: mediaType === "series" ? "TMDB · 剧集" : "TMDB · 电影",
+          checkedAt: Date.now(), scrape_state: "ok", reason: "",
+        });
+      }
+      note("TMDB 未命中该标题");
+    } catch (e) { note("TMDB 请求失败：" + (e && e.message ? e.message : "网络错误")); }
+  } else if (mode === "auto" || mode === "tmdb") {
+    note("未配置 TMDB 凭据");
+  }
+  if (mode === "tmdb" || mode === "filename") {
+    return mark({ provider: "文件名展示", scrape_state: "failed", reason: readMovieMetadata()[path]?.reason || "未命中" });
+  }
+  try {
+    const douban = await fetch(`https://movie.douban.com/j/subject_suggest?q=${encodeURIComponent(title)}`, { cache: "no-store" });
+    const item = douban.ok ? (await douban.json())?.[0] : null;
+    if (item) {
+      return mark({ title: item.title || title, year: item.year || base.year, poster: item.img || "", provider: "豆瓣", checkedAt: Date.now(), scrape_state: "ok", reason: "" });
+    }
+  } catch (e) { /* 豆瓣无 CORS，浏览器直连基本必失败 → 记失败原因，交给下次重试 */ }
+  return mark({ provider: "文件名展示", scrape_state: "failed", reason: readMovieMetadata()[path]?.reason || "未命中（可重试）" });
+}
 async function scrapeMovieMetadata(host, lib, files) {
   await loadScraperStatus();
+  movieScrapeContext = { host, lib, files };
   const all = readMovieMetadata();
   const localPaths = new Set();
   for (const file of files) {
-    const path=String(file.path);
-    try { const res=await fetch(`/api/media/metadata?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}`,{cache:"no-store"}); const local=res.ok?await res.json():null; if(local&&(local.nfo||local.poster||local.logo||local.fanart||local.backdrop||local.tags?.length||local.watched||local.subtitles?.length)){all[path]={...movieBaseMetadata(path),...(all[path]||{}),...local,title:local.title||(all[path]?.title)||movieBaseMetadata(path).title,provider:local.provider||"本地元数据",media_type:lib?.type==="series"?"series":"movie",checkedAt:Date.now()};localPaths.add(path);} } catch(e) {}
+    const path = String(file.path);
+    try {
+      const res = await fetch(`/api/media/metadata?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}`, { cache: "no-store" });
+      const local = res.ok ? await res.json() : null;
+      if (local && (local.nfo || local.poster || local.logo || local.fanart || local.backdrop || local.tags?.length || local.watched || local.subtitles?.length)) {
+        all[path] = {
+          ...movieBaseMetadata(path), ...(all[path] || {}), ...local,
+          title: local.title || (all[path] && all[path].title) || movieBaseMetadata(path).title,
+          provider: local.provider || "本地元数据",
+          media_type: lib?.type === "series" ? "series" : "movie",
+          checkedAt: Date.now(), scrape_state: "ok", reason: "",
+        };
+        localPaths.add(path);
+      }
+    } catch (e) { /* 本地元数据缺失不是错误：继续走在线刮削 */ }
   }
   writeMovieMetadata(all);
-  if (localPaths.size) renderMovieLibraryContent(host, lib, files);
-  const pending = files.filter(file => !all[file.path] && !localPaths.has(String(file.path)));
-  for (const file of pending) { all[file.path] = { ...movieBaseMetadata(String(file.path)), provider: "文件名展示（等待豆瓣刮削）", checkedAt: Date.now() }; }
-  writeMovieMetadata(all); if (pending.length) renderMovieLibraryContent(host, lib, files);
-  for (const file of pending) {
-    const path = String(file.path), fallback = all[path], title = fallback.title;
-    const mediaType = lib?.type === "series" ? "series" : "movie";
-
-    // TMDB 已配置时优先使用官方刮削（电影走 search/movie，剧集走 search/tv），
-    // 未配置或无结果时回落豆瓣，最后回落文件名展示。
-    const mode = scraperStatus.scraper_mode || scraperStatus.default || "auto";
-    if (mediaType === "series" && mode === "auto" && scraperStatus.tvdb_enabled) try {
-      const tvdb = await fetch(`/api/media/tvdb?query=${encodeURIComponent(title)}`, { cache:"force-cache" });
-      const item = tvdb.ok ? (await tvdb.json())?.results?.[0] : null;
-      if (item) { all[path] = { ...fallback, tvdb_id:item.id, media_type:mediaType, title:item.name || fallback.title, year:String(item.first_air_date || fallback.year).slice(0,4), poster:item.poster_path || "", overview:item.overview || "", provider:"TVDB · 剧集", checkedAt:Date.now() }; writeMovieMetadata(all); renderMovieLibraryContent(host, lib, files); continue; }
-    } catch(e) {}
-    if ((mode === "auto" || mode === "tmdb") && scraperStatus.tmdb_enabled) try {
-      const tmdb = await fetch(`/api/media/tmdb?query=${encodeURIComponent(title)}&type=${encodeURIComponent(mediaType)}`, { cache:"force-cache" });
-      const data = tmdb.ok ? await tmdb.json() : null;
-      const item = data?.results?.find(x => x.poster_path || x.overview || x.title || x.name);
-      if (item) {
-        const base = scraperStatus.tmdb_image_base || "https://image.tmdb.org/t/p";
-        all[path] = { ...fallback, tmdb_id:item.id, media_type:mediaType, title:item.title || item.name || fallback.title, year:String(item.release_date || item.first_air_date || fallback.year).slice(0,4), poster:item.poster_path ? `${base}/w342${item.poster_path}` : "", backdrop:item.backdrop_path ? `${base}/w1280${item.backdrop_path}` : "", overview:item.overview || "", rating:Number(item.vote_average||0), provider:mediaType === "series" ? "TMDB · 剧集" : "TMDB · 电影", checkedAt:Date.now() };
-        writeMovieMetadata(all); renderMovieLibraryContent(host, lib, files); continue;
-      }
-    } catch(e) {}
-    if (mode === "tmdb" || mode === "filename") { all[path] = { ...fallback, provider:"文件名展示", checkedAt:Date.now() }; writeMovieMetadata(all); renderMovieLibraryContent(host, lib, files); continue; }
-    try {
-      const douban = await fetch(`https://movie.douban.com/j/subject_suggest?q=${encodeURIComponent(title)}`, { cache:"force-cache" });
-      const item = douban.ok ? (await douban.json())?.[0] : null;
-      if (item) { all[path] = { ...fallback, title:item.title || fallback.title, year:item.year || fallback.year, poster:item.img || "", provider:"豆瓣", checkedAt:Date.now() }; writeMovieMetadata(all); renderMovieLibraryContent(host, lib, files); continue; }
-    } catch(e) {}
-    all[path] = { ...fallback, provider:"文件名展示", checkedAt:Date.now() };
-    writeMovieMetadata(all); renderMovieLibraryContent(host, lib, files);
-  }
+  if (localPaths.size) renderMovieScrapeProgress();
+  /* 待刮队列：没有记录、或上次失败且还在重试窗口内（attempts<3、间隔≥10 分钟）。
+     旧实现把「没有记录」当唯一条件，一次失败即永久放弃，这里改成可重试状态机。 */
+  const now = Date.now();
+  const pending = files.filter((file) => {
+    const path = String(file.path);
+    if (localPaths.has(path)) return false;
+    const meta = all[path];
+    if (!meta) return true;
+    const state = movieMetaState(meta);
+    if (state === "ok" || state === "skip") return false;
+    const attempts = Number(meta.scrape_attempts || 0);
+    const last = Number(meta.last_attempt || 0);
+    return attempts < MOVIE_SCRAPE_MAX_ATTEMPTS && (now - last) >= MOVIE_SCRAPE_RETRY_MS;
+  });
+  updateMovieScrapeStatus(files);
+  if (!pending.length) return;
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < pending.length) {
+      const file = pending[cursor++];
+      try { await scrapeOneMovie(lib, files, file); } catch (e) { console.warn("[scrape] 单条刮削失败", file && file.path, e); }
+      scheduleMovieRender(MOVIE_RENDER_THROTTLE_MS);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(MOVIE_SCRAPE_CONCURRENCY, pending.length) }, worker));
+  if (movieRenderTimer) { clearTimeout(movieRenderTimer); movieRenderTimer = null; }
+  renderMovieScrapeProgress();
+  flushMovieMetadata();
+  updateMovieScrapeStatus(files);
 }
 /* v0.9.17：媒体库标题只展示添加媒体库时填写的库名称，
    不再显示「电影 / 电视剧集 / 电子书 / 漫画 / 音乐与 MV」这类预设大类名。 */
@@ -845,12 +1048,12 @@ function mediaLibraryHeading(lib, badge, extra = "") {
 function renderMovieLibraryContent(host, lib, files) {
   if (lib?.type === "series") return renderSeriesLibraryContent(host, lib, files);
   const body = `<div class="media-poster-grid">${files.map(file => renderMoviePoster(lib, file)).join("")}</div>`;
-  host.innerHTML = `<section class="content-collection">${mediaLibraryHeading(lib, `${files.length} 部`)}${body}</section>`;
+  host.innerHTML = `<section class="content-collection">${mediaLibraryHeading(lib, `${files.length} 部`, movieScrapeControls(files))}${body}</section>`;
 }
 function renderSeriesLibraryContent(host, lib, files) {
   const shows = buildSeriesShows(files); shows.forEach(show => rememberSeriesShow(lib.id, show));
   const body = shows.length ? `<div class="series-show-grid">${shows.map(show => renderSeriesShowCard(lib, show)).join("")}</div>` : '<div class="empty-tip">该电视剧库暂无支持的剧集文件</div>';
-  host.innerHTML = `<section class="content-collection">${mediaLibraryHeading(lib, `${shows.length} 部剧 · ${files.length} 集`)}${body}</section>`;
+  host.innerHTML = `<section class="content-collection">${mediaLibraryHeading(lib, `${shows.length} 部剧 · ${files.length} 集`, movieScrapeControls(files))}${body}</section>`;
 }
 /* v0.9.83：剧集详情读的是缓存态结构（seriesShowCacheShape 只保留首个文件用于定位），
    因此集数、集路径一律以 seasonList 汇总，避免详情里出现「共1集」这种明显错数，
@@ -1055,8 +1258,12 @@ function jsObjArg(value) { return esc(JSON.stringify(value)); }
 function coverThumbUrl(url, width) {
   const raw = String(url || "");
   if (!raw || !width || raw.indexOf("/api/media/cover") !== 0) return raw;
+  /* v0.9.84：画面清晰度档位统一收紧「卡片类」封面取图尺寸（请求宽度 ≤640 的封面/海报）。
+     原画/高清档不收紧，流畅 200px、极省 140px —— 换档后 URL 宽度随之变化，
+     浏览器必然重新取图，因此从低档切回高档能立刻恢复原图（旧实现缺这条回退路径）。 */
+  const capped = Number(width) <= 640 && typeof qualityCoverWidth === "function" ? qualityCoverWidth(Number(width)) : Number(width);
   if (/[?&]w=\d/.test(raw)) return raw;
-  return raw + (raw.indexOf("?") >= 0 ? "&" : "?") + "w=" + Number(width);
+  return raw + (raw.indexOf("?") >= 0 ? "&" : "?") + "w=" + capped;
 }
 /* v0.9.82：整库索引的会话级缓存。
    影视/剧集/书刊都要「整库索引」才能正确排序与聚合，旧实现每次切库、切视图、
@@ -1471,10 +1678,34 @@ function renderSeriesInfoPanel(show, rating) {
 function renderMovieDetails(lib,path,meta){try{meta={...meta,__path:path};}catch(e){}
 /* v0.9.81：详情顺序统一为 —— 视频介绍(hero) → 演职人员(网格头像) → 视频推荐(网格略缩图) → 单集网格 → 视频信息(底部)。 */
 return `<div class="media-reader-overlay movie-detail-page movie-detail-backdrop" style="${esc(detailBackdropStyle(meta))}"><div class="movie-detail-scroll">${movieDetailCloseButton()}${renderMovieHero(lib,path,meta)}${renderCastPanel(meta)}${renderRecPanel(meta)}${episodeGridHTML(lib)}${renderVideoInfoPanel(path,meta)}</div></div>`;}
-function renderMoviePoster(lib, file) { const path=String(file.path), meta=movieMetadataFor(path), watched=!!meta.watched||movieFlag("watched",lib.id,path), art=meta.poster ? `<img src="${esc(coverThumbUrl(meta.poster, 320))}" alt="${esc(meta.title)}" loading="lazy" decoding="async">` : `<span>${esc(meta.title)}</span>`; return `<article class="media-poster-card ${watched?"is-read":""}" data-media-group="movie" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openMovieDetails(${jsAttrArg(lib.id)},${jsAttrArg(path)})"><div class="media-poster-art" style="${meta.poster ? "" : `background:${coverGradient(meta.title)}`}" >${art}<button class="movie-poster-settings" data-movie-settings title="观看状态" onclick="event.stopPropagation();toggleMovieWatched(${jsAttrArg(lib.id)},${jsAttrArg(path)},this)">${watched?"✓ 已观看":"○ 未观看"}</button></div><div class="media-poster-info"><strong>${esc(meta.title)}</strong><small>${esc([meta.year,meta.provider].filter(Boolean).join(" · ") || fileExt(path).toUpperCase())}</small></div></article>`; }
+function renderMoviePoster(lib, file) { const path=String(file.path), meta=movieMetadataFor(path), watched=!!meta.watched||movieFlag("watched",lib.id,path), art=meta.poster ? `<img src="${esc(coverThumbUrl(meta.poster, 320))}" alt="${esc(meta.title)}" loading="lazy" decoding="async">` : `<span>${esc(meta.title)}</span>`; return `<article class="media-poster-card ${watched?"is-read":""}" data-media-group="movie" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openMovieDetails(${jsAttrArg(lib.id)},${jsAttrArg(path)})"><div class="media-poster-art" style="${meta.poster ? "" : `background:${coverGradient(meta.title)}`}" >${art}<button class="movie-poster-settings" data-movie-settings title="观看状态" onclick="event.stopPropagation();toggleMovieWatched(${jsAttrArg(lib.id)},${jsAttrArg(path)},this)">${watched?"✓ 已观看":"○ 未观看"}</button></div><div class="media-poster-info"><strong>${esc(meta.title)}</strong><small>${esc([meta.year, meta.provider, file.disc ? `原盘 · ${file.disc_fragments} 个片段` : ""].filter(Boolean).join(" · ") || fileExt(path).toUpperCase())}</small></div></article>`; }
 function scrapeSeriesMetadata(host, lib, files) { return scrapeMovieMetadata(host, lib, files); }
 function toggleMediaResourceView(group) { mediaResourceView = mediaResourceView === "poster" ? "list" : "poster"; try { localStorage.setItem("vaulthub_media_resource_view",mediaResourceView); } catch(e) {} const lib=findMediaLibrary(localMediaSelection[group]); if(lib) loadLocalFiles(group,lib,group === "audio" ? audioCursor : 0); }
-function refreshMovieMetadata() { movieMetadataMemory = null; movieLocalTitleIndexCache = null; vaultStoreRemove(movieMetadataCache); libraryIndexSessionClear(); const lib=findMediaLibrary(localMediaSelection.movie); if(lib) loadLocalFiles("movie", lib, 0); toast("🔄 正在重新刮削影视信息"); }
+/* v0.9.84：重新刮削入口（旧实现是没绑定任何按钮的死代码）。
+   scope = "all"：清掉本库所有条目的刮削状态，整库重刮；
+   scope = "failed"：只把失败/未命中的条目放回队列（不动已成功的），命中即可修复。 */
+function refreshMovieMetadata(scope) {
+  const lib = findMediaLibrary(localMediaSelection.movie);
+  const all = readMovieMetadata();
+  const files = (movieScrapeContext && movieScrapeContext.files) || [];
+  const paths = new Set(files.map(file => String(file.path)));
+  let cleared = 0;
+  if (scope === "failed") {
+    Object.keys(all).forEach((path) => {
+      if (paths.size && !paths.has(path)) return;
+      const state = movieMetaState(all[path]);
+      if (state === "failed" || state === "pending") { all[path].scrape_attempts = 0; all[path].last_attempt = 0; cleared++; }
+    });
+  } else {
+    files.forEach((file) => { const path = String(file.path); if (all[path]) { delete all[path]; cleared++; } });
+  }
+  movieMetadataMemory = all;
+  writeMovieMetadata(all);
+  flushMovieMetadata();
+  libraryIndexSessionClear();
+  if (lib) loadLocalFiles("movie", lib, 0);
+  toast(scope === "failed" ? `🔄 正在重试 ${cleared} 条未刮削成功的影视条目` : `🔄 正在整库重新刮削影视信息（重置 ${cleared} 条）`);
+}
 
 function mediaStateKey(libId, path) { return `vaulthub_reading_${libId}_${path}`; }
 /* v0.9.30：阅读进度改为服务端持久化（/api/media/reading/progress）。
@@ -1912,6 +2143,13 @@ async function loadLocalFiles(group, lib, offset = 0) {
       mediaTruncated = rest.truncated;
       data.has_more = false;
     }
+    /* v0.9.84：整库索引补齐后，先把蓝光原盘的片段合并成一条再往下走 ——
+       否则「一部原盘 = 600+ 个无元数据影片」，列表不可用、刮削也无从命中。 */
+    if (group === "movie") {
+      const beforeCollapse = files.length;
+      files = collapseDiscFragments(files);
+      if (files.length !== beforeCollapse) { data.total = files.length; mediaTruncated = false; }
+    }
     /* v0.9.82：影视 / 书刊都是「整库索引」语义 —— 缓存给本会话后续切库、切视图复用。 */
     if (!fromSession && (group === "movie" || group === "comic") && data.status !== "indexing") {
       libraryIndexSession[lib.id] = { at: Date.now(), group, version: String(data.version || ""), total: Number(data.total) || files.length, status: data.status, files: files.slice() };
@@ -2121,7 +2359,7 @@ function syncActiveAudioCover(path) {
   if (!activeAudio || String(activeAudio.path) !== String(path)) return;
   const meta = audioMetadataFor(path);
   const coverEl = document.getElementById("audioCover");
-  if (coverEl && meta.cover) { coverEl.src = meta.cover; coverEl.style.background = ""; }
+  if (coverEl && meta.cover) { coverEl.src = coverThumbUrl(meta.cover, 320); coverEl.style.background = ""; }
   updateAudioExpandArt(meta);
   /* v0.9.62：封面更新后同步更新背景虚化 */
   if (meta.cover) setPlaybackBg(meta.cover);
@@ -2785,6 +3023,9 @@ function saveWeakNetworkState(patch) {
   const next = Object.assign(weakNetworkState(), patch || {});
   try { localStorage.setItem(WEAK_NETWORK_KEY, JSON.stringify(next)); } catch (e) { console.warn("[weak] 无法写入弱网设置（localStorage 受限）", e); }
   syncWeakNetworkSettings();
+  /* v0.9.84：测速结果会改变「自动」档的清晰度（弱网 → 高清/省流），
+     这里同步刷新档位呈现，避免面板与实际取图档位不一致。 */
+  if (typeof applyQualityLevel === "function") applyQualityLevel();
   return next;
 }
 /* v0.9.77：音质档位不再有手动按钮 —— 始终「自动」，由后台测速（当天首次打开 +
@@ -2824,6 +3065,12 @@ function autoAudioKbps() {
 }
 /* 当前实际生效的码率（0 = 原文件直出）。 */
 function effectiveAudioKbps() {
+  /* v0.9.84：显式「画面清晰度」档位同时决定音频码率（流畅 128k / 极省 96k），
+     自动档返回 null → 交回后台测速判定（原行为不变）。 */
+  if (typeof qualityAudioKbps === "function") {
+    const explicit = qualityAudioKbps();
+    if (explicit !== null) return Number(explicit) || 0;
+  }
   const choice = audioQualityChoice();
   if (choice === "original") return 0;
   if (choice === "auto") return autoAudioKbps();
@@ -2945,8 +3192,8 @@ function updateAudioQualityButton() {
   if (!status) return;
   const kbps = effectiveAudioKbps();
   status.textContent = kbps
-    ? `当前档位：自动限码率 ${kbps}k（后台测速判定，无需手动切换）`
-    : "当前档位：原文件直出（后台测速判定，无需手动切换）";
+    ? `当前档位：${typeof qualityChoice === "function" && qualityChoice() !== "auto" ? qualityProfile().label + " · " : "自动限码率 "}${kbps}k`
+    : "当前档位：原文件直出";
 }
 /* 选择播放源：弱网/显式档位 → 服务端转码流；其余 → 原文件。
    转码流失败（503 拥塞、ffmpeg 缺失等）自动回落原文件，不让播放卡死。 */
@@ -3603,7 +3850,20 @@ function comicSaveDataActive() {
   return /^(slow-)?2g$|^3g$/.test(String(c.effectiveType || ""));
 }
 function comicTranscodeWidth() {
+  /* v0.9.84：页面清晰度以「画面清晰度」档位为准 —— 显式档位（原画 0 / 高清 1600 /
+     流畅 1200 / 极省 900）直接生效；「自动」档返回 null，交回 v0.9.71 的省流判定
+     （保持既有契约：自动 + 无弱网信息 = 原图直出、弱网/saveData = 1600）。 */
+  if (typeof qualityPageWidth === "function") {
+    const explicit = qualityPageWidth();
+    if (explicit !== null) return Number(explicit) || 0;
+  }
   return comicSaveDataActive() ? (Number(comicPrefs().width) || COMIC_DEFAULT_WIDTH) : 0;
+}
+/* v0.9.84：阅读器工具栏按钮的文案 —— 显式档位显示档位名，自动档显示「画质·自动」。 */
+function comicQualityHint() {
+  if (typeof qualityLabelText !== "function") return "";
+  const p = typeof qualityProfile === "function" ? qualityProfile() : null;
+  return p ? `${qualityLabelText()}（${p.sub}）` : qualityLabelText();
 }
 function comicPageUrl(lib, path, entry, width) {
   const raw = String((entry && (entry.raw || entry.name)) || entry || "");
@@ -3616,7 +3876,9 @@ function comicPageUrl(lib, path, entry, width) {
   return u;
 }
 function comicCoverUrl(lib, path, width) {
-  const w = Number(width) || 320;
+  /* v0.9.84：书架封面尺寸跟随「画面清晰度」档位（原画/高清 320，流畅 200，极省 140）。 */
+  const requested = Number(width) || 320;
+  const w = typeof qualityCoverWidth === "function" ? qualityCoverWidth(requested) : requested;
   /* v0.9.77：PDF 封面 = 第 1 页小图（服务端渲染），避免书架用浏览器 PDF 缩略图。 */
   const m = String(path).toLowerCase().match(/\.([^.\\/]+)$/);
   if (m && m[1] === "pdf") {
@@ -3631,6 +3893,9 @@ function comicPageUrlAt(state, page) {
 function comicFitLabel(fit) { return fit === "height" ? "适高" : fit === "native" ? "原始" : "适宽"; }
 function comicModeLabel(mode) { return mode === "double" ? "双页" : mode === "scroll" ? "条漫" : "单页"; }
 function comicSaveLabel() {
+  /* v0.9.84：该按钮由「省流开关」升级为「画面清晰度」档位（原画/高清/流畅/极省/自动）。
+     没有载入档位模块时（如契约测试的隔离沙箱）退回旧的省流文案，保持向后兼容。 */
+  if (typeof qualityLabelText === "function") return qualityLabelText();
   const m = String(comicPrefs().saveData || "auto");
   return m === "on" ? "省流·开" : m === "off" ? "省流·关" : "省流·自动";
 }
@@ -3647,7 +3912,7 @@ function comicReaderHtml(state) {
 <span class="comic-sep"></span>
 <button class="comic-tool" type="button" data-act="rtl" title="切换阅读方向：右起（日漫）/ 左起">${state.rtl ? "右起" : "左起"}</button>
 <button class="comic-tool" type="button" data-act="fit" title="切换适应方式">${comicFitLabel(state.fit)}</button>
-<button class="comic-tool comic-tool-save" type="button" data-act="save" title="省流模式：远程网络下按页转码，单页体积降到约一半">${comicSaveLabel()}</button>
+<button class="comic-tool comic-tool-save" type="button" data-act="save" title="画面清晰度：原画 → 高清 → 流畅 → 极省（最低档无色彩）；档位越高越清晰、色彩越完整">${comicSaveLabel()}</button>
 <span class="comic-hint">${esc(comicModeLabel(state.mode))} · 左右半屏点击翻页 · Esc 关闭</span>
 </div>
 <div class="comic-stage" data-comic-stage>
@@ -3865,12 +4130,24 @@ function comicBind(state) {
         saveComicPrefs({ fit: state.fit });
         comicRenderStage(state, false);
       } else if (act === "save") {
-        const order = ["auto", "on", "off"];
-        const next = order[(order.indexOf(String(comicPrefs().saveData || "auto")) + 1) % order.length];
-        saveComicPrefs({ saveData: next });
-        state.prefetched = new Set();
-        comicRenderStage(state, true);
-        toast(next === "on" ? "🪶 省流模式：开（按页转码，单页体积约降到一半）" : next === "off" ? "🖼️ 省流模式：关（原图直出）" : "🪶 省流模式：自动（弱网才开）");
+        /* v0.9.84：循环「画面清晰度」档位（自动 → 原画 → 高清 → 流畅 → 极省）。
+           换档 = 清晰的清晰度 + 色彩一起变；最低档无色彩，切回高档立即恢复。 */
+        if (typeof cycleQualityLevel === "function") {
+          const next = cycleQualityLevel({ rerender: false });
+          const profile = typeof qualityProfile === "function" ? qualityProfile() : null;
+          const label = typeof qualityLabelText === "function" ? qualityLabelText() : "画质";
+          state.prefetched = new Set();
+          saveComicPrefs({ saveData: next === "auto" ? "auto" : next === "original" ? "off" : "on" });
+          comicRenderStage(state, true);
+          toast(`🖼 ${label}${profile ? " · " + profile.sub : ""}`);
+        } else {
+          const order = ["auto", "on", "off"];
+          const next = order[(order.indexOf(String(comicPrefs().saveData || "auto")) + 1) % order.length];
+          saveComicPrefs({ saveData: next });
+          state.prefetched = new Set();
+          comicRenderStage(state, true);
+          toast(next === "on" ? "🪶 省流模式：开（按页转码，单页体积约降到一半）" : next === "off" ? "🖼️ 省流模式：关（原图直出）" : "🪶 省流模式：自动（弱网才开）");
+        }
       }
     });
   }
@@ -4963,7 +5240,7 @@ async function openLocalMedia(group, libId, path) {
     }
   }
   if (["mp3","flac","m4a","ogg","wav"].includes(ext)) body = `<div class="media-viewer-body"><audio controls autoplay preload="metadata" src="${esc(url)}"></audio></div>`;
-  else if (MEDIA_FORMATS.movie.includes(ext)) body = `<div class="media-viewer-body media-video-body" data-video-controls-visible="true" data-video-engine="native" data-video-chrome-collapsed="false" data-video-repeat="off" data-video-shuffle="off" data-video-quality="auto">
+  else if (MEDIA_FORMATS.movie.includes(ext)) body = `<div class="media-viewer-body media-video-body" data-video-controls-visible="true" data-video-engine="native" data-video-chrome-collapsed="false" data-video-repeat="off" data-video-shuffle="off" data-video-quality="${typeof qualityVideoPreset === "function" ? qualityVideoPreset() : "auto"}">
 <video data-movie-player playsinline preload="metadata" onloadedmetadata="this.muted=false;this.volume=1" onvolumechange="this.dataset.volume=String(this.volume)"></video>
 <div class="video-chrome" data-video-chrome>
 <div class="vc-top">
