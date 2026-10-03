@@ -181,12 +181,15 @@ function renderNowPlaying() {
       plot: meta.lyrics ? String(meta.lyrics).replace(/\[[^\]]*\]/g, " ").replace(/\s+/g, " ").trim().slice(0, 120) : "暂无歌词，可在「文件」视图手动适配歌曲信息。",
       pct,
       kind: player.paused ? "♪ 已暂停" : "♪ 音乐播放",
+      resumeKind: "audio", libId: activeAudio.libId, path: activeAudio.path,
       tm: `${formatMediaTime(player.currentTime)} / ${formatMediaTime(dur)}`,
       note: [isMv ? "音乐 MV 播放" : "Navidrome · 原码直传", lib ? lib.name : ""]
     });
   }
 
-  /* 视频：读取 vaulthub_video_<lib>_<path> 播放进度，取最近 2 条未看完的 */
+  /* 视频：读取 vaulthub_video_<lib>_<path> 播放进度，取最近 2 条未看完的。
+     v0.9.85 去重：同一个视频可能留下多条记录（同一原盘的多个片段、同片在多库/多路径、
+     旧版遗留的片段 key）—— 按「视频身份」归并，只展示最新一次播放情况。 */
   const vids = [];
   try {
     for (let i = 0; i < localStorage.length; i++) {
@@ -201,7 +204,18 @@ function renderNowPlaying() {
     }
   } catch (e) {}
   vids.sort((a, b) => b.at - a.at);
-  vids.slice(0, 2).forEach(v => {
+  const uniqueVids = [];
+  const seenVideos = new Map();
+  vids.forEach(v => {
+    const id = nowPlayingVideoIdentity(v);
+    const prev = seenVideos.get(id);
+    if (!prev) { seenVideos.set(id, v); uniqueVids.push(v); return; }
+    /* 同一个视频：保留最新一条记录，同时保留更靠后的播放进度。 */
+    const keep = v.at > prev.at ? v : prev;
+    keep.time = Math.max(Number(v.time) || 0, Number(prev.time) || 0);
+  });
+  uniqueVids.sort((a, b) => b.at - a.at);
+  uniqueVids.slice(0, 2).forEach(v => {
     const meta = movieMetadataFor(v.path);
     const ext = fileExt(v.path).toUpperCase() || "VIDEO";
     rows.push({
@@ -222,6 +236,7 @@ function renderNowPlaying() {
       plot: meta.overview || "暂无简介，刮削完成后会自动补齐。",
       pct: 0,
       kind: "▶ 视频播放",
+      resumeKind: "video", libId: v.lib.id, path: v.path,
       tm: `已看到 ${formatMediaTime(v.time)}`,
       note: ["上次播放位置已记忆", v.lib.name]
     });
@@ -235,6 +250,7 @@ function renderNowPlaying() {
     <div class="now-th" style="background:${r.cover ? "#1b1f28" : r.grad}">
       ${r.cover ? `<img src="${esc(typeof coverThumbUrl === "function" ? coverThumbUrl(r.cover, 320) : r.cover)}" alt="" loading="lazy" decoding="async" onerror="this.remove()">` : `<span>${r.icon}</span>`}
       ${r.pct ? `<div class="prog"><i style="width:${r.pct.toFixed(1)}%"></i></div>` : ""}
+      ${r.resumeKind ? `<button class="now-play" type="button" title="${esc(t("nowPlay"))}" aria-label="${esc(t("nowPlay"))}" onclick="event.stopPropagation();resumeNowPlaying(${jsAttrArg(r.resumeKind)},${jsAttrArg(r.libId)},${jsAttrArg(r.path)})"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"></path></svg></button>` : ""}
     </div>
     <div class="now-body">
       <div class="now-ttl">${esc(r.title)}${r.yr ? `<span class="yr">${esc(r.yr)}</span>` : ""}</div>
@@ -254,6 +270,30 @@ function formatMediaTime(sec) {
   const s = Math.max(0, Math.floor(Number(sec) || 0));
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
   return (h ? h + ":" + String(m).padStart(2, "0") : String(m)) + ":" + String(r).padStart(2, "0");
+}
+/* v0.9.85：正在播放的「同一个视频」判定 —— 刮削标题优先（同一部片的不同文件/原盘片段
+   会得到同一个标题），标题缺失时退回原盘目录名、再退回去掉方括号标签的文件名。 */
+function nowPlayingVideoIdentity(v) {
+  let meta = null;
+  try { meta = typeof movieMetadataFor === "function" ? movieMetadataFor(v.path) : null; } catch (e) {}
+  const title = String((meta && meta.title) || "").trim().toLowerCase();
+  if (title) return `${v.lib.id}|t:${title}`;
+  let folder = "";
+  try { folder = typeof discFolderOf === "function" ? discFolderOf(String(v.path)) : ""; } catch (e) {}
+  const base = folder || String(v.path || "").replace(/\[[^\]]*\]/g, "").toLowerCase();
+  return `${v.lib.id}|p:${base}`;
+}
+/* v0.9.85：海报上的续播按钮。
+   · 视频：走 openLocalMedia('movie', …) —— 播放器会按 vaulthub_video_<lib>_<path> 恢复上次位置；
+   · 音乐：直接把底部播放器的当前曲目继续播放（播放器被暂停时按一下即可续播）。 */
+function resumeNowPlaying(kind, libId, path) {
+  if (kind === "audio") {
+    const player = document.getElementById("audioPlayerElement");
+    if (player && player.src) { player.play().catch(() => {}); return; }
+    if (typeof playAudioFile === "function" && libId && path) playAudioFile(libId, path);
+    return;
+  }
+  if (typeof openLocalMedia === "function" && libId && path) openLocalMedia("movie", libId, path);
 }
 
 /* ---------- 第三 / 四栏：最近入库（按 mtime 倒序取每库前 N 条） ---------- */

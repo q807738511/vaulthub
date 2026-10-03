@@ -205,6 +205,124 @@ function topUserMenuLogout() {
   if (typeof logoutVaultHub === "function") logoutVaultHub();
 }
 
+/* ---------- v0.9.85 通知中心（搜索框右侧喇叭：功能通知 + 刮削信息明细） ----------
+   设计要点：
+     · 纯前端队列，落 localStorage（上限 60 条），刷新/换页不丢；不新增服务端接口。
+     · 刮削过程由 02-media.js 的刮削状态机调用 pushNotification() 投递
+       （开始 / 完成汇总 / 失败明细 / 重试），点击通知可直接跳到对应媒体库。
+     · 徽标 = 未读条数；打开面板即视为已读（并持久化）。 */
+const VH_NOTIFY_KEY = "vaulthub_notifications_v1";
+const VH_NOTIFY_MAX = 60;
+let vhNotifications = (() => {
+  try {
+    const raw = JSON.parse(localStorage.getItem(VH_NOTIFY_KEY) || "[]");
+    return Array.isArray(raw) ? raw.filter(x => x && x.title) : [];
+  } catch (e) { return []; }
+})();
+
+function vhNotifyPersist() {
+  try { localStorage.setItem(VH_NOTIFY_KEY, JSON.stringify(vhNotifications.slice(0, VH_NOTIFY_MAX))); } catch (e) {}
+}
+function vhNotifyUnread() { return vhNotifications.filter(n => !n.read).length; }
+function renderNotifyBadge() {
+  const badge = document.getElementById("tnNotifyBadge");
+  if (!badge) return;
+  const n = vhNotifyUnread();
+  badge.hidden = n <= 0;
+  badge.textContent = n > 99 ? "99+" : String(n);
+}
+function notifyIconFor(level) {
+  return level === "fail" ? "⛔" : level === "warn" ? "⚠️" : level === "ok" ? "✅" : "🔔";
+}
+function formatNotifyTime(ts) {
+  const d = new Date(Number(ts) || Date.now());
+  const p = x => String(x).padStart(2, "0");
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function escNotify(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+/* pushNotification：level 取 info/ok/warn/fail；detail 是明细文本；
+   action 可选 {view:"movie"} —— 点击通知跳到该视图（落回已有的 switchView）。 */
+function pushNotification(entry) {
+  const item = {
+    id: "n" + Date.now() + Math.random().toString(36).slice(2, 7),
+    ts: Date.now(),
+    level: String(entry && entry.level || "info"),
+    title: String(entry && entry.title || ""),
+    detail: String(entry && entry.detail || ""),
+    action: entry && entry.action || null,
+    read: false
+  };
+  if (!item.title) return null;
+  vhNotifications.unshift(item);
+  if (vhNotifications.length > VH_NOTIFY_MAX) vhNotifications = vhNotifications.slice(0, VH_NOTIFY_MAX);
+  vhNotifyPersist();
+  renderNotifications();
+  if (entry && entry.toast && typeof toast === "function") toast(`${notifyIconFor(item.level)} ${item.title}`);
+  return item;
+}
+function renderNotifications() {
+  renderNotifyBadge();
+  const host = document.getElementById("tnNotifyList");
+  if (!host) return;
+  if (!vhNotifications.length) {
+    host.innerHTML = `<div class="tn-notify-empty">${escNotify(t("notifyEmpty"))}</div>`;
+    return;
+  }
+  host.innerHTML = vhNotifications.map(n => `<div class="tn-notify-item ${escNotify(n.level)}${n.read ? "" : " unread"}" data-notify="${escNotify(n.id)}">
+    <span class="ic">${notifyIconFor(n.level)}</span>
+    <span class="tx"><b>${escNotify(n.title)}</b>${n.detail ? `<small>${escNotify(n.detail)}</small>` : ""}<span class="dt">${escNotify(formatNotifyTime(n.ts))}${n.action && n.action.view ? ` · <a href="javascript:void(0)" onclick="notifyGoto('${escNotify(n.id)}')">${escNotify(t("notifyOpenLibrary"))}</a>` : ""}</span></span>
+  </div>`).join("");
+}
+function notifyGoto(id) {
+  const item = vhNotifications.find(n => n.id === id);
+  closeNotifyPanel();
+  if (item && item.action && item.action.view && typeof switchView === "function") switchView(item.action.view);
+}
+function notifyPanelOpen() { return !!document.getElementById("tnNotifyPanel")?.classList.contains("open"); }
+function closeNotifyPanel() {
+  const panel = document.getElementById("tnNotifyPanel"), btn = document.getElementById("tnNotifyBell");
+  if (panel) panel.classList.remove("open");
+  if (btn) btn.setAttribute("aria-expanded", "false");
+}
+function toggleNotifyPanel(event) {
+  if (event) event.stopPropagation();
+  const panel = document.getElementById("tnNotifyPanel"), btn = document.getElementById("tnNotifyBell");
+  if (!panel) return;
+  const willOpen = !panel.classList.contains("open");
+  closeNotifyPanel();
+  if (typeof closeTopUserMenu === "function") closeTopUserMenu();
+  if (!willOpen) return;
+  renderNotifications();
+  panel.classList.add("open");
+  if (btn) btn.setAttribute("aria-expanded", "true");
+  /* 打开即已读：未读徽标清零，但条目保留在列表里可回看明细。 */
+  if (vhNotifyUnread()) {
+    vhNotifications = vhNotifications.map(n => (n.read ? n : { ...n, read: true }));
+    vhNotifyPersist();
+    renderNotifyBadge();
+  }
+}
+function markNotificationsRead() {
+  vhNotifications = vhNotifications.map(n => (n.read ? n : { ...n, read: true }));
+  vhNotifyPersist();
+  renderNotifications();
+}
+function clearNotifications() {
+  vhNotifications = [];
+  vhNotifyPersist();
+  renderNotifications();
+}
+/* v0.9.85：搜索框快捷键提示按平台显示 —— Windows/Android 上 ⌘ 会渲染成方块乱码。 */
+function applySearchKbdLabel() {
+  const kbd = document.getElementById("topSearchKbd");
+  if (!kbd) return;
+  const ua = navigator.userAgent || "";
+  const isApple = /Mac|iPhone|iPad|iPod/.test(ua) || /Mac/.test(navigator.platform || "");
+  kbd.textContent = isApple ? "⌘K" : "Ctrl K";
+}
+
 /* ---------- 初始化 ---------- */
 function initTopNav() {
   applyLayoutMode();
@@ -212,10 +330,15 @@ function initTopNav() {
   const active = document.querySelector(".view.active");
   syncTopNavView(active ? active.id : "view-home");
   fillTopUserMenu();
+  renderNotifications();
+  applySearchKbdLabel();
   if (!initTopNav.bound) {
     initTopNav.bound = true;
     document.addEventListener("click", event => {
       closeTopUserMenu();
+      /* v0.9.85：点喇叭与其面板以外的地方收起通知面板。 */
+      const insideBell = event.target && event.target.closest && event.target.closest("#tnNotifyBell, #tnNotifyPanel");
+      if (!insideBell) closeNotifyPanel();
       /* 书刊页的「视图设置」浮层：点面板与触发按钮以外的地方收起。 */
       const inside = event.target && event.target.closest && event.target.closest("#bookViewSet, #bookViewSetButton");
       if (!inside && typeof closeBookViewSettings === "function") closeBookViewSettings();
@@ -226,6 +349,7 @@ function initTopNav() {
         if (box) { event.preventDefault(); box.focus(); box.select(); }
       } else if (event.key === "Escape") {
         closeTopUserMenu();
+        closeNotifyPanel();
       }
     });
   }

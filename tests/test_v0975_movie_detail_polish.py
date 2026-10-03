@@ -50,7 +50,8 @@ check("E1 演职人员头像结构（圆形 + 下方文字）", 'class="movie-ca
 check("E2 TMDB profile_path 头像 / 缺图首字占位", "profile_path" in MEDIA and "movie-cast-avatar-fallback" in MEDIA)
 check("E3 头像 CSS 圆形", ".movie-cast-avatar" in CSS and "border-radius:50%" in CSS)
 check("E3b 演职人员专用容器（不被方框条样式覆盖）", 'class="movie-detail-strip movie-cast-strip"' in MEDIA and ".movie-detail-strip article.movie-cast-card" in CSS and "border:none" in CSS.split(".movie-detail-strip article.movie-cast-card")[1][:200])
-check("E4 演职人员仍显示姓名与角色", 'x.name||""' in MEDIA and 'x.character||""' in MEDIA and "movie-cast-card" in MEDIA)
+check("E4 演职人员仍显示姓名与角色（v0.9.85：姓名一行 + 饰演/配音标签 + 角色名）",
+      'x.name||""' in MEDIA and "String(x.character || \"\").trim()" in MEDIA and "castRoleLabel" in MEDIA and "movie-cast-card" in MEDIA)
 
 # --- F. 分享外网地址（后端 + 设置页） ---
 check("F1 RuntimeConfig 含 share_public_base", 'SharePublicBase' in open(ROOT / "media-go/main.go", encoding="utf-8").read())

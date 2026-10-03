@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -32,6 +33,9 @@ type loginFailure struct {
 type sessionEntry struct {
 	expires    time.Time
 	mustChange bool
+	/* v0.9.85 持续登录：该会话的保持天数（30 默认 / 60 勾选）。滑动续期按它计算，
+	   0 视为默认值 —— 兼容旧版写入的、没有该字段的会话记录。 */
+	days int
 }
 
 type manager struct {
@@ -45,11 +49,48 @@ type manager struct {
 	bootstrapConsumed bool   // 一次性初始密码是否已完成首次登录（持久化，禁止再次登录）
 	salt, hash        string // 凭据哈希（sha256(salt+password)），auth.json 持久化
 	authFile          string // /data/auth.json：账户与鉴权模式的持久化文件
+	sessionsFile      string // v0.9.85 /data/sessions.json：持续登录会话的持久化文件
+	sessionsDirty     bool   // v0.9.85：会话表有变更，等待下一次落盘（5 分钟节流）
 	caddyConfig       []byte
 	children          []*exec.Cmd
 }
 
-const sessionIdleTimeout = 30 * time.Minute
+/*
+v0.9.85 持续登录：
+  - 会话默认保持 30 天（cookie 持久化 + 服务端同寿命滑动续期），登录页勾选后 60 天；
+  - 会话表落盘 /data/sessions.json，容器重建/升级后 cookie 依然有效（此前只存内存，
+    「保持登录」会随进程重启失效）；
+  - sessionIdleTimeout 保留为兜底：旧记录没有 days 字段、或读取异常时按它处理。
+*/
+const (
+	sessionIdleTimeout = 30 * time.Minute
+	sessionDefaultDays = 30
+	sessionLongDays    = 60
+	sessionMaxEntries  = 256
+)
+
+// sessionTTLFor 把会话保持天数换算成 TTL，只接受 60 天这一档加长，其余一律默认 30 天。
+func sessionTTLFor(days int) time.Duration {
+	if days >= sessionLongDays {
+		return sessionLongDays * 24 * time.Hour
+	}
+	if days > 0 && days < sessionDefaultDays {
+		/* 兼容早期可能写入的短天数：至少按默认档处理，不缩短客户预期。 */
+		return sessionDefaultDays * 24 * time.Hour
+	}
+	if days == 0 {
+		return sessionDefaultDays * 24 * time.Hour
+	}
+	return sessionDefaultDays * 24 * time.Hour
+}
+
+// sessionDaysFor 规整请求里的保持天数：只允许 30 / 60 两档。
+func sessionDaysFor(days int) int {
+	if days >= sessionLongDays {
+		return sessionLongDays
+	}
+	return sessionDefaultDays
+}
 
 /* ---------- v0.9.56 鉴权模式与账户持久化 ---------- */
 
@@ -271,10 +312,14 @@ func (m *manager) session(r *http.Request) (sessionEntry, bool) {
 	m.mu.Lock()
 	ent, ok := m.sessions[c.Value]
 	if ok && now.Before(ent.expires) {
-		ent.expires = now.Add(sessionIdleTimeout)
+		/* v0.9.85：按会话自身的保持天数滑动续期（默认 30 天 / 勾选 60 天），
+		   不再是 30 分钟 —— 客户要求「持续登录」。 */
+		ent.expires = now.Add(sessionTTLFor(ent.days))
 		m.sessions[c.Value] = ent
+		m.sessionsDirty = true
 	} else if ok {
 		delete(m.sessions, c.Value)
+		m.sessionsDirty = true
 		ok = false
 	}
 	m.mu.Unlock()
@@ -318,6 +363,7 @@ func (m *manager) cleanupSessions() {
 	for sid, ent := range m.sessions {
 		if !now.Before(ent.expires) {
 			delete(m.sessions, sid)
+			m.sessionsDirty = true
 		}
 	}
 	for key, f := range m.failures {
@@ -325,7 +371,140 @@ func (m *manager) cleanupSessions() {
 			delete(m.failures, key)
 		}
 	}
+	/* v0.9.85：过期清理也可能改变会话表，顺手把变更落盘（此处只写脏数据）。 */
+	dirty := m.sessionsDirty
+	if dirty {
+		m.sessionsDirty = false
+	}
+	payload, err := m.sessionsPayloadLocked()
 	m.mu.Unlock()
+	if dirty && err == nil {
+		m.writeSessionsFile(payload)
+	}
+}
+
+/* ---------- v0.9.85 持续登录：会话表持久化 ---------- */
+
+// sessionsDoc 是 /data/sessions.json 的磁盘形态。
+type sessionsDoc struct {
+	Version  int                      `json:"version"`
+	SavedAt  string                   `json:"saved_at"`
+	Sessions map[string]sessionRecord `json:"sessions"`
+}
+
+type sessionRecord struct {
+	Expires    string `json:"expires"`
+	MustChange bool   `json:"must_change"`
+	Days       int    `json:"days"`
+}
+
+// sessionsPayloadLocked 序列化当前会话表（调用方需持有 m.mu）。
+// 同时按到期时间裁剪到 sessionMaxEntries 条，避免文件无限增长。
+func (m *manager) sessionsPayloadLocked() ([]byte, error) {
+	now := time.Now()
+	doc := sessionsDoc{Version: 1, SavedAt: now.UTC().Format(time.RFC3339), Sessions: map[string]sessionRecord{}}
+	type pair struct {
+		sid string
+		ent sessionEntry
+	}
+	live := make([]pair, 0, len(m.sessions))
+	for sid, ent := range m.sessions {
+		if !now.Before(ent.expires) {
+			continue
+		}
+		live = append(live, pair{sid, ent})
+	}
+	if len(live) > sessionMaxEntries {
+		sort.Slice(live, func(i, j int) bool { return live[i].ent.expires.After(live[j].ent.expires) })
+		live = live[:sessionMaxEntries]
+	}
+	for _, p := range live {
+		doc.Sessions[p.sid] = sessionRecord{Expires: p.ent.expires.UTC().Format(time.RFC3339), MustChange: p.ent.mustChange, Days: p.ent.days}
+	}
+	return json.Marshal(doc)
+}
+
+// writeSessionsFile 原子写会话文件（0600）。失败只记日志：会话持久化是可用性优化，
+// 不能因为磁盘问题让登录/退出整体失败。
+func (m *manager) writeSessionsFile(payload []byte) {
+	m.mu.RLock()
+	path := m.sessionsFile
+	m.mu.RUnlock()
+	if path == "" || len(payload) == 0 {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		log.Printf("manager: sessions dir: %v", err)
+		return
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".sessions-*.tmp")
+	if err != nil {
+		log.Printf("manager: sessions temp: %v", err)
+		return
+	}
+	tmpName := tmp.Name()
+	if _, err = tmp.Write(payload); err == nil {
+		err = tmp.Chmod(0600)
+	}
+	if closeErr := tmp.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		_ = os.Remove(tmpName)
+		log.Printf("manager: sessions write: %v", err)
+		return
+	}
+	if err = os.Rename(tmpName, path); err != nil {
+		_ = os.Remove(tmpName)
+		log.Printf("manager: sessions rename: %v", err)
+	}
+}
+
+// flushSessions 立即把脏会话表落盘（登录/退出后调用，保证「保持登录」跨重启生效）。
+func (m *manager) flushSessions() {
+	m.mu.Lock()
+	payload, err := m.sessionsPayloadLocked()
+	m.sessionsDirty = false
+	m.mu.Unlock()
+	if err != nil {
+		log.Printf("manager: sessions marshal: %v", err)
+		return
+	}
+	m.writeSessionsFile(payload)
+}
+
+// loadSessions 在启动时恢复未过期的会话（容器重建/升级后 cookie 继续有效）。
+func (m *manager) loadSessions(path string) {
+	m.mu.Lock()
+	m.sessionsFile = path
+	m.mu.Unlock()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	var doc sessionsDoc
+	if json.Unmarshal(b, &doc) != nil {
+		log.Printf("manager: sessions file %s is invalid; ignoring", path)
+		return
+	}
+	now := time.Now()
+	restored := 0
+	m.mu.Lock()
+	for sid, rec := range doc.Sessions {
+		if sid == "" {
+			continue
+		}
+		exp, perr := time.Parse(time.RFC3339, rec.Expires)
+		if perr != nil || !now.Before(exp) {
+			continue
+		}
+		m.sessions[sid] = sessionEntry{expires: exp, mustChange: rec.MustChange, days: sessionDaysFor(rec.Days)}
+		restored++
+	}
+	m.mu.Unlock()
+	if restored > 0 {
+		log.Printf("manager: restored %d persistent session(s) from %s", restored, path)
+	}
 }
 func clientKey(r *http.Request) string {
 	h := r.RemoteAddr
@@ -378,6 +557,9 @@ func (m *manager) login(w http.ResponseWriter, r *http.Request) {
 	var x struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
+		/* v0.9.85 持续登录：登录页「保持登录 60 天」勾选时传 60，默认 30。
+		   取值范围由 sessionDaysFor 规整，客户端传什么都只会得到 30/60。 */
+		KeepDays int `json:"keep_days"`
 	}
 	if json.Unmarshal(b, &x) != nil {
 		m.reply(w, 400, map[string]any{"ok": false, "error": "invalid json"})
@@ -415,18 +597,24 @@ func (m *manager) login(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	m.sessions[sid] = sessionEntry{expires: time.Now().Add(sessionIdleTimeout), mustChange: forceChange}
+	days := sessionDaysFor(x.KeepDays)
+	ttl := sessionTTLFor(days)
+	m.sessions[sid] = sessionEntry{expires: time.Now().Add(ttl), mustChange: forceChange, days: days}
 	m.loginSucceededLocked(r)
 	m.mu.Unlock()
+	/* v0.9.85：登录即落盘会话表 —— 容器重建/升级后 cookie 仍然有效（持续登录）。 */
+	m.flushSessions()
 	secure := r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
-	http.SetCookie(w, &http.Cookie{Name: "vh_session", Value: sid, Path: "/", HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode, MaxAge: 1800})
-	m.reply(w, 200, map[string]any{"ok": true, "idle_timeout_seconds": 1800, "must_change": forceChange})
+	http.SetCookie(w, &http.Cookie{Name: "vh_session", Value: sid, Path: "/", HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode, MaxAge: int(ttl.Seconds()), Expires: time.Now().Add(ttl)})
+	m.reply(w, 200, map[string]any{"ok": true, "idle_timeout_seconds": int(ttl.Seconds()), "session_days": days, "must_change": forceChange})
 }
 func (m *manager) logout(w http.ResponseWriter, r *http.Request) {
 	if c, e := r.Cookie("vh_session"); e == nil {
 		m.mu.Lock()
 		delete(m.sessions, c.Value)
 		m.mu.Unlock()
+		/* v0.9.85：退出登录必须让持久化文件同步失效，否则重建容器后旧会话会「复活」。 */
+		m.flushSessions()
 	}
 	http.SetCookie(w, &http.Cookie{Name: "vh_session", Value: "", Path: "/", HttpOnly: true, Secure: r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https"), SameSite: http.SameSiteLaxMode, MaxAge: -1})
 	m.reply(w, 200, map[string]any{"ok": true})
@@ -446,7 +634,7 @@ func (m *manager) authMode(w http.ResponseWriter, r *http.Request) {
 	if open {
 		mode = "open"
 	}
-	m.reply(w, 200, map[string]any{"ok": true, "mode": mode, "username": user, "has_password": hashed, "must_change": mc})
+	m.reply(w, 200, map[string]any{"ok": true, "mode": mode, "username": user, "has_password": hashed, "must_change": mc, "session_default_days": sessionDefaultDays, "session_long_days": sessionLongDays})
 }
 
 // account 修改登录用户名 / 登录密码 / 鉴权模式（v0.9.56+）。需要有效会话。
@@ -573,6 +761,8 @@ func (m *manager) dropOtherSessions(r *http.Request) {
 			delete(m.sessions, sid)
 		}
 	}
+	/* v0.9.85：凭据变更后立即落盘，避免旧会话在容器重启后从文件里"复活"。 */
+	m.sessionsDirty = true
 }
 
 // unrestrictSession 把当前请求的会话从「受限」（强制改密）升级为完整会话。
@@ -591,8 +781,9 @@ func (m *manager) health(w http.ResponseWriter, r *http.Request) {
 }
 
 // sessionCheck is the loopback authority used by sibling services (media API) to
-// verify a browser session. It also slides the idle timeout, so authenticated
-// media traffic keeps the 30-minute window alive exactly like manager traffic.
+// verify a browser session. It also slides the session lifetime, so authenticated
+// media traffic keeps the persistent login (30 days by default, 60 when the user
+// ticked 「保持登录 60 天」) alive exactly like manager traffic.
 func (m *manager) sessionCheck(w http.ResponseWriter, r *http.Request) {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
@@ -604,7 +795,7 @@ func (m *manager) sessionCheck(w http.ResponseWriter, r *http.Request) {
 	}
 	// v0.9.56 开放模式：媒体写操作等依赖本回环会话校验的调用全部放行。
 	if m.open {
-		m.reply(w, 200, map[string]any{"ok": true, "mode": "open", "idle_timeout_seconds": int(sessionIdleTimeout.Seconds())})
+		m.reply(w, 200, map[string]any{"ok": true, "mode": "open", "idle_timeout_seconds": int(sessionTTLFor(sessionDefaultDays).Seconds()), "session_days": sessionDefaultDays})
 		return
 	}
 	ent, ok := m.session(r)
@@ -617,7 +808,7 @@ func (m *manager) sessionCheck(w http.ResponseWriter, r *http.Request) {
 		m.reply(w, 403, map[string]any{"ok": false, "error": "必须修改初始密码后才能继续", "must_change": true})
 		return
 	}
-	m.reply(w, 200, map[string]any{"ok": true, "idle_timeout_seconds": int(sessionIdleTimeout.Seconds())})
+	m.reply(w, 200, map[string]any{"ok": true, "idle_timeout_seconds": int(sessionTTLFor(ent.days).Seconds()), "session_days": sessionDaysFor(ent.days)})
 }
 func (m *manager) runtime(w http.ResponseWriter, r *http.Request) {
 	if !m.require(w, r) {
@@ -947,6 +1138,13 @@ func main() {
 		log.Fatal(err)
 	}
 	m := &manager{sessions: map[string]sessionEntry{}, failures: map[string]loginFailure{}, caddyConfig: b}
+	/* v0.9.85：先恢复持久化会话表 —— cookie 里带的 sid 才能在重启后继续被识别。
+	   /data 通常是卷，会话文件与 auth.json 同目录（0600）。 */
+	sessionsFile := os.Getenv("MANAGER_SESSIONS_FILE")
+	if sessionsFile == "" {
+		sessionsFile = "/data/sessions.json"
+	}
+	m.loadSessions(sessionsFile)
 	// v0.9.56：鉴权持久化文件优先；文件缺失时按环境变量推导。
 	// v0.9.58：ADMIN_PASSWORD 为空不再进入开放模式 —— 而是生成一次性随机初始
 	// 密码并立即持久化到 auth.json（must_change=true），保证容器升级（重建容器但
