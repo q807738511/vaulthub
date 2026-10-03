@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""v0.9.84 契约测试（二）：在 Node 里**真实执行**抽出的模块，验证行为而不只是文本。
+"""v0.9.85 契约测试（二）：在 Node 里**真实执行**抽出的模块，验证行为而不只是文本。
 
 覆盖：
   · 画面清晰度档位（03-quality.js 全文）：档位持久化、自动档映射、色彩倍率、
@@ -23,7 +23,7 @@ MEDIA = (ROOT / "web/js/02-media.js").read_text(encoding="utf-8")
 QUALITY = (ROOT / "web/js/03-quality.js").read_text(encoding="utf-8")
 
 if shutil.which("node") is None:
-    print("SKIP: 未找到 node，跳过 v0.9.84 逻辑级验证")
+    print("SKIP: 未找到 node，跳过 v0.9.85 逻辑级验证")
     raise SystemExit(0)
 
 
@@ -173,11 +173,11 @@ with tempfile.TemporaryDirectory() as tmp:
 out = (proc.stdout or "") + (proc.stderr or "")
 match = re.search(r"RESULT (\{.*\})", out)
 if not match:
-    print("FAIL: v0.9.84 逻辑验证未产出结果\n" + out[:1500])
+    print("FAIL: v0.9.85 逻辑验证未产出结果\n" + out[:1500])
     sys.exit(1)
 result = json.loads(match.group(1))
 if proc.returncode != 0 or result["fail"]:
     print(out)
-    raise SystemExit(f"FAIL: v0.9.84 逻辑级验证 {result['fail']} 项未通过")
+    raise SystemExit(f"FAIL: v0.9.85 逻辑级验证 {result['fail']} 项未通过")
 print(out.strip())
-print(f"PASS: v0.9.84 画面清晰度档位 / 原盘合并 / 刮削状态（{result['pass']} 项真实执行通过）")
+print(f"PASS: v0.9.85 画面清晰度档位 / 原盘合并 / 刮削状态（{result['pass']} 项真实执行通过）")

@@ -100,7 +100,8 @@ async function tickMetrics() {
     previousNetworkSample = { rx: Number(net.rx_bytes || 0), tx: Number(net.tx_bytes || 0), time: now };
     setNet(down, up);
     const netLabel = document.getElementById("netInterface");
-    if (netLabel) netLabel.textContent = net.interface ? net.interface : "";
+    /* v0.9.85：网卡名与下行/上行并排展示，无网卡信息时给占位符而不是空白。 */
+    if (netLabel) netLabel.textContent = net.interface ? net.interface : "--";
     renderDiskTemps(data.disk_temperatures, data.temperatures);
     const disks = data.filesystems || [];
     document.getElementById("diskCard").innerHTML = disks.map(d => {
@@ -141,8 +142,10 @@ function renderDiskTemps(diskTemps, allTemps) {
   if (!entries.length) { main.textContent = "--"; list.innerHTML = ""; return; }
   const hottest = entries.reduce((m, x) => Number(x.temp) > Number(m.temp) ? x : m, entries[0]);
   main.textContent = Number(hottest.temp).toFixed(0);
-  list.innerHTML = entries.slice(0, 6).map(x => `<div class="temp-item"><span>${esc(x.name)}</span><b>${Number(x.temp).toFixed(0)}°C</b></div>`).join("")
-    + (usingFallback ? `<div class="hint" style="margin-top:6px;">${curLang === "en" ? "No dedicated drive sensor; showing system sensors." : "未检测到独立硬盘温度传感器，显示系统传感器读数。"}</div>` : "");
+  /* v0.9.85：传感器明细压缩到 3 条（温度已压缩进「硬盘和网络」卡，空间优先）；
+     回落读数的说明移到标题上，不再多占一行。 */
+  list.title = usingFallback ? (curLang === "en" ? "No dedicated drive sensor; showing system sensors." : "未检测到独立硬盘温度传感器，显示系统传感器读数。") : "";
+  list.innerHTML = entries.slice(0, 3).map(x => `<div class="temp-item"><span>${esc(x.name)}</span><b>${Number(x.temp).toFixed(0)}°C</b></div>`).join("");
 }
 
 function fmtSize(bytes) {
@@ -899,6 +902,10 @@ function setLang(l) {
   if (typeof syncHomeLibTypes === "function") syncHomeLibTypes();
   if (typeof renderHomeRecent === "function") renderHomeRecent();
   if (typeof renderNowPlaying === "function") renderNowPlaying();
+  /* v0.9.85：影视详情里的演职人员姓名/角色名来自 TMDB，语言切换后按新语言重取。 */
+  if (typeof refreshDetailLanguage === "function") refreshDetailLanguage();
+  /* 通知面板里的文案由 JS 拼装。 */
+  if (typeof renderNotifications === "function") renderNotifications();
   /* 硬件徽标文案由 JS 拼装（当前/可用），也要跟随语言重绘。 */
   if (typeof refreshHardwareStatus === "function") refreshHardwareStatus();
   /* 登录状态徽标与提示同样是 JS 拼装的动态文案。 */

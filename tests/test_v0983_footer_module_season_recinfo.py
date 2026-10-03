@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""v0.9.84 契约测试：页脚版本同步 / 自定义模块归位媒体库 / 搜索框图标清除 /
+"""v0.9.85 契约测试：页脚版本同步 / 自定义模块归位媒体库 / 搜索框图标清除 /
 季度提示去除与展示规范 / 推荐「视频信息」弹窗（去左下角关闭 + 多图自适应填充）。"""
 
 import pathlib
@@ -70,8 +70,8 @@ check("2h 三个语种语言包都补了新键",
 
 print("3. 清除右上角搜索框内的装饰图标")
 check("3a 搜索框内不再有 ⌕ 图标", "⌕" not in HEADER)
-check("3b 搜索框与快捷键提示保留",
-      'id="topSearch"' in HEADER and "<kbd>⌘K</kbd>" in HEADER and 'class="tn-search"' in HEADER)
+check("3b 搜索框与快捷键提示保留（v0.9.85：kbd 改为平台化 Ctrl K / ⌘K）",
+      'id="topSearch"' in HEADER and 'id="topSearchKbd"' in HEADER and 'class="tn-search"' in HEADER)
 check("3c 搜索框结构未被破坏（input 紧跟 label）",
       '<label class="tn-search">\n      <input id="topSearch"' in HEADER)
 check("3d 搜索框样式仍完整", ".tn-search {" in CSS and ".tn-search:focus-within kbd { display: none; }" in CSS)
@@ -128,16 +128,16 @@ check("5k 简介排版与 16:9 画框保留（旧契约不破）",
 
 print("6. 版本")
 check("6a 页面与脚本版本一致",
-      'VAULTHUB_ASSET_VERSION = "0.9.84"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.84"' in STATE)
+      'VAULTHUB_ASSET_VERSION = "0.9.85"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.85"' in STATE)
 check("6b 关于 / 侧栏 / 页脚标语一致",
-      HTML.count("v0.9.84 · 刮削状态机·画质档位·首页文案") == 3)
-check("6c Update Log 有 v0.9.84 段",
-      (ROOT / "Update Log.md").read_text(encoding="utf-8").startswith("# VaultHub 蜀鼠之家 v0.9.84"))
-check("6d Release Notes 存在", (ROOT / ".github/RELEASE_NOTES_0.9.84.md").exists())
+      HTML.count("v0.9.85 · 持续登录·通知喇叭·海报精简") == 3)
+check("6c Update Log 有 v0.9.85 段",
+      (ROOT / "Update Log.md").read_text(encoding="utf-8").startswith("# VaultHub 蜀鼠之家 v0.9.85"))
+check("6d Release Notes 存在", (ROOT / ".github/RELEASE_NOTES_0.9.85.md").exists())
 
 if FAILS:
     print(f"\nFAIL: {len(FAILS)} 项未通过：")
     for f in FAILS:
         print("  -", f)
     sys.exit(1)
-print("\nPASS: v0.9.84 页脚版本同步 / 模块归位 / 搜索框清理 / 季度规范 / 推荐弹窗 契约全部通过")
+print("\nPASS: v0.9.85 页脚版本同步 / 模块归位 / 搜索框清理 / 季度规范 / 推荐弹窗 契约全部通过")

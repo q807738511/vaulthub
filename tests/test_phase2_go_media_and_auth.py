@@ -14,12 +14,13 @@ dockerfile = (ROOT / "Dockerfile").read_text()
 
 assert "sessionIdleTimeout = 30 * time.Minute" in manager
 # v0.9.58：会话从 map[string]time.Time 改为 map[string]sessionEntry（含 mustChange 受限会话标记）
-assert "m.sessions[sid] = sessionEntry{expires: time.Now().Add(sessionIdleTimeout)" in manager
-assert "MaxAge: 1800" in manager
+# v0.9.85：会话 TTL 按会话自身的保持天数（30 天默认 / 60 天勾选），cookie 为持久 cookie。
+assert "m.sessions[sid] = sessionEntry{expires: time.Now().Add(ttl), mustChange: forceChange, days: days}" in manager
+assert "MaxAge: int(ttl.Seconds()), Expires: time.Now().Add(ttl)" in manager
 assert "handle /api/logout" in manager
 assert "handle /api/logout" in (ROOT / "Caddyfile").read_text()
 assert "vaultHubAuthenticated" in html
-assert "VAULTHUB_IDLE_TIMEOUT_MS = 30 * 60 * 1000" in html
+assert "VAULTHUB_SESSION_DEFAULT_DAYS = 30" in html and "VAULTHUB_SESSION_LONG_DAYS = 60" in html  # v0.9.85 持续登录
 assert "markVaultHubActivity" in html
 assert "openCaddyModal()" in html
 assert "handleProtectedResponse" in html

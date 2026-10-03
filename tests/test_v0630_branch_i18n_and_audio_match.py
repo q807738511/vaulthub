@@ -91,7 +91,7 @@ assert "audioCandidateMatches(title, artist" in audio_go, "backend must reject u
 assert "recordings?.[0]" not in media, "unconditional recordings[0] adoption must be gone"
 
 # --- Static markup keys added for previously hardcoded copy. ---
-# v0.9.84：首页各栏右侧的小字提示（含 nowBadge）已按要求移除，不再要求 data-i18n 标记。
+# v0.9.85：首页各栏右侧的小字提示（含 nowBadge）已按要求移除，不再要求 data-i18n 标记。
 for key in ["hwAuto", "hwCpu", "hwVaapi", "hwQsv", "hwCuda"]:
     assert f'data-i18n="{key}"' in index, f"index.html must tag {key} with data-i18n"
 assert "hwBadgeFmt" in state and "hwBadgeFail" in state, "hardware badge copy must be translatable"

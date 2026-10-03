@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""v0.9.84 顶栏导航布局 + 电子书刊展示页的静态契约。
+"""v0.9.85 顶栏导航布局 + 电子书刊展示页的静态契约。
 
 覆盖三块：
   A. 顶栏导航壳（品牌 / 一级导航 / 媒体库标签 / 全局搜索 / 头像菜单 / 布局切换）
@@ -20,7 +20,7 @@ FEATURES = (ROOT / "web/js/03-features.js").read_text(encoding="utf-8")
 BOOT = (ROOT / "web/js/04-boot.js").read_text(encoding="utf-8")
 HOME = (ROOT / "web/js/05-home.js").read_text(encoding="utf-8")
 TOPNAV = (ROOT / "web/js/07-topnav.js").read_text(encoding="utf-8")
-NOTES = (ROOT / ".github/RELEASE_NOTES_0.9.84.md").read_text(encoding="utf-8")
+NOTES = (ROOT / ".github/RELEASE_NOTES_0.9.85.md").read_text(encoding="utf-8")
 LOG = (ROOT / "Update Log.md").read_text(encoding="utf-8")
 
 checks: list[tuple[str, bool, str]] = []
@@ -34,7 +34,7 @@ HEADER = HTML[HTML.index('<header class="topbar">'):HTML.index("</header>")]
 
 # ---------------------------------------------------------------- A. 顶栏导航
 check("A1 顶栏有媒体库标签容器", 'id="topLibTabs"' in HEADER and 'role="tablist"' in HEADER)
-check("A2 顶栏有全局搜索（⌘K）", 'id="topSearch"' in HEADER and "<kbd>⌘K</kbd>" in HEADER
+check("A2 顶栏有全局搜索（快捷键提示按平台渲染，v0.9.85 去掉 ⌘ 乱码）", 'id="topSearch"' in HEADER and 'id="topSearchKbd"' in HEADER
       and "oninput=\"onTopSearchInput()\"" in HEADER and "onkeydown=\"onTopSearchKey(event)\"" in HEADER)
 check("A3 顶栏一级导航（首页 / PT）—— v0.9.84 移除媒体搜索按钮（右侧已有搜索框）",
       all(f'data-topnav="{k}"' in HEADER for k in ["home", "pt"])
@@ -52,7 +52,7 @@ check("A6 品牌与信息区仍在（旧契约不破）",
       'id="accountWrap"' in HEADER and 'id="topScanStat"' in HEADER
       and HEADER.index('id="accountWrap"') < HEADER.index('class="tb-info"'))
 check("A7 独立脚本 07-topnav.js 已挂载且在主题引擎之后",
-      "/web/js/07-topnav.js?v=0.9.84" in HTML
+      "/web/js/07-topnav.js?v=0.9.85" in HTML
       and HTML.index("06-theme.js") < HTML.index("07-topnav.js") < HTML.index("03-audio-zoom.js"))
 check("A8 顶栏渲染器读真实媒体库并保序渲染",
       "function renderTopLibTabs()" in TOPNAV and "localMediaLibraries" in TOPNAV
@@ -168,18 +168,18 @@ check("C 侧栏模式下顶栏不重复媒体库与主导航",
       "否则侧栏 + 顶栏会出现两套一样的入口")
 
 # ---------------------------------------------------------------- D. 文档与版本
-check("D1 发布说明存在且包含本版四项修正（v0.9.84 说明随版本推进）",
-      "影视" in NOTES and ("刮削" in NOTES or "原盘" in NOTES)
-      and ("画面清晰度" in NOTES or "无色彩" in NOTES) and "正在播放" in NOTES)
-check("D2 Update Log 有对应条目", "画面清晰度" in LOG and "刮削状态机" in LOG and "v0.9.84" in LOG)
-check("D3 版本号为 0.9.84",
-      'VAULTHUB_ASSET_VERSION = "0.9.84"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.84"' in STATE
-      and "?v=0.9.84" in HTML and "?v=0.9.78" not in HTML)
+check("D1 发布说明存在且包含本版九项修正（发布说明随版本推进）",
+      "持续登录" in NOTES and ("60 天" in NOTES) and ("通知喇叭" in NOTES or "刮削" in NOTES)
+      and "正在播放" in NOTES and "演职人员" in NOTES and ("硬盘和网络" in NOTES))
+check("D2 Update Log 有对应条目", "持续登录" in LOG and "通知喇叭" in LOG and "硬盘和网络" in LOG and "v0.9.85" in LOG)
+check("D3 版本号为 0.9.85",
+      'VAULTHUB_ASSET_VERSION = "0.9.85"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.85"' in STATE
+      and "?v=0.9.85" in HTML and "?v=0.9.78" not in HTML)
 
 fails = [(n, d) for n, ok, d in checks if not ok]
 for n, ok, d in checks:
     print(("PASS: " if ok else "FAIL: ") + n + (f" | {d}" if d and not ok else ""))
 print(f"\nSUMMARY {len(checks) - len(fails)}/{len(checks)} PASS")
 if fails:
-    raise SystemExit("v0.9.84 契约测试未通过")
-print("v0.9.84 顶栏导航 + 书刊展示页契约测试通过")
+    raise SystemExit("v0.9.85 契约测试未通过")
+print("v0.9.85 顶栏导航 + 书刊展示页契约测试通过")

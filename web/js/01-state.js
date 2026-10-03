@@ -3,12 +3,22 @@
    so the ~131 inline on*= handlers keep working. Load order is fixed by the
    <script> tags in index.html and MUST be preserved. */
 
-const VAULTHUB_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+/* v0.9.85 持续登录：会话默认保持 30 天（登录页勾选「保持登录 60 天」则为 60 天）。
+   服务端把会话表落盘（/data/sessions.json），cookie 是持久 cookie，
+   因此容器重建/升级后仍然登录。此前前端有 30 分钟无操作就主动 /api/logout 把自己
+   踢下线的逻辑，与「持续登录」直接冲突 —— 现在只记录活动时间用于状态展示，
+   不再自动登出（会话保活仍按节流请求受保护端点滑动服务端会话）。 */
+const VAULTHUB_SESSION_DEFAULT_DAYS = 30;
+const VAULTHUB_SESSION_LONG_DAYS = 60;
+const VAULTHUB_SESSION_KEEPALIVE_MS = 10 * 60 * 1000;
+let vaultHubSessionDays = VAULTHUB_SESSION_DEFAULT_DAYS;
+let vaultHubLastActivityAt = 0;
+let vaultHubSessionPingedAt = 0;
 /* 脚本自带版本号，必须与 index.html 里的 window.VAULTHUB_ASSET_VERSION 相同。
    历史故障：v0.8.3→v0.8.5 的前端修改在服务端已生效，但浏览器仍执行缓存里的
    旧 02-media.js，用户看到「没有更新」。现在入口页 no-store、静态资源带 ?v=，
    并在启动时做一次一致性自查，不一致就绕过缓存强制重载一次。 */
-const VAULTHUB_SCRIPT_VERSION = "0.9.84";
+const VAULTHUB_SCRIPT_VERSION = "0.9.85";
 function ensureFreshAssets() {
   /* expected 为空 = 浏览器执行的 index.html 早于 v0.8.6（旧版本入口页没有声明
      版本号），同样属于"页面是旧的"，也需要换 URL 重新取一次。 */
@@ -50,10 +60,19 @@ let vaultHubIdleTimer = null;
    带 epoch 的探测结果只在 epoch 未变时才允许写入状态。 */
 let vaultHubAuthEpoch = 0;
 function showVaultHubLogin() { document.getElementById('authMask')?.classList.remove('hidden'); }
+/* v0.9.85：不再有「30 分钟无操作自动登出」。markVaultHubActivity 只做两件事：
+   记录最后活动时间（状态展示用），并按 10 分钟节流请求一次受保护端点把服务端会话
+   滑动续期 —— 长期开着的控制台页面不会被自己踢下线。 */
 function markVaultHubActivity() {
+  vaultHubLastActivityAt = Date.now();
   if (!vaultHubAuthenticated) return;
-  clearTimeout(vaultHubIdleTimer);
-  vaultHubIdleTimer=setTimeout(async()=>{ vaultHubAuthenticated=false; try { await fetch('/api/logout',{method:'POST',credentials:'same-origin'}); } catch (_) {} if (vaultHubAuthMode === "open") { await vaultHubAutoLogin(); handleVaultHubAuthResult(true); return; } showVaultHubLogin(); }, VAULTHUB_IDLE_TIMEOUT_MS);
+  if (Date.now() - vaultHubSessionPingedAt < VAULTHUB_SESSION_KEEPALIVE_MS) return;
+  vaultHubSessionPingedAt = Date.now();
+  try {
+    fetch('/api/system/runtime', { cache: 'no-store', credentials: 'same-origin' })
+      .then(res => { if (res.status === 401) handleVaultHubAuthResult(false); })
+      .catch(() => {});
+  } catch (_) {}
 }
 ['click','keydown','pointerdown','touchstart','scroll'].forEach(type=>document.addEventListener(type,markVaultHubActivity,{passive:true}));
 
@@ -91,15 +110,19 @@ function handleVaultHubAuthResult(logged) { vaultHubAuthenticated=!!logged; docu
 async function vaultHubLogin() {
   const username=document.getElementById('vaultHubUsername').value.trim();
   const password=document.getElementById('vaultHubPassword').value;
+  /* v0.9.85：登录页「保持登录 60 天」勾选决定会话保持时长（未勾选 = 默认 30 天）。 */
+  const keep60=!!document.getElementById('vaultHubKeep60')?.checked;
+  const keepDays=keep60?VAULTHUB_SESSION_LONG_DAYS:VAULTHUB_SESSION_DEFAULT_DAYS;
   const error=document.getElementById('authError');
   error.textContent='';
   try {
-    const res=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password})});
+    const res=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password,keep_days:keepDays})});
     const data=await res.json();
     if(!res.ok||!data.ok){error.textContent=data.error||'登录失败';return;}
     vaultHubAuthEpoch++;
+    vaultHubSessionDays=Number(data.session_days)||keepDays;
     handleVaultHubAuthResult(true);
-    renderSessionStatus(true, t('sessionOkHint'));
+    renderSessionStatus(true, tf('sessionOkHintDays',{ days: vaultHubSessionDays }));
     document.getElementById('vaultHubPassword').value='';
     /* v0.9.58：用一次性初始随机密码登录 → 强制改密（服务端会话同时受限）。 */
     if (data.must_change) { vaultHubMustChange = true; showForcedPasswordChange(password); }
@@ -411,7 +434,27 @@ const I18N = {
     vpFsDenied: "浏览器拒绝了全屏请求",
     setLook: "外观主题", setScrape: "刮削与硬件", setScrapeTab: "刮削配置", setHwTab: "硬件配置", caddyRoutes: "反向代理服务域名",
     setAccount: "账户管理", setAccountTitle: "当前登录状态", sessionChecking: "正在检查登录状态…", sessionRefresh: "刷新状态",
-    sessionHint: "会话在最后一次操作后 30 分钟空闲自动失效；增删媒体库等写操作需要有效登录。",
+    sessionHint: "登录状态默认保持 30 天（登录页勾选「保持登录 60 天」后为 60 天），容器重建或升级后依然有效；增删媒体库等写操作需要有效登录。",
+    sessionOkHintDays: "已保持登录 {days} 天；增删媒体库等写操作可直接执行。",
+    loginKeep60: "保持登录 60 天（默认 30 天）",
+    notifyTitle: "通知",
+    notifyEmpty: "暂无通知",
+    notifyClear: "清空",
+    notifyMarkRead: "全部已读",
+    notifyScrapeStart: "开始刮削 {n} 项",
+    notifyScrapeDone: "刮削完成：成功 {ok} · 失败 {fail} · 跳过 {skip}",
+    notifyScrapeRetry: "重试失败项：{n} 项",
+    notifyScrapeFailItem: "刮削失败：{title}（{reason}）",
+    notifyOpenLibrary: "查看媒体库",
+    castAs: "饰演",
+    castTitle: "演职人员",
+    castVoiceAs: "配音",
+    castEmpty: "暂无演职人员信息",
+    nowResume: "继续播放",
+    nowPlay: "继续播放",
+    netDisksTitle: "硬盘和网络",
+    diskTempShort: "硬盘温度",
+    netNic: "网卡",
     setLogoutTitle: "退出登录", setLogout: "退出登录", setLogoutHint: "退出后会立即失效服务端会话并返回登录页，本机保存的界面偏好不会被清除。",
     caddyOpenPage: "打开 Caddy 配置页面", caddyPageHint: "Caddyfile 内容较长，单独占用一整页编辑，避免在弹窗里挤成一团。",
     caddyPageTitle: "Caddy 反向代理配置", caddyPageClose: "关闭",
@@ -581,7 +624,27 @@ const I18N = {
     navGroupCustom: "自訂",
     settings: "系統設定", about: "關於",
     setAccount: "帳戶管理", setAccountTitle: "目前登入狀態", sessionChecking: "正在檢查登入狀態…", sessionRefresh: "重新檢查",
-    sessionHint: "工作階段在最後一次操作後 30 分鐘閒置自動失效；新增或刪除媒體庫等寫入操作需要有效登入。",
+    sessionHint: "登入狀態預設保持 30 天（登入頁勾選「保持登入 60 天」後為 60 天），容器重建或升級後依然有效；新增或刪除媒體庫等寫入操作需要有效登入。",
+    sessionOkHintDays: "已保持登入 {days} 天；新增或刪除媒體庫等寫入操作可直接執行。",
+    loginKeep60: "保持登入 60 天（預設 30 天）",
+    notifyTitle: "通知",
+    notifyEmpty: "暫無通知",
+    notifyClear: "清空",
+    notifyMarkRead: "全部已讀",
+    notifyScrapeStart: "開始刮削 {n} 項",
+    notifyScrapeDone: "刮削完成：成功 {ok} · 失敗 {fail} · 跳過 {skip}",
+    notifyScrapeRetry: "重試失敗項：{n} 項",
+    notifyScrapeFailItem: "刮削失敗：{title}（{reason}）",
+    notifyOpenLibrary: "查看媒體庫",
+    castAs: "飾演",
+    castTitle: "演職人員",
+    castVoiceAs: "配音",
+    castEmpty: "暫無演職人員資訊",
+    nowResume: "繼續播放",
+    nowPlay: "繼續播放",
+    netDisksTitle: "硬碟與網路",
+    diskTempShort: "硬碟溫度",
+    netNic: "網卡",
     setLogoutTitle: "登出", setLogout: "登出", setLogoutHint: "登出後會立即失效伺服器工作階段並回到登入頁，本機儲存的介面偏好不會被清除。",
     caddyOpenPage: "開啟 Caddy 設定頁面", caddyPageHint: "Caddyfile 內容較長，單獨佔用一整頁編輯。",
     caddyPageTitle: "Caddy 反向代理設定", caddyPageClose: "關閉",
@@ -814,7 +877,27 @@ const I18N = {
     navGroupCustom: "Custom",
     settings: "Settings", about: "About",
     setAccount: "Account", setAccountTitle: "Current session", sessionChecking: "Checking session…", sessionRefresh: "Refresh",
-    sessionHint: "Sessions expire after 30 minutes of inactivity; adding or removing libraries requires a valid sign-in.",
+    sessionHint: "Sign-in is kept for 30 days by default (60 days when you tick \"keep me signed in for 60 days\") and survives container restarts or upgrades; adding or removing libraries requires a valid sign-in.",
+    sessionOkHintDays: "Signed in for {days} days; write operations are allowed.",
+    loginKeep60: "Keep me signed in for 60 days (30 by default)",
+    notifyTitle: "Notifications",
+    notifyEmpty: "No notifications yet",
+    notifyClear: "Clear",
+    notifyMarkRead: "Mark all read",
+    notifyScrapeStart: "Scraping {n} item(s)",
+    notifyScrapeDone: "Scrape finished: {ok} ok · {fail} failed · {skip} skipped",
+    notifyScrapeRetry: "Retrying {n} failed item(s)",
+    notifyScrapeFailItem: "Scrape failed: {title} ({reason})",
+    notifyOpenLibrary: "Open library",
+    castAs: "as",
+    castTitle: "Cast",
+    castVoiceAs: "voice",
+    castEmpty: "No cast information yet",
+    nowResume: "Resume",
+    nowPlay: "Resume playback",
+    netDisksTitle: "Disks & Network",
+    diskTempShort: "Disk temp",
+    netNic: "NIC",
     setLogoutTitle: "Sign out", setLogout: "Sign out", setLogoutHint: "Signing out invalidates the server session immediately and returns to the login screen. Local UI preferences are kept.",
     caddyOpenPage: "Open Caddy config page", caddyPageHint: "The Caddyfile is long, so it gets a dedicated full page instead of a cramped dialog.",
     caddyPageTitle: "Caddy reverse proxy config", caddyPageClose: "Close",

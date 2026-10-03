@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""v0.9.84 契约测试（一）：画面清晰度与色彩档位（原「省流」）/ 首页文案修正 / 无元数据刮削链路。
+"""v0.9.85 契约测试（一）：画面清晰度与色彩档位（原「省流」）/ 首页文案修正 / 无元数据刮削链路。
 
 四项用户诉求逐条对应：
   1) 无元数据资源刮削异常 → 刮削状态机（可重试、并发、节流、原盘合并、原盘结构不入库）
@@ -112,15 +112,15 @@ check("4q 渲染改节流（不再每条整库重绘）", "function scheduleMovi
 check("4r 原盘片段数在卡片上可见", "原盘 · ${file.disc_fragments} 个片段" in MEDIA)
 
 print("5. 版本与文档")
-check("5a 版本号已升至 0.9.84", 'VAULTHUB_ASSET_VERSION = "0.9.84"' in HTML and 'const VAULTHUB_SCRIPT_VERSION = "0.9.84"' in STATE)
-check("5b 关于 / 侧栏 / 页脚标语一致", HTML.count("v0.9.84 · ") == 3)
-check("5c 脚本引用带新版本号", 'web/js/03-quality.js?v=0.9.84' in HTML and 'web/js/02-media.js?v=0.9.84' in HTML)
-check("5d Update Log 顶部为 v0.9.84", LOG.startswith("# VaultHub 蜀鼠之家 v0.9.84"))
-check("5e Release Notes 存在", (ROOT / ".github/RELEASE_NOTES_0.9.84.md").exists())
+check("5a 版本号已升至 0.9.85", 'VAULTHUB_ASSET_VERSION = "0.9.85"' in HTML and 'const VAULTHUB_SCRIPT_VERSION = "0.9.85"' in STATE)
+check("5b 关于 / 侧栏 / 页脚标语一致", HTML.count("v0.9.85 · ") == 3)
+check("5c 脚本引用带新版本号", 'web/js/03-quality.js?v=0.9.85' in HTML and 'web/js/02-media.js?v=0.9.85' in HTML)
+check("5d Update Log 顶部为 v0.9.85", LOG.startswith("# VaultHub 蜀鼠之家 v0.9.85"))
+check("5e Release Notes 存在", (ROOT / ".github/RELEASE_NOTES_0.9.85.md").exists())
 
 if FAILS:
     print(f"\nFAIL: {len(FAILS)} 项未通过：")
     for f in FAILS:
         print("  -", f)
     sys.exit(1)
-print("\nPASS: v0.9.84 刮削状态机 / 画面清晰度档位 / 首页文案 契约全部通过")
+print("\nPASS: v0.9.85 刮削状态机 / 画面清晰度档位 / 首页文案 契约全部通过")

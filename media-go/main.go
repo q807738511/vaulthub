@@ -72,7 +72,7 @@ type App struct {
 	cacheMaxBytes     int64
 	pageCacheDir      string
 	pageCacheMaxBytes int64
-	scanMaxDepth     int // v0.9.79: Web「媒体库」可在线改的扫描最大深度；0=默认 32
+	scanMaxDepth      int // v0.9.79: Web「媒体库」可在线改的扫描最大深度；0=默认 32
 	cacheMaxAge       time.Duration
 	cacheCleanup      time.Duration
 	cacheWake         chan struct{}
@@ -121,7 +121,7 @@ type RuntimeConfig struct {
 	// v0.9.79：下列两项原只能靠环境变量/vaulthub.env，现并入运行时配置，
 	// 使「硬件配置」与「转码缓存」都可在 Web 在线编辑，不再依赖 .env。
 	PageCacheMaxBytes int64 `json:"page_cache_max_bytes,omitempty"` // 归档页缓存配额（字节），0=沿用 cache_max_bytes/默认 16GiB
-	ScanMaxDepth    int   `json:"scan_max_depth,omitempty"`        // 扫描最大深度，0=默认 32
+	ScanMaxDepth      int   `json:"scan_max_depth,omitempty"`       // 扫描最大深度，0=默认 32
 }
 
 type playbackClient struct {
@@ -479,7 +479,7 @@ func (a *App) runtimeConfigSnapshot(includeSecret bool) map[string]any {
 		"share_public_base": a.sharePublicBase, "share_public_base_set": a.sharePublicBase != "",
 		"cache_max_bytes": a.cacheMaxBytes, "cache_max_age_hours": int64(a.cacheMaxAge / time.Hour),
 		"cache_cleanup_interval_hours": int64(a.cacheCleanup / time.Hour),
-		"page_cache_max_bytes": a.pageCacheMaxBytes, "scan_max_depth": a.scanMaxDepth,
+		"page_cache_max_bytes":         a.pageCacheMaxBytes, "scan_max_depth": a.scanMaxDepth,
 	}
 	if includeSecret {
 		out["tmdb_api_key"] = a.tmdbAPIKey
@@ -2553,6 +2553,18 @@ func (a *App) castAvatar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 }
+
+/* v0.9.85：TMDB 语言白名单 —— 界面语言 → TMDB language 代码。非法值回落 zh-CN。 */
+func tmdbLanguage(q string) string {
+	switch strings.ToLower(strings.TrimSpace(q)) {
+	case "en", "en-us":
+		return "en-US"
+	case "zh-tw", "zh-hk":
+		return "zh-TW"
+	}
+	return "zh-CN"
+}
+
 func (a *App) tmdb(w http.ResponseWriter, r *http.Request) {
 	if !writeAuth(r) {
 		errJSON(w, 401, "login required")
@@ -2588,7 +2600,11 @@ func (a *App) tmdb(w http.ResponseWriter, r *http.Request) {
 	   前端 if(res.ok) 整段跳过 → 详情/演职人员/TMDB 评分/影视推荐全部不生效。 */
 	/* v0.9.83：详情接口追加 images —— 推荐「视频信息」弹窗在简介较长时用
 	   多张横版剧照填充左侧图集（前端只保留 1.5~1.9 宽高比的图）。 */
-	u := base + "/" + endpoint + "?language=zh-CN&append_to_response=credits,recommendations,images"
+	/* v0.9.85：language 跟随界面语言（前端传 lang=zh-CN/zh-TW/en-US）——
+	   演职人员姓名与角色名、简介、剧集名都随系统语言本地化。白名单校验，
+	   非法值一律回落 zh-CN（历史默认）。 */
+	lang := tmdbLanguage(r.URL.Query().Get("lang"))
+	u := base + "/" + endpoint + "?language=" + url.QueryEscape(lang) + "&append_to_response=credits,recommendations,images"
 	if !tmdbIsBearerToken(key) {
 		u += "&api_key=" + url.QueryEscape(key)
 	}

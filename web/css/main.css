@@ -2005,3 +2005,79 @@ html[data-uimode="pc"] .libtab, html[data-uimode="pc"] .btn { min-height:36px; }
      · 网格卡片用 contain:content 隔离布局与绘制影响面（不改尺寸，避免滚动条跳动）。 */
 .media-file-list .media-file-row { content-visibility:auto; contain-intrinsic-size:auto 64px; }
 .media-poster-card, .book-card, .audio-album-card, .series-episode-card, .movie-rec-card, .movie-cast-card, .episode-grid .ep-grid-card { contain:content; }
+
+/* ---------- v0.9.85：通知喇叭 / 硬盘与网络合并卡 / 正在播放续播 / 音乐外观色彩档位补全 ---------- */
+
+/* 搜索框右侧的通知喇叭（功能通知 + 刮削信息明细） */
+.tn-notify-wrap { position: relative; display: flex; align-items: center; }
+.tn-bell { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--border2); background: var(--card2); color: var(--text2);
+  display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; position: relative; transition: border-color .15s, transform .15s; }
+.tn-bell:hover, .tn-bell[aria-expanded="true"] { border-color: var(--accent); color: var(--text); transform: translateY(-1px); }
+.tn-bell-ic { font-size: 15px; line-height: 1; }
+.tn-bell-badge { position: absolute; top: -3px; right: -3px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 999px;
+  background: var(--red); color: #fff; font-size: 10px; font-weight: 700; display: grid; place-items: center; box-shadow: 0 0 0 2px var(--bg2); }
+.tn-notify-pop { width: 340px; max-height: min(62vh, 520px); overflow: hidden; display: flex; flex-direction: column; }
+.tn-notify-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 6px 8px; border-bottom: 1px solid var(--border); }
+.tn-notify-head strong { font-size: 13px; }
+.tn-notify-actions { display: inline-flex; gap: 8px; }
+.tn-link { border: 0; background: none; color: var(--accent); font-size: 11.5px; cursor: pointer; padding: 2px 0; }
+.tn-link:hover { text-decoration: underline; }
+.tn-notify-list { overflow: auto; display: grid; gap: 6px; padding-top: 8px; align-content: start; }
+.tn-notify-item { display: grid; grid-template-columns: 20px minmax(0,1fr); gap: 8px; padding: 8px 9px; border: 1px solid var(--border);
+  border-radius: 9px; background: var(--card2); }
+.tn-notify-item.unread { border-color: color-mix(in srgb, var(--accent) 46%, var(--border)); }
+.tn-notify-item .ic { text-align: center; font-size: 13px; }
+.tn-notify-item .tx { min-width: 0; }
+.tn-notify-item b { display: block; font-size: 12.5px; font-weight: 600; overflow-wrap: anywhere; }
+.tn-notify-item small { display: block; margin-top: 3px; font-size: 11px; color: var(--text3); overflow-wrap: anywhere; }
+.tn-notify-item .dt { font-size: 10.5px; color: var(--text3); margin-top: 4px; }
+.tn-notify-item.warn .ic { color: var(--yellow); }
+.tn-notify-item.fail .ic { color: var(--red); }
+.tn-notify-item.ok .ic { color: var(--green); }
+.tn-notify-empty { padding: 14px 6px; text-align: center; color: var(--text3); font-size: 12px; }
+@media (max-width: 640px) { .tn-notify-pop { width: min(88vw, 340px); } }
+
+/* 硬件监控：网络速度 → 「硬盘和网络」，网卡/下行/上行并排 + 温度与容量剩余压缩同行 */
+.card.k-metric.hw-disks-net { display: flex; flex-direction: column; gap: 8px; }
+.hw-net-row { display: grid; grid-template-columns: minmax(0,1.1fr) auto auto; align-items: baseline; gap: 12px; }
+.hw-nic { font-size: 13px; font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hw-net-cell { display: inline-flex; align-items: baseline; gap: 4px; font-size: 11.5px; color: var(--text3); white-space: nowrap; }
+.hw-net-cell i { font-style: normal; color: var(--text3); }
+.hw-net-cell b { font-size: 18px; font-weight: 700; color: var(--accent); }
+.hw-net-cell.up b { color: var(--green); }
+.hw-net-cell small { font-size: 10.5px; color: var(--text3); }
+.hw-disk-row { display: grid; grid-template-columns: auto auto minmax(60px,1fr); align-items: center; gap: 12px;
+  padding-top: 8px; border-top: 1px solid var(--border); }
+.hw-disk-row .hw-net-cell b { font-size: 14px; color: var(--text); }
+.hw-bar-inline { height: 5px; border-radius: 3px; background: var(--track); overflow: hidden; }
+.hw-bar-inline i { display: block; height: 100%; background: var(--accent); }
+.hw-temp-list { margin-top: 2px; max-height: 74px; overflow: auto; }
+.hw-volumes { border-top: 1px solid var(--border); padding-top: 6px; max-height: 122px; overflow: auto; }
+.hw-volumes .disk-row { padding: 4px 0; }
+.hw-volumes .disk-row + .disk-row { border-top: 1px dashed var(--border); }
+@media (max-width: 880px) { .hw-net-row { gap: 8px; } .hw-net-cell b { font-size: 16px; } }
+
+/* 正在播放：海报上的续播按钮（hover 显现，触屏常显） */
+.now-row .now-th { overflow: hidden; }
+.now-row .now-th .now-play { position: absolute; inset: 0; margin: auto; width: 34px; height: 34px; border-radius: 50%; border: 0;
+  display: grid; place-items: center; background: rgba(0,0,0,.58); color: #fff; backdrop-filter: blur(4px); opacity: 0;
+  pointer-events: none; cursor: pointer; transition: opacity .16s, transform .16s; z-index: 3; padding: 0; }
+.now-row:hover .now-th .now-play, .now-row:focus-within .now-th .now-play { opacity: 1; pointer-events: auto; }
+.now-row .now-th .now-play:hover { transform: scale(1.08); background: color-mix(in srgb, var(--accent) 82%, #000); }
+.now-row .now-th .now-play svg { width: 15px; height: 15px; fill: currentColor; display: block; }
+@media (hover: none) { .now-row .now-th .now-play { opacity: 1; pointer-events: auto; } }
+
+/* v0.9.85 音乐/播放器外观：色彩档位必须覆盖「虚化封面背景层」和整块渐变占位面，
+   否则极省（无色彩）档下音乐面板/海报仍残留半块彩色（客户反馈的「半截绿色海报」）。 */
+html:not([data-quality="original"]):not([data-quality="high"]) .audio-poster-frame::before,
+html:not([data-quality="original"]):not([data-quality="high"]) .audio-fullscreen-overlay::before,
+html:not([data-quality="original"]):not([data-quality="high"]) .audio-fullscreen-poster::before {
+  filter: blur(28px) brightness(.5) saturate(var(--vh-quality-color, 1));
+}
+html[data-quality="minimal"] .audio-poster-frame::before,
+html[data-quality="minimal"] .audio-fullscreen-overlay::before,
+html[data-quality="minimal"] .audio-fullscreen-poster::before { filter: blur(28px) brightness(.5) saturate(0); }
+html:not([data-quality="original"]):not([data-quality="high"]) .audio-lyrics-page img { filter: blur(26px) brightness(.82) saturate(var(--vh-quality-color, 1)); }
+html[data-quality="minimal"] .audio-lyrics-page img { filter: blur(26px) brightness(.82) saturate(0); }
+html:not([data-quality="original"]):not([data-quality="high"]) :is(.audio-expand, .audio-fullscreen, .audio-player, .audio-latest-grid, .audio-album-grid) :is(.audio-poster-frame, .audio-fullscreen-poster, .audio-album-cover, .audio-latest-cover, .audio-artist-cover, .audio-player-cover, .audio-player-cover-wrap, .audio-lyrics-page) { filter: saturate(var(--vh-quality-color, 1)); }
+html[data-quality="minimal"] :is(.audio-expand, .audio-fullscreen, .audio-player, .audio-latest-grid, .audio-album-grid) :is(.audio-poster-frame, .audio-fullscreen-poster, .audio-album-cover, .audio-latest-cover, .audio-artist-cover, .audio-player-cover, .audio-player-cover-wrap, .audio-lyrics-page) { filter: saturate(0) contrast(1.04); }
