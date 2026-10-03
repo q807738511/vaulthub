@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""v0.9.83 契约测试：页脚版本同步 / 自定义模块归位媒体库 / 搜索框图标清除 /
+"""v0.9.84 契约测试：页脚版本同步 / 自定义模块归位媒体库 / 搜索框图标清除 /
 季度提示去除与展示规范 / 推荐「视频信息」弹窗（去左下角关闭 + 多图自适应填充）。"""
 
 import pathlib
@@ -128,16 +128,16 @@ check("5k 简介排版与 16:9 画框保留（旧契约不破）",
 
 print("6. 版本")
 check("6a 页面与脚本版本一致",
-      'VAULTHUB_ASSET_VERSION = "0.9.83"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.83"' in STATE)
+      'VAULTHUB_ASSET_VERSION = "0.9.84"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.84"' in STATE)
 check("6b 关于 / 侧栏 / 页脚标语一致",
-      HTML.count("v0.9.83 · 页脚版本同步·模块归位·季度规范·剧照填充") == 3)
-check("6c Update Log 有 v0.9.83 段",
-      (ROOT / "Update Log.md").read_text(encoding="utf-8").startswith("# VaultHub 蜀鼠之家 v0.9.83"))
-check("6d Release Notes 存在", (ROOT / ".github/RELEASE_NOTES_0.9.83.md").exists())
+      HTML.count("v0.9.84 · 刮削状态机·画质档位·首页文案") == 3)
+check("6c Update Log 有 v0.9.84 段",
+      (ROOT / "Update Log.md").read_text(encoding="utf-8").startswith("# VaultHub 蜀鼠之家 v0.9.84"))
+check("6d Release Notes 存在", (ROOT / ".github/RELEASE_NOTES_0.9.84.md").exists())
 
 if FAILS:
     print(f"\nFAIL: {len(FAILS)} 项未通过：")
     for f in FAILS:
         print("  -", f)
     sys.exit(1)
-print("\nPASS: v0.9.83 页脚版本同步 / 模块归位 / 搜索框清理 / 季度规范 / 推荐弹窗 契约全部通过")
+print("\nPASS: v0.9.84 页脚版本同步 / 模块归位 / 搜索框清理 / 季度规范 / 推荐弹窗 契约全部通过")

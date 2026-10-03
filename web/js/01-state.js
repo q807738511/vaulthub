@@ -8,7 +8,7 @@ const VAULTHUB_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
    历史故障：v0.8.3→v0.8.5 的前端修改在服务端已生效，但浏览器仍执行缓存里的
    旧 02-media.js，用户看到「没有更新」。现在入口页 no-store、静态资源带 ?v=，
    并在启动时做一次一致性自查，不一致就绕过缓存强制重载一次。 */
-const VAULTHUB_SCRIPT_VERSION = "0.9.83";
+const VAULTHUB_SCRIPT_VERSION = "0.9.84";
 function ensureFreshAssets() {
   /* expected 为空 = 浏览器执行的 index.html 早于 v0.8.6（旧版本入口页没有声明
      版本号），同样属于"页面是旧的"，也需要换 URL 重新取一次。 */
@@ -427,7 +427,7 @@ const I18N = {
     memUsed: "已用", memTotal: "总计", swap: "交换",
     netDownLbl: "↓ 下行", netUpLbl: "↑ 上行",
     secDisk: "硬盘容量",
-    secNow: "正在进行中的操作", nowEmpty: "当前没有正在播放的视频或音乐",
+    secNow: "正在播放", nowEmpty: "当前没有正在播放的视频或音乐",
     secRecentBook: "最近入库 · 电子书刊", secRecentBookSub: "电子书 / 漫画",
     secRecentVideo: "最近入库 · 影视作品", secRecentVideoSub: "电视剧集 / 电影",
     secRecentAudio: "最近入库 · 音视作品", secRecentAudioSub: "音乐 / 音乐 MV",
@@ -731,7 +731,7 @@ const I18N = {
     secServer: "伺服器監控",
     cpuUsage: "CPU 使用率", memUsage: "記憶體使用率", netSpeed: "網路速度", diskUsage: "硬碟使用率",
     avgTemp: " °C 均溫", diskFree: "容量剩餘",
-    secNow: "正在進行中的操作", nowEmpty: "目前沒有正在播放的影片或音樂",
+    secNow: "正在播放", nowEmpty: "目前沒有正在播放的影片或音樂",
     secRecentBook: "最近入庫 · 電子書刊", secRecentBookSub: "電子書 / 漫畫",
     secRecentVideo: "最近入庫 · 影視作品", secRecentVideoSub: "電視劇集 / 電影",
     secRecentAudio: "最近入庫 · 音視作品", secRecentAudioSub: "音樂 / 音樂 MV",
@@ -964,7 +964,7 @@ const I18N = {
     secServer: "Server monitoring",
     cpuUsage: "CPU usage", memUsage: "Memory usage", netSpeed: "Network speed", diskUsage: "Disk usage",
     avgTemp: " °C average", diskFree: "Free space",
-    secNow: "Operations in progress", nowEmpty: "No video or music is playing right now",
+    secNow: "Now playing", nowEmpty: "No video or music is playing right now",
     secRecentBook: "Recently added · Books & Comics", secRecentBookSub: "E-books / comics",
     secRecentVideo: "Recently added · Movies & TV", secRecentVideoSub: "TV series / movies",
     secRecentAudio: "Recently added · Music & MV", secRecentAudioSub: "Music / music videos",

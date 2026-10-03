@@ -64,6 +64,8 @@ tickMetrics();
 setInterval(tickMetrics, 5000);
 /* v0.9.71：弱网与音质状态初始化 —— 面板文案同步 + 音质药丸 + 后台补一次下行测速
    （自动档位 30 分钟内的结果直接复用，不重复打探测接口）。 */
+/* v0.9.84：画面清晰度与色彩档位在启动时先落地，避免首屏按默认档渲染后再跳变。 */
+if (typeof initQualityLevel === "function") initQualityLevel();
 if (typeof syncWeakNetworkSettings === "function") syncWeakNetworkSettings();
 if (typeof updateAudioQualityButton === "function") updateAudioQualityButton();
 /* v0.9.77：当天第一次打开 WEBUI 自动测速（延迟 + 下行带宽），

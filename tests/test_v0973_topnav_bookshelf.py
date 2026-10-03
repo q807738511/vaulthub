@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""v0.9.83 顶栏导航布局 + 电子书刊展示页的静态契约。
+"""v0.9.84 顶栏导航布局 + 电子书刊展示页的静态契约。
 
 覆盖三块：
   A. 顶栏导航壳（品牌 / 一级导航 / 媒体库标签 / 全局搜索 / 头像菜单 / 布局切换）
   B. 电子书刊展示页（页头 / 工具栏 / 书架标签 / 喜欢 / 网格密度 / 分页 / 完整展开保证）
-  C. 布局令牌回归守卫 —— v0.9.83 重写令牌块时曾弄丢 --topbar-h / --sidebar-w /
+  C. 布局令牌回归守卫 —— v0.9.84 重写令牌块时曾弄丢 --topbar-h / --sidebar-w /
      --ebook-font-size，顶栏高度与侧栏宽度当场退化成 auto（顶栏只剩 32px、
      侧栏按静态位置浮在正文上）。这里把三个令牌钉死，防止再次被重写吞掉。
 """
@@ -20,7 +20,7 @@ FEATURES = (ROOT / "web/js/03-features.js").read_text(encoding="utf-8")
 BOOT = (ROOT / "web/js/04-boot.js").read_text(encoding="utf-8")
 HOME = (ROOT / "web/js/05-home.js").read_text(encoding="utf-8")
 TOPNAV = (ROOT / "web/js/07-topnav.js").read_text(encoding="utf-8")
-NOTES = (ROOT / ".github/RELEASE_NOTES_0.9.83.md").read_text(encoding="utf-8")
+NOTES = (ROOT / ".github/RELEASE_NOTES_0.9.84.md").read_text(encoding="utf-8")
 LOG = (ROOT / "Update Log.md").read_text(encoding="utf-8")
 
 checks: list[tuple[str, bool, str]] = []
@@ -36,13 +36,13 @@ HEADER = HTML[HTML.index('<header class="topbar">'):HTML.index("</header>")]
 check("A1 顶栏有媒体库标签容器", 'id="topLibTabs"' in HEADER and 'role="tablist"' in HEADER)
 check("A2 顶栏有全局搜索（⌘K）", 'id="topSearch"' in HEADER and "<kbd>⌘K</kbd>" in HEADER
       and "oninput=\"onTopSearchInput()\"" in HEADER and "onkeydown=\"onTopSearchKey(event)\"" in HEADER)
-check("A3 顶栏一级导航（首页 / PT）—— v0.9.83 移除媒体搜索按钮（右侧已有搜索框）",
+check("A3 顶栏一级导航（首页 / PT）—— v0.9.84 移除媒体搜索按钮（右侧已有搜索框）",
       all(f'data-topnav="{k}"' in HEADER for k in ["home", "pt"])
       and 'data-topnav="search"' not in HEADER)
 check("A4 右上角头像菜单入口", 'id="topUserButton"' in HEADER and 'id="topUserMenu"' in HEADER
       and 'aria-expanded="false"' in HEADER and 'aria-controls="topUserMenu"' in HEADER)
 _TOP_MENU = HEADER[HEADER.index('id="topUserMenu"'):]
-check("A5 头像菜单含系统设置/外观主题/账户/退出（v0.9.83 自定义模块移入媒体库）",
+check("A5 头像菜单含系统设置/外观主题/账户/退出（v0.9.84 自定义模块移入媒体库）",
       all(f"topUserMenuGo('{t}')" in _TOP_MENU for t in ["library", "look", "account"])
       and "topUserMenuGo('custom')" not in _TOP_MENU
       and "自定义模块" not in _TOP_MENU
@@ -52,7 +52,7 @@ check("A6 品牌与信息区仍在（旧契约不破）",
       'id="accountWrap"' in HEADER and 'id="topScanStat"' in HEADER
       and HEADER.index('id="accountWrap"') < HEADER.index('class="tb-info"'))
 check("A7 独立脚本 07-topnav.js 已挂载且在主题引擎之后",
-      "/web/js/07-topnav.js?v=0.9.83" in HTML
+      "/web/js/07-topnav.js?v=0.9.84" in HTML
       and HTML.index("06-theme.js") < HTML.index("07-topnav.js") < HTML.index("03-audio-zoom.js"))
 check("A8 顶栏渲染器读真实媒体库并保序渲染",
       "function renderTopLibTabs()" in TOPNAV and "localMediaLibraries" in TOPNAV
@@ -99,7 +99,7 @@ check("A23 顶栏模式下侧栏让位（含遮罩左边界）",
       and "body.layout-topnav .media-reader-overlay," in CSS)
 
 # ---------------------------------------------------------------- B. 书刊展示页
-check("B1 三个书架标签（书架/喜欢/历史阅读）—— v0.9.83 未读改名书架、移除全部",
+check("B1 三个书架标签（书架/喜欢/历史阅读）—— v0.9.84 未读改名书架、移除全部",
       all(f'id: "{i}"' in MEDIA for i in ["shelf", "like", "completed"])
       and 'label: "书架"' in MEDIA and 'label: "🕘 历史阅读"' in MEDIA and 'label: "喜欢"' in MEDIA
       and '{ id: "all", label: "全部" }' not in MEDIA)
@@ -159,7 +159,7 @@ check("B17 历史阅读释放按钮仍在卡片上",
 for token, value in [("--topbar-h", "52px"), ("--sidebar-w", "236px"), ("--ebook-font-size", "17px")]:
     check(f"C 布局令牌 {token} 已定义（{value}）",
           f"{token}: {value};" in CSS,
-          f"v0.9.83 曾漏掉 {token}，顶栏/侧栏会当场塌掉")
+          f"v0.9.84 曾漏掉 {token}，顶栏/侧栏会当场塌掉")
 check("C CSS 花括号平衡", CSS.count("{") == CSS.count("}"), f"{CSS.count('{')} vs {CSS.count('}')}")
 # 切回侧栏时顶栏不该把媒体库/主导航再铺一遍（侧栏已经提供了同样的入口）
 check("C 侧栏模式下顶栏不重复媒体库与主导航",
@@ -168,17 +168,18 @@ check("C 侧栏模式下顶栏不重复媒体库与主导航",
       "否则侧栏 + 顶栏会出现两套一样的入口")
 
 # ---------------------------------------------------------------- D. 文档与版本
-check("D1 发布说明存在且包含视频推荐与评分配置（v0.9.83 说明随版本推进）",
-      "影视" in NOTES and ("分享" in NOTES or "五星" in NOTES or "评分" in NOTES))
-check("D2 Update Log 有对应条目", "顶栏导航" in LOG and "v0.9.83" in LOG)
-check("D3 版本号为 0.9.83",
-      'VAULTHUB_ASSET_VERSION = "0.9.83"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.83"' in STATE
-      and "?v=0.9.83" in HTML and "?v=0.9.78" not in HTML)
+check("D1 发布说明存在且包含本版四项修正（v0.9.84 说明随版本推进）",
+      "影视" in NOTES and ("刮削" in NOTES or "原盘" in NOTES)
+      and ("画面清晰度" in NOTES or "无色彩" in NOTES) and "正在播放" in NOTES)
+check("D2 Update Log 有对应条目", "画面清晰度" in LOG and "刮削状态机" in LOG and "v0.9.84" in LOG)
+check("D3 版本号为 0.9.84",
+      'VAULTHUB_ASSET_VERSION = "0.9.84"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.84"' in STATE
+      and "?v=0.9.84" in HTML and "?v=0.9.78" not in HTML)
 
 fails = [(n, d) for n, ok, d in checks if not ok]
 for n, ok, d in checks:
     print(("PASS: " if ok else "FAIL: ") + n + (f" | {d}" if d and not ok else ""))
 print(f"\nSUMMARY {len(checks) - len(fails)}/{len(checks)} PASS")
 if fails:
-    raise SystemExit("v0.9.83 契约测试未通过")
-print("v0.9.83 顶栏导航 + 书刊展示页契约测试通过")
+    raise SystemExit("v0.9.84 契约测试未通过")
+print("v0.9.84 顶栏导航 + 书刊展示页契约测试通过")

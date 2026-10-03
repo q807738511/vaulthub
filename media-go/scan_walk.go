@@ -108,6 +108,51 @@ type scannedFile struct {
 //     both must be indexed. Only a directory that contains itself is cut off.
 //   - A single unreadable subdirectory must not fail the scan, otherwise one
 //     permission error wipes an entire library's index.
+// bluRayStructuralExt 是蓝光原盘（BDMV / CERTIFICATE 结构）里永远不会作为媒体播放的
+// 结构文件扩展名：播放列表 .mpls、剪辑信息 .clpi、原盘对象 .bdmv、索引 .xml、证书 .otf/.sfx、
+// 数据文件 .dat 等。v0.9.84：这些文件不再进索引。
+//
+// 背景（客户反馈「新增了部分不带元数据的视频文件，无法进行刮削」）：旧实现把原盘里的
+// 每个结构文件都当成一条「影片」收录 —— 一部《黑鹰坠落》原盘 600+ 条（284 .mpls +
+// 254 .clpi + 127 .m2ts + 14 .bdmv + …），列表不可用，前端的元数据刮削对 00001.m2ts
+// 这类片段编号也永远命中不了。真正的视频片段（.m2ts/.mts）仍然保留，
+// 并在前端按原盘目录合并成一条（见 web/js/02-media.js 的 collapseDiscFragments）。
+var bluRayStructuralExt = map[string]bool{
+	".mpls": true, ".clpi": true, ".bdmv": true, ".xml": true, ".otf": true,
+	".sfx": true, ".dat": true, ".bdjo": true, ".jar": true, ".mpl": true, ".mo": true,
+}
+
+// inBluRayStructure 判断库内相对路径是否位于蓝光原盘结构目录内（BDMV / CERTIFICATE）。
+func inBluRayStructure(rel string) bool {
+	lower := strings.ToLower(filepath.ToSlash(rel))
+	return strings.Contains(lower, "bdmv/") || strings.Contains(lower, "certificate/") ||
+		strings.HasSuffix(lower, "bdmv") || strings.HasSuffix(lower, "certificate")
+}
+
+// skipIndexFile 决定某个库内相对路径是否跳过索引（v0.9.84）。
+//
+// 规则（只影响蓝光原盘结构，普通媒体库与 NFO/字幕 sidecar 完全不受影响）：
+//   - 位于 BDMV/ 或 CERTIFICATE/ 下且扩展名属于结构文件 → 跳过；
+//   - 位于 BDMV 的 BACKUP/、AUXDATA/、JAR/、BDJO/、META/ 子目录 → 跳过；
+//   - CERTIFICATE/ 下的全部文件（证书）→ 跳过；
+//   - BDMV/STREAM/ 下的 .m2ts/.mts 等真实视频 → 保留。
+func skipIndexFile(rel string) bool {
+	slash := filepath.ToSlash(rel)
+	lower := strings.ToLower(slash)
+	if !inBluRayStructure(lower) {
+		return false
+	}
+	if strings.Contains(lower, "certificate/") {
+		return true
+	}
+	for _, dir := range []string{"/backup/", "/auxdata/", "/jar/", "/bdjo/", "/meta/", "/meta_dl/"} {
+		if strings.Contains(lower, dir) {
+			return true
+		}
+	}
+	return bluRayStructuralExt[strings.ToLower(filepath.Ext(slash))]
+}
+
 func walkLibraryFiles(ctx context.Context, root string, maxDepth int, emit func(scannedFile)) error {
 	realRoot, err := filepath.EvalSymlinks(root)
 	if err != nil {
@@ -161,6 +206,9 @@ func walkLibraryFiles(ctx context.Context, root string, maxDepth int, emit func(
 			}
 			rel, e := filepath.Rel(realRoot, full)
 			if e != nil || rel == "." || strings.HasPrefix(rel, "..") {
+				continue
+			}
+			if skipIndexFile(rel) {
 				continue
 			}
 			emit(scannedFile{Rel: rel, Size: st.Size(), MTime: st.ModTime().Unix()})
@@ -247,6 +295,9 @@ func walkMultiLibraryFiles(ctx context.Context, roots []string, maxDepth int, em
 				}
 				rel, e := filepath.Rel(realRoot, full)
 				if e != nil || rel == "." || strings.HasPrefix(rel, "..") {
+					continue
+				}
+				if skipIndexFile(rel) {
 					continue
 				}
 				// 多路径：以 root 目录名为前缀，保证 (lib,path) 全局唯一。

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""v0.9.83 契约（回归守卫）：
+"""v0.9.84 契约（回归守卫）：
 1. 视频推荐的播放按钮叠在略缩图之上，鼠标滑过（或键盘聚焦）才显示
 2. 浏览器本地写入失败：统一走配额安全写入通道（清理可重建缓存 + 内存回退 + 准确提示）
 3. 无资源推荐「视频信息」弹窗补齐类型/时长（TMDB 详情），画框优先用 16:9 的 backdrop
@@ -84,11 +84,11 @@ check("5l 封面缓存头仍是公开长缓存", 'Cache-Control", "public, max-a
 check("5m 入口 Caddy 仍启用压缩", "encode zstd gzip" in CADDY)
 
 # ---------- 版本一致性 ----------
-check("V1 HTML 资源版本", 'VAULTHUB_ASSET_VERSION = "0.9.83"' in HTML)
-check("V2 脚本版本", 'VAULTHUB_SCRIPT_VERSION = "0.9.83"' in STATE)
-check("V3 静态缓存串", HTML.count("?v=0.9.83") >= 7)
-check("V4 UI 角标", "v0.9.83" in HTML)
+check("V1 HTML 资源版本", 'VAULTHUB_ASSET_VERSION = "0.9.84"' in HTML)
+check("V2 脚本版本", 'VAULTHUB_SCRIPT_VERSION = "0.9.84"' in STATE)
+check("V3 静态缓存串", HTML.count("?v=0.9.84") >= 7)
+check("V4 UI 角标", "v0.9.84" in HTML)
 
-print(f"v0.9.83 checks: {OK} passed, {FAIL} failed")
+print(f"v0.9.84 checks: {OK} passed, {FAIL} failed")
 import sys
 sys.exit(1 if FAIL else 0)

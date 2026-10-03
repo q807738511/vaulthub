@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.9.83"
+VERSION = "0.9.84"
 
 failures = []
 
@@ -43,7 +43,7 @@ for ref in asset_refs:
     )
 
 # 六个脚本 + 一个样式都必须在列
-for name in ("01-state.js", "02-media.js", "03-features.js", "05-home.js", "03-audio-zoom.js", "04-boot.js", "main.css"):
+for name in ("01-state.js", "03-quality.js", "02-media.js", "03-features.js", "05-home.js", "03-audio-zoom.js", "04-boot.js", "main.css"):
     check(
         any(name in ref for ref in asset_refs),
         f"index.html 缺少 {name} 的带版本引用",
@@ -53,6 +53,9 @@ for name in ("01-state.js", "02-media.js", "03-features.js", "05-home.js", "03-a
 js_order = [ref for ref in asset_refs if ref.endswith(f"?v={VERSION}") and "/js/" in ref]
 expected_order = [
     "/web/js/01-state.js",
+    # v0.9.84：画面清晰度与色彩档位模块 —— 02-media.js 的阅读页宽度、封面取图宽度、
+    # 音频码率都要读它，因此紧跟在 01-state.js 之后、02-media.js 之前。
+    "/web/js/03-quality.js",
     "/web/js/02-media.js",
     "/web/js/03-features.js",
     "/web/js/05-home.js",
