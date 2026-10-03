@@ -104,10 +104,12 @@ check("4j 两个遍历函数都做了拦截", SCAN.count("if skipIndexFile(rel) 
 check("4k 保留原盘真实视频片段（.m2ts 不跳过）", '".m2ts": true' not in SCAN and '".mpls": true' in SCAN)
 # v0.9.86（客户要求）：整库「重新刮削 / 重试失败项」按钮从影视页迁走 ——
 # 入口统一在「系统设置 → 媒体库 → 已添加的媒体库」的自动 / 逐项扫描。
-check("4l 影视页只保留状态与指路按钮（大刮削按钮已迁出）",
-      "function movieScrapeControls(" in MEDIA and "openSettingsPage('library')" in MEDIA
-      and "🔄 重新刮削" not in MEDIA.split("function movieScrapeControls(")[1][:400])
-check("4m 电影库与剧集库标题都挂上入口", MEDIA.count("movieScrapeControls(files)") >= 2)
+# 只判定代码：注释里保留「为什么删」的说明，不应被当成残留实现。
+MEDIA_CODE = re.sub(r"/\*.*?\*/", " ", MEDIA, flags=re.S)
+check("4l 影视页头的刮削按钮整块移除（v0.9.88 客户要求）",
+      "movieScrapeControls" not in MEDIA_CODE and "刮削设置</span>" not in MEDIA_CODE)
+check("4m 电影库与剧集库标题只带库名与统计（不再挂刮削入口）",
+      MEDIA.count("movieScrapeControls(files)") == 0 and MEDIA.count("mediaLibraryHeading(lib, ") >= 2)
 check("4m2 系统设置内提供自动扫描与逐项扫描",
       "function autoScanLibrary(" in MEDIA and "function openLibraryItemScan(" in MEDIA
       and "autoScanLibrary('${esc(lib.id)}')" in HOME and "openLibraryItemScan('${esc(lib.id)}')" in HOME)
@@ -121,14 +123,16 @@ check("4o 刮削状态经通知中心可见（库页不再有队列徽标）",
 check("4p 失败原因可诊断（凭据/未命中/请求失败）",
       '"TMDB 凭据无效' in MEDIA and '"TMDB 未命中该标题"' in MEDIA and '"未配置 TMDB 凭据"' in MEDIA)
 check("4q 渲染改节流（不再每条整库重绘）", "function scheduleMovieRender(" in MEDIA and "clearTimeout(movieRenderTimer)" in MEDIA)
-check("4r 原盘片段数在卡片上可见", "原盘 · ${file.disc_fragments} 个片段" in MEDIA)
+check("4r 原盘片段数在卡片上可见", "discSubtitle(file)" in MEDIA and "原盘 · ${n} 个片段" in MEDIA)
+check("4s 原盘镜像（ISO）在卡片上单独标注", 'return n > 1 ? `原盘 · ISO · ${n} 个镜像` : "原盘 · ISO";' in MEDIA)
+check("4t ISO 与同目录 BDMV 并存时标注双形态", "原盘 · ISO + BDMV" in MEDIA)
 
 print("5. 版本与文档")
-check("5a 版本号已升至 0.9.87", 'VAULTHUB_ASSET_VERSION = "0.9.87"' in HTML and 'const VAULTHUB_SCRIPT_VERSION = "0.9.87"' in STATE)
-check("5b 关于 / 侧栏 / 页脚标语一致", HTML.count("v0.9.87 · ") == 3)
-check("5c 脚本引用带新版本号", 'web/js/03-quality.js?v=0.9.87' in HTML and 'web/js/02-media.js?v=0.9.87' in HTML)
-check("5d Update Log 顶部为 v0.9.87", LOG.startswith("# VaultHub 蜀鼠之家 v0.9.87"))
-check("5e Release Notes 存在", (ROOT / ".github/RELEASE_NOTES_0.9.87.md").exists())
+check("5a 版本号已升至 0.9.88", 'VAULTHUB_ASSET_VERSION = "0.9.88"' in HTML and 'const VAULTHUB_SCRIPT_VERSION = "0.9.88"' in STATE)
+check("5b 关于 / 侧栏 / 页脚标语一致", HTML.count("v0.9.88 · ") == 3)
+check("5c 脚本引用带新版本号", 'web/js/03-quality.js?v=0.9.88' in HTML and 'web/js/02-media.js?v=0.9.88' in HTML)
+check("5d Update Log 顶部为 v0.9.88", LOG.startswith("# VaultHub 蜀鼠之家 v0.9.88"))
+check("5e Release Notes 存在", (ROOT / ".github/RELEASE_NOTES_0.9.88.md").exists())
 
 if FAILS:
     print(f"\nFAIL: {len(FAILS)} 项未通过：")

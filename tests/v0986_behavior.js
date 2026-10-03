@@ -104,12 +104,14 @@ chk("C5 扫描完成 → 成功/失败/跳过", run(media, `libraryScanPillHtml(
 run(media, `libraryScanState["m1"] = {running:false,message:"HTTP 500"}`);
 chk("C6 失败 → 扫描失败胶囊", run(media, `libraryScanPillHtml({id:"m1",type:"movie"})`).includes("扫描失败"));
 
-/* ============ 四、库页刮削区不再有大按钮 ============ */
-const controls = run(media, `movieScrapeControls([{path:"/M/a.mkv"}])`);
-chk("D1 库页刮削区无「重新刮削 / 重试失败项」按钮", !controls.includes("重新刮削") && !controls.includes("重试失败项"), controls);
-chk("D2 库页给指路按钮（系统设置）", controls.includes("openSettingsPage('library')"), controls);
-/* v0.9.87：队列徽标从库页移除（改由顶栏通知中心展示），这里反向断言。 */
-chk("D3 库页不再展示刮削队列徽标", !controls.includes("movieScrapeStatus"), controls);
+/* ============ 四、库页刮削区整块移除（v0.9.88） ============ */
+const mediaSource = fs.readFileSync(ROOT + "/web/js/02-media.js", "utf8");
+/* 注释里保留了「曾经有什么 / 为什么删」的说明，判定只针对真实代码。 */
+const mediaCode = mediaSource.replace(/\/\*[\s\S]*?\*\//g, " ");
+chk("D1 库页标题不再挂任何按钮参数", !/mediaLibraryHeading\(lib, `[^`]*`,/.test(mediaCode));
+chk("D2 库页刮削按钮函数已删除（连指路按钮也不留）", !mediaCode.includes("movieScrapeControls"));
+chk("D3 库页不再展示刮削队列徽标", !mediaCode.includes("movieScrapeStatus"));
+chk("D4 刮削入口仍在系统设置（自动扫描 / 逐项扫描）", mediaCode.includes("autoScanLibrary(") && mediaCode.includes("openLibraryItemScan("));
 
 /* ============ 五、音乐库不再分页 ============ */
 const audioHtml = run(media, `(() => { const host = { innerHTML: "", querySelector: () => null, querySelectorAll: () => [] }; renderAudioLibraryContent(host, {id:"a1",name:"音乐"}, [{path:"/M/a.mp3"}], {total:1}); return host.innerHTML; })()`);

@@ -688,24 +688,34 @@ function collapseDiscFragments(files) {
   (files || []).forEach((file) => {
     if (file && file.disc) { out.push(file); return; }
     const path = String((file && file.path) || "");
-    const disc = discFolderOf(path);
-    if (!disc) { out.push(file); return; }
-    const current = groups.get(disc);
+    const group = discGroupOf(path);
+    if (!group) { out.push(file); return; }
+    const isIso = group.kind === "iso";
+    const current = groups.get(group.key);
     if (!current) {
-      const entry = { ...file, disc: true, disc_folder: disc, disc_fragments: 1 };
-      groups.set(disc, entry);
+      const entry = { ...file, disc: true, disc_folder: group.key, disc_kind: group.kind, disc_fragments: 1 };
+      if (isIso) entry.iso_path = path;
+      groups.set(group.key, entry);
       out.push(entry);
       return;
     }
     current.disc_fragments = Number(current.disc_fragments || 1) + 1;
     merged++;
-    if (Number(file.size || 0) > Number(current.size || 0)) {
+    if (isIso && !current.iso_path) current.iso_path = path;
+    /* v0.9.88：同一目录里 ISO 与 BDMV 并存（先下镜像再解压很常见）时，
+       播放路径保留可直接播的 BDMV 片段，镜像路径另存 —— 一部片子只出现一条，
+       不会既有「能播的片段」又有一条打不开的 ISO 卡片。
+       同类之间保留体积最大的那个（多碟 / 分卷 ISO 的唯一入口）。 */
+    const currentIsIso = current.disc_kind === "iso";
+    const keepNew = (!isIso && currentIsIso) || (isIso === currentIsIso && Number(file.size || 0) > Number(current.size || 0));
+    if (keepNew) {
       current.path = file.path;
       current.size = file.size;
       current.mtime = file.mtime;
+      current.disc_kind = group.kind;
     }
   });
-  if (merged) console.info(`[scrape] 蓝光原盘片段合并：${files.length} → ${out.length} 条（合并 ${merged} 个片段）`);
+  if (merged) console.info(`[scrape] 原盘条目合并：${files.length} → ${out.length} 条（合并 ${merged} 个片段/镜像）`);
   return out;
 }
 /* 影视文件名常见的发布组/规格标记，展示标题时剔除 */
@@ -791,6 +801,32 @@ function discFolderOf(path) {
   const m = String(path).match(/^(.*)\/(?:BDMV|CERTIFICATE)\//i);
   return m ? m[1] : "";
 }
+/* v0.9.88：原盘镜像（ISO）—— 蓝光/DVD 原盘最常见的另一种存放形态。
+   服务端会把 .iso 交给 libbluray（UDF 直读）或 dvdvideo 读取，前端这里负责
+   把它当成「一条原盘条目」而不是普通视频文件。 */
+function isIsoImage(path) { return /\.iso$/i.test(String(path || "")); }
+function parentDir(path) { const p = String(path || "").split("/"); p.pop(); return p.join("/"); }
+function parentDirName(path) { const p = String(path || "").split("/").filter(Boolean); return p.length >= 2 ? p[p.length - 2] : ""; }
+/* 原盘里「不可能是片名」的目录 / 镜像名：结构名、占位名、纯编号符号。
+   命中就继续往上一级找 —— 否则这类原盘永远只能以「文件名展示」结束。 */
+const UNUSABLE_DISC_NAME_RE = /^(bdmv|certificate|disc|disc\d+|disk\d+|cd\d+|dvd|dvdrom|iso|title|movie|volume|vol\d+|video_ts|audio_ts|vts[\d_]*|原盘|镜像|影片|视频|\d{1,4})$/i;
+function discTitleCandidate(seg) {
+  const raw = String(seg || "").trim();
+  if (!raw) return "";
+  /* 只对「是否可用」做一次宽松探测（去掉扩展名与括号），返回值保留原始分隔符 ——
+     提前把 . _ - 换成空格会让后续 MOVIE_NOISE_RE 匹配不到 Blu-ray/HD-DVD 这类
+     规格词，标题里就会残留「Blu ray」。 */
+  const probe = raw.replace(/\.iso$/i, "").replace(/[\[\]()【】]/g, " ").replace(/\s+/g, " ").trim();
+  if (!probe || UNUSABLE_DISC_NAME_RE.test(probe) || !scrapableMovieTitle(probe)) return "";
+  return raw.replace(/\.iso$/i, "");
+}
+/* 原盘条目的分组与类型：BDMV 片段按原盘目录归组，ISO 镜像按所在目录归组。 */
+function discGroupOf(path) {
+  const folder = discFolderOf(path);
+  if (folder) return { key: folder, kind: "bdmv" };
+  if (isIsoImage(path)) return { key: parentDir(String(path)), kind: "iso" };
+  return null;
+}
 function movieTitleFromPath(path) {
   /* 先在原始文件名上剔除年份与发布规格，再做分隔符归一化：
      displayBookTitle 会把 WEB-DL 这类连字符换成空格，先跑它会导致噪声词漏匹配。 */
@@ -798,10 +834,23 @@ function movieTitleFromPath(path) {
     const name = String(path).split("/").pop().replace(/\.[^.]+$/, "");
     /* v0.9.84：蓝光原盘里的文件名是 00001.m2ts / MovieObject.bdmv 这类片段编号，
        拿它去刮削必然查不到。原盘条目的标题一律取 BDMV 的上一级目录名
-       （例如 [黑鹰坠落]Black.Hawk.Down.2001.Blu-ray... → 可被 TMDB 命中）。 */
+       （例如 [黑鹰坠落]Black.Hawk.Down.2001.Blu-ray... → 可被 TMDB 命中）。
+       v0.9.88：ISO 镜像用镜像名（片名通常就在上面）；当镜像名或原盘目录名本身
+       不可用（BDMV / disc / title / 纯编号）时继续上溯到父目录 —— 这类原盘以前
+       只能停在「文件名展示」，现在能正常刮到。 */
     const disc = discFolderOf(path);
-    const folder = disc ? String(disc).split("/").pop() : "";
-    return folder || name;
+    if (disc) {
+      const segs = String(disc).split("/").filter(Boolean);
+      for (let i = segs.length - 1; i >= 0; i--) {
+        const cand = discTitleCandidate(segs[i]);
+        if (cand) return cand;
+      }
+      return name;
+    }
+    if (isIsoImage(path)) {
+      return discTitleCandidate(name) || discTitleCandidate(parentDirName(path)) || name;
+    }
+    return name;
   })();
   const base = raw
     .replace(/\b(19|20)\d{2}\b/g, " ")
@@ -816,6 +865,86 @@ function movieTitleFromPath(path) {
 function movieYearFromPath(path) { const m = String(path).match(/\b(19|20)\d{2}\b/); return m ? m[0] : ""; }
 function movieBaseMetadata(path) { return { title: movieTitleFromPath(path), year: movieYearFromPath(path), poster: "", overview: "", provider: "文件名展示", checkedAt: 0 }; }
 function movieMetadataFor(path) { const all = readMovieMetadata(); return { ...movieBaseMetadata(path), ...(all[path] || {}) }; }
+/* ==================== v0.9.88：刮削结果服务端持久化 ====================
+   客户要求：「影视及音乐及电子书籍刮削，完成刮削后优先将刮削信息返回到服务器内部
+   进行持久化保存，防止出现多次批量重复读取的操作从而影响体验」。
+   影视与电子书的刮削结果以前只写浏览器 localStorage：换浏览器、清缓存、换设备，
+   或同一媒体库被多次整库扫描，都要重新刮一遍（每条一次 TMDB 请求）——这就是
+   重复批量读取。现在进库先读服务端 /api/media/scrape-cache，取较新的那份合并，
+   刮完再批量写回；「已刮削」条目自然不再进待刮队列。
+   音乐本来就有服务端持久化（v0.9.67：sidecar + SQLite + /api/media/audio/cache），
+   同一套思路，不重复造。
+   ============================================================================ */
+const MOVIE_SCRAPE_STORE_FIELDS = ["title", "year", "poster", "backdrop", "logo", "fanart", "overview",
+  "rating", "provider", "tmdb_id", "tvdb_id", "media_type", "user_title", "scrape_state", "reason"];
+/* 上传前统一成服务端字段（并剔除空值，避免把空字段写进结果库）。 */
+function movieScrapeStoreShape(meta) {
+  const out = {};
+  MOVIE_SCRAPE_STORE_FIELDS.forEach((key) => {
+    const v = meta ? meta[key] : undefined;
+    if (v === undefined || v === null || v === "" || v === 0) return;
+    out[key] = v;
+  });
+  out.checked_at = Number((meta && meta.checkedAt) || 0) || Date.now();
+  return out;
+}
+async function hydrateMovieMetadataFromServer(libId) {
+  if (!libId) return false;
+  try {
+    const res = await fetch(`/api/media/scrape-cache?id=${encodeURIComponent(libId)}`, { cache: "no-store", credentials: "same-origin" });
+    if (!res.ok) return false;
+    const data = await res.json();
+    const items = (data && data.items) || {};
+    const all = readMovieMetadata();
+    let changed = 0;
+    Object.keys(items).forEach((path) => {
+      const item = items[path];
+      if (!path || !item) return;
+      const cur = all[path];
+      const serverAt = Number(item.checked_at || 0);
+      if (cur && Number(cur.checkedAt || 0) > serverAt) return; // 本地更新，不覆盖
+      const merged = { ...movieBaseMetadata(path), ...(cur || {}), ...item, checkedAt: serverAt || Date.now() };
+      delete merged.checked_at;
+      /* v0.9.88：服务端记过这次尝试 → 沿用它的时间戳与次数。否则换浏览器 / 换设备后
+         整库「失败」条目会被当成从没刮过，每台设备再连打 3 遍（仍是重复批量读取）。
+         需要立即重试时走「逐项扫描 → 仅重试失败项」（那里显式复位次数与时间）。 */
+      if (merged.scrape_state === "failed" || merged.scrape_state === "pending") {
+        merged.scrape_attempts = Number(merged.scrape_attempts || 0) || 1;
+        merged.last_attempt = Number(merged.last_attempt || 0) || serverAt;
+      }
+      all[path] = merged;
+      changed++;
+    });
+    if (changed) { writeMovieMetadata(all); movieLocalTitleIndexCache = null; }
+    return changed > 0;
+  } catch (e) { return false; }
+}
+/* 写回服务端：批量一次请求（不是每条一次）。失败只记日志，不影响本次会话展示。 */
+function pushMovieScrapeResults(libId, paths, opts) {
+  if (!libId) return;
+  const list = [...new Set((paths || []).map(String).filter(Boolean))];
+  if (!list.length) return;
+  const all = readMovieMetadata();
+  const items = {};
+  list.forEach((path) => { if (all[path]) items[path] = movieScrapeStoreShape(all[path]); });
+  if (!Object.keys(items).length) return;
+  try {
+    fetch("/api/media/scrape-cache", {
+      method: "POST", headers: sessionWriteHeaders(true), credentials: "same-origin",
+      body: JSON.stringify({ id: String(libId), items, replace: !!(opts && opts.replace) })
+    }).then(res => { if (!res.ok) console.info("[scrape] 服务端保存刮削结果失败：HTTP", res.status); })
+      .catch(() => { /* 服务端不可用：本地仍可用 */ });
+  } catch (e) { /* 保持与旧版一致的静默降级 */ }
+}
+function pushAllMovieScrapeResults(libId) {
+  if (!libId) return;
+  pushMovieScrapeResults(libId, Object.keys(readMovieMetadata()));
+}
+async function clearServerScrapeCache(libId) {
+  if (!libId) return;
+  try { await fetch(`/api/media/scrape-cache?id=${encodeURIComponent(libId)}`, { method: "DELETE", headers: sessionWriteHeaders(true), credentials: "same-origin" }); }
+  catch (e) { /* 清不掉不影响本地重刮 */ }
+}
 async function loadScraperStatus() { try { const res = await fetch("/api/media/scrapers", { cache:"no-store" }); if (res.ok) scraperStatus = await res.json(); } catch(e) {} }
 async function loadMediaRuntimeSettings(notify = false) {
   const status = document.getElementById("mediaRuntimeStatus");
@@ -827,7 +956,7 @@ async function loadMediaRuntimeSettings(notify = false) {
     /* v0.9.75：读设置时同步刷新本机缓存的运行时配置（外网分享地址/TMDB 图片基址等），
        否则服务端改了配置而页面未重载时，分享仍用旧地址。 */
     scraperStatus = { ...scraperStatus, ...c, default: c.scraper_mode || scraperStatus.default };
-    const values = { scrapeRegion:c.scrape_region || "auto", mediaScraperMode:c.scraper_mode, tmdbApiBase:c.tmdb_api_base, tmdbImageBase:c.tmdb_image_base, tvdbApiBase:c.tvdb_api_base, mediaCacheDir:c.cache_dir, mediaCacheMaxBytes:c.cache_max_bytes, mediaCacheMaxAge:c.cache_max_age_hours, mediaCacheCleanup:c.cache_cleanup_interval_hours, mediaPageCacheMaxBytes:c.page_cache_max_bytes, mediaScanMaxDepth:c.scan_max_depth, sharePublicBase:c.share_public_base || "" }; 
+    const values = { scrapeRegion:c.scrape_region || "auto", scrapeMinMatch:Math.round((Number(c.scrape_min_match) || 0.7) * 100), mediaScraperMode:c.scraper_mode, tmdbApiBase:c.tmdb_api_base, tmdbImageBase:c.tmdb_image_base, tvdbApiBase:c.tvdb_api_base, mediaCacheDir:c.cache_dir, mediaCacheMaxBytes:c.cache_max_bytes, mediaCacheMaxAge:c.cache_max_age_hours, mediaCacheCleanup:c.cache_cleanup_interval_hours, mediaPageCacheMaxBytes:c.page_cache_max_bytes, mediaScanMaxDepth:c.scan_max_depth, sharePublicBase:c.share_public_base || "" }; 
     Object.entries(values).forEach(([id,value]) => { const el=document.getElementById(id); if(el && value !== undefined) el.value=String(value); });
     const key=document.getElementById("tmdbApiKey"); if(key){ key.value=""; key.placeholder=c.tmdb_api_key_masked ? "已设置；留空保留" : "未设置"; }
     const tvdbKey=document.getElementById("tvdbApiKey"); if(tvdbKey){ tvdbKey.value=""; tvdbKey.placeholder=c.tvdb_api_key_masked ? "已设置；留空保留" : "未设置"; }
@@ -840,7 +969,7 @@ async function loadMediaRuntimeSettings(notify = false) {
 async function saveMediaRuntimeSettings() {
   const value=id=>document.getElementById(id)?.value?.trim() || "";
   const proxyEl=document.getElementById("scraperProxy"), proxyValue=value("scraperProxy");
-  const payload={ scraper_mode:value("mediaScraperMode")||"auto", scrape_region:value("scrapeRegion")||"auto", tmdb_api_key:value("tmdbApiKey"), tmdb_api_base:value("tmdbApiBase"), tmdb_image_base:value("tmdbImageBase"), tvdb_api_key:value("tvdbApiKey"), tvdb_api_base:value("tvdbApiBase"), scraper_proxy:proxyValue, scraper_proxy_set:!!proxyValue || proxyEl?.dataset.configured!=="1", share_public_base:value("sharePublicBase").trim(), share_public_base_set:true, cache_dir:value("mediaCacheDir"), cache_max_bytes:Number(value("mediaCacheMaxBytes")), cache_max_age_hours:Number(value("mediaCacheMaxAge")), cache_cleanup_interval_hours:Number(value("mediaCacheCleanup")), page_cache_max_bytes:Number(value("mediaPageCacheMaxBytes")||"0"), scan_max_depth:Number(value("mediaScanMaxDepth")||"0") };
+  const payload={ scraper_mode:value("mediaScraperMode")||"auto", scrape_region:value("scrapeRegion")||"auto", scrape_min_match:Math.max(30, Math.min(100, Number(value("scrapeMinMatch"))||70))/100, tmdb_api_key:value("tmdbApiKey"), tmdb_api_base:value("tmdbApiBase"), tmdb_image_base:value("tmdbImageBase"), tvdb_api_key:value("tvdbApiKey"), tvdb_api_base:value("tvdbApiBase"), scraper_proxy:proxyValue, scraper_proxy_set:!!proxyValue || proxyEl?.dataset.configured!=="1", share_public_base:value("sharePublicBase").trim(), share_public_base_set:true, cache_dir:value("mediaCacheDir"), cache_max_bytes:Number(value("mediaCacheMaxBytes")), cache_max_age_hours:Number(value("mediaCacheMaxAge")), cache_cleanup_interval_hours:Number(value("mediaCacheCleanup")), page_cache_max_bytes:Number(value("mediaPageCacheMaxBytes")||"0"), scan_max_depth:Number(value("mediaScanMaxDepth")||"0") };
   const status=document.getElementById("mediaRuntimeStatus"); const hwStatus=document.getElementById("hardwareRuntimeStatus"); if(status) status.textContent="保存中…"; if(hwStatus) hwStatus.textContent="保存中…";
   try { const res=await fetch("/api/media/settings",{method:"PUT",headers:sessionWriteHeaders(true),body:JSON.stringify(payload)}); const data=await res.json(); if(!res.ok) throw new Error(data.error||`HTTP ${res.status}`); scraperStatus={...scraperStatus,...data,default:data.scraper_mode}; await loadMediaRuntimeSettings(false); toast("✅ 运行配置已立即生效"); }
   catch(e){ if(status)status.textContent=`⚠ ${e.message}`; if(hwStatus)hwStatus.textContent=`⚠ ${e.message}`; toast("⚠️ 保存失败："+e.message); }
@@ -937,15 +1066,10 @@ function scrapeQueueNotice(files) {
 function updateMovieScrapeStatus(files) {
   scrapeQueueNotice(files);
 }
-/* 库标题右侧的刮削状态（v0.9.84 新增）。
-   v0.9.86（客户要求）：整库「重新刮削 / 重试失败项」这两个大按钮从影视页迁走 ——
-   刮削入口统一放在「系统设置 → 媒体库 → 已添加的媒体库」（自动 / 逐项扫描）。
-   这里只保留状态与一个指路按钮，不再出现大块操作区。 */
-function movieScrapeControls(files) {
-  /* v0.9.87：库页里的刮削队列徽标整体移除（队列状态改由顶栏喇叭的通知栏承载），
-     只保留一个进入系统设置的入口按钮。 */
-  return `<div class="media-actions" style="gap:6px;flex-wrap:wrap"><button class="btn" type="button" onclick="openSettingsPage('library')" title="刮削入口在系统设置 → 媒体库 → 已添加的媒体库"><span data-i18n="scrapeGoSettings">刮削设置</span></button></div>`;
-}
+/* v0.9.88（客户要求「继续删除媒体库中的刮削设置按钮」）：媒体库页头不再有任何
+   刮削按钮与刮削状态 —— 队列进度只出现在顶栏通知栏，刮削入口只在
+   「系统设置 → 媒体库 → 已添加的媒体库」（⚡ 自动扫描 / ▤ 逐项扫描）。
+   实现上直接删掉了 movieScrapeControls 及其两处调用，避免留一个恒空的容器。 */
 
 /* ==================== v0.9.86：影视刮削入口（系统设置内） ====================
    客户要求：「影视界面中展示了很大的一个刮削按钮，给他迁移到
@@ -1038,6 +1162,8 @@ async function openLibraryItemScan(libId) {
   if (hint) hint.textContent = `${lib.name} · 读取中…`;
   openModal("libItemScanModal");
   try {
+    /* v0.9.88：逐项扫描前先合并服务端刮削结果，列表状态与库页一致。 */
+    await hydrateMovieMetadataFromServer(libId);
     libraryItemScan.files = await libraryScanLoadFiles(libId);
   } catch (e) {
     if (host) host.innerHTML = `<div class="media-error">读取失败：${esc(e.message)}</div>`;
@@ -1089,6 +1215,8 @@ async function scanLibraryEntry(libId, path) {
   try {
     await scrapeOneMovie(lib, files, file);
     if (typeof flushMovieMetadata === "function") flushMovieMetadata();
+    /* v0.9.88：用户显式重刮单条 → replace=true（允许用新的结果覆盖服务端旧结果）。 */
+    pushMovieScrapeResults(libId, [path], { replace: true });
   } catch (e) {
     toast("⚠️ 刮削失败：" + (e.message || e));
   } finally {
@@ -1151,6 +1279,120 @@ function renderMovieScrapeProgress() {
   else renderMovieLibraryContent(host, lib, files);
   updateMovieScrapeStatus(files);
 }
+/* ==================== v0.9.88：TMDB 标题匹配阈值（最低识别字符占比） ====================
+   客户要求：「TMDB 刮削配置优化，无需对标题进行全量刮削（最低识别字符数量为 70%，
+   如有异常后续进行手动调整命名进行辅助优化）」。
+   旧实现是 `results.find(x => x.poster_path || x.overview || x.title || x.name)` ——
+   压根不做比对，直接取 TMDB 返回的第一条带海报/简介的候选。中文库里
+   「[发布组]Some.Movie.2021.WEB-DL」经常被对到同名短片、预告或另一部片，
+   用户看到的就是「刮削信息不对」，实际根因是没有匹配判定。
+   现在：对每个候选按「字符覆盖率 + 词元 + 二元组」打分，取 ≥ 阈值（默认 70%）的最高分；
+   不到阈值就明确记「匹配度不足 n% ＜ 阈值」，用户在「逐项扫描 → ✎ 编辑名称」里
+   手动补名后重刮（override 文件跨设备持久化）。
+   评分对 title / original_title / name / original_name 取最大值 —— 切地区后 TMDB
+   返回的是当地语言标题，原名往往才是资源名的来源。
+   ============================================================================ */
+const DEFAULT_SCRAPE_MIN_MATCH = 0.7;
+function scrapeMinMatchThreshold() {
+  const v = Number((scraperStatus && scraperStatus.scrape_min_match) || 0);
+  if (!Number.isFinite(v) || v <= 0) return DEFAULT_SCRAPE_MIN_MATCH;
+  return Math.min(1, Math.max(0.3, v));
+}
+/* 归一化：NFKC（全角→半角）、去发布规格噪声与年份、只留字母/数字/中日韩字符。 */
+function titleNormalized(value) {
+  let s = String(value == null ? "" : value);
+  try { s = s.normalize("NFKC"); } catch (e) { /* 老浏览器不支持 NFKC：原样处理 */ }
+  return s.toLowerCase()
+    .replace(MOVIE_NOISE_RE, " ")
+    .replace(/(19|20)\d{2}/g, " ")
+    .replace(/[^0-9a-z\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+function titleTokens(value) {
+  const n = titleNormalized(value);
+  if (!n) return [];
+  /* 纯中文/日文标题没有词边界，按单字切；拉丁标题按空格切。 */
+  return /[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/.test(n) && !n.includes(" ") ? n.split("") : n.split(" ");
+}
+function titleBigrams(value) {
+  const s = titleNormalized(value).replace(/\s+/g, "");
+  const out = new Set();
+  for (let i = 0; i + 1 < s.length; i++) out.add(s.slice(i, i + 2));
+  if (!out.size && s) out.add(s);
+  return out;
+}
+function titleCharSet(value) { return new Set(titleNormalized(value).replace(/\s+/g, "").split("").filter(Boolean)); }
+function setDice(a, b) {
+  if (!a.size || !b.size) return 0;
+  let hit = 0;
+  a.forEach(x => { if (b.has(x)) hit++; });
+  return (2 * hit) / (a.size + b.size);
+}
+function setCoverage(query, cand) {
+  if (!query.size) return 0;
+  let hit = 0;
+  query.forEach(c => { if (cand.has(c)) hit++; });
+  return hit / query.size;
+}
+/* 打分：0.50 × 双向字符覆盖率 + 0.20 × 词元 Dice + 0.30 × 二元组 Dice。
+   · 覆盖率取双向最大：资源名带「第二部 / Part Two / 剧场版」等后缀时也应命中正片；
+   · 词元 Dice 同时按「按字切」与「按空格切」算，取较大值 —— 中文标题没有词边界，
+     只按一种切法会把「阿凡达」对「阿凡达：水之道」判成低分（实测 0.62 会误杀）；
+   · 覆盖率权重最高，是因为「70% 字符能对上」正是客户要的语义。 */
+function titleMatchScore(query, candidate) {
+  const qc = titleCharSet(query), cc = titleCharSet(candidate);
+  if (!qc.size || !cc.size) return 0;
+  const coverage = Math.max(setCoverage(qc, cc), setCoverage(cc, qc));
+  const spaceDice = setDice(new Set(titleTokens(query)), new Set(titleTokens(candidate)));
+  const charDice = setDice(qc, cc);
+  const tokenDice = Math.max(spaceDice, charDice);
+  const bigramDice = setDice(titleBigrams(query), titleBigrams(candidate));
+  const score = 0.50 * coverage + 0.20 * tokenDice + 0.30 * bigramDice;
+  return Math.max(0, Math.min(1, score));
+}
+function itemTitleForms(item) {
+  if (!item) return [];
+  return [item.title, item.original_title, item.name, item.original_name]
+    .map(v => String(v == null ? "" : v).trim()).filter(Boolean);
+}
+function itemYear(item) {
+  const raw = (item && (item.release_date || item.first_air_date || item.year)) || "";
+  const m = String(raw).match(/(19|20)\d{2}/);
+  return m ? m[0] : "";
+}
+function queryYear(query, fallback) {
+  const m = String(query || "").match(/(19|20)\d{2}/);
+  return m ? m[0] : String(fallback || "");
+}
+/* 候选打分：返回 {item, score, threshold, matched}；没有可用候选时返回 null。 */
+function pickTitleMatch(results, query, opts) {
+  const list = Array.isArray(results) ? results : [];
+  const threshold = Number((opts && opts.threshold) || 0) || scrapeMinMatchThreshold();
+  const wantYear = queryYear(query, opts && opts.year);
+  let best = null;
+  list.forEach((item) => {
+    const forms = itemTitleForms(item);
+    if (!forms.length) return;
+    let score = forms.reduce((acc, f) => Math.max(acc, titleMatchScore(query, f)), 0);
+    /* 年份是稳定的纠偏信号：同年 +5%，差一年以上 -15%（同名不同年代的作品）。 */
+    const year = itemYear(item);
+    if (wantYear && year) {
+      if (year === wantYear) score += 0.05;
+      else if (Math.abs(Number(year) - Number(wantYear)) > 1) score -= 0.15;
+    }
+    score = Math.max(0, Math.min(1, score));
+    if (!best || score > best.score) best = { item, score, name: forms[0] };
+  });
+  if (!best) return null;
+  return { ...best, threshold, matched: best.score >= threshold };
+}
+/* 失败原因带上最高匹配度：用户一眼分清是「标题对不上」还是「网络/凭据」问题。 */
+function titleMatchReason(best, threshold) {
+  const pct = best ? Math.round(best.score * 100) : 0;
+  return `标题匹配度不足（最高 ${pct}% ＜ ${Math.round((threshold || scrapeMinMatchThreshold()) * 100)}%）· 可在「逐项扫描 → ✎ 编辑名称」后重刮`;
+}
+
 /* 单条刮削：返回是否成功。所有请求用 no-store —— 空结果不再被浏览器缓存成永久失败。 */
 async function scrapeOneMovie(lib, files, file) {
   const all = readMovieMetadata();
@@ -1177,7 +1419,10 @@ async function scrapeOneMovie(lib, files, file) {
     try {
       const tvdb = await fetch(`/api/media/tvdb?query=${encodeURIComponent(title)}`, { cache: "no-store", credentials: "same-origin" });
       if (tvdb.status === 401 || tvdb.status === 403) note("TVDB 凭据无效");
-      const item = tvdb.ok ? (await tvdb.json())?.results?.[0] : null;
+      const tvdbList = tvdb.ok ? (((await tvdb.json()) || {}).results || []) : [];
+      const tvdbBest = pickTitleMatch(tvdbList, title, { year: base.year });
+      const item = tvdbBest && tvdbBest.matched ? tvdbBest.item : null;
+      if (!item && tvdbList.length) note(titleMatchReason(tvdbBest, scrapeMinMatchThreshold()));
       if (item) {
         return mark({
           tvdb_id: item.id, media_type: mediaType, title: item.name || title,
@@ -1193,7 +1438,10 @@ async function scrapeOneMovie(lib, files, file) {
       const tmdb = await fetch(`/api/media/tmdb?query=${encodeURIComponent(title)}&type=${encodeURIComponent(mediaType)}&lang=${tmdbLangTag()}`, { cache: "no-store", credentials: "same-origin" });
       if (tmdb.status === 401 || tmdb.status === 403) note("TMDB 凭据无效（系统设置 → 刮削里换成 v3 Key 或 v4 Token）");
       const data = tmdb.ok ? await tmdb.json() : null;
-      const item = data && Array.isArray(data.results) ? data.results.find(x => x.poster_path || x.overview || x.title || x.name) : null;
+      const candidates = data && Array.isArray(data.results)
+        ? data.results.filter(x => x && (x.poster_path || x.overview || x.title || x.name)) : [];
+      const best = pickTitleMatch(candidates, title, { year: base.year });
+      const item = best && best.matched ? best.item : null;
       if (item) {
         const imgBase = scraperStatus.tmdb_image_base || "https://image.tmdb.org/t/p";
         return mark({
@@ -1203,10 +1451,15 @@ async function scrapeOneMovie(lib, files, file) {
           backdrop: item.backdrop_path ? `${imgBase}/w1280${item.backdrop_path}` : "",
           overview: item.overview || "", rating: Number(item.vote_average || 0),
           provider: mediaType === "series" ? "TMDB · 剧集" : "TMDB · 电影",
+          tmdb_title: best ? String(best.name || "").slice(0, 200) : "",
+          match_score: best ? Math.round(best.score * 100) / 100 : 0,
           checkedAt: Date.now(), scrape_state: "ok", reason: "",
         });
       }
-      note("TMDB 未命中该标题");
+      /* v0.9.88：有候选但都低于阈值 → 记「匹配度不足 n%」，而不是笼统的「未命中」；
+         完全没有候选才是真的未命中。这条 later 会被下面的 mark() 原样保留。 */
+      if (candidates.length) note(titleMatchReason(best, scrapeMinMatchThreshold()));
+      else note("TMDB 未命中该标题");
     } catch (e) { note("TMDB 请求失败：" + (e && e.message ? e.message : "网络错误")); }
   } else if (mode === "auto" || mode === "tmdb") {
     note("未配置 TMDB 凭据");
@@ -1226,7 +1479,12 @@ async function scrapeOneMovie(lib, files, file) {
 async function scrapeMovieMetadata(host, lib, files) {
   await loadScraperStatus();
   movieScrapeContext = { host, lib, files };
+  /* v0.9.88：先吃服务端持久化的刮削结果 —— 换浏览器/换设备/重复进库都不会
+     再把已刮削的条目重新排进队列（这正是「多次批量重复读取」的来源）。 */
+  let hydrated = false;
+  if (lib && lib.id) hydrated = await hydrateMovieMetadataFromServer(lib.id);
   const all = readMovieMetadata();
+  if (hydrated) { renderMovieScrapeProgress(); }
   const localPaths = new Set();
   for (const file of files) {
     const path = String(file.path);
@@ -1277,6 +1535,8 @@ async function scrapeMovieMetadata(host, lib, files) {
   renderMovieScrapeProgress();
   flushMovieMetadata();
   updateMovieScrapeStatus(files);
+  /* v0.9.88：整批结果一次性写回服务端（批量一条请求，而不是每条一次）。 */
+  pushMovieScrapeResults(lib && lib.id, pending.map(file => String(file.path)));
   /* v0.9.85：刮削结束写一条通知（含失败/跳过明细），顶栏喇叭可见。 */
   notifyScrapeResult(lib, files, { queued: pending.length });
 }
@@ -1289,12 +1549,12 @@ function mediaLibraryHeading(lib, badge, extra = "") {
 function renderMovieLibraryContent(host, lib, files) {
   if (lib?.type === "series") return renderSeriesLibraryContent(host, lib, files);
   const body = `<div class="media-poster-grid">${files.map(file => renderMoviePoster(lib, file)).join("")}</div>`;
-  host.innerHTML = `<section class="content-collection">${mediaLibraryHeading(lib, `${files.length} 部`, movieScrapeControls(files))}${body}</section>`;
+  host.innerHTML = `<section class="content-collection">${mediaLibraryHeading(lib, `${files.length} 部`)}${body}</section>`;
 }
 function renderSeriesLibraryContent(host, lib, files) {
   const shows = buildSeriesShows(files); shows.forEach(show => rememberSeriesShow(lib.id, show));
   const body = shows.length ? `<div class="series-show-grid">${shows.map(show => renderSeriesShowCard(lib, show)).join("")}</div>` : '<div class="empty-tip">该电视剧库暂无支持的剧集文件</div>';
-  host.innerHTML = `<section class="content-collection">${mediaLibraryHeading(lib, `${shows.length} 部剧 · ${files.length} 集`, movieScrapeControls(files))}${body}</section>`;
+  host.innerHTML = `<section class="content-collection">${mediaLibraryHeading(lib, `${shows.length} 部剧 · ${files.length} 集`)}${body}</section>`;
 }
 /* v0.9.83：剧集详情读的是缓存态结构（seriesShowCacheShape 只保留首个文件用于定位），
    因此集数、集路径一律以 seasonList 汇总，避免详情里出现「共1集」这种明显错数，
@@ -1498,6 +1758,8 @@ async function libraryItemScanRetryFailed(){
   }
   libraryItemScan.busy="";
   if(typeof flushMovieMetadata==="function")flushMovieMetadata();
+  /* v0.9.88：重试结果批量写回服务端。 */
+  pushMovieScrapeResults(libId, targets.map(file => String(file.path)));
   renderLibraryItemScanBody();
 }
 /* v0.9.75：十分制五星图示评分（半星步进 0.5），鼠标悬停跟踪预览、点击落定；
@@ -2050,7 +2312,16 @@ function renderMoviePoster(lib, file) { const path=String(file.path), meta=movie
 /* v0.9.85：媒体库海报只展示片名 + 换行年份（取消元数据来源/分辨率等）：电影=年份，
    剧集=年份 · N 季 · 共M集，原盘合并条目保留「原盘 · N 个片段」提示。 */
 function moviePosterSubtitle(meta, path, file) {
-  return [meta.year, file && file.disc ? `原盘 · ${file.disc_fragments} 个片段` : ""].filter(Boolean).join(" · ") || fileExt(path).toUpperCase();
+  return [meta.year, file && file.disc ? discSubtitle(file) : ""].filter(Boolean).join(" · ") || fileExt(path).toUpperCase();
+}
+/* v0.9.88：原盘形态提示 —— 纯镜像标注 ISO；目录 + 镜像并存标注「ISO + BDMV」；
+   BDMV 目录标注片段数。让用户一眼看出这条到底是什么形态。 */
+function discSubtitle(file) {
+  const n = Number((file && file.disc_fragments) || 1);
+  const kind = String((file && file.disc_kind) || "bdmv");
+  if (kind === "iso") return n > 1 ? `原盘 · ISO · ${n} 个镜像` : "原盘 · ISO";
+  if (file && file.iso_path) return `原盘 · ISO + BDMV · ${n} 个片段`;
+  return `原盘 · ${n} 个片段`;
 }
 function scrapeSeriesMetadata(host, lib, files) { return scrapeMovieMetadata(host, lib, files); }
 function toggleMediaResourceView(group) { mediaResourceView = mediaResourceView === "poster" ? "list" : "poster"; try { localStorage.setItem("vaulthub_media_resource_view",mediaResourceView); } catch(e) {} const lib=findMediaLibrary(localMediaSelection[group]); if(lib) loadLocalFiles(group,lib,group === "audio" ? audioCursor : 0); }
@@ -2873,6 +3144,13 @@ function audioMatchAcceptable(fallback, item) {
    既避免同一会话内反复请求（旧逻辑会把失败的文件名兜底永久留在 localStorage，
    刷新后永不重刮；5 分钟时间窗又让「刚失败想立即刷新重试」的用户干等）。 */
 const audioScrapeAttemptedSession = new Set();
+/* v0.9.88：服务端已记过「未命中/失败」的曲目，在重试窗口内不再联网查询 ——
+   音乐本来就有服务端持久化（v0.9.67 sidecar + SQLite + /api/media/audio/cache），
+   但以前只把成功的曲目当「已刮削」，not_found/failed 的每次进库、每换一个浏览器
+   都会把整库失败曲目重新查一遍，正是客户说的「多次批量重复读取」。
+   窗口 10 分钟与影视刮削的重试窗口一致：既不做无意义重查，也不会让刚失败想重试
+   的用户干等太久（超窗后进库即重试）。 */
+const AUDIO_SCRAPE_RETRY_MS = 10 * 60 * 1000;
 /* v0.9.56：刮削串行链 —— 首页「最近入库」、音乐库视图、周期刷新会并发触发多次
    scrapeAudioMetadata；并行整表/交错写会把刚本地化的封面冲回远端。链式串行后，
    后发调用等前一轮完成，pending 过滤自然为空（已有 provider 不再刮）。 */
@@ -2893,6 +3171,10 @@ async function scrapeAudioMetadataInner(host, lib, files) {
     const meta = all[path];
     if (!meta) return true;
     if (meta.provider) return false; // 已成功（iTunes/MusicBrainz）或手动编辑（manual）都不再自动覆盖
+    /* v0.9.88：服务端已记过未命中/失败且在重试窗口内 → 不重复联网。 */
+    const status = String(meta.status || "");
+    const checkedAt = Number(meta.checkedAt || 0);
+    if ((status === "not_found" || status === "failed") && checkedAt && Date.now() - checkedAt < AUDIO_SCRAPE_RETRY_MS) return false;
     return true;
   });
   let updated = false;
@@ -2933,13 +3215,32 @@ async function scrapeAudioMetadataInner(host, lib, files) {
         updated = true;
       } else {
         await commitAudioMetadata({id:lib.id,path,title:fallback.title,artist:fallback.artist,album:fallback.album,status:"not_found",error_code:"no_reliable_match",source:"auto",query_title:fallback.title,query_artist:known?fallback.artist:"",country:"AUTO"});
+        markAudioScrapeMiss(path, fallback, "not_found", "no_reliable_match");
       }
     } catch (e) {
       try { await commitAudioMetadata({id:lib.id,path,title:fallback.title,artist:fallback.artist,album:fallback.album,status:"failed",error_code:"scrape_unavailable",source:"auto",query_title:fallback.title,query_artist:known?fallback.artist:"",country:"AUTO"}); } catch (_) {}
+      markAudioScrapeMiss(path, fallback, "failed", "scrape_unavailable");
     }
     audioScrapeAttemptedSession.add(path); // 无论成败，本会话内不再重复请求该曲
   }
   if (updated && host && lib) renderAudioLibraryContent(host, lib, files);
+}
+/* v0.9.88：单路径合并写「未命中/失败」状态 —— 与成功路径同一套合并写法，
+   不做整表覆写（音乐库视图与首页最近入库可能并发触发刮削）。 */
+function markAudioScrapeMiss(path, fallback, status, errorCode) {
+  try {
+    const cur = readAudioMetadata();
+    cur[path] = {
+      ...(cur[path] || fallback || audioBaseMetadata(path)),
+      title: (cur[path] && cur[path].title) || fallback.title,
+      artist: (cur[path] && cur[path].artist) || fallback.artist,
+      album: (cur[path] && cur[path].album) || fallback.album,
+      status: String(status || ""),
+      error_code: String(errorCode || ""),
+      checkedAt: Date.now()
+    };
+    writeAudioMetadata(cur);
+  } catch (e) { /* 本地状态写失败不影响服务端已记录的结果 */ }
 }
 /* ================= v0.9.56 专辑/歌手批量编辑 =================
    需求：「允许编辑专辑或者歌手」—— 专辑/歌手卡片上的 ✎ 打开批量编辑弹窗，
@@ -3840,6 +4141,46 @@ async function scrapeBookCover(img) {
   const local = libId && mediaPath && coverUrl ? await persistCoverToLibrary(libId, mediaPath, coverUrl) : coverUrl;
   cache[key] = { url: local || "", checkedAt: Date.now() }; writeCoverCache(cache);
   if (local) { img.hidden = false; img.src = local; }
+  /* v0.9.88：封面刮削结果写回服务端 —— 换浏览器/换设备不必把整架书重刮一遍。 */
+  pushBookScrapeResult(libId, mediaPath, title, local || coverUrl);
+}
+/* 书籍/漫画的刮削结果（标题 + 封面）同样进服务端刮削结果库。 */
+function pushBookScrapeResult(libId, mediaPath, title, coverUrl) {
+  if (!libId || !mediaPath || !coverUrl) return;
+  try {
+    const items = {};
+    items[mediaPath] = {
+      title: String(title || "").slice(0, 200), poster: String(coverUrl).slice(0, 2048),
+      provider: "封面刮削", kind: "book", scrape_state: "ok", checked_at: Date.now()
+    };
+    fetch("/api/media/scrape-cache", {
+      method: "POST", headers: sessionWriteHeaders(true), credentials: "same-origin",
+      body: JSON.stringify({ id: String(libId), items })
+    }).catch(() => { /* 服务端不可用：本地封面缓存仍生效 */ });
+  } catch (e) {}
+}
+/* 进书架前先把服务端存过的封面灌回本地封面缓存，避免重复联网刮削。 */
+async function hydrateBookCoversFromServer(libId) {
+  if (!libId) return false;
+  try {
+    const res = await fetch(`/api/media/scrape-cache?id=${encodeURIComponent(libId)}`, { cache: "no-store", credentials: "same-origin" });
+    if (!res.ok) return false;
+    const items = ((await res.json()) || {}).items || {};
+    const cache = readCoverCache();
+    let changed = false;
+    Object.keys(items).forEach((path) => {
+      const item = items[path];
+      if (!item || !item.poster) return;
+      const key = coverCacheKey(libId, path);
+      const at = Number(item.checked_at || 0);
+      const cur = cache[key];
+      if (cur && cur.url && Number(cur.checkedAt || 0) >= at) return;
+      cache[key] = { url: String(item.poster), checkedAt: at || Date.now() };
+      changed = true;
+    });
+    if (changed) writeCoverCache(cache);
+    return changed;
+  } catch (e) { return false; }
 }
 function refreshBookCovers() {
   try { localStorage.removeItem(coverScrapeCache); } catch (e) {}
@@ -3848,6 +4189,18 @@ function refreshBookCovers() {
   toast("🔄 正在重新刮削封面");
 }
 function scrapeVisibleBookCovers(host) {
+  /* v0.9.88：先灌服务端已存的封面，再对真正缺封面的条目联网刮削。 */
+  const card = host.querySelector("[data-media-library]");
+  const libId = card && card.dataset.mediaLibrary;
+  if (libId) hydrateBookCoversFromServer(libId).then((changed) => {
+    if (!changed) return;
+    host.querySelectorAll("img[data-cover-title]").forEach((img) => {
+      const el = img.closest("[data-media-library]");
+      const key = el ? coverCacheKey(el.dataset.mediaLibrary, el.dataset.mediaPath) : "";
+      const cached = key ? readCoverCache()[key] : null;
+      if (cached && cached.url && !img.src) { img.hidden = false; img.src = cached.url; }
+    });
+  });
   const images = [...host.querySelectorAll("img[data-cover-title]")];
   let cursor=0; const worker=async()=>{ while(cursor<images.length) await scrapeBookCover(images[cursor++]); };
   Promise.all(Array.from({length:Math.min(4,images.length)},worker));
@@ -4065,6 +4418,9 @@ function applyAudioServerCache(libId, items) {
       lyrics: (cur && cur.lyrics) || entry.lyrics || "",
       lyrics_source: (cur && cur.lyrics_source) || entry.lyrics_source || "",
       provider: (cur && cur.provider) || entry.provider || "",
+      /* v0.9.88：未命中的曲目也要有状态，否则每次进库都会被当成新曲重查。 */
+      status: (cur && cur.status) || entry.status || "",
+      error_code: (cur && cur.error_code) || entry.error_code || "",
       checkedAt: entry.checked_at ? entry.checked_at * 1000 : Date.now()
     });
     all[path] = merged;

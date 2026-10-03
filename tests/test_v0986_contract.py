@@ -72,9 +72,12 @@ check("3b 页头仍保留本视图 / 全库 / 本页统计",
       "本视图 <b>${Number(total) || 0}</b>" in MEDIA and "全库 <b>${Number((counts && counts.all) || 0)}</b>" in MEDIA)
 
 # --------------------------------------------------- 4. 刮削入口迁入系统设置
-scrape_controls = MEDIA.split("function movieScrapeControls(")[1][:600]
-check("4a 影视页不再有整库重刮按钮", "🔄 重新刮削" not in scrape_controls and "↻ 重试失败项" not in scrape_controls)
-check("4b 影视页给的是指路按钮", "openSettingsPage('library')" in scrape_controls)
+# 只判定代码：注释里的历史说明（「库页曾有…」）不应算残留。
+MEDIA_CODE = re.sub(r"/\*.*?\*/", " ", MEDIA, flags=re.S)
+check("4a 影视页标题不再挂任何按钮参数（注释不参与判定）",
+      not re.search(r"mediaLibraryHeading\(lib, `[^`]*`,", MEDIA_CODE))
+check("4b 影视页的刮削按钮整块移除（v0.9.88：连指路按钮也不留）",
+      "movieScrapeControls" not in MEDIA_CODE and "刮削设置</span>" not in MEDIA_CODE)
 check("4c 系统设置库列表提供自动扫描", "onclick=\"autoScanLibrary('${esc(lib.id)}')\"" in HOME)
 check("4d 系统设置库列表提供逐项扫描", "onclick=\"openLibraryItemScan('${esc(lib.id)}')\"" in HOME)
 check("4e 自动扫描走既有刮削状态机", "await scrapeMovieMetadata(null, lib, files);" in MEDIA)
@@ -124,7 +127,7 @@ check("7h 逐项扫描里保存后自动重刮该条", "openLibraryItemScanFresh
 check("7i 有名称/年份的 Go 单测", (ROOT / "media-go/v0986_metadata_edit_test.go").exists())
 
 # ------------------------------------------------------------------ i18n 与版本
-for key in ["scrapeGoSettings", "libScanAuto", "libScanItem", "libScanTitle", "libScanAll",
+for key in ["scrapeMinMatchLabel", "scrapeMinMatchHint", "libScanAuto", "libScanItem", "libScanTitle", "libScanAll",
             "libScanRetryFailed", "editTitleLabel", "editYearLabel", "editScrapeHint"]:
     count = len(re.findall(rf"\b{key}:", STATE))
     check(f"8 i18n {key} 三语齐备", count >= 3, f"出现 {count} 次")

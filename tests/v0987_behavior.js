@@ -112,10 +112,14 @@ run(media, `scraperStatus = { scrape_region: "us" };`);
 chk("A9 切换地区后语言标记变化 → 演职人员缓存自动重取", castLangJp !== run(media, "tmdbLangTag()"), [castLangJp, run(media, "tmdbLangTag()")]);
 
 /* ================= B. 队列提示只进通知栏 ================= */
-const controls = run(media, `movieScrapeControls([{path:"a.mkv"}])`);
-chk("B1 库页不再出现刮削队列徽标", !controls.includes("movieScrapeStatus") && !controls.includes("刮削 0/1"), controls);
-chk("B2 库页保留进入系统设置的刮削入口", controls.includes("openSettingsPage('library')"), controls);
-chk("B3 源文件里不再写刮削队列徽标 DOM", !fs.readFileSync(ROOT + "/web/js/02-media.js", "utf8").includes('getElementById("movieScrapeStatus")'));
+const mediaSource = fs.readFileSync(ROOT + "/web/js/02-media.js", "utf8");
+/* 注释里保留了「曾经有什么 / 为什么删」的说明，判定只针对真实代码。 */
+const mediaCode = mediaSource.replace(/\/\*[\s\S]*?\*\//g, " ");
+chk("B1 库页不再出现刮削队列徽标", !mediaCode.includes("movieScrapeStatus"));
+chk("B2 库页刮削设置按钮整块删除（v0.9.88）", !mediaCode.includes("movieScrapeControls") && !mediaCode.includes("刮削设置</span>"));
+chk("B3 库页标题只带库名与统计（无第三参数入口）",
+    /mediaLibraryHeading\(lib, `\$\{files\.length\} 部`\)/.test(mediaCode)
+    && /mediaLibraryHeading\(lib, `\$\{shows\.length\} 部剧/.test(mediaCode));
 
 const calls = [];
 run(media, `this.__notice = null; upsertNotification = e => { __notice = e; };`);

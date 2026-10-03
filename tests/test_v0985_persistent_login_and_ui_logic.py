@@ -63,6 +63,8 @@ PIECES = [
     extract_function(MEDIA, "tmdbLangTag"),
     extract_function(MEDIA, "castRoleLabel"),
     extract_function(MEDIA, "moviePosterSubtitle"),
+    # v0.9.88：原盘副标题（moviePosterSubtitle 依赖 discSubtitle）
+    extract_function(MEDIA, "discSubtitle"),
     extract_function(FEATURES, "renderDiskTemps"),
     NOTIFY_BLOCK,
 ]
