@@ -191,7 +191,10 @@ func (a *App) playbackPlan(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
-	media, err := probePlaybackMedia(ctx, p)
+	/* v0.9.88：原盘镜像先解析成可读输入（蓝光 UDF 经 libbluray 直读、
+	   DVD 镜像走 dvdvideo），否则 ffprobe 读到的只是镜像裸字节。 */
+	disc := a.resolveDiscInput(ctx, p)
+	media, err := probePlaybackMedia(ctx, disc.Spec)
 	if err != nil {
 		errJSON(w, 422, "media probe failed")
 		return
@@ -200,6 +203,12 @@ func (a *App) playbackPlan(w http.ResponseWriter, r *http.Request) {
 	selected, _ := hwInfo["selected"].(string)
 	plan := choosePlaybackPlan(media, req.Client, req.Quality, selected)
 	plan = applyNetworkCap(plan, req.Quality, req.NetworkBps)
+	/* v0.9.88：原盘镜像一定走转码链路（浏览器不认识 iso/bluray），
+	   并在原因里标注输入来源，便于用户理解为什么没有「原画直连」。 */
+	if disc.Kind != discInputPlain {
+		plan.Disc = string(disc.Kind)
+		plan.Reason = "原盘" + map[discInputKind]string{discInputBluRay: "蓝光", discInputDVD: "DVD"}[disc.Kind] + " · " + plan.Reason
+	}
 	q := url.Values{"id": {lib.ID}, "path": {req.Path}}
 	if plan.Mode == "direct" {
 		plan.URL = "/api/media/file?" + q.Encode()

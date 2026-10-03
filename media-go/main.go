@@ -82,15 +82,24 @@ type App struct {
 	/* v0.9.87：刮削地区（auto/cn/jp/us）—— 决定 TMDB 请求 language，
 	   让「按地区刮削」覆盖 TMDB 默认语言，避免中文界面下用中文查不到
 	   日/美资源的原名而回落到资源名（文件名展示）。 */
-	scrapeRegion    string
-	tmdbAPIKey      string
-	tmdbAPIBase     string
-	tmdbImageBase   string
-	tvdbAPIKey      string
-	tvdbAPIBase     string
-	scraperProxy    string
-	sharePublicBase string
-	configTrusted   bool // false when config exists but cannot be read/decoded
+	scrapeRegion string
+	/* v0.9.88：TMDB 标题匹配的最低识别字符占比（默认 0.7）——
+	   无需标题全量一致，70% 字符能对上就算命中；异常的靠手动编辑名称辅助。 */
+	scrapeMinMatch float64
+	/* v0.9.88：刮削结果服务端持久化（影视 / 电子书），进库先读、刮完写回，
+	   避免换浏览器/换设备/多次批量扫描时整库重复联网刮削。 */
+	scrapeCachePath   string
+	scrapeCacheMu     sync.Mutex
+	scrapeCache       scrapeCacheFile
+	scrapeCacheLoaded bool
+	tmdbAPIKey        string
+	tmdbAPIBase       string
+	tmdbImageBase     string
+	tvdbAPIKey        string
+	tvdbAPIBase       string
+	scraperProxy      string
+	sharePublicBase   string
+	configTrusted     bool // false when config exists but cannot be read/decoded
 	// Hooks are test-only fault/interleaving instrumentation, nil in production.
 	scanWriteHook     func(string, int)
 	removeHook        func(string)
@@ -116,14 +125,16 @@ type RuntimeConfig struct {
 	TVDBAPIBase   string `json:"tvdb_api_base"`
 	ScraperProxy  string `json:"scraper_proxy,omitempty"`
 	/* v0.9.87：刮削地区 —— auto（跟随界面语言）/ cn（zh-CN）/ jp（ja-JP）/ us（en-US）。 */
-	ScrapeRegion              string `json:"scrape_region,omitempty"`
-	ScraperProxySet           bool   `json:"scraper_proxy_set,omitempty"`
-	SharePublicBase           string `json:"share_public_base,omitempty"`
-	SharePublicBaseSet        bool   `json:"share_public_base_set,omitempty"`
-	CacheDir                  string `json:"cache_dir"`
-	CacheMaxBytes             int64  `json:"cache_max_bytes"`
-	CacheMaxAgeHours          int64  `json:"cache_max_age_hours"`
-	CacheCleanupIntervalHours int64  `json:"cache_cleanup_interval_hours"`
+	ScrapeRegion string `json:"scrape_region,omitempty"`
+	/* v0.9.88：标题匹配阈值（0.3–1.0，默认 0.7）。 */
+	ScrapeMinMatch            float64 `json:"scrape_min_match,omitempty"`
+	ScraperProxySet           bool    `json:"scraper_proxy_set,omitempty"`
+	SharePublicBase           string  `json:"share_public_base,omitempty"`
+	SharePublicBaseSet        bool    `json:"share_public_base_set,omitempty"`
+	CacheDir                  string  `json:"cache_dir"`
+	CacheMaxBytes             int64   `json:"cache_max_bytes"`
+	CacheMaxAgeHours          int64   `json:"cache_max_age_hours"`
+	CacheCleanupIntervalHours int64   `json:"cache_cleanup_interval_hours"`
 	// v0.9.79：下列两项原只能靠环境变量/vaulthub.env，现并入运行时配置，
 	// 使「硬件配置」与「转码缓存」都可在 Web 在线编辑，不再依赖 .env。
 	PageCacheMaxBytes int64 `json:"page_cache_max_bytes,omitempty"` // 归档页缓存配额（字节），0=沿用 cache_max_bytes/默认 16GiB
@@ -160,8 +171,10 @@ type playbackPlan struct {
 	Hardware    string `json:"hardware"`
 	// MaxHeight caps the output height when the caller asked for an explicit
 	// transcode quality (v0.9.50 播放器设置 → 转码质量). 0 means "no cap".
-	MaxHeight int           `json:"max_height,omitempty"`
-	Media     playbackMedia `json:"media"`
+	MaxHeight int `json:"max_height,omitempty"`
+	/* v0.9.88：原盘输入类型（bluray / dvd），普通文件为空。 */
+	Disc  string        `json:"disc,omitempty"`
+	Media playbackMedia `json:"media"`
 }
 
 type playbackSession struct {
@@ -207,6 +220,8 @@ func (a *App) load() {
 	a.metadataOverrides = env("MEDIA_METADATA_OVERRIDES", "/data/media-metadata-overrides.json")
 	a.scraperMode = env("MEDIA_SCRAPER_MODE", "auto")
 	a.scrapeRegion = normalizeScrapeRegion(os.Getenv("SCRAPE_REGION"))
+	a.scrapeMinMatch = normalizeScrapeMinMatch(envFloat("SCRAPE_MIN_MATCH", defaultScrapeMinMatch))
+	a.scrapeCachePath = env("MEDIA_SCRAPE_CACHE", "/data/media-scrape-cache.json")
 	a.tmdbAPIKey = os.Getenv("TMDB_API_KEY")
 	a.tmdbAPIBase = strings.TrimRight(env("TMDB_API_BASE", "https://api.themoviedb.org/3"), "/")
 	a.tmdbImageBase = strings.TrimRight(env("TMDB_IMAGE_BASE", "https://image.tmdb.org/t/p"), "/")
@@ -481,6 +496,8 @@ func (a *App) runtimeConfigSnapshot(includeSecret bool) map[string]any {
 		"scraper_mode": a.scraperMode, "tmdb_enabled": a.tmdbAPIKey != "",
 		"scrape_region":       a.scrapeRegion,
 		"scrape_region_lang":  scrapeRegionLanguage(a.scrapeRegion),
+		"scrape_min_match":    a.scrapeMinMatch,
+		"scrape_cache":        true,
 		"tmdb_api_key_masked": a.tmdbAPIKey != "", "tmdb_api_base": a.tmdbAPIBase,
 		"tmdb_image_base": a.tmdbImageBase, "cache_dir": a.cacheDir,
 		"tvdb_enabled": a.tvdbAPIKey != "", "tvdb_api_key_masked": a.tvdbAPIKey != "", "tvdb_api_base": a.tvdbAPIBase,
@@ -510,6 +527,9 @@ func (a *App) loadRuntimeConfig() {
 	}
 	if c.ScrapeRegion != "" {
 		a.scrapeRegion = normalizeScrapeRegion(c.ScrapeRegion)
+	}
+	if c.ScrapeMinMatch > 0 {
+		a.scrapeMinMatch = normalizeScrapeMinMatch(c.ScrapeMinMatch)
 	}
 	if c.TMDBAPIKey != "" {
 		a.tmdbAPIKey = c.TMDBAPIKey
@@ -665,6 +685,20 @@ func (a *App) saveRuntimeConfig(c RuntimeConfig) error {
 		return fmt.Errorf("invalid scrape region")
 	}
 	c.ScrapeRegion = normalizeScrapeRegion(c.ScrapeRegion)
+	/* v0.9.88：标题匹配阈值。0 = 表单未带值（沿用当前），越界直接报错，
+	   不做静默夹紧 —— 阈值被悄悄改成别的值只会让用户以为「没生效」。 */
+	if c.ScrapeMinMatch == 0 {
+		a.mu.RLock()
+		c.ScrapeMinMatch = a.scrapeMinMatch
+		a.mu.RUnlock()
+		if c.ScrapeMinMatch == 0 {
+			c.ScrapeMinMatch = defaultScrapeMinMatch
+		}
+	}
+	if !validScrapeMinMatch(c.ScrapeMinMatch) {
+		return fmt.Errorf("invalid scrape match threshold")
+	}
+	c.ScrapeMinMatch = normalizeScrapeMinMatch(c.ScrapeMinMatch)
 	if c.TMDBAPIKey == "" {
 		a.mu.RLock()
 		c.TMDBAPIKey = a.tmdbAPIKey
@@ -715,6 +749,8 @@ func (a *App) saveRuntimeConfig(c RuntimeConfig) error {
 	a.tvdbAPIKey, a.tvdbAPIBase, a.scraperProxy = c.TVDBAPIKey, strings.TrimRight(c.TVDBAPIBase, "/"), c.ScraperProxy
 	/* v0.9.87：刮削地区立即生效（前端下次 TMDB 请求即用新语言，无需重启）。 */
 	a.scrapeRegion = normalizeScrapeRegion(c.ScrapeRegion)
+	/* v0.9.88：标题匹配阈值同样立即生效（下一条刮削即按新阈值判定）。 */
+	a.scrapeMinMatch = normalizeScrapeMinMatch(c.ScrapeMinMatch)
 	a.cacheDir, a.cacheMaxBytes = c.CacheDir, c.CacheMaxBytes
 	a.cacheMaxAge, a.cacheCleanup = time.Duration(c.CacheMaxAgeHours)*time.Hour, time.Duration(c.CacheCleanupIntervalHours)*time.Hour
 	a.pageCacheMaxBytes = c.PageCacheMaxBytes
@@ -2068,9 +2104,20 @@ func probe(w http.ResponseWriter, r *http.Request, a *App) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
-	b, e := exec.CommandContext(ctx, "ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", "-show_format", p).Output()
+	/* v0.9.88：原盘镜像（ISO）与 BDMV 片段先解析成可读输入 —— 蓝光镜像经
+	   libbluray(udfread) 直读 UDF，DVD 镜像走 dvdvideo，拿不到才退回裸文件。 */
+	disc := a.resolveDiscInput(ctx, p)
+	probeArgs := []string{"-v", "quiet", "-print_format", "json", "-show_streams", "-show_format"}
+	probeArgs = append(probeArgs, ffprobeInputArgs(disc.Kind)...)
+	probeArgs = append(probeArgs, disc.Spec)
+	b, e := exec.CommandContext(ctx, "ffprobe", probeArgs...).Output()
 	if e != nil {
-		writeJSON(w, 200, map[string]any{"audio_codec": "", "video_codec": "", "container_likely_supported": false, "audio_likely_supported": true, "compat_recommended": true})
+		out := map[string]any{"audio_codec": "", "video_codec": "", "container_likely_supported": false, "audio_likely_supported": true, "compat_recommended": true}
+		out["disc_input"] = string(disc.Kind)
+		if hint := discProbeHint(p); hint != "" {
+			out["probe_hint"] = hint
+		}
+		writeJSON(w, 200, out)
 		return
 	}
 	var x struct {
@@ -2100,7 +2147,7 @@ func probe(w http.ResponseWriter, r *http.Request, a *App) {
 	ext := strings.ToLower(filepath.Ext(p))
 	container := ext == ".mp4" || ext == ".m4v" || ext == ".webm" || ext == ".ogv" || ext == ".ogg"
 	audio := ac == "" || map[string]bool{"aac": true, "mp3": true, "opus": true, "vorbis": true, "flac": true}[ac]
-	writeJSON(w, 200, map[string]any{"audio_codec": ac, "video_codec": vc, "width": width, "height": height, "format_name": x.Format.FormatName, "container": strings.TrimPrefix(ext, "."), "bit_rate": x.Format.BitRate, "duration": x.Format.Duration, "video_metadata": true, "container_likely_supported": container, "audio_likely_supported": audio, "compat_recommended": !container || !audio})
+	writeJSON(w, 200, map[string]any{"audio_codec": ac, "video_codec": vc, "width": width, "height": height, "format_name": x.Format.FormatName, "container": strings.TrimPrefix(ext, "."), "bit_rate": x.Format.BitRate, "duration": x.Format.Duration, "video_metadata": true, "container_likely_supported": container, "audio_likely_supported": audio, "compat_recommended": !container || !audio, "disc_input": string(disc.Kind), "disc": disc.Kind != discInputPlain})
 }
 func streams(w http.ResponseWriter, r *http.Request, a *App) {
 	if !readAuth(r) {
@@ -2117,7 +2164,12 @@ func streams(w http.ResponseWriter, r *http.Request, a *App) {
 		errJSON(w, 404, "invalid media path")
 		return
 	}
-	b, e := exec.CommandContext(r.Context(), "ffprobe", "-v", "error", "-show_entries", "stream=index,codec_type,codec_name:stream_tags=language,title", "-of", "json", p).Output()
+	/* v0.9.88：原盘的音轨/字幕轨要按解析后的输入读取（ISO 直接读镜像）。 */
+	disc := a.resolveDiscInput(r.Context(), p)
+	streamArgs := []string{"-v", "error", "-show_entries", "stream=index,codec_type,codec_name:stream_tags=language,title", "-of", "json"}
+	streamArgs = append(streamArgs, ffprobeInputArgs(disc.Kind)...)
+	streamArgs = append(streamArgs, disc.Spec)
+	b, e := exec.CommandContext(r.Context(), "ffprobe", streamArgs...).Output()
 	if e != nil {
 		writeJSON(w, 200, map[string]any{"audio_tracks": []any{}, "subtitle_tracks": []any{}})
 		return
@@ -2446,6 +2498,8 @@ func main() {
 	mux.HandleFunc("/api/media/archive", a.archive)
 	mux.HandleFunc("/api/media/zip", a.archive)
 	mux.HandleFunc("/api/media/settings", a.runtimeSettings)
+	/* v0.9.88：刮削结果服务端持久化（影视 / 电子书）。 */
+	mux.HandleFunc("/api/media/scrape-cache", a.scrapeCacheHandler)
 	mux.HandleFunc("/api/media/scrapers", func(w http.ResponseWriter, r *http.Request) {
 		out := a.runtimeConfigSnapshot(false)
 		out["default"], out["types"] = out["scraper_mode"], []string{"movie", "series"}
@@ -2878,7 +2932,7 @@ func withScaleFilter(post []string, vcodec string, maxHeight int) []string {
 // buildCompatCache produces the seekable (faststart) MP4 in the background so
 // the *next* open is a plain cache hit with full Range support. It deliberately
 // uses a detached context: the user closing the tab must not abort it.
-func (a *App) buildCompatCache(p, cache, audioTrack, hw, mode string, maxHeight int) {
+func (a *App) buildCompatCache(disc discInput, cache, audioTrack, hw, mode string, maxHeight int) {
 	compatMu.Lock()
 	if compatBuilds[cache] {
 		compatMu.Unlock()
@@ -2891,9 +2945,10 @@ func (a *App) buildCompatCache(p, cache, audioTrack, hw, mode string, maxHeight 
 		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Hour)
 		defer cancel()
 		tmp := cache + fmt.Sprintf(".bg-%d", os.Getpid())
-		pre, mid := compatArgsScaled(ctx, p, audioTrack, hw, mode, maxHeight)
+		pre, mid := compatArgsScaled(ctx, disc.Spec, audioTrack, hw, mode, maxHeight)
 		args := append([]string{"-hide_banner", "-loglevel", "error"}, pre...)
-		args = append(args, "-i", p)
+		args = append(args, ffprobeInputArgs(disc.Kind)...)
+		args = append(args, "-i", disc.Spec)
 		args = append(args, mid...)
 		args = append(args, "-movflags", "+faststart", "-f", "mp4", "-y", tmp)
 		if e := exec.CommandContext(ctx, "ffmpeg", args...).Run(); e != nil {
@@ -2936,7 +2991,10 @@ func (a *App) compat(w http.ResponseWriter, r *http.Request) {
 	if n, err := strconv.Atoi(r.URL.Query().Get("height")); err == nil && n >= 144 && n <= 4320 {
 		maxHeight = n
 	}
-	cache := a.cacheKey(fmt.Sprintf("%s:%d:%d:%s:%s:a%s:h%d", p, st.Size(), st.ModTime().UnixNano(), hw, mode, audioTrack, maxHeight))
+	/* v0.9.88：原盘镜像的转码输入与探测保持一致（bluray: / dvdvideo），
+	   并把它并入缓存键 —— 否则同一镜像换了解析方式会命中旧缓存。 */
+	disc := a.resolveDiscInput(r.Context(), p)
+	cache := a.cacheKey(fmt.Sprintf("%s:%d:%d:%s:%s:a%s:h%d:d%s", p, st.Size(), st.ModTime().UnixNano(), hw, mode, audioTrack, maxHeight, disc.Kind))
 	// Fully built cache: serve it with byte ranges so seeking works.
 	if f, e := os.Open(cache); e == nil {
 		defer f.Close()
@@ -2967,9 +3025,10 @@ func (a *App) compat(w http.ResponseWriter, r *http.Request) {
 	// about a second even for a multi-gigabyte source. Range is intentionally
 	// not honoured here (we answer 200 with the full stream); the seekable copy
 	// is produced in the background for the next open.
-	pre, mid := compatArgsScaled(ctx, p, audioTrack, hw, mode, maxHeight)
+	pre, mid := compatArgsScaled(ctx, disc.Spec, audioTrack, hw, mode, maxHeight)
 	args := append([]string{"-hide_banner", "-loglevel", "error"}, pre...)
-	args = append(args, "-i", p)
+	args = append(args, ffprobeInputArgs(disc.Kind)...)
+	args = append(args, "-i", disc.Spec)
 	args = append(args, mid...)
 	args = append(args, "-movflags", "+frag_keyframe+empty_moov+default_base_moof", "-f", "mp4", "pipe:1")
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
@@ -2985,7 +3044,7 @@ func (a *App) compat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if env("COMPAT_PRECACHE", "1") != "0" {
-		a.buildCompatCache(p, cache, audioTrack, hw, mode, maxHeight)
+		a.buildCompatCache(disc, cache, audioTrack, hw, mode, maxHeight)
 	}
 	w.Header().Set("Content-Type", "video/mp4")
 	w.Header().Set("Accept-Ranges", "none")

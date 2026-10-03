@@ -18,7 +18,7 @@ let vaultHubSessionPingedAt = 0;
    历史故障：v0.8.3→v0.8.5 的前端修改在服务端已生效，但浏览器仍执行缓存里的
    旧 02-media.js，用户看到「没有更新」。现在入口页 no-store、静态资源带 ?v=，
    并在启动时做一次一致性自查，不一致就绕过缓存强制重载一次。 */
-const VAULTHUB_SCRIPT_VERSION = "0.9.87";
+const VAULTHUB_SCRIPT_VERSION = "0.9.88";
 function ensureFreshAssets() {
   /* expected 为空 = 浏览器执行的 index.html 早于 v0.8.6（旧版本入口页没有声明
      版本号），同样属于"页面是旧的"，也需要换 URL 重新取一次。 */
@@ -348,8 +348,9 @@ const I18N = {
     avatarUpload: "上传头像图片（可选）", avatarReset: "恢复默认", avatarSaved: "头像已保存",
     avatarTooLarge: "图片过大，无法保存到 localStorage", avatarResetDone: "头像已恢复默认",
     setLibrary: "媒体库", setLibExisting: "已添加的媒体库",
-    /* v0.9.86：影视刮削迁入系统设置 + 媒体名称/年份编辑 */
-    scrapeGoSettings: "刮削设置",
+    /* v0.9.88：标题匹配阈值（最低识别字符占比，默认 70%）。 */
+    scrapeMinMatchLabel: "标题匹配阈值（最低识别字符占比）",
+    scrapeMinMatchHint: "默认 70%：标题无需完全一致，70% 字符能对上即算命中；没命中的条目会在通知里给出匹配度，可到「逐项扫描 → ✎ 编辑名称」补名后重刮。",
     /* v0.9.87：刮削地区（中/日/美）—— 决定 TMDB 请求 language。 */
     scrapeRegionLabel: "刮削地区（TMDB 语言）",
     scrapeRegionAuto: "跟随界面语言",
@@ -613,8 +614,9 @@ const I18N = {
     avatarUpload: "上傳頭像圖片（可選）", avatarReset: "恢復預設", avatarSaved: "頭像已保存",
     avatarTooLarge: "圖片過大，無法保存到 localStorage", avatarResetDone: "頭像已恢復預設",
     setLibrary: "媒體庫", setLibExisting: "已新增的媒體庫",
-    /* v0.9.86 */
-    scrapeGoSettings: "刮削設定",
+    /* v0.9.88 */
+    scrapeMinMatchLabel: "標題匹配閾值（最低識別字元佔比）",
+    scrapeMinMatchHint: "預設 70%：標題無需完全一致，70% 字元對得上即算命中；未命中的條目會在通知裡給出匹配度，可到「逐項掃描 → ✎ 編輯名稱」補名後重刮。",
     scrapeRegionLabel: "刮削地區（TMDB 語言）",
     scrapeRegionAuto: "跟隨介面語言",
     scrapeRegionCn: "中國（中文簡體 · zh-CN）",
@@ -883,8 +885,9 @@ const I18N = {
     avatarUpload: "Upload avatar image (optional)", avatarReset: "Reset to default", avatarSaved: "Avatar saved",
     avatarTooLarge: "Image too large for localStorage", avatarResetDone: "Avatar reset to default",
     setLibrary: "Libraries", setLibExisting: "Existing libraries",
-    /* v0.9.86 */
-    scrapeGoSettings: "Scrape settings",
+    /* v0.9.88 */
+    scrapeMinMatchLabel: "Title match threshold (min. recognised characters)",
+    scrapeMinMatchHint: "Default 70%: the title does not need to match exactly — 70% of the characters is enough. Misses report their best score in the notification centre; rename the item under Item scan → ✎ Edit name and re-scrape.",
     scrapeRegionLabel: "Scrape region (TMDB language)",
     scrapeRegionAuto: "Follow interface language",
     scrapeRegionCn: "China (Simplified Chinese · zh-CN)",
