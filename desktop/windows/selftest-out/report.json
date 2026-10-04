@@ -1,0 +1,720 @@
+{
+  "startedAt": "2026-10-04T02:11:05.591Z",
+  "base": "http://192.168.112.3:8088",
+  "steps": [
+    {
+      "name": "healthz 经网关可达",
+      "ok": true,
+      "detail": "200 ok",
+      "ms": 118
+    },
+    {
+      "name": "POST /api/login 200",
+      "ok": true,
+      "detail": "{\"idle_timeout_seconds\":2592000,\"must_change\":false,\"ok\":true,\"session_days\":30}\n",
+      "ms": 145
+    },
+    {
+      "name": "网关持有 vh_session",
+      "ok": true,
+      "detail": "Cookie 已捕获并持久化",
+      "ms": 146
+    },
+    {
+      "name": "GET /api/media/libraries",
+      "ok": true,
+      "detail": "5 个库: audio-1ydt060[audio], book-1ke0ua1[book], comic-1rfyw87[comic], movie-ovd5kd[movie], series-1cux2hw[series]",
+      "ms": 150
+    },
+    {
+      "name": "列表 audio (audio-1ydt060)",
+      "ok": true,
+      "detail": "total=14 version=83baf0b3684d11f271647034a0ccef7e etag=有 bytes=1541",
+      "ms": 159
+    },
+    {
+      "name": "列表 audio If-None-Match → 304",
+      "ok": true,
+      "detail": "status=304 bytes=0",
+      "ms": 169
+    },
+    {
+      "name": "列表 book (book-1ke0ua1)",
+      "ok": true,
+      "detail": "total=184693 version=75e28dbadd545b6d600274acf084f31f etag=有 bytes=7821",
+      "ms": 304
+    },
+    {
+      "name": "列表 book If-None-Match → 304",
+      "ok": true,
+      "detail": "status=304 bytes=0",
+      "ms": 435
+    },
+    {
+      "name": "列表 comic (comic-1rfyw87)",
+      "ok": true,
+      "detail": "total=1022 version=147c58bc874b5e720db2a1798c660c63 etag=有 bytes=9926",
+      "ms": 440
+    },
+    {
+      "name": "列表 comic If-None-Match → 304",
+      "ok": true,
+      "detail": "status=304 bytes=0",
+      "ms": 451
+    },
+    {
+      "name": "列表 movie (movie-ovd5kd)",
+      "ok": true,
+      "detail": "total=687 version=e42400870602ef685d75abfaa203f94c etag=有 bytes=11359",
+      "ms": 462
+    },
+    {
+      "name": "列表 movie If-None-Match → 304",
+      "ok": true,
+      "detail": "status=304 bytes=0",
+      "ms": 474
+    },
+    {
+      "name": "列表 series (series-1cux2hw)",
+      "ok": true,
+      "detail": "total=974 version=c15719d0a76d3c7b30b9c0b620b202f9 etag=有 bytes=7744",
+      "ms": 486
+    },
+    {
+      "name": "列表 series If-None-Match → 304",
+      "ok": true,
+      "detail": "status=304 bytes=0",
+      "ms": 501
+    },
+    {
+      "name": "封面缩略图 w=320",
+      "ok": true,
+      "detail": "200 image/jpeg 37607B cache=private, max-age=31536000, immutable",
+      "ms": 517
+    },
+    {
+      "name": "POST /api/media/playback/plan",
+      "ok": true,
+      "detail": "mode=direct layer=direct_play container=mp4 v=hevc 3840x1512 reason=浏览器支持当前封装、视频和音频编码",
+      "ms": 750
+    },
+    {
+      "name": "GET /api/media/file Range 206",
+      "ok": true,
+      "detail": "206 content-range=bytes 0-2047/5873528546 bytes=2048",
+      "ms": 753
+    },
+    {
+      "name": "音频流 Range 206（带 bitrate）",
+      "ok": true,
+      "detail": "206 bytes=1024 type=audio/mpeg",
+      "ms": 766
+    },
+    {
+      "name": "音频流缺 bitrate → 400",
+      "ok": true,
+      "detail": "400 {\"error\":\"bitrate required\",\"ok\":false}\n",
+      "ms": 767
+    },
+    {
+      "name": "漫画 register 页清单",
+      "ok": true,
+      "detail": "200 total=4 entries=4",
+      "ms": 774
+    },
+    {
+      "name": "漫画页 w=800 缩略",
+      "ok": true,
+      "detail": "200 image/jpeg 194534B",
+      "ms": 779
+    },
+    {
+      "name": "PUT 阅读进度",
+      "ok": true,
+      "detail": "200 {\"progress\":37.5,\"page\":42,\"total\":120,\"updated_at\":1791079867}\n",
+      "ms": 922
+    },
+    {
+      "name": "GET 阅读进度读回一致",
+      "ok": true,
+      "detail": "progress=37.5 page=42 total=120（响应为 {id,items} 映射）",
+      "ms": 928
+    },
+    {
+      "name": "DELETE 阅读进度生效",
+      "ok": true,
+      "detail": "DELETE=200 条目已移除=true",
+      "ms": 955
+    },
+    {
+      "name": "GET /api/media/settings",
+      "ok": true,
+      "detail": "bytes=688",
+      "ms": 958
+    },
+    {
+      "name": "GET /api/media/index/status",
+      "ok": true,
+      "detail": "running=false libs=5",
+      "ms": 969
+    },
+    {
+      "name": "找到可播放视频（转码流确有输出）",
+      "ok": true,
+      "detail": "remux · 394MiB · 首包 65271B/45ms · Files.S01E10.NF.1080p.WEB-DL.AAC2.0.H264-Kan@CHDBits.mkv",
+      "ms": 1142
+    },
+    {
+      "name": "渲染层加载并显示登录页",
+      "ok": true,
+      "detail": "gate 标题=「登录 VaultHub」",
+      "ms": 2075
+    },
+    {
+      "name": "渲染层通过网关登录",
+      "ok": true,
+      "detail": "{\"status\":200,\"body\":\"{\\\"idle_timeout_seconds\\\":2592000,\\\"must_change\\\":false,\\\"ok\\\":true,\\\"session_days\\\":30}\\n\"}",
+      "ms": 2094
+    },
+    {
+      "name": "侧栏渲染出媒体库入口",
+      "ok": true,
+      "detail": "5 / 5",
+      "ms": 2418
+    },
+    {
+      "name": "首页库卡片渲染",
+      "ok": true,
+      "detail": "5 张",
+      "ms": 2449
+    },
+    {
+      "name": "侧栏版本号显示",
+      "ok": true,
+      "detail": "v0.1.0.0 · 契约 v0.9.83",
+      "ms": 2450
+    },
+    {
+      "name": "浏览「音乐」(audio)",
+      "ok": true,
+      "detail": "卡片=1 图片=1/1 音乐tab=5",
+      "ms": 3369
+    },
+    {
+      "name": "浏览「电子书」(book)",
+      "ok": true,
+      "detail": "卡片=472 图片=10/61",
+      "ms": 4328
+    },
+    {
+      "name": "浏览「漫画」(comic)",
+      "ok": true,
+      "detail": "卡片=394 图片=10/80",
+      "ms": 5373
+    },
+    {
+      "name": "浏览「电影」(movie)",
+      "ok": true,
+      "detail": "卡片=2 图片=0/0",
+      "ms": 6439
+    },
+    {
+      "name": "浏览「电视」(series)",
+      "ok": true,
+      "detail": "卡片=17 图片=0/0",
+      "ms": 7399
+    },
+    {
+      "name": "剧集视频（H.264 MKV → 音频转码）真实解码",
+      "ok": true,
+      "detail": "时长=1424s 1440x1080 readyState=4 模式=Smart Stream · Remux",
+      "ms": 7882
+    },
+    {
+      "name": "剧集播放器展示服务端决策",
+      "ok": true,
+      "detail": "Smart Stream · Remux · mkv · h264 1440x1080 · aac · 2319 kbps · 浏览器支持音视频编码，仅转换容器封装",
+      "ms": 7883
+    },
+    {
+      "name": "视频播放进度真实推进",
+      "ok": true,
+      "detail": "currentTime=1.13s 已缓冲=18.4s paused=false",
+      "ms": 8935
+    },
+    {
+      "name": "拖动进度（转码流 seek）",
+      "ok": true,
+      "detail": "seek 后 currentTime=62.37s readyState=4 err=null",
+      "ms": 11437
+    },
+    {
+      "name": "点电影卡片可打开播放器",
+      "ok": true,
+      "detail": "电影库卡片=2",
+      "ms": 13417
+    },
+    {
+      "name": "播放器取得播放 URL 并开始加载",
+      "ok": true,
+      "detail": "src=http://127.0.0.1:11077/api/media/compat?hw=cuda&id=movie-ovd5kd&mode=full_transcode&path=[五个扑水的少年].Water.Boys.",
+      "ms": 13418
+    },
+    {
+      "name": "播放器展示服务端播放决策与理由",
+      "ok": true,
+      "detail": "模式=Smart Stream · 完整转码 · CUDA · mp4 · hevc 3840x1512 · aac · 7103 kbps · 视频编码不兼容，转换为 H.264/AAC",
+      "ms": 13418
+    },
+    {
+      "name": "电影（4K HEVC / 全转码）真实解码",
+      "ok": false,
+      "detail": "服务端全转码未输出可播放数据（readyState=0）—— 服务端限制，非客户端缺陷",
+      "ms": 43655
+    },
+    {
+      "name": "漫画页真实解码",
+      "ok": true,
+      "detail": "1761x2500 位置=4 / 4",
+      "ms": 45328
+    },
+    {
+      "name": "漫画阅读进度已同步服务端",
+      "ok": true,
+      "detail": " 进度已同步到服务端",
+      "ms": 46540
+    },
+    {
+      "name": "电子书正文渲染且中文可读",
+      "ok": true,
+      "detail": "85269 字符, 汉字 26886, 替换符 0",
+      "ms": 47880
+    },
+    {
+      "name": "文本编码探测正确（无乱码替换符）",
+      "ok": true,
+      "detail": "替换符 0 个；开头「全文\\色情小说合集\\txt\\list1【0.8G】 ├小说已分类 │ ├A 乱伦 │ │ ├A 待分类乱伦篇 │ │ │ ├《小镇情欲多」",
+      "ms": 47881
+    },
+    {
+      "name": "音乐视图五个 tab",
+      "ok": true,
+      "detail": "专辑 / 歌手 / 歌单 / ♥ 喜欢 / 曲目",
+      "ms": 49799
+    },
+    {
+      "name": "音乐播放条出现",
+      "ok": true,
+      "detail": "堀江由衣 (ほりえ ゆい) - Love Destiny — 未知歌手 · 未分类",
+      "ms": 49807
+    },
+    {
+      "name": "音频流地址已设置",
+      "ok": true,
+      "detail": "src=http://127.0.0.1:11077/api/media/audio/stream?id=audio-1ydt060&path=堀江由衣 (ほりえ ゆい) - Love Destiny.ogg&bitrate=1",
+      "ms": 49811
+    },
+    {
+      "name": "音频真实解码并推进播放",
+      "ok": true,
+      "detail": "currentTime=0.42s 时长=273.5s paused=false readyState=4",
+      "ms": 50336
+    },
+    {
+      "name": "明暗主题切换",
+      "ok": true,
+      "detail": "data-mode=light",
+      "ms": 51087
+    },
+    {
+      "name": "搜索返回结果",
+      "ok": true,
+      "detail": "命中卡片=79 · 共 79 条匹配",
+      "ms": 55053
+    },
+    {
+      "name": "设置页渲染",
+      "ok": true,
+      "detail": "9 个分组",
+      "ms": 55154
+    },
+    {
+      "name": "画质档位已落到 <html>（data-quality）",
+      "ok": true,
+      "detail": "data-quality=original --vh-quality-color=1 gray=false",
+      "ms": 55204
+    },
+    {
+      "name": "顶栏可循环切换画质档位",
+      "ok": true,
+      "detail": "data-quality=high 色彩=1 灰度=false 存储=high",
+      "ms": 56223
+    },
+    {
+      "name": "档位文案与色彩变量同步",
+      "ok": true,
+      "detail": "画面清晰度：高清 · 转码 1600px · 完整色彩（点击切换）",
+      "ms": 56225
+    },
+    {
+      "name": "漫画默认右到左翻页（v0.9.88 rtl:true）",
+      "ok": true,
+      "detail": "关闭 (Esc) | 上一页（→ 方向） | 下一页（← 方向） | 缩小 | 放大 | 适应窗口 / 放大 | 阅读模式：单页 / 双页 / 连续滚动 | 翻页方向：右到左（日式） | 页码跳转",
+      "ms": 56752
+    },
+    {
+      "name": "漫画工具栏含模式/方向/跳转控件",
+      "ok": true,
+      "detail": "9 个控件 · 位置=4 / 4",
+      "ms": 56754
+    },
+    {
+      "name": "漫画页脚显示取图宽度策略",
+      "ok": true,
+      "detail": "[かわもりみさき] 淫乳主婦の不貞願望 奥さんと彼女と❤2 [彩页汉化].zip · 10.9 MB · 共 4 页 · 服务端转码 1200px",
+      "ms": 56755
+    },
+    {
+      "name": "切换模式写回 vaulthub_comic_prefs",
+      "ok": true,
+      "detail": "{\"saveData\":\"auto\",\"mode\":\"double\",\"rtl\":true,\"fit\":\"width\",\"width\":1600,\"__vh_wt\":1791079922353}",
+      "ms": 57472
+    },
+    {
+      "name": "TXT 按章切分并生成目录",
+      "ok": true,
+      "detail": "章节=1 目录项=1 首章「全文」",
+      "ms": 58721
+    },
+    {
+      "name": "章节正则覆盖 第X章/Chapter N/N. 标题 三类",
+      "ok": true,
+      "detail": "4 章：第一章 / Chapter 2 / 3. 小标题 / 第二卷",
+      "ms": 58723
+    },
+    {
+      "name": "章节偏移可用于目录跳转",
+      "ok": true,
+      "detail": "offsets=3,13,27,38",
+      "ms": 58730
+    },
+    {
+      "name": "电子书字号范围 12–32",
+      "ok": true,
+      "detail": "共 21 档：12…32",
+      "ms": 58739
+    },
+    {
+      "name": "刮削面板字段来自服务端",
+      "ok": true,
+      "detail": "scraper_mode=tmdb region=cn 阈值=70%",
+      "ms": 59666
+    },
+    {
+      "name": "刮削缓存参数已回显",
+      "ok": true,
+      "detail": "cache_dir=/data/transcode-cache（面板共 21 个字段）",
+      "ms": 59667
+    },
+    {
+      "name": "密钥只显示已设置/未设置",
+      "ok": true,
+      "detail": "TMDB=已设置；留空保留 · 代理=已配置 http://192.168.112.3:7890；留空保留",
+      "ms": 59668
+    },
+    {
+      "name": "设置页含独立「画面清晰度」页",
+      "ok": true,
+      "detail": "5 个档位可选",
+      "ms": 59761
+    }
+  ],
+  "shots": [
+    {
+      "name": "01-login-gate",
+      "file": "C:\\Users\\Enged\\Documents\\deepseek-harness\\default-workspace\\vaulthub-desktop\\selftest-out\\01-login-gate.png",
+      "bytes": 108233,
+      "sampleDistinct": 91
+    },
+    {
+      "name": "02-home",
+      "file": "C:\\Users\\Enged\\Documents\\deepseek-harness\\default-workspace\\vaulthub-desktop\\selftest-out\\02-home.png",
+      "bytes": 44225,
+      "sampleDistinct": 41
+    },
+    {
+      "name": "03-lib-audio",
+      "file": "C:\\Users\\Enged\\Documents\\deepseek-harness\\default-workspace\\vaulthub-desktop\\selftest-out\\03-lib-audio.png",
+      "bytes": 144763,
+      "sampleDistinct": 103
+    },
+    {
+      "name": "03-lib-book",
+      "file": "C:\\Users\\Enged\\Documents\\deepseek-harness\\default-workspace\\vaulthub-desktop\\selftest-out\\03-lib-book.png",
+      "bytes": 1273278,
+      "sampleDistinct": 253
+    },
+    {
+      "name": "03-lib-comic",
+      "file": "C:\\Users\\Enged\\Documents\\deepseek-harness\\default-workspace\\vaulthub-desktop\\selftest-out\\03-lib-comic.png",
+      "bytes": 1245510,
+      "sampleDistinct": 250
+    },
+    {
+      "name": "03-lib-movie",
+      "file": "C:\\Users\\Enged\\Documents\\deepseek-harness\\default-workspace\\vaulthub-desktop\\selftest-out\\03-lib-movie.png",
+      "bytes": 81847,
+      "sampleDistinct": 66
+    },
+    {
+      "name": "03-lib-series",
+      "file": "C:\\Users\\Enged\\Documents\\deepseek-harness\\default-workspace\\vaulthub-desktop\\selftest-out\\03-lib-series.png",
+      "bytes": 192727,
+      "sampleDistinct": 132
+    },
+    {
+      "name": "04-player-series",
+      "file": "C:\\Users\\Enged\\Documents\\deepseek-harness\\default-workspace\\vaulthub-desktop\\selftest-out\\04-player-series.png",
+      "bytes": 775360,
+      "sampleDistinct": 246
+    },
+    {
+      "name": "04-player-movie",
+      "file": "C:\\Users\\Enged\\Documents\\deepseek-harness\\default-workspace\\vaulthub-desktop\\selftest-out\\04-player-movie.png",
+      "bytes": 38571,
+      "sampleDistinct": 31
+    },
+    {
+      "name": "05-comic-reader",
+      "file": "C:\\Users\\Enged\\Documents\\deepseek-harness\\default-workspace\\vaulthub-desktop\\selftest-out\\05-comic-reader.png",
+      "bytes": 1733653,
+      "sampleDistinct": 256
+    },
+    {
+      "name": "06-book-reader",
+      "file": "C:\\Users\\Enged\\Documents\\deepseek-harness\\default-workspace\\vaulthub-desktop\\selftest-out\\06-book-reader.png",
+      "bytes": 68948,
+      "sampleDistinct": 55
+    },
+    {
+      "name": "07-audio",
+      "file": "C:\\Users\\Enged\\Documents\\deepseek-harness\\default-workspace\\vaulthub-desktop\\selftest-out\\07-audio.png",
+      "bytes": 158022,
+      "sampleDistinct": 116
+    },
+    {
+      "name": "08-light-theme",
+      "file": "C:\\Users\\Enged\\Documents\\deepseek-harness\\default-workspace\\vaulthub-desktop\\selftest-out\\08-light-theme.png",
+      "bytes": 158216,
+      "sampleDistinct": 119
+    },
+    {
+      "name": "09-search",
+      "file": "C:\\Users\\Enged\\Documents\\deepseek-harness\\default-workspace\\vaulthub-desktop\\selftest-out\\09-search.png",
+      "bytes": 722729,
+      "sampleDistinct": 233
+    },
+    {
+      "name": "10-settings",
+      "file": "C:\\Users\\Enged\\Documents\\deepseek-harness\\default-workspace\\vaulthub-desktop\\selftest-out\\10-settings.png",
+      "bytes": 47895,
+      "sampleDistinct": 44
+    },
+    {
+      "name": "11-comic-v0988",
+      "file": "C:\\Users\\Enged\\Documents\\deepseek-harness\\default-workspace\\vaulthub-desktop\\selftest-out\\11-comic-v0988.png",
+      "bytes": 795926,
+      "sampleDistinct": 242
+    },
+    {
+      "name": "12-ebook-chapters",
+      "file": "C:\\Users\\Enged\\Documents\\deepseek-harness\\default-workspace\\vaulthub-desktop\\selftest-out\\12-ebook-chapters.png",
+      "bytes": 76557,
+      "sampleDistinct": 68
+    },
+    {
+      "name": "13-settings-scrape",
+      "file": "C:\\Users\\Enged\\Documents\\deepseek-harness\\default-workspace\\vaulthub-desktop\\selftest-out\\13-settings-scrape.png",
+      "bytes": 92637,
+      "sampleDistinct": 68
+    },
+    {
+      "name": "14-settings-quality",
+      "file": "C:\\Users\\Enged\\Documents\\deepseek-harness\\default-workspace\\vaulthub-desktop\\selftest-out\\14-settings-quality.png",
+      "bytes": 92663,
+      "sampleDistinct": 74
+    }
+  ],
+  "ok": false,
+  "gatewayPort": 11077,
+  "planSample": {
+    "path": "[五个扑水的少年].Water.Boys.2021.2160p.WEB-DL.H.265.AAC-AilMWeb/[五个扑水的少年].Water.Boys.2021.2160p.WEB-DL.H.265.AAC-AilMWeb.mp4",
+    "plan": {
+      "layer": "direct_play",
+      "mode": "direct",
+      "reason": "浏览器支持当前封装、视频和音频编码",
+      "url": "/api/media/file?id=movie-ovd5kd&path=%5B%E4%BA%94%E4%B8%AA%E6%89%91%E6%B0%B4%E7%9A%84%E5%B0%91%E5%B9%B4%5D.Water.Boys.2021.2160p.WEB-DL.H.265.AAC-AilMWeb%2F%5B%E4%BA%94%E4%B8%AA%E6%89%91%E6%B0%B4%E7%9A%84%E5%B0%91%E5%B9%B4%5D.Water.Boys.2021.2160p.WEB-DL.H.265.AAC-AilMWeb.mp4",
+      "video_action": "copy",
+      "audio_action": "copy",
+      "hardware": "cuda",
+      "media": {
+        "container": "mp4",
+        "video_codec": "hevc",
+        "audio_codec": "aac",
+        "width": 3840,
+        "height": 1512,
+        "bit_rate": "7102917",
+        "duration": "6615.341859"
+      }
+    }
+  },
+  "comicSample": {
+    "titles": [
+      "关闭 (Esc)",
+      "上一页（→ 方向）",
+      "下一页（← 方向）",
+      "缩小",
+      "放大",
+      "适应窗口 / 放大",
+      "阅读模式：单页 / 双页 / 连续滚动",
+      "翻页方向：右到左（日式）",
+      "页码跳转"
+    ],
+    "pos": "4 / 4",
+    "foot": "[かわもりみさき] 淫乳主婦の不貞願望 奥さんと彼女と❤2 [彩页汉化].zip · 10.9 MB · 共 4 页 · 服务端转码 1200px",
+    "prefsAfterChange": "{\"saveData\":\"auto\",\"mode\":\"double\",\"rtl\":true,\"fit\":\"width\",\"width\":1600,\"__vh_wt\":1791079922353}"
+  },
+  "readingSample": {
+    "lib": "book-1ke0ua1",
+    "path": "色情小说合集/list1【0.8G】.txt",
+    "wrote": {
+      "progress": 37.5,
+      "page": 42,
+      "total": 120
+    },
+    "readBack": {
+      "progress": 37.5,
+      "page": 42,
+      "total": 120,
+      "updated_at": 1791079867
+    }
+  },
+  "playableSample": {
+    "libId": "series-1cux2hw",
+    "path": "Yu.Yu.Hakusho.Ghost.Files.S01-S04.1992-1995.1080p.WEB-DL.AAC2.0.H264-Kan@CHDBits/Yu.Yu.Hakusho.Ghost.Files.S01.1080p.WEB-DL.AAC2.0.H264-Kan@CHDBits/Yu.Yu.Hakusho.Ghost.Files.S01E10.NF.1080p.WEB-DL.AAC2.0.H264-Kan@CHDBits.mkv",
+    "size": 412710339,
+    "mode": "remux",
+    "bytes": 65271,
+    "ms": 45
+  },
+  "librarySummary": {
+    "audio": {
+      "cards": 1,
+      "tabbed": true,
+      "tabs": 5,
+      "empty": 0,
+      "imgs": 1,
+      "loaded": 1,
+      "title": "音乐"
+    },
+    "book": {
+      "cards": 472,
+      "tabbed": false,
+      "tabs": 0,
+      "empty": 0,
+      "imgs": 61,
+      "loaded": 10,
+      "title": "电子书"
+    },
+    "comic": {
+      "cards": 394,
+      "tabbed": false,
+      "tabs": 0,
+      "empty": 0,
+      "imgs": 80,
+      "loaded": 10,
+      "title": "漫画"
+    },
+    "movie": {
+      "cards": 2,
+      "tabbed": false,
+      "tabs": 0,
+      "empty": 0,
+      "imgs": 0,
+      "loaded": 0,
+      "title": "电影"
+    },
+    "series": {
+      "cards": 17,
+      "tabbed": false,
+      "tabs": 0,
+      "empty": 0,
+      "imgs": 0,
+      "loaded": 0,
+      "title": "电视"
+    }
+  },
+  "seriesSample": {
+    "libId": "series-1cux2hw",
+    "path": "Yu.Yu.Hakusho.Ghost.Files.S01-S04.1992-1995.1080p.WEB-DL.AAC2.0.H264-Kan@CHDBits/Yu.Yu.Hakusho.Ghost.Files.S01.1080p.WEB-DL.AAC2.0.H264-Kan@CHDBits/Yu.Yu.Hakusho.Ghost.Files.S01E10.NF.1080p.WEB-DL.AAC2.0.H264-Kan@CHDBits.mkv",
+    "size": 412710339,
+    "mode": "Smart Stream · Remux",
+    "bytes": 65271,
+    "ms": 45,
+    "src": "http://127.0.0.1:11077/api/media/compat?hw=cuda&id=series-1cux2hw&mode=remux&path=Yu.Yu.Hakusho.Ghost.Files.S01-S04.1992-1995.1080p.WEB-DL.AAC2.0.H264-Kan%40CHDBits%2FYu.Yu.Hakusho.Ghost.Files.S01.1080p.WEB-DL.AAC2.0.H264-Kan%40CHDBits%2FYu.Yu.Hakusho.Ghost.Files.S01E10.NF.1080p.WEB-DL.AAC2.0.H264-Kan%40CHDBits.mkv",
+    "duration": 1423.5725,
+    "w": 1440,
+    "h": 1080,
+    "readyState": 4,
+    "cap": "mkv · h264 1440x1080 · aac · 2319 kbps · 浏览器支持音视频编码，仅转换容器封装",
+    "msg": "",
+    "meta": true
+  },
+  "movieSample": {
+    "cards": 2,
+    "src": "http://127.0.0.1:11077/api/media/compat?hw=cuda&id=movie-ovd5kd&mode=full_transcode&path=%5B%E4%BA%94%E4%B8%AA%E6%89%91%E6%B0%B4%E7%9A%84%E5%B0%91%E5%B9%B4%5D.Water.Boys.2021.2160p.WEB-DL.H.265.AAC-AilMWeb%2F%5B%E4%BA%94%E4%B8%AA%E6%89%91%E6%B0%B4%E7%9A%84%E5%B0%91%E5%B9%B4%5D.Water.Boys.2021.2160p.WEB-DL.H.265.AAC-AilMWeb.mp4",
+    "readyState": 0,
+    "duration": null,
+    "err": null,
+    "mode": "Smart Stream · 完整转码 · CUDA",
+    "cap": "mp4 · hevc 3840x1512 · aac · 7103 kbps · 视频编码不兼容，转换为 H.264/AAC",
+    "msg": "25 秒内没有收到可播放数据\n       服务端转码流没有输出服务端理由：视频编码不兼容，转换为 H.264/AAC\n       常见原因：该文件需要转码，但服务端转码不可用\n       （硬件加速不可用、或 4K HEVC 等重负载转码失败）。\n       改用直出重试\n       改用转码重试",
+    "played": false,
+    "w": 0,
+    "h": 0
+  },
+  "qualitySample": {
+    "initial": {
+      "q": "original",
+      "color": "1",
+      "gray": false
+    },
+    "after": {
+      "q": "high",
+      "color": "1",
+      "gray": false,
+      "title": "画面清晰度：高清 · 转码 1600px · 完整色彩（点击切换）",
+      "stored": "high"
+    }
+  },
+  "scrapeSample": {
+    "mode": "tmdb",
+    "region": "cn",
+    "minMatch": "70",
+    "tmdbBase": "https://api.themoviedb.org/3",
+    "tmdbKeyPlaceholder": "已设置；留空保留",
+    "proxyPlaceholder": "已配置 http://192.168.112.3:7890；留空保留",
+    "cacheDir": "/data/transcode-cache",
+    "fields": 21
+  },
+  "rendererStats": {
+    "requests": null
+  },
+  "endedAt": "2026-10-04T02:12:05.354Z",
+  "durationMs": 59763,
+  "summary": {
+    "total": 71,
+    "passed": 70,
+    "failed": 1
+  }
+}

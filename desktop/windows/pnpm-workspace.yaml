@@ -1,0 +1,16 @@
+# pnpm 11 reads overrides / allowBuilds from here
+# (putting them in package.json's "pnpm" field has no effect in pnpm 11).
+#
+# Why @electron/get must be pinned to 3.1.0:
+#   electron-builder 26.17.0 ships app-builder-lib, which calls
+#   `ElectronDownloadCacheMode` (an export that only exists in @electron/get >= 3.1),
+#   but declares its dependency as `@electron/get@^3.0.0`. With 3.0.0 installed that
+#   export is undefined, so downloading the 7zip / NSIS / winCodeSign toolset throws:
+#     TypeError: Cannot read properties of undefined (reading 'ReadWrite')
+#   The Electron binary itself can be supplied via electronDist, but the toolset
+#   download cannot, so the dependency version has to be fixed.
+overrides:
+  '@electron/get': 3.1.0
+
+allowBuilds:
+  electron-winstaller: false

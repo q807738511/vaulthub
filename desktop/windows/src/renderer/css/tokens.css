@@ -1,0 +1,238 @@
+/* ============================================================================
+   VaultHub Desktop — 主题令牌
+   取自服务端 v0.9.83 web/css/main.css（8 套调色板 × 明暗），保证三端观感一致。
+   使用方式：html[data-palette="emerald|plum|neon|clay"][data-mode="dark|light"]
+   ========================================================================= */
+
+:root {
+  /* 布局尺寸与阅读器基准字号（明暗共用） */
+  --topbar-h: 52px;
+  --sidebar-w: 236px;
+  --ebook-font-size: 17px;
+  --dur: 160ms;
+  --ease: cubic-bezier(.2,.8,.2,1);
+
+  /* 客户端自有令牌 */
+  --rail-w: 60px;
+  --poster-w: 180px;
+  --reader-bg: #060A0A;
+  --overlay: rgba(4, 8, 8, .72);
+  --ok: #3FBF7F;
+  --warn: #E6A23C;
+  --err: #E5534B;
+  --info: #4C9AFF;
+}
+
+/* 青瓷 · 暗（默认） */
+html[data-palette="emerald"][data-mode="dark"] {
+  --bg: #0B1413;
+  --bg2: #1E2D2B;
+  --card: #101A19;
+  --card2: #162321;
+  --border: rgba(255, 255, 255, .08);
+  --border2: rgba(255, 255, 255, .16);
+  --track: rgba(255, 255, 255, .10);
+  --text: #E8F2F1;
+  --text2: #B7C9C7;
+  --text3: #8CA3A0;
+  --accent: #2BC4B4;
+  --accent-ink: #06231F;
+  --accent-dim: rgba(43, 196, 180, .16);
+  --accent-ring: rgba(43, 196, 180, .34);
+  --accent-glow: rgba(43, 196, 180, .40);
+  --radius: 10px;
+  --radius-sm: 6px;
+  --radius-lg: 14px;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .45);
+  --shadow-lg: 0 1px 2px rgba(0, 0, 0, .45), 0 10px 28px rgba(0, 0, 0, .50);
+  --font-head: inherit;
+  color-scheme: dark;
+}
+
+/* 青瓷 · 亮 */
+html[data-palette="emerald"][data-mode="light"] {
+  --bg: #F7F8FA;
+  --bg2: #E9ECEF;
+  --card: #FFFFFF;
+  --card2: #F1F3F5;
+  --border: rgba(16, 22, 30, .10);
+  --border2: rgba(16, 22, 30, .20);
+  --track: rgba(16, 22, 30, .10);
+  --text: #12171D;
+  --text2: #4A5257;
+  --text3: #667076;
+  --accent: #0B7C73;
+  --accent-ink: #FFFFFF;
+  --accent-dim: rgba(15, 158, 146, .12);
+  --accent-ring: rgba(15, 158, 146, .30);
+  --accent-glow: rgba(15, 158, 146, .32);
+  --radius: 10px;
+  --radius-sm: 6px;
+  --radius-lg: 14px;
+  --shadow: 0 1px 2px rgba(16, 24, 40, .06);
+  --shadow-lg: 0 1px 2px rgba(16, 24, 40, .06), 0 8px 24px rgba(16, 24, 40, .07);
+  --font-head: inherit;
+  color-scheme: light;
+}
+
+/* 午夜紫调 · 暗 */
+html[data-palette="plum"][data-mode="dark"] {
+  --bg: #0F0D16;
+  --bg2: #2A2440;
+  --card: #171426;
+  --card2: #1F1B31;
+  --border: rgba(255, 255, 255, .08);
+  --border2: rgba(255, 255, 255, .16);
+  --track: rgba(255, 255, 255, .10);
+  --text: #EDE9FE;
+  --text2: #C4BCDD;
+  --text3: #9C93B8;
+  --accent: #8B5CF6;
+  --accent-ink: #150F26;
+  --accent-dim: rgba(139, 92, 246, .16);
+  --accent-ring: rgba(139, 92, 246, .35);
+  --accent-glow: rgba(139, 92, 246, .45);
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-lg: 16px;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .45);
+  --shadow-lg: 0 0 0 1px rgba(139, 92, 246, .22), 0 22px 48px rgba(0, 0, 0, .60);
+  --font-head: inherit;
+  color-scheme: dark;
+}
+
+/* 午夜紫调 · 亮 */
+html[data-palette="plum"][data-mode="light"] {
+  --bg: #F7F5FF;
+  --bg2: #E8E3F6;
+  --card: #FFFFFF;
+  --card2: #F1EEFA;
+  --border: rgba(30, 24, 48, .10);
+  --border2: rgba(30, 24, 48, .20);
+  --track: rgba(30, 24, 48, .10);
+  --text: #1E1830;
+  --text2: #4A4266;
+  --text3: #665D80;
+  --accent: #5B2FCB;
+  --accent-ink: #FFFFFF;
+  --accent-dim: rgba(109, 61, 224, .12);
+  --accent-ring: rgba(109, 61, 224, .28);
+  --accent-glow: rgba(109, 61, 224, .30);
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-lg: 16px;
+  --shadow: 0 1px 2px rgba(30, 24, 48, .06);
+  --shadow-lg: 0 1px 2px rgba(30, 24, 48, .06), 0 10px 26px rgba(30, 24, 48, .09);
+  --font-head: inherit;
+  color-scheme: light;
+}
+
+/* 霓虹胶片 · 暗 */
+html[data-palette="neon"][data-mode="dark"] {
+  --bg: #0B0B0F;
+  --bg2: #26262F;
+  --card: #141419;
+  --card2: #1C1C24;
+  --border: rgba(255, 255, 255, .08);
+  --border2: rgba(255, 255, 255, .16);
+  --track: rgba(255, 255, 255, .10);
+  --text: #F5F5F7;
+  --text2: #C7C7D1;
+  --text3: #8A8A99;
+  --accent: #FF4D6D;
+  --accent-ink: #2A0410;
+  --accent-dim: rgba(255, 77, 109, .15);
+  --accent-ring: rgba(255, 77, 109, .35);
+  --accent-glow: rgba(255, 77, 109, .45);
+  --radius: 5px;
+  --radius-sm: 3px;
+  --radius-lg: 8px;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .50);
+  --shadow-lg: 0 2px 6px rgba(0, 0, 0, .60), 0 22px 48px rgba(0, 0, 0, .65);
+  --font-head: inherit;
+  color-scheme: dark;
+}
+
+/* 霓虹胶片 · 亮 */
+html[data-palette="neon"][data-mode="light"] {
+  --bg: #F5F5F8;
+  --bg2: #E5E5EC;
+  --card: #FFFFFF;
+  --card2: #EEEEF3;
+  --border: rgba(22, 22, 28, .10);
+  --border2: rgba(22, 22, 28, .20);
+  --track: rgba(22, 22, 28, .10);
+  --text: #16161C;
+  --text2: #42424E;
+  --text3: #5E5E6B;
+  --accent: #BE123C;
+  --accent-ink: #FFFFFF;
+  --accent-dim: rgba(225, 29, 72, .10);
+  --accent-ring: rgba(225, 29, 72, .26);
+  --accent-glow: rgba(225, 29, 72, .30);
+  --radius: 5px;
+  --radius-sm: 3px;
+  --radius-lg: 8px;
+  --shadow: 0 1px 2px rgba(22, 22, 28, .07);
+  --shadow-lg: 0 2px 6px rgba(22, 22, 28, .10), 0 16px 34px rgba(22, 22, 28, .14);
+  --font-head: inherit;
+  color-scheme: light;
+}
+
+/* 暖陶 · 暗 */
+html[data-palette="clay"][data-mode="dark"] {
+  --bg: #17130F;
+  --bg2: #332A21;
+  --card: #1F1A15;
+  --card2: #271F18;
+  --border: rgba(255, 255, 255, .09);
+  --border2: rgba(255, 255, 255, .18);
+  --track: rgba(255, 255, 255, .10);
+  --text: #F3E9DC;
+  --text2: #CFC0AC;
+  --text3: #A89880;
+  --accent: #E08A4E;
+  --accent-ink: #2A1408;
+  --accent-dim: rgba(224, 138, 78, .16);
+  --accent-ring: rgba(224, 138, 78, .32);
+  --accent-glow: rgba(224, 138, 78, .40);
+  --radius: 14px;
+  --radius-sm: 10px;
+  --radius-lg: 18px;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .40);
+  --shadow-lg: 0 1px 2px rgba(0, 0, 0, .40), 0 10px 28px rgba(0, 0, 0, .45);
+  --font-head: "Songti SC", "STSong", "Source Han Serif SC", "Noto Serif SC", "SimSun", Georgia, "Times New Roman", serif;
+  color-scheme: dark;
+}
+
+/* 暖陶 · 亮 */
+html[data-palette="clay"][data-mode="light"] {
+  --bg: #FAF6F1;
+  --bg2: #EBE2D6;
+  --card: #FFFDFB;
+  --card2: #F3EDE5;
+  --border: rgba(44, 38, 32, .12);
+  --border2: rgba(44, 38, 32, .22);
+  --track: rgba(44, 38, 32, .12);
+  --text: #2C2620;
+  --text2: #544A40;
+  --text3: #7A6E62;
+  --accent: #8F3F14;
+  --accent-ink: #FFFFFF;
+  --accent-dim: rgba(180, 83, 31, .12);
+  --accent-ring: rgba(180, 83, 31, .28);
+  --accent-glow: rgba(180, 83, 31, .30);
+  --radius: 14px;
+  --radius-sm: 10px;
+  --radius-lg: 18px;
+  --shadow: 0 1px 2px rgba(74, 53, 32, .07);
+  --shadow-lg: 0 1px 2px rgba(74, 53, 32, .07), 0 8px 24px rgba(74, 53, 32, .08);
+  --font-head: "Songti SC", "STSong", "Source Han Serif SC", "Noto Serif SC", "SimSun", Georgia, "Times New Roman", serif;
+  color-scheme: light;
+}
+
+/* 浅色模式下阅读器不必全黑 */
+html[data-mode="light"] {
+  --reader-bg: #E8E8E4;
+  --overlay: rgba(20, 24, 28, .45);
+}

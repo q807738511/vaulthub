@@ -1,0 +1,70 @@
+appId: com.vaulthub.desktop
+productName: VaultHub Desktop
+copyright: Copyright © 2026 VaultHub
+
+# 版本号说明：
+#   electron-builder 要求 package.json 的 version 是**严格三段 semver**，
+#   写成 0.1.0.0 会被直接拒绝（Invalid version: "0.1.0.0"）。
+#   因此这里保留 version=0.1.0 供工具链使用，用 buildVersion / shortVersion
+#   把 Windows 文件版本与产品版本落成四段 0.1.0.0（NSIS FileVersion 取 shortVersion）。
+buildVersion: 0.1.0.0
+
+# extraMetadata 在版本校验之后才合并（packager.js 的 deepAssign），
+# 因此这里可以把对外产品版本顶成四段 0.1.0.0，而 package.json 的 version
+# 仍是合法的三段 semver 供工具链使用。
+extraMetadata:
+  version: 0.1.0.0
+  shortVersion: 0.1.0.0
+  shortVersionWindows: 0.1.0.0
+
+directories:
+  output: dist
+  buildResources: build
+
+# 直接使用我们已校验过 SHA256 的 Electron 解包目录，避免走 @electron/get 下载路径。
+# 原因：electron-builder 26.17.0 的 app-builder-lib 调用了
+# `ElectronDownloadCacheMode`（@electron/get ≥3.1 才有的导出），但它自己声明的是
+# `@electron/get@^3.0.0`，装上 3.0.0 就会抛
+# "TypeError: Cannot read properties of undefined (reading 'ReadWrite')"。
+# 指定 electronDist 后走的是「custom unpacked Electron distribution」分支，不再下载。
+electronDist: node_modules/electron/dist
+
+# 只打包运行所需内容（脚本、缓存、自检产物都不进安装包）
+files:
+  - package.json
+  - src/**/*
+  - '!**/*.map'
+  - '!**/*.ts'
+
+asar: true
+compression: normal
+# 本应用没有任何原生/生产依赖（全部是 devDependencies），无需重建原生模块
+npmRebuild: false
+# 不做自动更新（服务端没有更新通道，交接包 M5 也说明由客户端自行实现）
+publish: null
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.ico
+  # 安装到用户目录即可，避免要求管理员权限
+  requestedExecutionLevel: asInvoker
+  artifactName: VaultHub-Desktop-0.1.0.0-Setup.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: VaultHub Desktop
+  uninstallDisplayName: VaultHub Desktop ${version}
+  deleteAppDataOnUninstall: false
+  # 安装完成后不自动启动，便于静默验证
+  runAfterFinish: true
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico

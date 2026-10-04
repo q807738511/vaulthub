@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN" data-palette="emerald" data-mode="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; font-src 'self' data:;" />
+  <title>VaultHub Desktop</title>
+  <link rel="stylesheet" href="./css/tokens.css" />
+  <link rel="stylesheet" href="./css/app.css" />
+</head>
+<body>
+  <div id="root">
+    <div id="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">V</div>
+          <div>
+            <div class="brand-text">VaultHub</div>
+            <div class="brand-sub">蜀鼠之家 · 桌面端</div>
+          </div>
+        </div>
+        <nav class="nav" id="nav"></nav>
+        <div class="sidebar-foot">
+          <div class="server-chip" id="serverChip"></div>
+          <div class="muted" id="footVer" style="font-size:10.5px;padding:0 8px"></div>
+        </div>
+      </aside>
+
+      <div class="main">
+        <header class="topbar">
+          <button class="icon-btn" id="btnRail" title="折叠侧栏">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h18v16H3zM9 4v16"/></svg>
+          </button>
+          <button class="icon-btn" id="btnBack" title="返回首页">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8M5 10v10h14V10"/></svg>
+          </button>
+          <div>
+            <div class="topbar-title" id="topTitle">首页</div>
+            <div class="topbar-crumb" id="topCrumb"></div>
+          </div>
+          <div class="grow"></div>
+          <div class="searchbox">
+            <span class="s-ico">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   stroke-width="1.9" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+            </span>
+            <input class="field" id="topSearch" placeholder="搜索媒体…  (Ctrl+K)" />
+          </div>
+          <button class="icon-btn" id="btnQuality" title="画面清晰度">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="9"/>
+              <path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor" stroke="none"/>
+            </svg>
+          </button>
+          <button class="icon-btn" id="btnTheme" title="切换明暗">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+          </button>
+          <button class="icon-btn" id="btnSettings" title="设置">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-2.87 1.2v.17a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 7.9 19.9l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4 15.4H3.83a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.1 7.9l-.06-.06A2 2 0 1 1 6.87 5.01l.06.06a1.7 1.7 0 0 0 2.87-1.2V3.7a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 2.87 1.2l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0 1.2 2.87h.17a2 2 0 1 1 0 4h-.09z"/>
+            </svg>
+          </button>
+        </header>
+        <div class="content" id="content"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>

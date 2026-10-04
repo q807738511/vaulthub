@@ -1,0 +1,24 @@
+{
+  "name": "vaulthub-desktop",
+  "productName": "VaultHub Desktop",
+  "version": "0.1.0",
+  "shortVersion": "0.1.0.0",
+  "shortVersionWindows": "0.1.0.0",
+  "description": "VaultHub 蜀鼠之家 桌面客户端（Windows）",
+  "main": "src/main/main.js",
+  "author": {
+    "name": "VaultHub"
+  },
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "dist": "electron-builder --win nsis",
+    "dist:portable": "electron-builder --win portable"
+  },
+  "devDependencies": {
+    "electron": "44.5.1",
+    "electron-builder": "26.17.0"
+  }
+}
