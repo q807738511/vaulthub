@@ -92,11 +92,29 @@ func (a *App) scrapeCachePathOf() string {
 	return env("MEDIA_SCRAPE_CACHE", "/data/media-scrape-cache.json")
 }
 
-// loadScrapeCache 读盘（懒加载，只读一次）。文件不存在视为空库。
-// 解析失败返回错误而不是静默清空 —— 否则一次坏写会让整库刮削结果消失。
-func (a *App) loadScrapeCache() (scrapeCacheFile, error) {
-	a.scrapeCacheMu.Lock()
-	defer a.scrapeCacheMu.Unlock()
+// cloneScrapeCacheFile 深拷贝整个结果库。
+//
+// v0.9.89（生产事故修复）：Go 的 map 不是并发安全的，两个请求只要有一个在写、
+// 另一个在读（哪怕只是 range），运行时就抛 fatal error: concurrent map writes ——
+// 这是**不可 recover** 的致命错误，会当场杀掉整个 media-api 进程，Caddy 上游
+// 127.0.0.1:9100 拒连，于是全站 /api 接口全部 502（表现为「媒体库没了 / 新建报 502」）。
+// 因此：共享 map 只在 scrapeCacheMu 内访问，锁外一律用副本。
+func cloneScrapeCacheFile(in scrapeCacheFile) scrapeCacheFile {
+	out := scrapeCacheFile{Version: in.Version, Libraries: make(map[string]scrapeCacheLibrary, len(in.Libraries))}
+	for id, lib := range in.Libraries {
+		items := make(map[string]scrapeCacheItem, len(lib.Items))
+		for p, it := range lib.Items {
+			items[p] = it
+		}
+		out.Libraries[id] = scrapeCacheLibrary{Updated: lib.Updated, Items: items}
+	}
+	return out
+}
+
+// loadScrapeCacheLocked 读盘（懒加载，只读一次）。调用者必须已持有 scrapeCacheMu。
+// 文件不存在视为空库；解析失败返回错误而不是静默清空 —— 否则一次坏写会让整库
+// 刮削结果消失。返回的是**共享结构**，只能在锁内使用。
+func (a *App) loadScrapeCacheLocked() (scrapeCacheFile, error) {
 	if a.scrapeCacheLoaded {
 		return a.scrapeCache, nil
 	}
@@ -118,6 +136,128 @@ func (a *App) loadScrapeCache() (scrapeCacheFile, error) {
 	out.Version = scrapeCacheVersion
 	a.scrapeCache, a.scrapeCacheLoaded = out, true
 	return out, nil
+}
+
+// loadScrapeCache 返回深拷贝，供锁外只读使用。
+func (a *App) loadScrapeCache() (scrapeCacheFile, error) {
+	a.scrapeCacheMu.Lock()
+	defer a.scrapeCacheMu.Unlock()
+	c, err := a.loadScrapeCacheLocked()
+	if err != nil {
+		return c, err
+	}
+	return cloneScrapeCacheFile(c), nil
+}
+
+// scrapeCacheRead 在锁内取指定库的条目副本（since/limit 过滤后返回），锁外不再碰共享 map。
+func (a *App) scrapeCacheRead(id string, since int64, limit int) (items map[string]scrapeCacheItem, updated int64, total int, version int, err error) {
+	a.scrapeCacheMu.Lock()
+	defer a.scrapeCacheMu.Unlock()
+	c, err := a.loadScrapeCacheLocked()
+	if err != nil {
+		return nil, 0, 0, 0, err
+	}
+	lib := c.Libraries[id]
+	out := map[string]scrapeCacheItem{}
+	keys := make([]string, 0, len(lib.Items))
+	for k := range lib.Items {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		it := lib.Items[k]
+		if since > 0 && it.CheckedAt < since {
+			continue
+		}
+		if limit > 0 && len(out) >= limit {
+			break
+		}
+		out[k] = it
+	}
+	return out, lib.Updated, len(lib.Items), c.Version, nil
+}
+
+// scrapeCacheMerge 把「读盘 → 合并 → 落盘」整段放进同一把锁：并发 POST 不再互相踩 map，
+// 也不会与 GET/DELETE 交错。replace=true 表示显式重刮（覆盖同路径旧条目）。
+func (a *App) scrapeCacheMerge(id string, in map[string]scrapeCacheItem, replace bool) (stored, skipped, count int, updated int64, err error) {
+	a.scrapeCacheMu.Lock()
+	defer a.scrapeCacheMu.Unlock()
+	cache, err := a.loadScrapeCacheLocked()
+	if err != nil {
+		return 0, 0, 0, 0, err
+	}
+	if cache.Libraries == nil {
+		cache.Libraries = map[string]scrapeCacheLibrary{}
+	}
+	lib := cache.Libraries[id]
+	if lib.Items == nil {
+		lib.Items = map[string]scrapeCacheItem{}
+	}
+	total := 0
+	for _, entry := range cache.Libraries {
+		total += len(entry.Items)
+	}
+	for path, raw := range in {
+		if !validScrapeCachePath(path) {
+			skipped++
+			continue
+		}
+		item, ok := sanitizeScrapeCacheItem(raw)
+		if !ok || scrapeCacheItemEmpty(item) {
+			skipped++
+			continue
+		}
+		existing, exists := lib.Items[path]
+		if exists {
+			if !replace && existing.CheckedAt > item.CheckedAt {
+				skipped++ // 旧设备的陈旧结果不回冲新结果
+				continue
+			}
+			if replace {
+				delete(lib.Items, path)
+			}
+		} else if len(lib.Items) >= scrapeCacheMaxItems || total+stored >= scrapeCacheMaxTotal {
+			skipped++
+			continue
+		}
+		lib.Items[path] = item
+		stored++
+	}
+	lib.Updated = time.Now().UnixMilli()
+	cache.Libraries[id] = lib
+	if stored > 0 {
+		if err := a.saveScrapeCache(cache); err != nil {
+			return stored, skipped, 0, 0, err
+		}
+	}
+	return stored, skipped, len(lib.Items), lib.Updated, nil
+}
+
+// scrapeCacheClear 清空一个库或整库，同样全程持锁。
+func (a *App) scrapeCacheClear(id string, all bool) (cleared int, err error) {
+	a.scrapeCacheMu.Lock()
+	defer a.scrapeCacheMu.Unlock()
+	cache, err := a.loadScrapeCacheLocked()
+	if err != nil {
+		return 0, err
+	}
+	if all {
+		for k, entry := range cache.Libraries {
+			cleared += len(entry.Items)
+			delete(cache.Libraries, k)
+		}
+	} else {
+		entry, ok := cache.Libraries[id]
+		if !ok {
+			return 0, nil
+		}
+		cleared = len(entry.Items)
+		delete(cache.Libraries, id)
+	}
+	if err := a.saveScrapeCache(cache); err != nil {
+		return 0, err
+	}
+	return cleared, nil
 }
 
 // saveScrapeCache 原子落盘 0600。
@@ -294,34 +434,17 @@ func (a *App) scrapeCacheGet(w http.ResponseWriter, r *http.Request) {
 	if n, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && n > 0 {
 		limit = n
 	}
-	cache, err := a.loadScrapeCache()
+	// v0.9.89：整段读在锁内完成并返回副本 —— 旧实现把共享 map 拿到锁外遍历，
+	// 与并发的 POST 写同一张 map 会触发 fatal error（生产事故根因）。
+	items, updated, total, version, err := a.scrapeCacheRead(id, since, limit)
 	if err != nil {
 		// 坏文件：明确报错，让前端继续用本地元数据，而不是假装「库里没数据」。
 		errJSON(w, 500, "scrape cache unreadable")
 		return
 	}
-	lib := cache.Libraries[id]
-	items := map[string]scrapeCacheItem{}
-	count := 0
-	keys := make([]string, 0, len(lib.Items))
-	for k := range lib.Items {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		it := lib.Items[k]
-		if since > 0 && it.CheckedAt < since {
-			continue
-		}
-		if limit > 0 && count >= limit {
-			break
-		}
-		items[k] = it
-		count++
-	}
 	writeJSON(w, 200, map[string]any{
-		"ok": true, "id": id, "version": cache.Version, "updated": lib.Updated,
-		"count": count, "total": len(lib.Items), "items": items,
+		"ok": true, "id": id, "version": version, "updated": updated,
+		"count": len(items), "total": total, "items": items,
 	})
 }
 
@@ -351,59 +474,19 @@ func (a *App) scrapeCachePost(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, 400, "empty scrape cache payload")
 		return
 	}
-	cache, err := a.loadScrapeCache()
+	// v0.9.89：合并 + 落盘整段持锁（并发 POST 不会再 fatal）。
+	stored, skipped, count, updated, err := a.scrapeCacheMerge(body.ID, body.Items, body.Replace)
 	if err != nil {
-		errJSON(w, 500, "scrape cache unreadable")
-		return
-	}
-	if cache.Libraries == nil {
-		cache.Libraries = map[string]scrapeCacheLibrary{}
-	}
-	lib := cache.Libraries[body.ID]
-	if lib.Items == nil {
-		lib.Items = map[string]scrapeCacheItem{}
-	}
-	total := 0
-	for _, entry := range cache.Libraries {
-		total += len(entry.Items)
-	}
-	stored, skipped := 0, 0
-	for path, raw := range body.Items {
-		if !validScrapeCachePath(path) {
-			skipped++
-			continue
-		}
-		item, ok := sanitizeScrapeCacheItem(raw)
-		if !ok || scrapeCacheItemEmpty(item) {
-			skipped++
-			continue
-		}
-		if existing, exists := lib.Items[path]; exists {
-			if !body.Replace && existing.CheckedAt > item.CheckedAt {
-				skipped++ // 旧设备的陈旧结果不回冲新结果
-				continue
-			}
-			if body.Replace {
-				delete(lib.Items, path)
-			}
-		} else if len(lib.Items) >= scrapeCacheMaxItems || total+stored >= scrapeCacheMaxTotal {
-			skipped++
-			continue
-		}
-		lib.Items[path] = item
-		stored++
-	}
-	lib.Updated = time.Now().UnixMilli()
-	cache.Libraries[body.ID] = lib
-	if stored > 0 {
-		if err := a.saveScrapeCache(cache); err != nil {
+		if count == 0 && stored == 0 && skipped == 0 {
 			errJSON(w, 500, "scrape cache write failed")
 			return
 		}
+		errJSON(w, 500, "scrape cache unreadable")
+		return
 	}
 	writeJSON(w, 200, map[string]any{
 		"ok": true, "id": body.ID, "stored": stored, "skipped": skipped,
-		"count": len(lib.Items), "updated": lib.Updated,
+		"count": count, "updated": updated,
 	})
 }
 
@@ -412,33 +495,14 @@ func (a *App) scrapeCacheDelete(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, http.StatusUnauthorized, "login required")
 		return
 	}
-	cache, err := a.loadScrapeCache()
-	if err != nil {
-		errJSON(w, 500, "scrape cache unreadable")
-		return
-	}
 	id := r.URL.Query().Get("id")
 	all := r.URL.Query().Get("all") == "1"
-	cleared := 0
-	if all {
-		for k, entry := range cache.Libraries {
-			cleared += len(entry.Items)
-			delete(cache.Libraries, k)
-		}
-	} else {
-		if id == "" {
-			errJSON(w, 400, "missing library id")
-			return
-		}
-		entry, ok := cache.Libraries[id]
-		if !ok {
-			writeJSON(w, 200, map[string]any{"ok": true, "id": id, "cleared": 0})
-			return
-		}
-		cleared = len(entry.Items)
-		delete(cache.Libraries, id)
+	if !all && id == "" {
+		errJSON(w, 400, "missing library id")
+		return
 	}
-	if err := a.saveScrapeCache(cache); err != nil {
+	cleared, err := a.scrapeCacheClear(id, all)
+	if err != nil {
 		errJSON(w, 500, "scrape cache write failed")
 		return
 	}

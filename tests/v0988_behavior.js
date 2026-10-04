@@ -1,4 +1,4 @@
-/* v0.9.88 行为测试（Node VM 桩，真实执行源文件）：
+/* v0.9.89 行为测试（Node VM 桩，真实执行源文件）：
      A. TMDB 标题匹配阈值（最低识别字符占比 70%）
      B. 原盘 ISO / BDMV 识别、合并与标题
      C. 刮削结果服务端持久化（影视 / 电子书）：读写形状、合并语义、批量次数
@@ -118,9 +118,12 @@ const yearPick = run(media, `pickTitleMatch([
   { id: 2, title: "Dune", release_date: "2021-10-22" }
 ], "Dune", { year: "2021" })`);
 chk("A14 同名作品按年份纠偏（1984 vs 2021）", yearPick && yearPick.item.id === 2, yearPick);
-chk("A15 匹配度不足的原因写明百分比与阈值",
-  run(media, `titleMatchReason({ score: 0.42 }, 0.7)`).includes("42%") && run(media, `titleMatchReason({ score: 0.42 }, 0.7)`).includes("70%"),
-  run(media, `titleMatchReason({ score: 0.42 }, 0.7)`));
+/* v0.9.89：口径改为「识别字符占比」，文案同步（且不再出现「最高】n%」）。 */
+chk("A15 匹配度不足的原因写明识别字符占比与阈值",
+  run(media, `titleMatchReason({ coverage: 0.42, score: 0.42 }, 0.7)`).includes("识别字符占比 42%")
+  && run(media, `titleMatchReason({ coverage: 0.42, score: 0.42 }, 0.7)`).includes("70%")
+  && !run(media, `titleMatchReason({ coverage: 0.42, score: 0.42 }, 0.7)`).includes("最高"),
+  run(media, `titleMatchReason({ coverage: 0.42, score: 0.42 }, 0.7)`));
 
 /* 端到端：单条刮削的失败原因必须保留「匹配度不足」，而不是被末尾的笼统文案覆盖 */
 const mkE2E = results => load("/web/js/02-media.js", {
@@ -134,8 +137,11 @@ const e2eMiss = mkE2E([{ id: 5, title: "完全不同的一部片", release_date:
 run(e2eMiss, `scraperStatus = { scraper_mode: "auto", tmdb_enabled: true, scrape_min_match: 0.7 };`);
 await run(e2eMiss, `scrapeOneMovie({id:"movie1",type:"movie"}, [{path:"黑鹰坠落.Blu-ray.2001.iso"}], {path:"黑鹰坠落.Blu-ray.2001.iso"})`);
 const missMeta = run(e2eMiss, `movieMetadataFor("黑鹰坠落.Blu-ray.2001.iso")`);
-chk("A16 候选都低于阈值 → 失败原因写明匹配度与阈值（不被笼统文案覆盖）",
-  missMeta.scrape_state === "failed" && missMeta.reason.includes("匹配度不足") && missMeta.reason.includes("70%"), missMeta.reason);
+/* v0.9.89：匹配不足不再是硬失败 —— 记 review（待确认，保留文件名展示、不进自动重试），
+   原因写明「没有共同字符」而不是让人误以为程序坏掉的「最高 0%」。 */
+chk("A16 候选都低于阈值 → 记 review 且原因写明「没有共同字符」（不被笼统文案覆盖）",
+  missMeta.scrape_state === "review" && !String(missMeta.reason).includes("最高 0%")
+  && (missMeta.reason.includes("没有共同字符") || missMeta.reason.includes("识别字符占比")), missMeta.reason);
 
 const e2eHit = mkE2E([
   { id: 7, title: "无关短片", vote_average: 9 },

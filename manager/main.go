@@ -52,7 +52,11 @@ type manager struct {
 	sessionsFile      string // v0.9.85 /data/sessions.json：持续登录会话的持久化文件
 	sessionsDirty     bool   // v0.9.85：会话表有变更，等待下一次落盘（5 分钟节流）
 	caddyConfig       []byte
+	childrenMu        sync.Mutex // v0.9.89：守护循环会并发改子进程表
 	children          []*exec.Cmd
+	childRestarts     map[string]int // v0.9.89：各子进程被自动拉起的次数（/api/system/runtime 暴露）
+	stopCh            chan struct{}  // v0.9.89：容器关闭时通知守护循环别再拉起
+	stopOnce          sync.Once
 }
 
 /*
@@ -814,7 +818,10 @@ func (m *manager) runtime(w http.ResponseWriter, r *http.Request) {
 	if !m.require(w, r) {
 		return
 	}
-	m.reply(w, 200, map[string]any{"ok": true, "pid": os.Getpid(), "go": "go-manager", "children": len(m.children)})
+	m.reply(w, 200, map[string]any{
+		"ok": true, "pid": os.Getpid(), "go": "go-manager",
+		"children": m.childCount(), "child_restarts": m.restartSnapshot(),
+	})
 }
 
 func (m *manager) caddyConfigHandler(w http.ResponseWriter, r *http.Request) {
@@ -925,6 +932,119 @@ func start(bin string, args ...string) *exec.Cmd {
 		return nil
 	}
 	return c
+}
+
+/* v0.9.89：子进程守护。
+ *
+ * 之前 manager 只把 media-api / subtitle-api / caddy 各 start 一次，然后一直等
+ * ctx.Done。任何一个子进程退出（panic、fatal error、OOM）都没人拉起，而 Caddy
+ * 还活着 —— 于是整个界面 /api/* 全部 502，直到有人手动重启容器。
+ * 现在每个子进程由一个守护循环托管：退出即按退避重启，并记录重启次数；
+ * 容器关闭时先关 stopCh，保证不会在停止过程中又拉起新进程。
+ */
+
+func (m *manager) addChild(c *exec.Cmd) {
+	if c == nil {
+		return
+	}
+	m.childrenMu.Lock()
+	m.children = append(m.children, c)
+	m.childrenMu.Unlock()
+}
+
+func (m *manager) childrenSnapshot() []*exec.Cmd {
+	m.childrenMu.Lock()
+	defer m.childrenMu.Unlock()
+	out := make([]*exec.Cmd, len(m.children))
+	copy(out, m.children)
+	return out
+}
+
+func (m *manager) childCount() int {
+	m.childrenMu.Lock()
+	defer m.childrenMu.Unlock()
+	return len(m.children)
+}
+
+func (m *manager) noteRestart(name string) int {
+	m.childrenMu.Lock()
+	defer m.childrenMu.Unlock()
+	if m.childRestarts == nil {
+		m.childRestarts = map[string]int{}
+	}
+	m.childRestarts[name]++
+	return m.childRestarts[name]
+}
+
+func (m *manager) restartCount(name string) int {
+	m.childrenMu.Lock()
+	defer m.childrenMu.Unlock()
+	return m.childRestarts[name]
+}
+
+func (m *manager) restartSnapshot() map[string]int {
+	m.childrenMu.Lock()
+	defer m.childrenMu.Unlock()
+	out := make(map[string]int, len(m.childRestarts))
+	for k, v := range m.childRestarts {
+		out[k] = v
+	}
+	return out
+}
+
+func (m *manager) stoppingNow() bool {
+	if m.stopCh == nil {
+		return false
+	}
+	select {
+	case <-m.stopCh:
+		return true
+	default:
+		return false
+	}
+}
+
+// stopChildren 通知所有守护循环不要再拉起子进程（容器关闭时调用）。
+func (m *manager) stopChildren() {
+	m.stopOnce.Do(func() {
+		if m.stopCh != nil {
+			close(m.stopCh)
+		}
+	})
+}
+
+// supervise 启动并守护一个子进程，退出后按退避（1s→2s→…→30s 封顶）重启。
+func (m *manager) supervise(name, bin string, args ...string) {
+	delay := time.Second
+	for {
+		c := start(bin, args...)
+		if c == nil {
+			if m.stoppingNow() {
+				return
+			}
+			n := m.noteRestart(name)
+			log.Printf("v0.9.89: %s 启动失败（第 %d 次），%s 后重试", name, n, delay)
+		} else {
+			m.addChild(c)
+			err := c.Wait()
+			if m.stoppingNow() {
+				return
+			}
+			n := m.noteRestart(name)
+			log.Printf("v0.9.89: %s 已退出（%v）—— 第 %d 次自动拉起，%s 后重试", name, err, n, delay)
+		}
+		select {
+		case <-m.stopCh:
+			return
+		case <-time.After(delay):
+		}
+		if delay < 30*time.Second {
+			delay *= 2
+			if delay > 30*time.Second {
+				delay = 30 * time.Second
+			}
+		}
+	}
 }
 
 // caddyPath is the caddy binary used for validation. It is a variable so tests
@@ -1196,14 +1316,16 @@ func main() {
 			}
 		}
 	}
-	for _, bin := range []string{"/usr/bin/media-api", "/usr/bin/subtitle-api"} {
-		if c := start(bin); c != nil {
-			m.children = append(m.children, c)
-		}
+	if m.stopCh == nil {
+		m.stopCh = make(chan struct{})
 	}
-	if c := start("/usr/bin/caddy", "run", "--config", "/data/Caddyfile", "--adapter", "caddyfile"); c != nil {
-		m.children = append(m.children, c)
+	if m.childRestarts == nil {
+		m.childRestarts = map[string]int{}
 	}
+	// v0.9.89：三个子进程都交给守护循环（退出即自动拉起，不再全站 502）。
+	go m.supervise("media-api", "/usr/bin/media-api")
+	go m.supervise("subtitle-api", "/usr/bin/subtitle-api")
+	go m.supervise("caddy", "/usr/bin/caddy", "run", "--config", "/data/Caddyfile", "--adapter", "caddyfile")
 	addr := os.Getenv("MANAGER_ADDR")
 	if addr == "" {
 		addr = "127.0.0.1:9099"
@@ -1223,13 +1345,15 @@ func main() {
 		}
 	}()
 	<-ctx.Done()
+	// v0.9.89：先关掉守护信号，避免 SIGTERM 之后守护循环又把子进程拉起来。
+	m.stopChildren()
 	shutdown, cancelShutdown := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancelShutdown()
 	_ = srv.Shutdown(shutdown)
-	for _, c := range m.children {
+	for _, c := range m.childrenSnapshot() {
 		_ = c.Process.Signal(syscall.SIGTERM)
 	}
-	for _, c := range m.children {
+	for _, c := range m.childrenSnapshot() {
 		_, _ = c.Process.Wait()
 	}
 }

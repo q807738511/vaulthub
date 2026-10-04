@@ -28,6 +28,43 @@ import (
 
 const coverDownloadMaxBytes = 20 << 20 // 20 MiB
 
+/* v0.9.89：图片本地化扩展到海报以外的角色。
+   v0.9.56 只落 <名>.cover.jpg，而服务端本地元数据读取端（local_metadata.go）
+   认的是 <名>-poster.jpg / <名>-fanart.jpg / <名>-backdrop.jpg / <名>-logo.png。
+   两套命名对不上，导致「刮削完图还是远程图床」，换设备/断网就白板。
+   现在同一张图按角色落成读取端认识的 sidecar：下次读本地元数据直接带回本地 URL，
+   前端拿到即是本地图，也不再需要重新下载。 */
+var coverRoleSidecar = map[string]string{
+	"poster":   "poster",
+	"fanart":   "fanart",
+	"backdrop": "backdrop",
+	"logo":     "logo",
+}
+
+// coverSidecarRelRole 由媒体相对路径 + 角色派生 sidecar 相对路径。
+// role 为空或 "cover" → 沿用 v0.9.56 的 <名>.cover.<ext>（前端 /api/media/cover 直读）；
+// poster/fanart/backdrop/logo → <名>-<role>.<ext>（服务端本地元数据读取端认得）。
+func coverSidecarRelRole(mediaRel, role, ext string) string {
+	name := filepath.Base(mediaRel)
+	stem := strings.TrimSuffix(name, filepath.Ext(name))
+	if stem == "" {
+		stem = name
+	}
+	tag, ok := coverRoleSidecar[role]
+	if !ok || role == "" {
+		tag = "cover"
+	}
+	side := stem + "-" + tag + "." + ext
+	if tag == "cover" {
+		side = stem + ".cover." + ext
+	}
+	dir := filepath.Dir(mediaRel)
+	if dir == "." || dir == "" {
+		return side
+	}
+	return filepath.ToSlash(filepath.Join(dir, side))
+}
+
 // sniffImageExt 识别图片魔数；非图片返回空串。
 func sniffImageExt(head []byte) string {
 	if len(head) < 3 {
@@ -105,6 +142,7 @@ func (a *App) coverSave(w http.ResponseWriter, r *http.Request) {
 		ID   string `json:"id"`
 		Path string `json:"path"`
 		URL  string `json:"url"`
+		Role string `json:"role"` // v0.9.89: cover(默认) / poster / fanart / backdrop / logo
 	}
 	if json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body) != nil {
 		errJSON(w, 400, "invalid json")
@@ -161,7 +199,13 @@ func (a *App) coverSave(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, 415, "cover is not jpeg/png/webp/gif")
 		return
 	}
-	relOut := coverSidecarRel(body.Path, ext)
+	if body.Role != "" && body.Role != "cover" {
+		if _, ok := coverRoleSidecar[body.Role]; !ok {
+			errJSON(w, 400, "invalid artwork role")
+			return
+		}
+	}
+	relOut := coverSidecarRelRole(body.Path, body.Role, ext)
 	dest := filepath.Join(filepath.Dir(mediaFull), filepath.Base(relOut))
 	// 只允许写在已通过安全校验的媒体文件同一目录内（safeFile 已做 symlink 边界检查）。
 	if filepath.Dir(dest) != filepath.Dir(mediaFull) {
@@ -192,7 +236,11 @@ func (a *App) coverSave(w http.ResponseWriter, r *http.Request) {
 	st, _ := os.Stat(dest)
 	version := st.ModTime().Unix()
 	coverURL := "/api/media/cover?id=" + url.QueryEscape(l.ID) + "&path=" + url.QueryEscape(relOut) + "&v=" + fmt.Sprintf("%d", version)
-	writeJSON(w, 200, map[string]any{"ok": true, "path": relOut, "ext": ext, "url": coverURL})
+	role := body.Role
+	if role == "" {
+		role = "cover"
+	}
+	writeJSON(w, 200, map[string]any{"ok": true, "path": relOut, "ext": ext, "url": coverURL, "role": role, "localized": true})
 }
 
 func (a *App) coverGet(w http.ResponseWriter, r *http.Request) {

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""v0.9.88 行为测试：跑 tests/v0988_behavior.js（Node VM 桩，真实执行源文件）。
+"""v0.9.89 行为测试：跑 tests/v0988_behavior.js（Node VM 桩，真实执行源文件）。
 
 覆盖：TMDB 标题匹配阈值（默认 70%，含年份纠偏与 original_title 打分）、
 原盘 ISO/BDMV 识别与合并（ISO + BDMV 同目录只留一条、标题上溯）、
@@ -15,7 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 if shutil.which("node") is None:
-    print("SKIP: 本机没有 node，跳过 v0.9.88 行为测试")
+    print("SKIP: 本机没有 node，跳过 v0.9.89 行为测试")
     sys.exit(0)
 
 r = subprocess.run(["node", str(ROOT / "tests/v0988_behavior.js")],

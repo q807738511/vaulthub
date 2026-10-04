@@ -18,7 +18,7 @@ let vaultHubSessionPingedAt = 0;
    历史故障：v0.8.3→v0.8.5 的前端修改在服务端已生效，但浏览器仍执行缓存里的
    旧 02-media.js，用户看到「没有更新」。现在入口页 no-store、静态资源带 ?v=，
    并在启动时做一次一致性自查，不一致就绕过缓存强制重载一次。 */
-const VAULTHUB_SCRIPT_VERSION = "0.9.88";
+const VAULTHUB_SCRIPT_VERSION = "0.9.89";
 function ensureFreshAssets() {
   /* expected 为空 = 浏览器执行的 index.html 早于 v0.8.6（旧版本入口页没有声明
      版本号），同样属于"页面是旧的"，也需要换 URL 重新取一次。 */
@@ -418,6 +418,8 @@ const I18N = {
     vpClose: "关闭播放",
     vpMore: "更多操作",
     vpInfo: "获取信息",
+    editOriginalNameLabel: "原文件名称",
+    editOriginalNameHint: "媒体库里未被改动的原始文件名（只读，用于核对刮削结果）",
     vpDetails: "打开详情页",
     vpDiag: "复制播放诊断",
     vpDiagOk: "播放诊断已复制",
@@ -785,6 +787,8 @@ const I18N = {
     vpClose: "關閉播放",
     vpMore: "更多操作",
     vpInfo: "取得資訊",
+    editOriginalNameLabel: "原檔案名稱",
+    editOriginalNameHint: "媒體庫裡未被改動的原始檔案名稱（唯讀，用於核對刮削結果）",
     vpDetails: "開啟詳情頁",
     vpDiag: "複製播放診斷",
     vpDiagOk: "播放診斷已複製",
@@ -1056,6 +1060,8 @@ const I18N = {
     vpClose: "Close player",
     vpMore: "More actions",
     vpInfo: "Playback info",
+    editOriginalNameLabel: "Original file name",
+    editOriginalNameHint: "The untouched original file name in the media library (read-only; for checking scrape results).",
     vpDetails: "Open details page",
     vpDiag: "Copy playback diagnostics",
     vpDiagOk: "Playback diagnostics copied",

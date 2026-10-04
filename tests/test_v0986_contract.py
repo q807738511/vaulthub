@@ -76,7 +76,7 @@ check("3b 页头仍保留本视图 / 全库 / 本页统计",
 MEDIA_CODE = re.sub(r"/\*.*?\*/", " ", MEDIA, flags=re.S)
 check("4a 影视页标题不再挂任何按钮参数（注释不参与判定）",
       not re.search(r"mediaLibraryHeading\(lib, `[^`]*`,", MEDIA_CODE))
-check("4b 影视页的刮削按钮整块移除（v0.9.88：连指路按钮也不留）",
+check("4b 影视页的刮削按钮整块移除（v0.9.89：连指路按钮也不留）",
       "movieScrapeControls" not in MEDIA_CODE and "刮削设置</span>" not in MEDIA_CODE)
 check("4c 系统设置库列表提供自动扫描", "onclick=\"autoScanLibrary('${esc(lib.id)}')\"" in HOME)
 check("4d 系统设置库列表提供逐项扫描", "onclick=\"openLibraryItemScan('${esc(lib.id)}')\"" in HOME)

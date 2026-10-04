@@ -2500,6 +2500,8 @@ func main() {
 	mux.HandleFunc("/api/media/settings", a.runtimeSettings)
 	/* v0.9.88：刮削结果服务端持久化（影视 / 电子书）。 */
 	mux.HandleFunc("/api/media/scrape-cache", a.scrapeCacheHandler)
+	// v0.9.89：NFO 元数据本地化（刮削结果写回媒体目录，下次直接读本地，不再重复联网）。
+	mux.HandleFunc("/api/media/nfo", a.nfoHandler)
 	mux.HandleFunc("/api/media/scrapers", func(w http.ResponseWriter, r *http.Request) {
 		out := a.runtimeConfigSnapshot(false)
 		out["default"], out["types"] = out["scraper_mode"], []string{"movie", "series"}

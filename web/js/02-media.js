@@ -1018,13 +1018,16 @@ function movieMetaState(meta) {
 }
 function movieScrapeStats(files) {
   const all = readMovieMetadata();
-  const stats = { total: 0, ok: 0, failed: 0, pending: 0, skip: 0 };
+  const stats = { total: 0, ok: 0, failed: 0, pending: 0, skip: 0, review: 0 };
   (files || []).forEach((file) => {
     stats.total++;
     const state = movieMetaState(all[String((file && file.path) || file)]);
     if (state === "ok") stats.ok++;
     else if (state === "failed") stats.failed++;
     else if (state === "skip") stats.skip++;
+    /* v0.9.89：review = 匹配度不足（等用户手动改名/调阈值后重刮），
+       与 failed（网络/凭据问题，可自动重试）分开统计，避免吓人的「失败」数字。 */
+    else if (state === "review") stats.review++;
     else stats.pending++;
   });
   return stats;
@@ -1033,6 +1036,7 @@ function movieScrapeSummary(files) {
   const s = movieScrapeStats(files);
   const parts = [`刮削 ${s.ok}/${s.total}`];
   if (s.pending) parts.push(`${s.pending} 排队中`);
+  if (s.review) parts.push(`${s.review} 待确认`);
   if (s.failed) parts.push(`${s.failed} 待重试`);
   if (s.skip) parts.push(`${s.skip} 无可识别标题`);
   return parts.join(" · ");
@@ -1051,11 +1055,12 @@ function scrapeQueueNotice(files) {
   const bits = [];
   if (s.ok) bits.push(`已刮削 ${s.ok}`);
   if (s.pending) bits.push(`排队中 ${s.pending}`);
+  if (s.review) bits.push(`待确认 ${s.review}`);
   if (s.failed) bits.push(`待重试 ${s.failed}`);
   if (s.skip) bits.push(`无可识别标题 ${s.skip}`);
   const entry = {
     key: scrapeQueueKey(lib),
-    level: s.failed ? "warn" : (s.pending ? "info" : "ok"),
+    level: s.failed ? "warn" : ((s.pending || s.review) ? "info" : "ok"),
     title: typeof tf === "function" ? tf("notifyScrapeQueue", { ok: s.ok, total: s.total }) : `刮削队列 ${s.ok}/${s.total}`,
     detail: [(lib && lib.name) || "", bits.join(" · ")].filter(Boolean).join(" · "),
     action: { view: "movie" }
@@ -1145,7 +1150,8 @@ function libraryItemScanTitle(path) {
 function libraryItemScanStateLabel(path) {
   const state = movieMetaState(movieMetadataFor(path));
   if (state === "ok") return "已刮削";
-  if (state === "failed") return "上次未命中";
+  if (state === "failed") return "上次失败（可重试）";
+  if (state === "review") return "待确认（识别字符占比不足，可改名后重刮）";
   if (state === "skip") return "文件名无可用标题";
   return "待刮削";
 }
@@ -1340,16 +1346,24 @@ function setCoverage(query, cand) {
    · 词元 Dice 同时按「按字切」与「按空格切」算，取较大值 —— 中文标题没有词边界，
      只按一种切法会把「阿凡达」对「阿凡达：水之道」判成低分（实测 0.62 会误杀）；
    · 覆盖率权重最高，是因为「70% 字符能对上」正是客户要的语义。 */
-function titleMatchScore(query, candidate) {
+/* v0.9.89（客户：「本功能原意即用于辅助刮削和优化刮削体验」）：
+   打分同时给出两个量 —— coverage（识别字符占比）与 score（综合分）。
+   命中判据以 coverage 为主口径（= 客户说的「最低识别字符数量 70%」），
+   综合分只用于在多个候选里挑更好的那个，不再当第二道卡死条件；
+   两者任一达标即视为命中 —— 阈值因此是「辅助」而不是「阻塞」。 */
+function titleMatchDetail(query, candidate) {
   const qc = titleCharSet(query), cc = titleCharSet(candidate);
-  if (!qc.size || !cc.size) return 0;
+  if (!qc.size || !cc.size) return { score: 0, coverage: 0 };
   const coverage = Math.max(setCoverage(qc, cc), setCoverage(cc, qc));
   const spaceDice = setDice(new Set(titleTokens(query)), new Set(titleTokens(candidate)));
   const charDice = setDice(qc, cc);
   const tokenDice = Math.max(spaceDice, charDice);
   const bigramDice = setDice(titleBigrams(query), titleBigrams(candidate));
   const score = 0.50 * coverage + 0.20 * tokenDice + 0.30 * bigramDice;
-  return Math.max(0, Math.min(1, score));
+  return { score: Math.max(0, Math.min(1, score)), coverage: Math.max(0, Math.min(1, coverage)) };
+}
+function titleMatchScore(query, candidate) {
+  return titleMatchDetail(query, candidate).score;
 }
 function itemTitleForms(item) {
   if (!item) return [];
@@ -1374,7 +1388,12 @@ function pickTitleMatch(results, query, opts) {
   list.forEach((item) => {
     const forms = itemTitleForms(item);
     if (!forms.length) return;
-    let score = forms.reduce((acc, f) => Math.max(acc, titleMatchScore(query, f)), 0);
+    let detail = { score: 0, coverage: 0 };
+    forms.forEach((f) => {
+      const d = titleMatchDetail(query, f);
+      if (d.coverage > detail.coverage || (d.coverage === detail.coverage && d.score > detail.score)) detail = d;
+    });
+    let score = detail.score;
     /* 年份是稳定的纠偏信号：同年 +5%，差一年以上 -15%（同名不同年代的作品）。 */
     const year = itemYear(item);
     if (wantYear && year) {
@@ -1382,15 +1401,150 @@ function pickTitleMatch(results, query, opts) {
       else if (Math.abs(Number(year) - Number(wantYear)) > 1) score -= 0.15;
     }
     score = Math.max(0, Math.min(1, score));
-    if (!best || score > best.score) best = { item, score, name: forms[0] };
+    if (!best || score > best.score) best = { item, score, coverage: detail.coverage, name: forms[0] };
   });
   if (!best) return null;
-  return { ...best, threshold, matched: best.score >= threshold };
+  return { ...best, threshold, matched: best.coverage >= threshold || best.score >= threshold };
 }
 /* 失败原因带上最高匹配度：用户一眼分清是「标题对不上」还是「网络/凭据」问题。 */
+/* v0.9.89：未命中的原因按「有没有可比对的候选」分开写，不再出现
+   「最高 0%」这种让人以为程序坏了的文案（0% 其实是「候选与资源名毫无共同字符」）。 */
 function titleMatchReason(best, threshold) {
-  const pct = best ? Math.round(best.score * 100) : 0;
-  return `标题匹配度不足（最高 ${pct}% ＜ ${Math.round((threshold || scrapeMinMatchThreshold()) * 100)}%）· 可在「逐项扫描 → ✎ 编辑名称」后重刮`;
+  const need = Math.round((threshold || scrapeMinMatchThreshold()) * 100);
+  if (!best) return `未命中：TMDB 没有返回候选 · 已按文件名展示`;
+  const cov = Math.round(Number(best.coverage || 0) * 100);
+  if (cov <= 0) return `未命中：候选标题与资源名没有共同字符 · 已按文件名展示 · 可在「逐项扫描 → ✎ 编辑名称」后重刮`;
+  return `识别字符占比 ${cov}%（＜ ${need}%）· 未采用，已按文件名展示 · 可在「逐项扫描 → ✎ 编辑名称」后重刮`;
+}
+
+/* v0.9.89：刮削没拿到结果时，区分「网络/凭据问题」（failed，可自动重试）
+   与「匹配度不足」（review，等用户手动改名或调阈值 —— 客户要的辅助模式）。
+   旧实现一律记 failed，于是整库匹配不上时通知栏一片「待重试」。 */
+function movieScrapeRecordedReason(path) {
+  const rec = readMovieMetadata()[path];
+  return String((rec && rec.reason) || "");
+}
+function movieFallbackState(path) {
+  const reason = movieScrapeRecordedReason(path);
+  return /请求失败|凭据|网络|超时|HTTP 5|HTTP 4/.test(reason) ? "failed" : "review";
+}
+function movieFallbackReason(path) {
+  const reason = movieScrapeRecordedReason(path);
+  if (reason) return reason;
+  return "未命中：已按文件名展示 · 可在「逐项扫描 → ✎ 编辑名称」后重刮";
+}
+
+/* ================= v0.9.89：刮削结果本地化（NFO + 图片落盘） =================
+   客户第 2、3 项：刮削拿到完整元数据后先把数据本地化，再展示给界面；
+   此后任何一次进库（含换设备、清缓存、重建索引）都直接读媒体目录里的
+   NFO 与本地图片，不再整库联网重复刮削。
+   · 图片：POST /api/media/cover {role} → 落到媒体目录（读取端认得的 sidecar 名）；
+   · NFO：POST /api/media/nfo → Kodi / Emby / Jellyfin 通用 XML 写到媒体文件旁边；
+   · 串行执行 + 每条只做一次（localized_at 标记）；失败不影响刮削结果本身。 */
+const MOVIE_LOCALIZE_ROLES = ["poster", "fanart", "backdrop", "logo"];
+let movieLocalizeQueue = [];
+let movieLocalizeBusy = false;
+function queueMovieLocalization(lib, path) {
+  if (!lib || !lib.id || !path) return;
+  const meta = readMovieMetadata()[String(path)];
+  if (meta && meta.localized_at && meta.nfo) return; // 已本地化过，不重复写盘
+  const key = `${lib.id}|${path}`;
+  if (movieLocalizeQueue.some((x) => x.key === key)) return;
+  movieLocalizeQueue.push({ key, lib, path: String(path) });
+  pumpMovieLocalization();
+}
+/* v0.9.89：已刮削条目的本地化回填。
+   客户库里的历史刮削结果（服务端结果库存量几百条）本版之前没有本地化产物，
+   如果只对新刮削的条目做本地化，老库要重刮一次才生效 —— 所以进库时把
+   「已刮削但还没有 NFO/本地图」的条目排队补做，每条只做一次（localized_at 标记）。
+   串行执行 + 单次进库限量，避免一口气写上千个文件把磁盘和界面拖住。 */
+const MOVIE_LOCALIZE_BACKLOG_PER_VISIT = 60;
+function queueLocalizationBacklog(lib, files) {
+  if (!lib || !lib.id) return 0;
+  const all = readMovieMetadata();
+  let queued = 0;
+  for (const file of files || []) {
+    if (queued >= MOVIE_LOCALIZE_BACKLOG_PER_VISIT) break;
+    const path = String((file && file.path) || file);
+    const meta = all[path];
+    if (!meta) continue;
+    if (movieMetaState(meta) !== "ok") continue;
+    if (meta.localized_at && meta.nfo) continue;
+    queueMovieLocalization(lib, path);
+    queued++;
+  }
+  return queued;
+}
+async function pumpMovieLocalization() {
+  if (movieLocalizeBusy) return;
+  movieLocalizeBusy = true;
+  try {
+    while (movieLocalizeQueue.length) {
+      const job = movieLocalizeQueue.shift();
+      try { await localizeMovieEntry(job.lib, job.path); } catch (e) { console.info("[scrape] 本地化失败：", job.path, e); }
+      scheduleMovieRender(MOVIE_RENDER_THROTTLE_MS);
+    }
+  } finally { movieLocalizeBusy = false; }
+}
+/* 额外 NFO 目标：剧集写 show 根 tvshow.nfo（上一层）；电影写 movie.nfo（同目录）。
+   读取端候选顺序是 <文件名>.nfo → movie.nfo / tvshow.nfo，写这两处即可被读回。 */
+function movieNFOExtras(lib, path) {
+  if (lib && lib.type === "series") return [{ name: "tvshow.nfo", up: 1 }];
+  return [{ name: "movie.nfo", up: 0 }];
+}
+async function localizeMovieEntry(lib, path) {
+  const all = readMovieMetadata();
+  const meta = all[path] || movieBaseMetadata(path);
+  if (movieMetaState(meta) !== "ok") return;
+  const stored = {};
+  for (const role of MOVIE_LOCALIZE_ROLES) {
+    const url = String(meta[role] || "");
+    if (!url || url.startsWith("/api/media/")) continue; // 已经是站内本地图，不用再下
+    try {
+      const res = await fetch("/api/media/cover", {
+        method: "POST", credentials: "same-origin", cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: lib.id, path, url, role }),
+      });
+      if (!res.ok) continue;
+      const data = await res.json();
+      if (data && data.url) stored[role] = data.url;
+    } catch (e) { /* 单张图失败不影响其它角色与 NFO */ }
+  }
+  let nfo = "";
+  try {
+    const res = await fetch("/api/media/nfo", {
+      method: "POST", credentials: "same-origin", cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: lib.id, path: path, extras: movieNFOExtras(lib, path),
+        meta: {
+          title: meta.user_title || meta.title || movieTitleFromPath(path),
+          original_title: meta.original_title || "",
+          show_title: meta.show_title || "",
+          year: String(meta.year || ""),
+          overview: meta.overview || "",
+          rating: Number(meta.rating || 0),
+          runtime: Number(meta.runtime || 0),
+          genres: Array.isArray(meta.genres) ? meta.genres : [],
+          cast: Array.isArray(meta.cast) ? meta.cast.slice(0, 40) : [],
+          tmdb_id: meta.tmdb_id != null ? String(meta.tmdb_id) : "",
+          tvdb_id: meta.tvdb_id != null ? String(meta.tvdb_id) : "",
+          poster: stored.poster || meta.poster || "",
+          fanart: stored.fanart || meta.fanart || "",
+          backdrop: stored.backdrop || meta.backdrop || "",
+          logo: stored.logo || meta.logo || "",
+        },
+      }),
+    });
+    if (res.ok) { const data = await res.json(); nfo = String((data && data.nfo) || ""); }
+  } catch (e) { /* NFO 写失败（只读挂载等）不影响展示 */ }
+  const fresh = readMovieMetadata();
+  const merged = { ...(fresh[path] || meta), original_path: String(path), localized_at: Date.now() };
+  MOVIE_LOCALIZE_ROLES.forEach((role) => { if (stored[role]) merged[role] = stored[role]; });
+  if (nfo) merged.nfo = nfo;
+  fresh[path] = merged;
+  writeMovieMetadata(fresh);
 }
 
 /* 单条刮削：返回是否成功。所有请求用 no-store —— 空结果不再被浏览器缓存成永久失败。 */
@@ -1407,6 +1561,9 @@ async function scrapeOneMovie(lib, files, file) {
   const mark = (patch) => {
     all[path] = { ...base, ...patch, scrape_attempts: attempts, last_attempt: Date.now() };
     writeMovieMetadata(all);
+    /* v0.9.89：命中即本地化 —— 图片落盘 + 写 NFO，让下一次进库（含换设备/换浏览器）
+       直接读媒体目录里的本地元数据，不再整库联网刮削。串行队列，避免并发写盘风暴。 */
+    if (patch.scrape_state === "ok") queueMovieLocalization(lib, path);
     return patch.scrape_state === "ok";
   };
   /* 文件名没有任何可识别标题（原盘片段、音轨编号等）→ 不发请求，标记 skip，
@@ -1465,7 +1622,7 @@ async function scrapeOneMovie(lib, files, file) {
     note("未配置 TMDB 凭据");
   }
   if (mode === "tmdb" || mode === "filename") {
-    return mark({ provider: "文件名展示", scrape_state: "failed", reason: readMovieMetadata()[path]?.reason || "未命中" });
+    return mark({ provider: "文件名展示", scrape_state: movieFallbackState(path), reason: movieFallbackReason(path) });
   }
   try {
     const douban = await fetch(`https://movie.douban.com/j/subject_suggest?q=${encodeURIComponent(title)}`, { cache: "no-store" });
@@ -1474,7 +1631,7 @@ async function scrapeOneMovie(lib, files, file) {
       return mark({ title: item.title || title, year: item.year || base.year, poster: item.img || "", provider: "豆瓣", checkedAt: Date.now(), scrape_state: "ok", reason: "" });
     }
   } catch (e) { /* 豆瓣无 CORS，浏览器直连基本必失败 → 记失败原因，交给下次重试 */ }
-  return mark({ provider: "文件名展示", scrape_state: "failed", reason: readMovieMetadata()[path]?.reason || "未命中（可重试）" });
+  return mark({ provider: "文件名展示", scrape_state: movieFallbackState(path), reason: movieFallbackReason(path) });
 }
 async function scrapeMovieMetadata(host, lib, files) {
   await loadScraperStatus();
@@ -1485,6 +1642,9 @@ async function scrapeMovieMetadata(host, lib, files) {
   if (lib && lib.id) hydrated = await hydrateMovieMetadataFromServer(lib.id);
   const all = readMovieMetadata();
   if (hydrated) { renderMovieScrapeProgress(); }
+  /* v0.9.89：把历史刮削结果补做本地化（图片 + NFO），不必整库重刮。 */
+  const backfilled = queueLocalizationBacklog(lib, files);
+  if (backfilled) console.info(`[scrape] 本地化回填：${backfilled} 条已刮削条目排队写 NFO / 本地图`);
   const localPaths = new Set();
   for (const file of files) {
     const path = String(file.path);
@@ -1514,7 +1674,9 @@ async function scrapeMovieMetadata(host, lib, files) {
     const meta = all[path];
     if (!meta) return true;
     const state = movieMetaState(meta);
-    if (state === "ok" || state === "skip") return false;
+    /* v0.9.89：review（待确认）不自动重试 —— 客户要的是「异常时手动改名辅助」，
+       否则整库匹配不上时会反复批量联网（正是要避免的重复刮削）。 */
+    if (state === "ok" || state === "skip" || state === "review") return false;
     const attempts = Number(meta.scrape_attempts || 0);
     const last = Number(meta.last_attempt || 0);
     return attempts < MOVIE_SCRAPE_MAX_ATTEMPTS && (now - last) >= MOVIE_SCRAPE_RETRY_MS;
@@ -1689,6 +1851,9 @@ async function saveMovieUserRating(libId, path, value) {
 async function saveMovieMetadataOverride(libId,path,values){const res=await fetch(`/api/media/metadata/override?id=${encodeURIComponent(libId)}&path=${encodeURIComponent(path)}`,{method:"PUT",headers:sessionWriteHeaders(true),body:JSON.stringify(values)});const data=await res.json();if(!res.ok)throw new Error(data.error||`HTTP ${res.status}`);return data;}
 async function toggleMovieWatched(libId,path,button){const meta=movieMetadataFor(path),next=!(meta.watched||movieFlag("watched",libId,path));try{const data=await saveMovieMetadataOverride(libId,path,{poster:meta.poster||"",logo:meta.logo||"",fanart:meta.fanart||"",backdrop:meta.backdrop||"",tags:meta.tags||[],watched:next});meta.watched=!!data.watched;const all=readMovieMetadata();all[path]=meta;writeMovieMetadata(all);localStorage.setItem(movieStateKey("watched",libId,path),next?"1":"0");if(button)button.textContent=next?"✓ 已观看":"○ 未观看";}catch(e){toast("⚠️ 状态保存失败："+e.message);}}
 async function openMediaMetadataEditor(libId,path){const meta=movieMetadataFor(path);document.getElementById("mediaEditLibId").value=libId;document.getElementById("mediaEditPath").value=path;
+  /* v0.9.89：刮削完成后，原文件名退到「媒体信息编辑」里展示（只读）——
+     一级标题是刮削出来的 NFO 标题，二级信息（原始文件名）在这里可查。 */
+  const origInput=document.getElementById("mediaEditOriginalName");if(origInput)origInput.value=String(path).split("/").pop();
   /* v0.9.86（客户要求「增加影视媒体编辑功能辅助完成刮削（媒体名称、年份）」）：
      名称回填优先级 —— 手工设置过的名称 > 当前展示名；年份同理。 */
   const titleInput=document.getElementById("mediaEditTitle"),yearInput=document.getElementById("mediaEditYear");
@@ -2308,7 +2473,9 @@ function renderSeriesInfoPanel(show, rating) {
 function renderMovieDetails(lib,path,meta){try{meta={...meta,__path:path};}catch(e){}
 /* v0.9.81：详情顺序统一为 —— 视频介绍(hero) → 演职人员(网格头像) → 视频推荐(网格略缩图) → 单集网格 → 视频信息(底部)。 */
 return `<div class="media-reader-overlay movie-detail-page movie-detail-backdrop" style="${esc(detailBackdropStyle(meta))}"><div class="movie-detail-scroll">${movieDetailCloseButton()}${renderMovieHero(lib,path,meta)}${renderCastPanel(meta)}${renderRecPanel(meta)}${episodeGridHTML(lib)}${renderVideoInfoPanel(path,meta)}</div></div>`;}
-function renderMoviePoster(lib, file) { const path=String(file.path), meta=movieMetadataFor(path), watched=!!meta.watched||movieFlag("watched",lib.id,path), art=meta.poster ? `<img src="${esc(coverThumbUrl(meta.poster, 320))}" alt="${esc(meta.title)}" loading="lazy" decoding="async">` : `<span>${esc(meta.title)}</span>`; return `<article class="media-poster-card ${watched?"is-read":""}" data-media-group="movie" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openMovieDetails(${jsAttrArg(lib.id)},${jsAttrArg(path)})"><div class="media-poster-art" style="${meta.poster ? "" : `background:${coverGradient(meta.title)}`}" >${art}<button class="movie-poster-settings" data-movie-settings title="观看状态" onclick="event.stopPropagation();toggleMovieWatched(${jsAttrArg(lib.id)},${jsAttrArg(path)},this)">${watched?"✓ 已观看":"○ 未观看"}</button></div><div class="media-poster-info"><strong>${esc(meta.title)}</strong><small>${esc(moviePosterSubtitle(meta, path, file))}</small></div></article>`; }
+function renderMoviePoster(lib, file) { const path=String(file.path), meta=movieMetadataFor(path), watched=!!meta.watched||movieFlag("watched",lib.id,path), art=meta.poster ? `<img src="${esc(coverThumbUrl(meta.poster, 320))}" alt="${esc(meta.title)}" loading="lazy" decoding="async">` : `<span>${esc(meta.title)}</span>`; /* v0.9.89：一级标题 = 刮削标题（卡片大字）；原文件名作为二级信息收进
+     tooltip 与「媒体信息编辑」弹窗，不再占用卡片版面。 */
+  return `<article class="media-poster-card ${watched?"is-read":""}" title="原文件：${esc(path)}" data-media-group="movie" data-media-library="${esc(lib.id)}" data-media-path="${esc(path)}" onclick="openMovieDetails(${jsAttrArg(lib.id)},${jsAttrArg(path)})"><div class="media-poster-art" style="${meta.poster ? "" : `background:${coverGradient(meta.title)}`}" >${art}<button class="movie-poster-settings" data-movie-settings title="观看状态" onclick="event.stopPropagation();toggleMovieWatched(${jsAttrArg(lib.id)},${jsAttrArg(path)},this)">${watched?"✓ 已观看":"○ 未观看"}</button></div><div class="media-poster-info"><strong>${esc(meta.title)}</strong><small>${esc(moviePosterSubtitle(meta, path, file))}</small></div></article>`; }
 /* v0.9.85：媒体库海报只展示片名 + 换行年份（取消元数据来源/分辨率等）：电影=年份，
    剧集=年份 · N 季 · 共M集，原盘合并条目保留「原盘 · N 个片段」提示。 */
 function moviePosterSubtitle(meta, path, file) {

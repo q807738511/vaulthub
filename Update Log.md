@@ -1,3 +1,45 @@
+# VaultHub 蜀鼠之家 v0.9.89
+
+> 迭代主题：**生产事故修复（刮削结果库并发写 fatal → 全站 502）** · 阈值改为辅助刮削 · 刮削结果 NFO 本地化 · 原文件名进媒体信息编辑
+
+## 0. 生产事故修复：v0.9.88 的刮削结果库并发写会杀掉后端（全站 502）
+
+- **现象**：升级到 v0.9.88 后，媒体库看起来「没了」，新建媒体库报 **502**；容器状态却是 `Up`。
+- **根因（已用真实镜像 + 日志 + 对照实验确证）**：
+  - `media-go/scrape_store.go` 的 `loadScrapeCache()` 只把「首次读盘」放进锁里，返回的结构体里 `Libraries` / `Items` 仍是与 `a.scrapeCache` **共享的同一份 map**；
+  - 之后 `scrapeCacheGet` 在**锁外** `range` 这张 map，`scrapeCachePost` 在**锁外** `lib.Items[path] = item` / `delete(...)`，`scrapeCacheDelete` 在**锁外** `delete(cache.Libraries, ...)`；
+  - 前端批量写回（生产库里 454 条，一次 POST 几百条）与界面轮询 GET 并发时，Go 运行时抛 `fatal error: concurrent map read and map write`（不可 recover）→ **整个 media-api 进程退出**；
+  - manager 只 `start` 一次子进程、然后等 `ctx.Done()`，没有任何守护 —— 后端死了没人拉起，而容器里的 Caddy 还活着，于是它把请求反代到 `127.0.0.1:9100` 得到 `connection refused`，**全站 `/api/*` 返回 502**。
+  - 日志原文：`"msg":"dial tcp 127.0.0.1:9100: connect: connection refused" ... "status":502`，进程表里 `media-api` 确实已消失（只剩 manager / subtitle-api / caddy）。
+  - **媒体库数据本身没有丢**：`/data/media-libraries.json` 完好（音乐 / 电子书 / 漫画 / 电影 / 电视 5 个库），只是界面拿不到列表。
+- **修复**：
+  1. `scrape_store.go` 全面改为「共享 map 只在 `scrapeCacheMu` 内访问」：新增 `cloneScrapeCacheFile` 深拷贝，`loadScrapeCacheLocked`（持锁）/ `loadScrapeCache`（返回副本），并把 GET/POST/DELETE 收敛成 `scrapeCacheRead` / `scrapeCacheMerge` / `scrapeCacheClear` 三个全程持锁的操作（POST 的「读盘 → 合并 → 落盘」整段同锁，DELETE 同理）。
+  2. `manager` 增加子进程守护：`supervise()` 按退避（1s→2s→…→30s）自动拉起退出的 `media-api` / `subtitle-api` / `caddy`，`/api/system/runtime` 暴露 `child_restarts` 计数；容器关闭时先 `stopChildren()` 再 SIGTERM，避免关停过程中反复拉起。
+- **回归测试**：`media-go/v0989_scrape_cache_concurrency_test.go`（8 写 + 8 读 + 并发 DELETE，每次写回 240 条，真实并发跑）与 `manager/v0989_supervise_test.go`。对照实验：把 v0.9.88 的旧实现换回来跑同一并发用例，**0.026 秒即 `fatal error: concurrent map read and map write`**；修复版全部通过。
+
+## 1. TMDB 刮削配置调整为「辅助刮削」（客户：本功能原意即用于辅助刮削与优化体验）
+
+- **口径修正**：命中判据回到客户说的那一条 —— **最低识别字符占比（覆盖率）≥ 阈值即命中**；综合分只用于在多个候选里挑更好的那个，不再当第二道卡死条件（覆盖率或综合分任一达标即命中）。阈值因此是「辅助」，不再阻塞。
+- **不再整库判失败**：匹配不足的条目改记 `scrape_state = "review"`（**待确认**），保留原文件名展示，**不进自动重试队列**（不反复批量联网）—— 等用户按客户说的「手动调整命名」后单条重刮。网络 / 凭据问题才记 `failed`（可重试）。统计与通知栏相应拆成「已刮削 / 排队中 / 待确认 / 待重试 / 无可识别标题」。
+- **文案修正**：不再出现让人以为程序坏了的「最高 0%」—— 没有候选时写「未命中：TMDB 没有返回候选」，候选毫无共同字符时写「未命中：候选标题与资源名没有共同字符」，其余写「识别字符占比 n%（＜ 70%）· 未采用，已按文件名展示 · 可在「逐项扫描 → ✎ 编辑名称」后重刮」。
+
+## 2. 刮削结果 NFO 本地化（影视 / 音乐 / 电子书）
+
+- 服务端 NFO 读取端（`local_metadata.go`，`movie.nfo` / `tvshow.nfo` / `<文件名>.nfo` → provider「本地 NFO」）早就有了，**缺的是写回**。本版补齐：
+  - 新增 `POST /api/media/nfo`：把刮削结果写成 Kodi / Emby / Jellyfin / Plex(XBMCnfo) 通用 XML，落在媒体文件旁边（`<文件名>.nfo`，可附带 `movie.nfo` / `tvshow.nfo`，剧集写 show 根）；
+  - `GET /api/media/nfo` 回读（验证写进去的一定能被本地元数据解析）；
+  - 安全：需登录会话；目标目录必须落在该库合法根内（复用 `safeFile` 双向校验，防路径穿越）；文件名白名单（只允许 `.nfo`）；**已存在且不是 VaultHub 写的 NFO 默认保留不覆盖**（尊重用户手写 / 其他工具）；临时文件 + rename 原子写，0644，单文件 ≤ 512 KB；XML 全字段转义。
+- 前端新增本地化流水线：刮削命中后**串行**（避免并发写盘风暴）执行 ① 图片落盘 → ② 写 NFO，并标记 `localized_at`（同一条只做一次）。
+- **NFO 里的图片地址可移植化**：站点内的 sidecar 图（`/api/media/cover?path=…` 这类带查询串的地址）外部媒体服务器（Emby / Jellyfin / Kodi）读不了，写进去等于没写 —— 改成**同目录相对文件名**（`<名>-poster.jpg`），播放器自己就能找到；远程图保留原地址，站内其它位置的图宁可不写。
+- **movie.nfo 的写入保护**：只在「该目录只有一个媒体文件」时才额外写 `movie.nfo`（Emby/Kodi 文件夹约定）。本地元数据读取端在单文件目录下会让 `movie.nfo` 对整个目录生效，扁平库（多部片子共用根目录）里写它会把一部片的信息串到同目录其它文件上 —— 实测写完后同目录的 ISO 也被读成「本地 NFO + 同一部片」。扁平库因此只写 `<文件名>.nfo`，安全且同样能被读回（读取端候选顺序本就以 `<文件名>.nfo` 优先）。
+- **已刮削条目的本地化回填**：客户库里历史刮削结果（服务端结果库存量条目）本版之前没有本地化产物，如果只对新刮削的条目本地化，老库得重刮一次才生效 —— 所以进库时把「已刮削但还没有 NFO / 本地图」的条目排队补做（每条只做一次，单次进库限量 60 条，串行执行避免一口气写上千个文件）。
+- 效果：下一次进库 / 换浏览器 / 换设备 / 重建索引时，`/api/media/metadata` 直接读本地 NFO 与本地图 → 不再整库重复联网刮削（这正是客户要的「防止多次批量重复刮削」）。
+
+## 3. 数据本地化 + 标题层级（一级 = NFO 标题，二级 = 原文件名收进媒体信息编辑）
+
+- **图片本地化扩展到海报以外的角色**：`POST /api/media/cover` 新增 `role`（`poster` / `fanart` / `backdrop` / `logo`），落成**读取端认得**的 `<名>-poster.jpg` / `<名>-fanart.jpg` / `<名>-backdrop.jpg` / `<名>-logo.png`（v0.9.56 只写 `<名>.cover.jpg`，服务端读取端并不认这个名，所以以前刮完仍是远程图床）。现在图片进媒体目录、由服务端本地元数据带回本地 URL，断网 / 换设备照样有图。
+- **标题层级**：卡片一级标题 = 刮削出来的 NFO 标题；原文件名作为二级信息收进 **「媒体信息编辑」弹窗新增的只读字段「原文件名称」**（卡片悬停也能看到原始路径）。不做物理改名 —— 用户文件永远不动。
+
 # VaultHub 蜀鼠之家 v0.9.88
 
 > 迭代主题：删除媒体库刮削按钮 · TMDB 标题匹配阈值（最低识别字符 70%） · 刮削结果服务端持久化 · 原盘 ISO/BDMV 读取与刮削
@@ -9,7 +51,7 @@
 
 ## 2. TMDB 刮削配置优化：标题匹配阈值（最低识别字符占比 70%）
 - **根因**：旧实现是 `results.find(x => x.poster_path || x.overview || x.title || x.name)` —— 压根不做比对，直接取 TMDB 返回的第一条带海报/简介的候选。中文库里「`[小组]Some.Movie.2021.WEB-DL`」经常对到同名短片、预告或另一部片，用户看到的就是「刮削信息不对」。
-- 现在对每个候选按 **0.50 × 双向字符覆盖率 + 0.20 × 词元 Dice + 0.30 × 二元组 Dice** 打分：
+- ~~现在对每个候选按 **0.50 × 双向字符覆盖率 + 0.20 × 词元 Dice + 0.30 × 二元组 Dice** 打分：~~（v0.9.89 已按客户反馈改为「识别字符占比」为主口径，见下版：阈值只做辅助，不阻塞）
   - 覆盖率取双向最大 —— 资源名带「第二部 / Part Two / 剧场版」这类后缀时同样命中正片；
   - 词元 Dice 同时按「按字切」与「按空格切」计算取较大值（中文没有词边界，单一写法会把「阿凡达」对「阿凡达：水之道」判成 0.62 而误杀）；
   - `title / original_title / name / original_name` 全部参与打分并对结果取最大 —— 切换刮削地区后 TMDB 返回当地语言标题，原名往往才是资源名的来源；
