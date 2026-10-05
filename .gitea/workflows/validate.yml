@@ -1,0 +1,191 @@
+# =============================================================================
+# VaultHub —— Gitea Actions 校验流水线（Gitea 原生版，纯 shell，零外部 action）
+#
+# 三条设计前提：
+#   1. 不依赖 github.com 上的任何 action。内网 runner 拉不到外网，
+#      原版里的 actions/checkout@v4、actions/setup-go@v5 只会让任务卡死；
+#      而 Gitea 本来就会先把仓库克隆到工作目录，checkout 是多余的。
+#   2. 工具能缺能少，但绝不静默通过：镜像里没有的 go / gcc / python3 / docker
+#      一律打印「跳过：镜像里没有 X」，哪一项没跑一眼能看见。
+#   3. 不硬编码任何主机名或 IP，只用 Gitea 一定会注入的环境变量。
+#
+# 实际镜像由 act_runner 的 GITEA_RUNNER_LABELS 决定：
+#   ubuntu-latest:docker://node:16-bullseye        有 bash/git/node/gcc/make
+#   ubuntu-latest:docker://catthehacker/ubuntu:act-latest   还多 go + python3（体积大）
+#
+# GitHub 原版已整体注释保留在本文件末尾，并另存为
+# .github/workflows/validate.yml.disabled（改名回 .yml 即可恢复）。
+# =============================================================================
+name: Validate
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 环境自检
+        run: |
+          set -eu
+          echo "工作目录：$(pwd)"
+          echo "提交：$(git rev-parse --short HEAD 2>/dev/null || echo '?')"
+          for t in sh bash git node gcc make go python3 docker curl; do
+            if command -v "$t" >/dev/null 2>&1; then echo "  有  $t"; else echo "  缺  $t"; fi
+          done
+
+      - name: 检查 shell 脚本语法
+        run: |
+          set -eu
+          if [ ! -d scripts ]; then echo "没有 scripts 目录"; exit 1; fi
+          n=0
+          for f in scripts/*.sh; do sh -n "$f"; echo "  ok $f"; n=$((n+1)); done
+          echo "共检查 $n 个 shell 脚本"
+
+      - name: 检查 JavaScript 语法
+        run: |
+          set -eu
+          if ! command -v node >/dev/null 2>&1; then echo "跳过：镜像里没有 node"; exit 0; fi
+          for f in web/js/*.js web/vendor/ffmpeg/*.js; do node --check "$f"; echo "  ok $f"; done
+          cat > /tmp/extract_inline.js <<'JS'
+          const fs = require('fs');
+          const html = fs.readFileSync('index.html', 'utf8');
+          const re = /<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g;
+          let m;
+          const parts = [];
+          while ((m = re.exec(html))) { if (m[1].trim()) parts.push(m[1]); }
+          fs.writeFileSync('/tmp/vaulthub-inline.js', parts.join('\n;\n'));
+          console.log('  index.html 内联脚本 ' + parts.length + ' 段');
+          JS
+          node /tmp/extract_inline.js
+          if [ -s /tmp/vaulthub-inline.js ]; then node --check /tmp/vaulthub-inline.js; echo "  ok index.html 内联脚本"; fi
+
+      - name: 检查 Go 服务
+        run: |
+          set -eu
+          if ! command -v go >/dev/null 2>&1; then echo "跳过：镜像里没有 go，go test/vet/build 未执行"; exit 0; fi
+          for d in manager media-go subtitle-api; do
+            if [ -f "$d/go.mod" ]; then
+              echo "--- $d ---"
+              ( cd "$d" && go test ./... && go vet ./... && go build ./... )
+            fi
+          done
+
+      - name: 检查遗留 C 源码
+        run: |
+          set -eu
+          if ! command -v gcc >/dev/null 2>&1; then echo "跳过：镜像里没有 gcc"; exit 0; fi
+          gcc -Wall -Wextra -Werror -fsyntax-only vaulthub-manager.c
+          gcc -Wall -Wextra -Werror -pthread -fsyntax-only tests/fixtures/media-api_legacy.c
+          echo "  ok C 源码语法"
+
+      - name: 运行前端测试套件
+        run: |
+          set -eu
+          if ! command -v python3 >/dev/null 2>&1; then echo "跳过：镜像里没有 python3，前端测试套件未执行"; exit 0; fi
+          pass=0; fail=0; failed=""
+          for f in tests/test_*.py; do
+            if python3 "$f" >/tmp/t.log 2>&1; then pass=$((pass+1)); else fail=$((fail+1)); failed="$failed $f"; fi
+          done
+          echo "测试套件：通过 $pass 个，失败 $fail 个"
+          if [ "$fail" -ne 0 ]; then echo "失败用例：$failed"; tail -40 /tmp/t.log; exit 1; fi
+
+      - name: 校验 Compose 与 Caddyfile
+        run: |
+          set -eu
+          if command -v docker >/dev/null 2>&1; then
+            cp .env.example .env 2>/dev/null || true
+            docker compose config >/dev/null && echo "  ok docker-compose.yml"
+          else
+            echo "跳过：镜像里没有 docker CLI，docker-compose.yml 未校验"
+          fi
+          if [ -x ./caddy ]; then
+            ./caddy validate --config Caddyfile --adapter caddyfile && echo "  ok Caddyfile"
+          else
+            echo "跳过：./caddy 不可执行，Caddyfile 未校验"
+          fi
+
+      - name: 小结
+        run: |
+          echo "校验流程结束。上面每一条「跳过：…」都代表该项没在这个 runner 上真正执行。"
+          echo "要让 go test / 前端测试套件真跑起来，把 runner 的标签指向带 go + python3 的镜像。"
+
+# GitHub 原版工作流（已停用，原样保留以便恢复）
+#
+# 下面这段是 GitHub Actions 时代的 validate.yml，逐字复制、整体注释。
+# 恢复步骤：
+#   1. 去掉每行开头的「# 」（或直接从 .github/workflows/validate.yml.disabled 改名成 .yml）
+#   2. 确认 GitHub 账户已恢复、ghcr.io 可推送；它推的是 ghcr.io 而不是 Docker Hub
+#   3. 删掉本 .gitea/workflows/validate.yml，否则两边会各跑一遍
+#
+# 原文件在仓库里也可直接取用：.github/workflows/validate.yml.disabled
+# ---------------------------------------------------------------------------
+# name: Validate
+#
+# on:
+#   push:
+#   pull_request:
+#
+# permissions:
+#   contents: read
+#
+# jobs:
+#   validate:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - uses: actions/checkout@v4
+#
+#       - name: Set up Go
+#         uses: actions/setup-go@v5
+#         with:
+#           go-version: '1.23.x'
+#           cache: false
+#
+#       - name: Check shell scripts
+#         run: |
+#           sh -n scripts/install.sh
+#           sh -n scripts/upgrade.sh
+#           sh -n scripts/rollback.sh
+#
+#       - name: Check Go services
+#         run: |
+#           cd manager
+#           go test ./...
+#           go vet ./...
+#           go build ./...
+#           cd ../media-go
+#           go test ./...
+#           go vet ./...
+#           go build ./...
+#
+#       - name: Check legacy C sources
+#         run: |
+#           gcc -Wall -Wextra -Werror -fsyntax-only vaulthub-manager.c
+#           gcc -Wall -Wextra -Werror -pthread -fsyntax-only tests/fixtures/media-api_legacy.c
+#
+#       - name: Check JavaScript syntax
+#         run: |
+#           for f in web/js/*.js; do
+#             node --check "$f"
+#           done
+#           # Any remaining inline scripts in index.html must also parse.
+#           python3 - <<'PY'
+#           import re
+#           from pathlib import Path
+#           html = Path('index.html').read_text(encoding='utf-8')
+#           scripts = re.findall(r'<script(?![^>]*src)[^>]*>(.*?)</script>', html, re.S)
+#           body = '\n;\n'.join(s for s in scripts if s.strip())
+#           Path('/tmp/vaulthub-inline.js').write_text(body, encoding='utf-8')
+#           PY
+#           if [ -s /tmp/vaulthub-inline.js ]; then node --check /tmp/vaulthub-inline.js; fi
+#
+#       - name: Validate Compose model
+#         run: |
+#           cp .env.example .env
+#           docker compose config >/dev/null
+#
+#       - name: Validate bundled Caddyfile
+#         run: |
+#           chmod +x ./caddy
+#           ./caddy validate --config Caddyfile --adapter caddyfile

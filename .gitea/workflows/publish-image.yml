@@ -1,0 +1,325 @@
+# =============================================================================
+# VaultHub —— Gitea Actions 构建 / 发布流水线（Gitea 原生版，纯 shell，零外部 action）
+#
+# 与原 GitHub 版的对应关系：
+#   原版                            本版
+#   actions/checkout@v4        →   不需要，Gitea 已把仓库克隆到工作目录
+#   docker/setup-buildx-action →   不需要，直接用本机 docker CLI
+#   docker/login-action        →   docker login --password-stdin
+#   docker/metadata-action     →   手写 tag 规则（下面「确定镜像标签」一步）
+#   docker/build-push-action   →   docker build / docker push
+#   gh release create          →   scripts/ci-release-gitea.sh（Gitea OpenAPI，幂等+重试+读回）
+#
+# 触发：main 推送 → 只推 sha-<短提交>；tag 推送（v* 或 数字开头）→ 额外推 latest 和该 tag。
+#
+# 关于构建环境（重要）：
+#   job 跑在 act_runner 给的容器里，容器里不一定有 docker CLI，也不一定有 docker socket。
+#   所以「构建并推送」这一步会先探测：
+#     有 docker           → 真的 build + push + 读回 digest
+#     没有 docker         → 打印 ::warning:: 并给出 NAS 上的命令，然后跳过（不亮假绿灯）
+#   想让 CI 自己构建，需要在 act_runner 的 config.yaml 里给 job 容器挂 socket：
+#     container:
+#       options: "-v /var/run/docker.sock:/var/run/docker.sock"
+#   并且把标签指向自带 docker CLI 的镜像。否则请继续用 NAS 侧脚本。
+#
+# 需要的仓库密钥（缺了就跳过对应步骤，并在日志里明说）：
+#   DOCKERHUB_USERNAME / DOCKERHUB_TOKEN     推 Docker Hub
+#   GITEA_RELEASE_TOKEN                      在 Gitea 上创建 Release（仓库级访问令牌）
+#
+# GitHub 原版已整体注释保留在本文件末尾，并另存为
+# .github/workflows/publish-image.yml.disabled（改名回 .yml 即可恢复）。
+# =============================================================================
+name: Publish
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - 'v*'
+      - '[0-9]*'
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 环境与身份自检
+        run: |
+          set -eu
+          echo "工作目录：$(pwd)"
+          echo "GITHUB_REF        = ${GITHUB_REF:-<未设置>}"
+          echo "GITHUB_REF_NAME   = ${GITHUB_REF_NAME:-<未设置>}"
+          echo "GITHUB_SHA        = ${GITHUB_SHA:-<未设置>}"
+          echo "GITHUB_REPOSITORY = ${GITHUB_REPOSITORY:-<未设置>}"
+          echo "GITHUB_SERVER_URL = ${GITHUB_SERVER_URL:-<未设置>}"
+          for t in sh git node gcc make go python3 docker curl; do
+            if command -v "$t" >/dev/null 2>&1; then echo "  有  $t"; else echo "  缺  $t"; fi
+          done
+          if [ -S /var/run/docker.sock ]; then echo "  docker socket：可用"; else echo "  docker socket：不可用"; fi
+
+      - name: 版本一致性校验
+        run: |
+          set -eu
+          V_HTML=$(sed -n 's/.*VAULTHUB_ASSET_VERSION *= *"\([^"]*\)".*/\1/p' index.html | head -1)
+          V_JS=$(sed -n 's/.*VAULTHUB_SCRIPT_VERSION *= *"\([^"]*\)".*/\1/p' web/js/01-state.js | head -1)
+          echo "index.html 资源版本 = $V_HTML"
+          echo "01-state.js 脚本版本 = $V_JS"
+          if [ -z "$V_HTML" ] || [ -z "$V_JS" ]; then echo "::error title=版本号读不到::index.html / 01-state.js 里的版本常量没解析出来"; exit 1; fi
+          if [ "$V_HTML" != "$V_JS" ]; then echo "::error title=版本号不一致::index.html=$V_HTML 与 01-state.js=$V_JS 必须相同"; exit 1; fi
+          echo "VERSION=$V_HTML" > /tmp/vh-version.env
+
+          case "${GITHUB_REF:-}" in
+            refs/tags/*)
+              TAG="${GITHUB_REF_NAME:-}"
+              WANT="${TAG#v}"
+              echo "这是一个 tag 构建：$TAG（期望版本 $WANT）"
+              if [ "$WANT" != "$V_HTML" ]; then
+                echo "::error title=tag 与版本号不符::tag=$TAG 对应版本 $WANT，但代码里是 $V_HTML；请先改版本号再打 tag"
+                exit 1
+              fi
+              echo "TAG=$TAG" >> /tmp/vh-version.env
+              ;;
+            *)
+              echo "这是分支推送（${GITHUB_REF_NAME:-?}）：不做 tag 与版本号的绑定校验"
+              ;;
+          esac
+
+      - name: 发布说明文件检查
+        run: |
+          set -eu
+          . /tmp/vh-version.env
+          NOTES=".github/RELEASE_NOTES_${VERSION}.md"
+          if [ -f "$NOTES" ]; then
+            N=$(wc -c < "$NOTES" | tr -d ' ')
+            echo "发布说明：$NOTES（$N 字节）"
+            if [ "${TAG:-}" != "" ] && [ "$N" -lt 500 ]; then
+              echo "::error title=发布说明过短::$NOTES 只有 $N 字节，小于 500，几乎可以断定文件不对"; exit 1
+            fi
+          else
+            if [ "${TAG:-}" != "" ]; then
+              echo "::error title=缺少发布说明::找不到 $NOTES，拒绝为 $TAG 发布"; exit 1
+            fi
+            echo "::warning title=暂无发布说明::分支推送，未找到 $NOTES（正式发版前必须补上）"
+          fi
+
+      - name: 前端测试套件
+        run: |
+          set -eu
+          if ! command -v python3 >/dev/null 2>&1; then echo "跳过：镜像里没有 python3，测试套件未执行"; exit 0; fi
+          pass=0; fail=0; failed=""
+          for f in tests/test_*.py; do
+            if python3 "$f" >/tmp/t.log 2>&1; then pass=$((pass+1)); else fail=$((fail+1)); failed="$failed $f"; fi
+          done
+          echo "测试套件：通过 $pass 个，失败 $fail 个"
+          if [ "$fail" -ne 0 ]; then echo "失败用例：$failed"; tail -40 /tmp/t.log; exit 1; fi
+
+      - name: 构建并推送镜像到 Docker Hub
+        env:
+          IMAGE_NAME: docker.io/q807738511/vaulthub
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          set -eu
+          . /tmp/vh-version.env
+          SHORT=$(git rev-parse --short HEAD)
+          # 标签规则与原 docker/metadata-action 一致：
+          #   分支推送 → 只产生 sha-<短提交>
+          #   tag 推送 → 额外产生该 tag 和 latest（latest 与版本 tag 指向同一 digest）
+          REFS="$IMAGE_NAME:sha-$SHORT"
+          if [ "${TAG:-}" != "" ]; then REFS="$REFS $IMAGE_NAME:$TAG $IMAGE_NAME:latest"; fi
+          BUILD_ARGS=""
+          for r in $REFS; do BUILD_ARGS="$BUILD_ARGS -t $r"; done
+
+          if ! command -v docker >/dev/null 2>&1; then
+            echo "::warning title=本次未构建镜像::runner 的 job 容器里没有 docker CLI，已跳过构建与推送"
+            echo "本次本应产生的标签：$REFS"
+            echo "请在能构建的机器（NAS）上执行： sh scripts/release-nas.sh ${TAG:-<tag>}"
+            echo "SKIPPED" > /tmp/vh-build-status
+            exit 0
+          fi
+          if [ -z "${DOCKERHUB_USERNAME:-}" ] || [ -z "${DOCKERHUB_TOKEN:-}" ]; then
+            echo "::error title=缺少 Docker Hub 凭据::请在仓库设置里配置 DOCKERHUB_USERNAME / DOCKERHUB_TOKEN"
+            exit 1
+          fi
+
+          echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin docker.io
+          docker build $BUILD_ARGS -f Dockerfile .
+
+          echo "--- 逐个推送 ---"
+          for r in $REFS; do
+            echo "push $r"
+            docker push "$r"
+          done
+
+          echo "--- 推完读回 digest（不信任 push 的退出码）---"
+          for r in $REFS; do
+            DIG=$(docker buildx imagetools inspect "$r" 2>/dev/null | sed -n 's/^Digest: *//p' | head -1)
+            if [ -z "$DIG" ]; then echo "::error title=读回失败::$r 推完读不到 digest"; exit 1; fi
+            echo "  $r -> $DIG"
+          done
+          echo "BUILT" > /tmp/vh-build-status
+
+      - name: 在 Gitea 上创建 / 更新 Release
+        env:
+          GITEA_RELEASE_TOKEN: ${{ secrets.GITEA_RELEASE_TOKEN }}
+        run: |
+          set -eu
+          . /tmp/vh-version.env
+          if [ "${TAG:-}" = "" ]; then echo "分支推送，不创建 Release"; exit 0; fi
+          if [ -z "${GITEA_RELEASE_TOKEN:-}" ]; then
+            echo "::warning title=跳过 Release::没有配置 GITEA_RELEASE_TOKEN 仓库密钥，未在 Gitea 上创建 Release"
+            exit 0
+          fi
+          if ! command -v python3 >/dev/null 2>&1; then
+            echo "::warning title=跳过 Release::镜像里没有 python3，Release 说明的 JSON 转义做不了"; exit 0
+          fi
+          GITEA_TOKEN="$GITEA_RELEASE_TOKEN" \
+          GITEA_API_BASE="${GITHUB_SERVER_URL:-}/api/v1" \
+          GITEA_REPO_SLUG="${GITHUB_REPOSITORY:-}" \
+            sh scripts/ci-release-gitea.sh "$TAG" ".github/RELEASE_NOTES_${VERSION}.md"
+
+      - name: 小结
+        run: |
+          echo "======== 本次流水线小结 ========"
+          if [ -f /tmp/vh-build-status ] && [ "$(cat /tmp/vh-build-status)" = "BUILT" ]; then
+            echo "镜像：已构建并推送，digest 见上一步读回结果"
+          else
+            echo "镜像：未构建（本 runner 没有 docker）。请在 NAS 上执行 scripts/release-nas.sh"
+          fi
+          echo "Gitea Release：见上一步日志（未配置令牌或非 tag 构建时会明确跳过）"
+          echo "================================"
+
+# GitHub 原版工作流（已停用，原样保留以便恢复）
+#
+# 下面这段是 GitHub Actions 时代的 publish-image.yml，逐字复制、整体注释。
+# 恢复步骤：
+#   1. 去掉每行开头的「# 」（或直接从 .github/workflows/publish-image.yml.disabled 改名成 .yml）
+#   2. 确认 GitHub 账户已恢复、ghcr.io 可推送；它推的是 ghcr.io 而不是 Docker Hub
+#   3. 删掉本 .gitea/workflows/publish-image.yml，否则两边会各跑一遍
+#
+# 原文件在仓库里也可直接取用：.github/workflows/publish-image.yml.disabled
+# ---------------------------------------------------------------------------
+# name: Build and publish container
+#
+# on:
+#   push:
+#     branches: [main]
+#     tags:
+#       - 'v*'
+#       - '[0-9]*'
+#   workflow_dispatch:
+#
+# permissions:
+#   contents: write
+#   packages: write
+#
+# env:
+#   IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/vaulthub
+#
+# jobs:
+#   publish:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - name: Check out repository
+#         uses: actions/checkout@v4
+#
+#       - name: Set up Docker Buildx
+#         uses: docker/setup-buildx-action@v3
+#
+#       - name: Log in to GHCR
+#         uses: docker/login-action@v3
+#         with:
+#           registry: ghcr.io
+#           username: ${{ github.actor }}
+#           password: ${{ secrets.GITHUB_TOKEN }}
+#
+#       - name: Extract image metadata
+#         id: meta
+#         uses: docker/metadata-action@v5
+#         with:
+#           images: ${{ env.IMAGE_NAME }}
+#           tags: |
+#             # v0.9.41：latest 只在正式版本 tag（vX.Y.Z）推送时更新，
+#             # 与版本号标签指向同一 digest；普通 main 提交只产生 sha-xxxx，不再动 latest。
+#             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }}
+#             type=ref,event=tag
+#             type=sha,format=short
+#
+#       - name: Build and push image
+#         uses: docker/build-push-action@v6
+#         with:
+#           context: .
+#           file: ./Dockerfile
+#           platforms: linux/amd64
+#           push: true
+#           tags: ${{ steps.meta.outputs.tags }}
+#           labels: ${{ steps.meta.outputs.labels }}
+#           cache-from: type=gha
+#           cache-to: type=gha,mode=max
+#
+#       - name: Create GitHub Release for version tags
+#         if: startsWith(github.ref, 'refs/tags/')
+#         env:
+#           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#         run: |
+#           set -euo pipefail
+#           NOTES=".github/RELEASE_NOTES_${GITHUB_REF_NAME#v}.md"
+#           if [ ! -f "$NOTES" ]; then
+#             echo "::error title=缺少发布说明::找不到 $NOTES，拒绝创建没有说明的 Release"
+#             exit 1
+#           fi
+#           echo "发布说明文件：$NOTES ($(wc -c < "$NOTES") 字节)"
+#
+#           # v0.9.70 复盘：旧写法里 gh 偶发返回非 0 时，Release 其实已经创建并发布，
+#           # 但步骤仍判失败 → 整个「Build and publish container」红灯 →
+#           # workflow_run 触发的 Docker Hub 同步因「构建失败」被跳过，Docker Hub 停留旧版。
+#           # 因此这里改为幂等 + 重试 + 发布后读回校验，最终以「Release 是否真的已发布」为准。
+#           publish_release() {
+#             if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+#               echo "Release 已存在，改为覆盖标题与说明并确保非草稿"
+#               gh release edit "$GITHUB_REF_NAME" \
+#                 --repo "$GITHUB_REPOSITORY" \
+#                 --title "VaultHub $GITHUB_REF_NAME" \
+#                 --notes-file "$NOTES" \
+#                 --draft=false \
+#                 --prerelease=false
+#             else
+#               echo "Release 不存在，创建正式 Release"
+#               gh release create "$GITHUB_REF_NAME" \
+#                 --repo "$GITHUB_REPOSITORY" \
+#                 --title "VaultHub $GITHUB_REF_NAME" \
+#                 --notes-file "$NOTES" \
+#                 --verify-tag
+#             fi
+#           }
+#
+#           for ATTEMPT in 1 2 3; do
+#             if publish_release; then
+#               echo "第 $ATTEMPT 次发布调用成功"
+#               break
+#             fi
+#             echo "::warning title=Release 发布重试::第 $ATTEMPT 次调用返回非 0，10 秒后重试"
+#             sleep 10
+#           done
+#
+#           # 读回校验：不信任 gh 的退出码，只认仓库里真实存在的 Release 状态。
+#           gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+#             --json isDraft,isPrerelease,name,tagName,body,url > /tmp/vaulthub-release.json
+#           cat /tmp/vaulthub-release.json
+#           DRAFT=$(jq -r '.isDraft' /tmp/vaulthub-release.json 2>/dev/null || echo "")
+#           PRE=$(jq -r '.isPrerelease' /tmp/vaulthub-release.json 2>/dev/null || echo "")
+#           BODY_LEN=$(jq -r '.body | length' /tmp/vaulthub-release.json 2>/dev/null || echo "")
+#           echo "读回结果：draft=$DRAFT prerelease=$PRE 说明字符数=$BODY_LEN"
+#           # 空值 / 非数字必须先拦住：否则 [ "" -lt 500 ] 只会打印报错而不改变判定，
+#           # 校验会被静默跳过（本步骤在本地用桩程序模拟时正是这样漏掉的）。
+#           case "$BODY_LEN" in
+#             ''|*[!0-9]*)
+#               echo "::error title=Release 校验失败::读回说明长度无效（$BODY_LEN），无法确认说明完整"
+#               exit 1
+#               ;;
+#           esac
+#           if [ "$DRAFT" != "false" ] || [ "$PRE" != "false" ] || [ "$BODY_LEN" -lt 500 ]; then
+#             echo "::error title=Release 校验失败::draft=$DRAFT prerelease=$PRE body_len=$BODY_LEN"
+#             exit 1
+#           fi
+#           echo "Release 已发布且说明完整：$(jq -r '.url' /tmp/vaulthub-release.json)"
