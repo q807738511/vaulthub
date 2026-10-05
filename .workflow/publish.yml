@@ -82,6 +82,59 @@ stages:
               printf '  %-32s %s\n' "$k" "$v"
             done
 
+            echo "================ 预检：Docker Hub 凭据与网络 ================"
+            if python3 - <<'PY'
+            # 这一步专门用来「把话说清楚」：Docker Hub 推不上去时，日志里能直接看到
+            # 是哪个环节断的（缺凭据 / 凭据无效 / 网络不通），而不是一句 login failed。
+            import base64, os, sys, urllib.request, urllib.error
+
+            user = os.environ.get("DOCKERHUB_USERNAME", "")
+            tok = os.environ.get("DOCKERHUB_TOKEN", "")
+            print("  DOCKERHUB_USERNAME = %s" % (user or "<未设置>"))
+            print("  DOCKERHUB_TOKEN    = %s" % (("已设置（%d 字符）" % len(tok)) if tok else "<未设置>"))
+
+            def probe(url, auth=None, timeout=25):
+                req = urllib.request.Request(url)
+                if auth:
+                    req.add_header("Authorization",
+                                   "Basic " + base64.b64encode(auth.encode()).decode())
+                try:
+                    with urllib.request.urlopen(req, timeout=timeout) as r:
+                        return r.status
+                except urllib.error.HTTPError as e:
+                    return e.code
+                except Exception as e:
+                    print("    连接失败：%s" % str(e)[:140])
+                    return 0
+
+            code = probe("https://registry-1.docker.io/v2/")
+            print("  registry-1.docker.io/v2/ → %s" %
+                  ("HTTP %d（网络可达）" % code if code else "不可达"))
+
+            if user and tok:
+                code = probe("https://auth.docker.io/token?service=registry.docker.io"
+                             "&scope=repository:q807738511/vaulthub:pull,push",
+                             auth="%s:%s" % (user, tok))
+                if code == 200:
+                    print("  Docker Hub 凭据校验 → HTTP 200 ✅ 凭据有效且有 push 权限")
+                    sys.exit(0)
+                print("  Docker Hub 凭据校验 → HTTP %d ❌ 凭据无效或无 push 权限"
+                      "（去 Docker Hub → Account settings → Personal access tokens 重新签发）" % code)
+                sys.exit(1)
+
+            print("  ❌ 缺凭据 —— docker 步骤必然失败。")
+            print("     修复：Gitee → 本仓库 → 流水线 → 设置 → 通用变量，新建：")
+            print("       DOCKERHUB_USERNAME = q807738511")
+            print("       DOCKERHUB_TOKEN    = <Docker Hub 访问令牌（不是登录密码）>")
+            sys.exit(1)
+            PY
+            then
+              echo "  预检通过，继续解析版本号。"
+            else
+              echo "❌ 预检未通过：先把 Docker Hub 凭据配好，再重推 release-* 分支触发。"
+              exit 1
+            fi
+
             echo "================ 本次构建提交 ================"
             HEAD_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
             [ -n "$HEAD_SHA" ] || HEAD_SHA="${GITEE_COMMIT:-}"
