@@ -27,7 +27,7 @@
 #   DOCKERHUB_USERNAME / DOCKERHUB_TOKEN   推镜像（缺省则尝试已登录的 docker 凭据）
 #   GITEE_TOKEN                            建发行版（缺省则跳过发行版并提示）
 #   GITEE_REPO_SLUG                        默认 q807738511/vaulthub
-#   PUSH_PROXY                             例 socks5://192.168.112.3:7890
+#   PUSH_PROXY                             例 socks5://proxy.lan:7890
 #                                          见下方「推送到 Docker Hub 的三条路」
 #
 # === 推送到 Docker Hub 的三条路（NAS 直连 registry-1.docker.io 会超时）=========
@@ -181,15 +181,15 @@ if [ "$DO_PUSH" -eq 1 ]; then
   ① 在容器里跑 skopeo（推荐，不动宿主机）：
      docker run --rm \
        -v /var/run/docker.sock:/var/run/docker.sock \
-       -e ALL_PROXY=socks5://192.168.112.3:7890 \
+       -e ALL_PROXY=socks5://proxy.lan:7890 \
        quay.io/skopeo/stable copy --all \
          docker-daemon:vaulthub-src:latest \
          docker://docker.io/q807738511/vaulthub:vX.Y.Z \
          --dest-creds "$DOCKERHUB_USERNAME:$DOCKERHUB_TOKEN"
 
   ② 或给 dockerd 配代理（改宿主机，daemon.json 的 proxies 现在是空的）：
-     { "proxies": { "https-proxy": "socks5://192.168.112.3:7890",
-                    "http-proxy":  "socks5://192.168.112.3:7890" } }
+     { "proxies": { "https-proxy": "socks5://proxy.lan:7890",
+                    "http-proxy":  "socks5://proxy.lan:7890" } }
      然后 systemctl reload docker（compose 里已开 live-restore，容器不会被重启）
 
 推送不了的根因：daemon.json 里的 4 个加速器（docker.fnnas.com /
@@ -245,5 +245,5 @@ fi
 
 echo
 note "完成。生产升级（NAS 上）："
-note "  cd /vol1/1000/Docker/vaulthub && docker compose pull && docker compose up -d"
+note "  cd /srv/vaulthub && docker compose pull && docker compose up -d"
 note "注意：生产 compose 是 pull_policy: always，升级依赖 :latest 已被更新。"
