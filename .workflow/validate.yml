@@ -30,7 +30,13 @@ triggers:
       # 空前缀 = 匹配所有分支
       prefix:
         - ''
-  pr: {}
+  pr:
+    # 与原 validate.yml 的 pull_request 一致：所有 PR 都触发。
+    # 显式写空前缀（官方 demo 用空前缀表示"匹配全部"），
+    # 不用空的 `pr: {}`，避免方言歧义。
+    branches:
+      prefix:
+        - ''
 
 stages:
   - name: validate
