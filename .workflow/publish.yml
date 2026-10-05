@@ -1,0 +1,128 @@
+# =============================================================================
+# VaultHub —— Gitee Go 发布流水线（构建镜像 → 推 Docker Hub → 建 Gitee 发行版）
+#
+# 对应原来的 .github/workflows/publish-image.yml（GitHub Actions）。
+#
+# === 与旧流程的差异（重要，决定你能不能照搬）===================================
+#   ❌ 不再有 GHCR：镜像主仓库改为 Docker Hub（用户已确认）
+#   ❌ 不再有 gh CLI：发行版改用 Gitee OpenAPI v5（scripts/ci-release.sh）
+#   ❌ 不再有 workflow_run：原 sync-dockerhub-to-ghcr.yml 整条作废并已删除
+#   ❌ 不再有 ::error title= / $GITHUB_STEP_SUMMARY / type=gha 缓存
+#   ⚠️ build@docker 的 tag 字段文档里是单值。旧流程会同时推三个 tag
+#      （vX.Y.Z、latest、sha-xxxxxxx），而生产 compose 用的是 :latest +
+#      pull_policy: always，所以 :latest 必须更新，否则生产永远升不上来。
+#      → 若实测只推成功一个 tag，请改用下方注释里的「第二个 build@docker」补 latest，
+#        或直接走 NAS 上的 scripts/release-nas.sh（三种 tag 与旧行为完全对等）。
+#
+# === 首次运行前必须做的 3 件事 =================================================
+#   1. 开通 Gitee Go：仓库页 → 左侧「流水线」→ 按提示开通
+#   2. 在「流水线 → 全局参数」里建两个参数（不要写进本文件）：
+#        DOCKERHUB_USERNAME = q807738511
+#        DOCKERHUB_TOKEN    = <Docker Hub 访问令牌，不是登录密码>
+#      再建一个用于调 Gitee API 的参数：
+#        GITEE_TOKEN        = <Gitee 个人访问令牌，需 projects 权限>
+#   3. 确认真实插件标识：在「流水线 → 编辑 → 代码视图」点插件选择器，
+#      核对 build@docker / build@python 是否就是这两个名字
+#
+# === 无法在本地验证的部分（如实标注）==========================================
+#   · Gitee Go 的 yml 方言（triggers/stages/steps）只能在 Gitee 上真跑验证
+#   · 打 tag 推送时 tag 名对应哪个系统变量：文档只列了 GITEE_BRANCH /
+#     GITEE_COMMIT / GITEE_COMMIT_MESSAGE，没列 GITEE_TAG。下方脚本用
+#     `${GITEE_TAG:-${GITEE_BRANCH}}` 兜底，并强制校验形如 v1.2.3，
+#     解析不出来就直接失败 —— 宁可红灯，也不要发错版本
+#   · 托管 runner 上是否带 docker CLI / curl，取决于插件镜像
+# =============================================================================
+name: publish
+displayName: 发布（Docker Hub 镜像 + Gitee 发行版）
+
+triggers:
+  # 只在推送版本 tag 时发布（对应原 on.push.tags: ['v*', '[0-9]*']）
+  push:
+    tags:
+      prefix:
+        - v
+  # 允许在 Gitee 界面上手动点一次（对应原 workflow_dispatch）
+  # 注：Gitee Go 的手动执行是界面按钮，不需要在 yml 里声明
+
+stages:
+  - stage: publish
+    name: publish
+    displayName: 构建与发布
+    strategy: fast
+    trigger: auto
+    steps:
+      # ---------------------------------------------------------------- 构建镜像
+      - step: build@docker
+        name: build_push_image
+        displayName: 构建并推送镜像到 Docker Hub
+        # Docker 镜像仓库地址（对应旧流程的 registry: ghcr.io → 现为 docker.io）
+        repository: docker.io
+        username: ${DOCKERHUB_USERNAME}
+        password: ${DOCKERHUB_TOKEN}
+        # 版本标签。GITEE_BRANCH 在 tag 推送场景下是否等于 tag 名需首次运行确认；
+        # 若为空会拼出 "q807738511/vaulthub:" 这种非法 tag 并让步骤失败（这比静默发错好）。
+        tag: q807738511/vaulthub:${GITEE_BRANCH}
+        dockerfile: ./Dockerfile
+        # 与旧流程一致：每次全量重建，不吃缓存
+        isCache: false
+
+      # ------------------------------------------------- 构建 latest（必要时启用）
+      # 旧流程用 docker/metadata-action 一次推三个 tag；Gitee 的 build@docker
+      # 只接受单值 tag，所以 :latest 需要单独一步。
+      # ⚠️ 这一步默认注释掉：它会把镜像重建一遍、双倍消耗构建分钟。
+      #    如果你的生产 compose 不是 pull_policy: always 跟随 :latest，
+      #    或者你改用 scripts/release-nas.sh 发布，就不需要它。
+      #
+      # - step: build@docker
+      #   name: build_push_latest
+      #   displayName: 构建并推送 latest 标签
+      #   repository: docker.io
+      #   username: ${DOCKERHUB_USERNAME}
+      #   password: ${DOCKERHUB_TOKEN}
+      #   tag: q807738511/vaulthub:latest
+      #   dockerfile: ./Dockerfile
+      #   isCache: true
+
+      # ------------------------------------------------------- 创建 Gitee 发行版
+      # 用 build@python 是刻意的：scripts/ci-release.sh 依赖 curl + python3，
+      # 选 Python 插件可以保证 runner 上一定有 python3（并顺手证明 curl 在不在）。
+      - step: build@python
+        name: create_release
+        displayName: 创建 Gitee 发行版（幂等 + 重试 + 读回校验）
+        pythonVersion: "3.9"
+        commands:
+          - |
+            set -e
+            echo "================ 环境自检 ================"
+            for t in curl python3 git; do
+              printf '  %-8s ' "$t"
+              command -v "$t" >/dev/null 2>&1 && "$t" --version 2>&1 | head -1 || echo "【缺失】"
+            done
+
+            echo "================ 解析版本号 ================"
+            TAG="${GITEE_TAG:-${GITEE_BRANCH:-}}"
+            echo "  GITEE_TAG=${GITEE_TAG:-<未设置>}  GITEE_BRANCH=${GITEE_BRANCH:-<未设置>}"
+            echo "  解析出的 tag=${TAG:-<空>}"
+            case "$TAG" in
+              v[0-9]*.[0-9]*.[0-9]*) : ;;
+              *)
+                echo "无法从 Gitee 系统变量解析出版本 tag（得到：'$TAG'）。"
+                echo "请在 Gitee 流水线里确认 tag 推送时版本号对应的变量名，"
+                echo "或改用 NAS 上的 scripts/release-nas.sh 发布。"
+                echo "拒绝在版本号不明确的情况下创建发行版 —— 发错版本比红灯更糟。"
+                exit 1
+                ;;
+            esac
+            VERSION="${TAG#v}"
+            NOTES=".github/RELEASE_NOTES_${VERSION}.md"
+            if [ ! -f "$NOTES" ]; then
+              echo "找不到发布说明 $NOTES，拒绝创建没有说明的发行版"
+              exit 1
+            fi
+            echo "  版本=$TAG  说明文件=$NOTES（$(wc -c < "$NOTES" | tr -d ' ') 字节）"
+
+            echo "================ 创建发行版 ================"
+            # 真正的发布逻辑放在脚本里：既能在 CI 跑，也能在 NAS 上手动跑，
+            # 还能在本地用 curl 桩程序做完整回归（tests/test_v0970_release_step_logic.py）。
+            GITEE_REPO_SLUG="${GITEE_REPO_SLUG:-q807738511/vaulthub}" \
+              sh scripts/ci-release.sh "$TAG" "$NOTES" "${GITEE_REPO_SLUG:-q807738511/vaulthub}"

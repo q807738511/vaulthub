@@ -6,7 +6,7 @@
 
 ## 现状
 
-当前生产镜像 `ghcr.io/q807738511/vaulthub` 在单个容器内由
+当前生产镜像 `docker.io/q807738511/vaulthub`（v0.9.90 起由 GHCR 迁到 Docker Hub）在单个容器内由
 `vaulthub-manager`（PID 1）拉起四个进程：
 
 | 进程 | 端口 | 职责 |

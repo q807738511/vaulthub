@@ -1,10 +1,12 @@
 services:
   vaulthub:
-    # v0.9.41：镜像跟随 GHCR 可写标签 latest —— 每次正式版本发布（tag vX.Y.Z）会
-    # 同时更新 vX.Y.Z 与 latest 指向同一 digest；日常升级无需再改本文件：
-    #   docker compose pull && docker compose up -d --force-recreate
-    # 需要锁定/回滚到具体版本时，把下面改成 ghcr.io/q807738511/vaulthub:v0.9.50 即可。
-    image: ghcr.io/q807738511/vaulthub:latest
+    # v0.9.90：镜像主仓库由 GHCR 迁到 Docker Hub。GitHub 账户停用后
+    # ghcr.io/q807738511/vaulthub 返回 403 DENIED，拉取与推送两端都已断，
+    # 仓库与流水线整体迁到 Gitee（见 .workflow/）。
+    # 每次正式版本发布（tag vX.Y.Z）会同时更新 vX.Y.Z 与 latest 指向同一 digest；
+    # 日常升级无需再改本文件：docker compose pull && docker compose up -d --force-recreate
+    # 需要锁定/回滚到具体版本时，把下面改成 docker.io/q807738511/vaulthub:v0.9.50 即可。
+    image: docker.io/q807738511/vaulthub:latest
     container_name: VaultHub
     pull_policy: always
 

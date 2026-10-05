@@ -1,0 +1,110 @@
+# =============================================================================
+# VaultHub —— Gitee Go 校验流水线
+#
+# 对应原来的 .github/workflows/validate.yml（GitHub Actions）。
+# 触发条件、校验项完全对齐，只是换成了 Gitee Go 的 YAML 方言。
+#
+# ⚠️ 首次运行前请注意（Gitee Go 的语法无法在本地验证，只能真跑一次）：
+#   1. 文件必须放在仓库根目录的 `.workflow/` 下，扩展名 .yml / .yaml
+#   2. `build@golang` 是官方「Golang 构建」插件的标识；若首次运行报「插件不存在」，
+#      在「流水线 → 编辑 → 代码视图」里点插件选择器确认真实标识（老文档里叫 golangbuild@1）
+#   3. 本流水线只用 `commands:` 执行 shell，故意不依赖任何 Gitee 专有上下文变量，
+#      所以在插件标识确认后基本可以照搬
+#   4. 校验项里 gcc / node / python3 / docker / caddy 都不一定在托管 runner 上 ——
+#      所以第一步是「工具自检」，会先把缺什么打印出来，而不是让你对着报错猜
+#   5. 免费额度：单仓库 200 分钟（一次性）+ 个人每月 500 分钟自动到账
+# =============================================================================
+name: validate
+displayName: 校验（shell / Go / JS / Caddy / Compose）
+
+triggers:
+  # 与原 validate.yml 一致：push 与 pull_request 都触发，分支不限
+  push: {}
+  pr: {}
+
+variables:
+  # Golang 版本号。与原 setup-go 的 go-version: '1.23.x' 对齐。
+  GO_VERSION: "1.23"
+
+stages:
+  - stage: validate
+    name: validate
+    displayName: 校验
+    # 任一项失败即中止本阶段（对应原工作流的隐式行为：一步红则整条红）
+    strategy: fast
+    trigger: auto
+    steps:
+      - step: build@golang
+        name: validate_all
+        displayName: 全量校验
+        golangVersion: "1.23"
+        commands:
+          - |
+            set -e
+            echo "================ 0/6 工具自检 ================"
+            for t in sh git go gcc node python3 docker curl; do
+              printf '  %-8s ' "$t"
+              if command -v "$t" >/dev/null 2>&1; then
+                "$t" --version 2>&1 | head -1
+              else
+                echo "【缺失】"
+              fi
+            done
+            printf '  %-8s ' "docker compose"
+            if docker compose version >/dev/null 2>&1; then docker compose version | head -1; else echo "【缺失】"; fi
+            printf '  %-8s ' "caddy"
+            if [ -x ./caddy ]; then ./caddy version 2>&1 | head -1; else echo "【缺失】"; fi
+
+            echo "================ 1/6 shell 脚本语法 ================"
+            sh -n scripts/install.sh
+            sh -n scripts/upgrade.sh
+            sh -n scripts/rollback.sh
+            sh -n scripts/ci-release.sh
+            echo "  OK: 4 个脚本语法通过"
+
+            echo "================ 2/6 Go 服务 ================"
+            cd manager
+            go test ./...
+            go vet ./...
+            go build ./...
+            cd ../media-go
+            go test ./...
+            go vet ./...
+            go build ./...
+            cd ..
+            echo "  OK: manager + media-go 测试 / vet / 构建通过"
+
+            echo "================ 3/6 遗留 C 源码 ================"
+            gcc -Wall -Wextra -Werror -fsyntax-only vaulthub-manager.c
+            gcc -Wall -Wextra -Werror -pthread -fsyntax-only tests/fixtures/media-api_legacy.c
+            echo "  OK: C 源码无警告"
+
+            echo "================ 4/6 前端 JS 语法 ================"
+            for f in web/js/*.js; do
+              node --check "$f"
+            done
+            python3 - <<'PY'
+            import re
+            from pathlib import Path
+            html = Path('index.html').read_text(encoding='utf-8')
+            scripts = re.findall(r'<script(?![^>]*src)[^>]*>(.*?)</script>', html, re.S)
+            body = '\n;\n'.join(s for s in scripts if s.strip())
+            Path('/tmp/vaulthub-inline.js').write_text(body, encoding='utf-8')
+            print(f"  内联脚本 {len(scripts)} 段，提取 {len(body)} 字符")
+            PY
+            if [ -s /tmp/vaulthub-inline.js ]; then node --check /tmp/vaulthub-inline.js; fi
+            echo "  OK: web/js 与 index.html 内联脚本全部可解析"
+
+            echo "================ 5/6 Compose 模型 ================"
+            cp .env.example .env
+            docker compose config >/dev/null
+            rm -f .env
+            echo "  OK: docker-compose.yml 模型合法"
+
+            echo "================ 6/6 内置 Caddyfile ================"
+            chmod +x ./caddy
+            ./caddy validate --config Caddyfile --adapter caddyfile
+            echo "  OK: Caddyfile 合法"
+
+            echo
+            echo "全部 6 项校验通过。"

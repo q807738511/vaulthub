@@ -3,6 +3,7 @@
 *.log
 .git
 .github
+.workflow
 .env
 .env.*
 !.env.example

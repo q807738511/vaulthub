@@ -231,9 +231,10 @@ if env_block:
     lost = [k for k in common if not re.search(rf"-\s*{k}=", env_block.group(1))]
     check("常用项仍展示在 compose", not lost, "缺少: " + ",".join(lost))
 
-# v0.9.56：compose 跟随 GHCR 可写 latest（每次正式版本 tag 与版本号同 digest）
-check("compose 跟随 GHCR latest（v0.9.56 起）",
-      "image: ghcr.io/q807738511/vaulthub:latest" in compose, "未引用 vaulthub:latest")
+# v0.9.90：镜像主仓库由 GHCR 迁到 Docker Hub —— GitHub 账户停用后
+# ghcr.io/q807738511/vaulthub 返回 403 DENIED，两端都已拉不动。
+check("compose 跟随 Docker Hub latest（v0.9.90 起）",
+      "image: docker.io/q807738511/vaulthub:latest" in compose, "未引用 vaulthub:latest")
 check("compose 保留固定版本回滚说明",
       "v0.9.41" in compose or ":latest" in compose, "缺少回滚指引")
 
