@@ -24,7 +24,7 @@ v0.9.90 起，CI/CD 从 GitHub Actions 整体迁到这里。原因是 GitHub 账
 2. **运行器的 checkout 是 `git fetch --no-tags --prune --depth=1`**，本地**一个 tag 都没有**，
    所以 `git tag --points-at HEAD` 永远是空 —— 不能拿它当版本号来源。
    → 版本号改为「系统变量（发布分支名）解析 + **远端** tag 核对」，
-   远端核对有两条路：`git ls-remote --tags origin`，失败则 Gitee OpenAPI（走 `GITEE_TOKEN`）。
+   远端核对有两条路：`git ls-remote --tags origin`，失败则 Gitee OpenAPI（走 `VH_GITEE_TOKEN`）。
 3. **分支 / Tag / 提交注释三类匹配规则是交集关系**（官方文档）：同时设置需全部满足。
    所以 `publish.yml` **只写 `branches`**，不写 `tags` —— 否则分支推送会因为「没带 tag」
    而永远匹配不上。
@@ -109,7 +109,7 @@ stages:
 |---|---|
 | `DOCKERHUB_USERNAME` | `q807738511` |
 | `DOCKERHUB_TOKEN` | Docker Hub 访问令牌（不是登录密码） |
-| `GITEE_TOKEN` | Gitee 个人访问令牌，需勾 `projects` 权限 |
+| `VH_GITEE_TOKEN` | Gitee 个人访问令牌，需勾 `projects` 权限（Gitee 不允许自定义变量以 `GITEE_` 开头，所以不叫 GITEE_TOKEN） |
 
 `scripts/ci-release.sh` 的幂等 / 重试 / 读回校验逻辑有完整回归：
 `python3 tests/test_v0970_release_step_logic.py`（静态 11 项 + 行为场景 10 项）。

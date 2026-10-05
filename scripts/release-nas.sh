@@ -232,8 +232,8 @@ fi
 if [ "$DO_RELEASE" -eq 1 ] && [ -n "$VERSION" ]; then
   echo
   echo "================ 创建 Gitee 发行版 ================"
-  if [ -z "${GITEE_TOKEN:-}" ]; then
-    note "⚠️ 未设置 GITEE_TOKEN，跳过发行版创建。"
+  if [ -z "${GITEE_TOKEN:-${VH_GITEE_TOKEN:-}}" ]; then
+    note "⚠️ 未设置 GITEE_TOKEN / VH_GITEE_TOKEN，跳过发行版创建。"
     note "   需要时单独执行："
     note "   GITEE_TOKEN=<令牌> sh scripts/ci-release.sh $TAG .github/RELEASE_NOTES_${VERSION}.md ${GITEE_REPO_SLUG}"
   else

@@ -16,6 +16,7 @@
 #
 # 用法：
 #   GITEE_TOKEN=<访问令牌> sh scripts/ci-release.sh <tag> <说明文件> [owner/repo]
+#   （流水线里用的是 VH_GITEE_TOKEN —— Gitee 不允许自定义变量以 GITEE_ 开头；两者都认）
 #
 # 例：
 #   GITEE_TOKEN=xxx sh scripts/ci-release.sh v0.9.90 .github/RELEASE_NOTES_0.9.90.md enged/vaulthub
@@ -24,6 +25,11 @@
 # 退出码：0 = Release 已发布且说明完整；非 0 = 失败（CI 据此亮红灯）
 # =============================================================================
 set -eu
+
+# Gitee Go 不允许自定义「通用变量」以 GITEE_ 开头（该前缀是系统变量保留），
+# 所以流水线里放的是 VH_GITEE_TOKEN；本地/NAS 上习惯用 GITEE_TOKEN。
+# 两个名字都认，脚本内部统一用 GITEE_TOKEN。
+GITEE_TOKEN="${GITEE_TOKEN:-${VH_GITEE_TOKEN:-}}"
 
 TAG="${1:-}"
 NOTES="${2:-}"
@@ -44,7 +50,7 @@ note() { echo "[ci-release] $*" >&2; }
 # ---------------------------------------------------------------- 前置检查
 [ -n "$TAG" ] || die "用法：GITEE_TOKEN=<令牌> sh scripts/ci-release.sh <tag> <说明文件> [owner/repo]"
 [ -n "$SLUG" ] || die "缺少 owner/repo；请作为第 3 个参数传入，或设置环境变量 GITEE_REPO_SLUG"
-[ -n "${GITEE_TOKEN:-}" ] || die "缺少环境变量 GITEE_TOKEN（Gitee 个人访问令牌）"
+[ -n "${GITEE_TOKEN:-}" ] || die "缺少环境变量 GITEE_TOKEN（流水线里叫 VH_GITEE_TOKEN）—— Gitee 个人访问令牌"
 
 case "$SLUG" in
   */*) : ;;

@@ -30,7 +30,9 @@
 #   2. 「流水线 → 通用变量」里建三个参数（不要写进本文件）：
 #        DOCKERHUB_USERNAME = q807738511
 #        DOCKERHUB_TOKEN    = <Docker Hub 访问令牌，不是登录密码>
-#        GITEE_TOKEN        = <Gitee 个人访问令牌，勾 projects 权限>
+#        VH_GITEE_TOKEN     = <Gitee 个人访问令牌，勾 projects 权限>
+#        （Gitee 不允许自定义变量以 GITEE_ 开头 —— 那是系统变量保留前缀；
+#          脚本内部仍统一用 GITEE_TOKEN，两处都已兼容。）
 #   3. 确认真实插件标识：build@python / build@docker 是否就是这两个名字
 #      （validate.yml 里的 build@golang 已证实可用）
 #
@@ -92,6 +94,8 @@ stages:
             tok = os.environ.get("DOCKERHUB_TOKEN", "")
             print("  DOCKERHUB_USERNAME = %s" % (user or "<未设置>"))
             print("  DOCKERHUB_TOKEN    = %s" % (("已设置（%d 字符）" % len(tok)) if tok else "<未设置>"))
+            gtok = os.environ.get("VH_GITEE_TOKEN") or os.environ.get("GITEE_TOKEN") or ""
+            print("  VH_GITEE_TOKEN     = %s" % (("已设置（%d 字符）" % len(gtok)) if gtok else "<未设置 —— 发行版步骤会失败>"))
 
             def probe(url, auth=None, timeout=25):
                 req = urllib.request.Request(url)
@@ -161,12 +165,12 @@ stages:
             if command -v git >/dev/null 2>&1; then
               if TAGS_RAW="$(git ls-remote --tags origin 2>/dev/null)"; then LOOKUP=git; else LOOKUP=git-failed; fi
             fi
-            if [ "$LOOKUP" != "git" ] && [ -n "${GITEE_TOKEN:-}" ] && command -v python3 >/dev/null 2>&1; then
+            if [ "$LOOKUP" != "git" ] && [ -n "${VH_GITEE_TOKEN:-${GITEE_TOKEN:-}}" ] && command -v python3 >/dev/null 2>&1; then
               echo "  git 不可用/失败，改用 Gitee OpenAPI 查 tag"
               if TAGS_RAW="$(HEAD_SHA="$HEAD_SHA" python3 - <<'PY'
             import json, os, urllib.request
             sha = os.environ["HEAD_SHA"]
-            tok = os.environ.get("GITEE_TOKEN", "")
+            tok = os.environ.get("VH_GITEE_TOKEN") or os.environ.get("GITEE_TOKEN", "")
             for page in range(1, 4):
                 url = ("https://gitee.com/api/v5/repos/enged/vaulthub/tags"
                        "?access_token=%s&per_page=100&page=%d" % (tok, page))
@@ -292,4 +296,5 @@ stages:
             # 仓库 slug 用 Gitee 的 enged/vaulthub
             # （不是 Docker Hub 的 q807738511/vaulthub，这两个别搞混）
             GITEE_REPO_SLUG="${GITEE_REPO_SLUG:-enged/vaulthub}" \
+            GITEE_TOKEN="${VH_GITEE_TOKEN:-${GITEE_TOKEN:-}}" \
               sh scripts/ci-release.sh "$VH_TAG" "$NOTES" "${GITEE_REPO_SLUG:-enged/vaulthub}"
