@@ -3,50 +3,41 @@
 #
 # 对应原来的 .github/workflows/publish-image.yml（GitHub Actions）。
 #
-# ⚠️ 语法基准：本文件按 Gitee 官方 demo 仓库里**真实跑通过**的 yml 写，
-#    不是照搬 GitHub Actions 猜的。真实文件的骨架是：
-#        version: '1.0'
-#        name: <流水线标识>          ← 阶段用 name: 作标识，不是 stage:
-#        displayName: <显示名>
-#        triggers: {...}
-#        stages:
-#          - name: <阶段标识>
-#            displayName: <阶段名>
-#            steps:
-#              - step: build@<插件>
-#                name: <步骤标识>
-#                displayName: <步骤名>
-#                <插件自己的字段>
-#    参考：gitee.com/gitee-go/spring-boot-gradle-deploy-case 的 .workflow/MasterPipeline.yml
+# === 实测结论（2026-10-05，Gitee Go 个人版，有日志为证）=======================
+#   1. ❌「Tag 匹配」不生效：v0.9.89 的 tag 推送**没有**触发本流水线
+#      （流水线列表里本流水线「暂无构建历史」），而同一仓库的 validate.yml
+#      （只写了「分支匹配」）每次推送都正常触发。
+#      → 本流水线改用**分支触发**：把发布分支 release-vX.Y.Z 推上去即触发。
+#   2. ⚠️ 运行器的 checkout 是 `git fetch --no-tags --prune --depth=1`（实测日志），
+#      **本地一个 tag 都没有**，所以「git tag --points-at HEAD」永远是空的。
+#      → 版本号改为：先从系统变量（发布分支名等）解析，再去远端核对 tag
+#        （git ls-remote → Gitee OpenAPI 两条路，见第①步）。
+#   3. ⚠️ 官方文档：分支匹配 / Tag 匹配 / 提交注释匹配三者是**交集**关系
+#      （同时设置需全部满足）。所以这里**只写 branches**，不写 tags，
+#      否则分支推送会因为「没带 tag」而永远匹配不上。
 #
-# === 与旧流程的差异（重要，决定你能不能照搬）=================================
-#   ❌ 不再有 GHCR：镜像主仓库改为 Docker Hub（用户已确认）
-#   ❌ 不再有 gh CLI：发行版改用 Gitee OpenAPI v5（scripts/ci-release.sh）
-#   ❌ 不再有 workflow_run：原 sync-dockerhub-to-ghcr.yml 整条作废并已删除
-#   ❌ 不再有 ::error title= / $GITHUB_STEP_SUMMARY / type=gha 缓存
-#   ⚠️ build@docker 的 tag 字段是单值。旧流程一次推三个 tag
-#      （vX.Y.Z、latest、sha-xxxxxxx），而生产 compose 用的是 :latest +
-#      pull_policy: always，所以 :latest 必须更新，否则生产永远升不上来
-#      → 见下方「第二阶段/第三步」，或直接走 NAS 上的 scripts/release-nas.sh
+# === 发布流程（发一个新版本要 3 条命令）======================================
+#     git push gitee HEAD:main                        # 代码
+#     git push gitee refs/tags/vX.Y.Z                 # 版本 tag（发行版要用）
+#     git push gitee HEAD:refs/heads/release-vX.Y.Z   # ← 这一下才触发流水线
+#   产物：Docker Hub q807738511/vaulthub:vX.Y.Z + :latest，以及 Gitee 发行版。
+#   发布分支可以留着当记录，也可以发布完删掉。
 #
 # === 首次运行前必须做的 3 件事 ===============================================
-#   1. 开通 Gitee Go：仓库页 → 左侧「流水线」→ 按提示开通（已做）
-#   2. 在「流水线 → 全局参数」里建三个参数（不要写进本文件）：
+#   1. 开通 Gitee Go（已做）
+#   2. 「流水线 → 通用变量」里建三个参数（不要写进本文件）：
 #        DOCKERHUB_USERNAME = q807738511
 #        DOCKERHUB_TOKEN    = <Docker Hub 访问令牌，不是登录密码>
 #        GITEE_TOKEN        = <Gitee 个人访问令牌，勾 projects 权限>
-#   3. 确认真实插件标识：在「流水线 → 编辑 → 代码视图」点插件选择器，
-#      核对 build@python / build@docker 是否就是这两个名字
+#   3. 确认真实插件标识：build@python / build@docker 是否就是这两个名字
+#      （validate.yml 里的 build@golang 已证实可用）
 #
 # === 无法在本地验证的部分（如实标注）========================================
-#   · Gitee Go 的 yml 方言只能在 Gitee 上真跑验证。本文件已对齐官方 demo 的骨架，
-#     但 `strategy` 取值（naturally / fast）与「分支匹配与 Tag 匹配是否互斥」
-#     仍以首跑结果为准
-#   · 打 tag 推送时版本号对应哪个系统变量：官方只列了 GITEE_BRANCH /
-#     GITEE_COMMIT / GITEE_COMMIT_MESSAGE，**没有 GITEE_TAG**。
-#     所以第①步改成先问 git「HEAD 上打着哪个 tag」，系统变量只作退路；
-#     解析不出来直接红灯 —— 宁可失败，也不要发错版本
-#   · 托管 runner 上是否带 docker CLI / curl，取决于插件镜像
+#   · build@docker 个人版没有「构建参数」字段 → 构建源已写进 Dockerfile 默认值
+#     （GO_IMAGE / RUNTIME_IMAGE / GOPROXY / APT_MIRROR），零 build-arg 也能构建
+#   · 托管 runner 上是否有 docker CLI / curl，取决于插件镜像
+#   · 流水线参数 `${VH_TAG}` / `${VH_LATEST}` 在**插件字段**里能否被替换：
+#     以首跑结果为准；替换不成功只会让该步失败，不会推错标签
 # =============================================================================
 version: '1.0'
 name: publish
@@ -55,15 +46,12 @@ displayName: 发布（Docker Hub 镜像 + Gitee 发行版）
 triggers:
   # 开启自动触发（对应旧工作流的 on:）
   trigger: auto
+  # ⚠️ 只保留「分支匹配」——实测唯一真正生效的触发方式。
+  #    发布分支固定用 release-vX.Y.Z 前缀；普通 main 推送不会触发本流水线。
   push:
-    # 只在推送版本 tag 时发布（对应原 on.push.tags: ['v*', '[0-9]*']）
-    # ⚠️ Gitee 的「分支匹配 / Tag 匹配 / 提交注释匹配」是**交集**关系。
-    #    这里只写了 tags；普通分支推送会不会也触发，**首跑后请到
-    #    「流水线 → 触发记录」确认一次**。若发现分支推送也触发了，
-    #    第①步会直接红灯（不会推错镜像），把触发器的分支匹配收紧即可。
-    tags:
+    branches:
       prefix:
-        - v
+        - release-
 
 stages:
   - name: publish
@@ -74,12 +62,13 @@ stages:
     trigger: auto
     steps:
       # ================================================== ① 解析并锁定版本号
-      # 版本号必须**先**确定下来，因为 Gitee 没有文档化的 GITEE_TAG。
-      # 解析结果写进流水线参数 VH_TAG / VH_VERSION，下游步骤只认这两个参数：
+      # 版本号必须**先**确定下来，因为 Gitee 没有文档化的 GITEE_TAG，
+      # 而运行器的 checkout 又是 --no-tags（本地没有 tag）。
+      # 解析结果写进流水线参数 VH_TAG / VH_VERSION / VH_LATEST，下游只认这三个：
       # 万一这一步没跑成，下游拿不到参数会直接失败，而不会推错镜像、发错版本。
       - step: build@python
         name: resolve_tag
-        displayName: 解析版本号
+        displayName: 解析版本号（发布分支名 → 远端 tag 核对）
         pythonVersion: '3.9'
         commands:
           - |
@@ -91,32 +80,84 @@ stages:
               printf '  %-32s %s\n' "$k" "$v"
             done
 
-            echo "================ 解析版本号 ================"
+            echo "================ 本次构建提交 ================"
+            HEAD_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
+            [ -n "$HEAD_SHA" ] || HEAD_SHA="${GITEE_COMMIT:-}"
+            [ -n "$HEAD_SHA" ] || { echo "❌ 拿不到本次构建的提交号，拒绝继续。"; exit 1; }
+            echo "  HEAD=$HEAD_SHA"
+
+            echo "================ ① 系统变量里取版本号 ================"
             TAG=""
-            # ① 最可靠：HEAD 上正好打着一个版本 tag
+            for src in "${GITEE_BRANCH:-}" "${GITEE_TAG:-}" "${GITEE_COMMIT_MESSAGE:-}"; do
+              [ -n "$src" ] || continue
+              cand="$(printf '%s' "$src" | grep -Eo 'v?[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
+              if [ -n "$cand" ]; then
+                TAG="$cand"
+                echo "  '$(printf '%s' "$src" | head -c 60)' → $TAG"
+                break
+              fi
+            done
+            [ -n "$TAG" ] || echo "  （系统变量里没有版本号）"
+
+            echo "================ ② 去远端核对 tag ================"
+            # Gitee Go 的 checkout 是 --depth=1 --no-tags（实测），本地没有 tag，只能问远端。
+            LOOKUP=none
+            TAGS_RAW=""
             if command -v git >/dev/null 2>&1; then
-              echo "  git tag --points-at HEAD:"
-              git tag --points-at HEAD 2>/dev/null | sed 's/^/    /' || true
-              TAG="$(git tag --points-at HEAD 2>/dev/null \
-                     | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+' | sort -V | tail -1 || true)"
-            else
-              echo "  【缺失】git（改用系统变量退路）"
+              if TAGS_RAW="$(git ls-remote --tags origin 2>/dev/null)"; then LOOKUP=git; else LOOKUP=git-failed; fi
             fi
-            # ② 退路：Gitee 系统变量里夹带的版本号
-            [ -n "$TAG" ] || TAG="$(printf '%s' "${GITEE_TAG:-}" | grep -Eo 'v?[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
-            [ -n "$TAG" ] || TAG="$(printf '%s' "${GITEE_BRANCH:-}" | grep -Eo 'v?[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
-            # ③ 退路：注解 tag 的 message 里写了版本号
-            [ -n "$TAG" ] || TAG="$(printf '%s' "${GITEE_COMMIT_MESSAGE:-}" | grep -Eo 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
-            echo "  解析结果: '${TAG:-<空>}'"
+            if [ "$LOOKUP" != "git" ] && [ -n "${GITEE_TOKEN:-}" ] && command -v python3 >/dev/null 2>&1; then
+              echo "  git 不可用/失败，改用 Gitee OpenAPI 查 tag"
+              if TAGS_RAW="$(HEAD_SHA="$HEAD_SHA" python3 - <<'PY'
+            import json, os, urllib.request
+            sha = os.environ["HEAD_SHA"]
+            tok = os.environ.get("GITEE_TOKEN", "")
+            for page in range(1, 4):
+                url = ("https://gitee.com/api/v5/repos/enged/vaulthub/tags"
+                       "?access_token=%s&per_page=100&page=%d" % (tok, page))
+                try:
+                    data = json.load(urllib.request.urlopen(url, timeout=20))
+                except Exception:
+                    break
+                if not isinstance(data, list) or not data:
+                    break
+                for t in data:
+                    name = t.get("name") or ""
+                    csha = ((t.get("commit") or {}).get("sha") or "")
+                    if name and csha == sha:
+                        print("%s\trefs/tags/%s" % (sha, name))
+            PY
+              )"; then LOOKUP=api; else LOOKUP=api-failed; fi
+            fi
+            echo "  远端 tag 查询方式: $LOOKUP"
+
+            REMOTE_TAG=""
+            if [ "$LOOKUP" = "git" ] || [ "$LOOKUP" = "api" ]; then
+              printf '%s\n' "$TAGS_RAW" | sed 's/\^{}//' | awk -v h="$HEAD_SHA" '$1==h {print $2}' \
+                | sed 's|^refs/tags/||' | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+$' | sort -V > /tmp/vh_vtags || true
+              echo "  指向本次提交的版本 tag："
+              sed 's/^/    /' /tmp/vh_vtags 2>/dev/null || true
+              REMOTE_TAG="$(tail -1 /tmp/vh_vtags 2>/dev/null || true)"
+            fi
+
+            if [ -n "$REMOTE_TAG" ]; then
+              TAG="$REMOTE_TAG"
+              echo "  ✅ 以远端 tag 为准: $TAG"
+            elif [ "$LOOKUP" != "git" ] && [ "$LOOKUP" != "api" ]; then
+              echo "  ⚠️ 拿不到远端 tag 列表（$LOOKUP）—— 跳过核对，用系统变量里的版本号继续。"
+            elif [ -z "$TAG" ]; then
+              echo "❌ 本次提交上没有任何版本 tag —— 拒绝发布。"
+              echo "   发布必须：先把 tag vX.Y.Z 打在要发布的提交上，再推 release-vX.Y.Z 分支。"
+              exit 1
+            else
+              echo "  ⚠️ 远端没有指向本次提交的版本 tag，但系统变量里读到 $TAG —— 按 $TAG 继续"
+              echo "     （创建发行版那一步会用 Gitee API 再校验一次 tag）"
+            fi
 
             case "$TAG" in
               v[0-9]*.[0-9]*.[0-9]*) : ;;
               [0-9]*.[0-9]*.[0-9]*)  TAG="v${TAG}" ;;
-              *)
-                echo "❌ 无法解析出版本 tag —— 拒绝继续。"
-                echo "   宁可红灯，也不要把镜像和发行版发到错误的版本号上。"
-                echo "   若本次不是「推送版本 tag」触发的，请到流水线触发器里把 Tag 匹配设为前缀 v。"
-                exit 1 ;;
+              *) echo "❌ 版本号形态不对: '$TAG'"; exit 1 ;;
             esac
             VERSION="${TAG#v}"
             NOTES=".github/RELEASE_NOTES_${VERSION}.md"
@@ -127,7 +168,8 @@ stages:
             echo "✅ 版本=$TAG  说明=$NOTES（$(wc -c < "$NOTES" | tr -d ' ') 字节）"
             echo "VH_TAG=$TAG" >> GITEE_PARAMS
             echo "VH_VERSION=$VERSION" >> GITEE_PARAMS
-            echo "  已写入流水线参数：VH_TAG / VH_VERSION（下游步骤引用）"
+            echo "VH_LATEST=latest" >> GITEE_PARAMS
+            echo "  已写入流水线参数：VH_TAG / VH_VERSION / VH_LATEST（下游步骤引用）"
 
       # ================================================== ② 构建并推送版本镜像
       # 对应旧工作流的 docker/build-push-action + ghcr.io → 现为 Docker Hub。
@@ -137,7 +179,7 @@ stages:
         displayName: 构建并推送 vX.Y.Z
         # 镜像仓库地址（对应旧流程的 registry: ghcr.io → 现为 docker.io）
         repository: docker.io
-        # 这两项在「流水线 → 全局参数」里配置，不要写进本文件
+        # 这两项在「流水线 → 通用变量」里配置，不要写进本文件
         username: ${DOCKERHUB_USERNAME}
         password: ${DOCKERHUB_TOKEN}
         # 版本标签。${VH_TAG} 由第①步写入；没写进去就会退化成非法 tag 并让本步失败，
@@ -149,6 +191,9 @@ stages:
 
       # ================================================== ③ 构建并推送 latest
       # 生产 compose 用的是 :latest + pull_policy: always，不更新 latest 生产就升不上来。
+      # ⚠️ ${VH_LATEST} 由第①步写入（值恒为 latest）。这样写是为了**保险**：
+      #    万一第①步没跑成，这里会变成非法 tag 而失败，绝不会把某个提交推成 latest
+      #    从而让生产静默换到没发布的版本上。
       # ⚠️ 代价：镜像会被构建第二遍，构建分钟翻倍（免费额度 = 单仓库 200 分钟 + 每月 500 分钟）。
       #    如果改用 NAS 上的 scripts/release-nas.sh 发布（一次推 vX.Y.Z / latest /
       #    sha-xxxxxxx 三个 tag，零构建分钟），把这一步整段删掉即可。
@@ -158,7 +203,7 @@ stages:
         repository: docker.io
         username: ${DOCKERHUB_USERNAME}
         password: ${DOCKERHUB_TOKEN}
-        tag: q807738511/vaulthub:latest
+        tag: q807738511/vaulthub:${VH_LATEST}
         dockerfile: ./Dockerfile
         isCache: true
 

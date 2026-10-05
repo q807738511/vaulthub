@@ -9,10 +9,23 @@ v0.9.90 起，CI/CD 从 GitHub Actions 整体迁到这里。原因是 GitHub 账
 | 文件 | 对应原来的 | 触发 |
 |---|---|---|
 | `validate.yml` | `.github/workflows/validate.yml` | push（所有分支）/ PR |
-| `publish.yml` | `.github/workflows/publish-image.yml` | 推送 `v*` tag |
+| `publish.yml` | `.github/workflows/publish-image.yml` | 推送 `release-v*` 分支（见下） |
 
 原来的 `sync-dockerhub-to-ghcr.yml` **已删除**：它的作用是把 GHCR 同步到 Docker Hub，
 而现在 Docker Hub 是镜像主仓库，GHCR 不在发布链路的任何一环。
+
+## 实测踩到的三个坑（2026-10-05，有日志为证）
+
+1. **「Tag 匹配」在个人版不生效。** `v0.9.89` 的 tag 推送没有触发 `publish.yml`
+   （流水线列表里它「暂无构建历史」），而同一仓库的 `validate.yml`（只写「分支匹配」）
+   每次推送都正常触发。→ `publish.yml` 改为**分支触发**：推 `release-vX.Y.Z` 分支。
+2. **运行器的 checkout 是 `git fetch --no-tags --prune --depth=1`**，本地**一个 tag 都没有**，
+   所以 `git tag --points-at HEAD` 永远是空 —— 不能拿它当版本号来源。
+   → 版本号改为「系统变量（发布分支名）解析 + **远端** tag 核对」，
+   远端核对有两条路：`git ls-remote --tags origin`，失败则 Gitee OpenAPI（走 `GITEE_TOKEN`）。
+3. **分支 / Tag / 提交注释三类匹配规则是交集关系**（官方文档）：同时设置需全部满足。
+   所以 `publish.yml` **只写 `branches`**，不写 `tags` —— 否则分支推送会因为「没带 tag」
+   而永远匹配不上。
 
 ## 方言对照（按 Gitee 官方 demo 仓库里真实跑通过的 yml 校准）
 
@@ -51,24 +64,30 @@ stages:
 | 阶段标识 `stage:` | 阶段标识 **`name:`** |
 | `uses: actions/checkout@v4` | 不需要，工作区默认就是代码库根目录 |
 | `uses: docker/build-push-action` | `step: build@docker`（`repository` / `username` / `password` / `tag` / `dockerfile` / `isCache`），产出参数 `GITEE_DOCKER_IMAGE` |
-| `uses: actions/setup-go` | `step: build@golang`（`golangVersion`），默认走 `goproxy.cn` |
-| `${{ github.* }}` / `$GITHUB_*` | `${GITEE_*}`；自定义参数写在 `variables:` 里，运行时可用 `echo 'KEY=VALUE' >> GITEE_PARAMS` 往下游传 |
-| `secrets.X` | 仓库/流水线级「全局参数」，用 `${X}` 引用 |
+| `uses: actions/setup-go` | `step: build@golang`（`golangVersion`） |
+| `${{ github.* }}` / `$GITHUB_*` | `${GITEE_*}`；自定义参数用 `echo 'KEY=VALUE' >> GITEE_PARAMS` 往下游传 |
+| `secrets.X` | 流水线「通用变量」（旧文档写作「全局参数」），用 `${X}` 引用 |
 | `gh release create` | Gitee OpenAPI v5 + `curl`（`scripts/ci-release.sh`） |
 | `::error title=` / `$GITHUB_STEP_SUMMARY` | 不支持，退化为 `echo` |
 | `cache-from: type=gha` | 无对应物（`build@golang` 有 `caches:` 支持 `/go/pkg/mod`） |
 
 **系统参数里没有 `GITEE_TAG`**（官方只文档化了 `GITEE_BRANCH` / `GITEE_COMMIT` /
-`GITEE_COMMIT_MESSAGE` / `GITEE_PIPELINE_*` / `GITEE_REPO` …）。所以 `publish.yml`
-第①步用 `git tag --points-at HEAD` 先取版本号，系统变量只作退路；解析不出来**直接红灯**。
+`GITEE_COMMIT_MESSAGE` / `GITEE_PIPELINE_*` / `GITEE_REPO` …），而 checkout 又不带 tag。
+所以 `publish.yml` 第①步从系统变量（发布分支名）解析版本号，再去**远端**核对 tag 存在且指向
+本次提交；核对不上又拿不到远端列表时按系统变量继续（创建发行版那步会再校验一次）。
 
 ## 发布的两条路
 
-1. **NAS 上 `sh scripts/release-nas.sh <tag>`（推荐）** —— 零构建分钟消耗、
-   三种 tag（`vX.Y.Z` / `latest` / `sha-xxxxxxx`）与原来完全对等、不依赖第三方 runner。
-2. **Gitee Go 全托管** —— 推 tag 即触发 `publish.yml`。注意免费额度是
-   单仓库 200 分钟（一次性）+ 个人每月 500 分钟，且 `build@docker` 只接受单个 tag 值，
-   所以 `latest` 要单独一步（构建分钟翻倍）。
+1. **NAS 上 `sh scripts/release-nas.sh <tag>`（零构建分钟消耗）** —— 一次推三种 tag
+   （`vX.Y.Z` / `latest` / `sha-xxxxxxx`），与原来的发布完全对等、不依赖第三方 runner。
+2. **Gitee Go 全托管** —— 三条命令：
+   ```sh
+   git push gitee HEAD:main                        # 代码
+   git push gitee refs/tags/vX.Y.Z                 # 版本 tag（发行版要用）
+   git push gitee HEAD:refs/heads/release-vX.Y.Z   # ← 这一下才触发 release 流水线
+   ```
+   免费额度：单仓库 200 分钟（一次性）+ 每月 500 分钟；`build@docker` 只接受单个 tag 值，
+   所以 `latest` 要单独一步（构建分钟翻倍）。发布分支可以留着当记录，也可以发布后删掉。
 
 ## 首次运行要盯的四件事
 
@@ -76,12 +95,13 @@ stages:
    工具不在就打印【跳过】并继续（不许因为缺工具假红），末尾会列一份【跳过清单】。
    想全量校验，用 Gitee 的**主机组**（`shell@agent` / `deploy@agent`）把命令下到 NAS 上跑。
 2. **插件标识**（`build@python` / `build@docker` / `build@golang`）在
-   「流水线 → 编辑 → 代码视图」的插件选择器里核对一次。
-3. **打 tag 推送时版本号对应哪个系统变量没有官方文档** —— 见上文，已用 git 兜底。
-4. **`triggers` 里分支 / Tag / 提交注释三类匹配规则是交集**。`publish.yml` 只写了
-   `tags.prefix: [v]`；首跑后到「触发记录」确认一次普通分支推送没被误触发。
+   「流水线 → 编辑 → 代码视图」的插件选择器里核对一次（`build@golang` 已证实可用）。
+3. **`build@docker` 个人版没有「构建参数」字段**，传不了 `--build-arg` ——
+   构建源（`GO_IMAGE` / `RUNTIME_IMAGE` / `GOPROXY` / `APT_MIRROR`）已写进 `Dockerfile` 默认值。
+4. **流水线参数在插件字段里的替换**（`tag: ...:${VH_TAG}`）以首跑结果为准；
+   替换不成功只会让该步失败，不会推错标签。
 
-## 需要在「流水线 → 全局参数」里建的参数
+## 需要在「流水线 → 通用变量」里建的参数
 
 | 参数 | 值 |
 |---|---|
