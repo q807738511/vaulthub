@@ -54,6 +54,11 @@ stages:
             set -e
             SKIPPED=""
 
+            # 国内 runner 必须走国内 Go 代理，否则拉模块直接超时
+            # （实测：modernc.org/sqlite 走 proxy.golang.org → dial tcp i/o timeout）
+            export GOPROXY="https://goproxy.cn,direct"
+            export GOSUMDB="off"   # go.sum 仍然逐条校验，关掉的只是「校验和数据库联网查询」
+
             echo "================ 0/7 工具自检 ================"
             for t in sh git go gcc node python3 docker curl; do
               printf '  %-10s ' "$t"
