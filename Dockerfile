@@ -1,12 +1,14 @@
 # syntax=docker/dockerfile:1
 
-# Base images are build args so air-gapped/China networks can point them at a
-# mirror (e.g. docker.m.daocloud.io/library/...) without editing this file.
-ARG GO_IMAGE=golang:1.23-alpine
-ARG RUNTIME_IMAGE=debian:trixie-slim
-# GOPROXY lets the Go build fetch modernc.org/sqlite where proxy.golang.org is
-# blocked. CI leaves it at the default; local NAS builds pass goproxy.cn.
-ARG GOPROXY=https://proxy.golang.org,direct
+# 基础镜像写成构建参数，便于断网/国内网络指向镜像站。
+# v0.9.89：默认值改为国内镜像 —— Gitee Go（personal 版）的 build@docker
+#   插件字段只有 repository/username/password/tag/dockerfile/artifacts/isCache，
+#   没有「构建参数」项，无法从流水线传 --build-arg；海外/自定义构建仍可
+#   用 --build-arg 覆盖回来。
+ARG GO_IMAGE=docker.m.daocloud.io/library/golang:1.23-alpine
+ARG RUNTIME_IMAGE=docker.m.daocloud.io/library/debian:trixie-slim
+# GOPROXY：proxy.golang.org 在中国大陆不可达，默认走 goproxy.cn。
+ARG GOPROXY=https://goproxy.cn,direct
 
 FROM ${GO_IMAGE} AS go-build
 ARG GOPROXY
@@ -31,8 +33,11 @@ RUN go build -trimpath -ldflags="-s -w" -o /out-vaulthub-manager .
 # hardware transcoding still works once nvidia-container-toolkit injects them —
 # no CUDA base image needed on GPU-less hosts.
 FROM ${RUNTIME_IMAGE}
-# v0.9.50：apt 源参数化 —— 海外 CI（GitHub Actions）默认用官方源；
-# 中国大陆构建传 --build-arg APT_MIRROR=http://mirrors.aliyun.com/debian 提速。
+# v0.9.50：apt 源参数化。
+# v0.9.89 修正：这里原先只用了 ${APT_MIRROR:-} 却从未 ARG 声明，外部传
+#   --build-arg APT_MIRROR=... 会被判为「未消费」而静默不生效；现补上声明，
+#   默认走阿里云源（Gitee Go runner 在国内），传空值仍可回到官方源。
+ARG APT_MIRROR=http://mirrors.aliyun.com/debian
 RUN if [ -n "${APT_MIRROR:-}" ]; then \
       sed -i "s|http://deb.debian.org/debian|${APT_MIRROR}|g; s|http://security.debian.org/debian-security|${APT_MIRROR}-security|g" /etc/apt/sources.list.d/debian.sources 2>/dev/null || \
       sed -i "s|http://deb.debian.org/debian|${APT_MIRROR}|g; s|http://security.debian.org/debian-security|${APT_MIRROR}-security|g" /etc/apt/sources.list; \

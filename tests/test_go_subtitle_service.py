@@ -10,7 +10,7 @@ dockerfile = (root / "Dockerfile").read_text(encoding="utf-8")
 caddy = (root / "Caddyfile").read_text(encoding="utf-8")
 checks = {
     "Go subtitle service": "subtitle-api/main.go" in dockerfile and "start_subtitle_api" in (root / "vaulthub-manager.c").read_text(),
-    "single container build": ("AS go-build" in dockerfile and "GO_IMAGE=golang:1.23-alpine" in dockerfile and "COPY --from=go-build" in dockerfile),
+    "single container build": ("AS go-build" in dockerfile and "golang:1.23-alpine" in dockerfile and "COPY --from=go-build" in dockerfile),
     "local subtitle scan": "localProvider" in go and ".srt" in go and ".vtt" in go,
     "provider adapters": "shooter" in go and "zimuku" in go and "subhd" in go and "https://www.shooter.cn/api/subapi.php" in go,
     "safe relative path": "path outside media root" in go and "filepath.Rel" in go,
