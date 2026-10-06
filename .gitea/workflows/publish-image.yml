@@ -46,6 +46,10 @@ jobs:
       - name: 准备工作区（自行克隆）
         run: |
           set -eu
+          # Gitea/act 用 bash -eo pipefail 执行 run 块；本脚本是按 set -eu 语义写的，
+          # 这里显式关掉 pipefail：否则「... | head -1」这类管道会因 head 提前退出（SIGPIPE）
+          # 或 grep 无匹配而被判成步骤失败——之前 CI 的 1~2 秒红灯就是这个。
+          if [ -n "${BASH_VERSION:-}" ]; then set +o pipefail; fi
           # 实测：act_runner 交下来的工作目录是空的（连 .git 都没有），因此所有读文件的
           # 步骤都会在第 1~2 步就退出，看起来像校验逻辑写错了，其实是没代码可校验。
           # actions/checkout@v4 在内网 runner 上拉不到 github.com，所以这里用纯 git 克隆。
@@ -71,6 +75,10 @@ jobs:
       - name: 环境与身份自检
         run: |
           set -eu
+          # Gitea/act 用 bash -eo pipefail 执行 run 块；本脚本是按 set -eu 语义写的，
+          # 这里显式关掉 pipefail：否则「... | head -1」这类管道会因 head 提前退出（SIGPIPE）
+          # 或 grep 无匹配而被判成步骤失败——之前 CI 的 1~2 秒红灯就是这个。
+          if [ -n "${BASH_VERSION:-}" ]; then set +o pipefail; fi
           echo "工作目录：$(pwd)"
           echo "GITHUB_REF        = ${GITHUB_REF:-<未设置>}"
           echo "GITHUB_REF_NAME   = ${GITHUB_REF_NAME:-<未设置>}"
@@ -85,6 +93,10 @@ jobs:
       - name: 版本一致性校验
         run: |
           set -eu
+          # Gitea/act 用 bash -eo pipefail 执行 run 块；本脚本是按 set -eu 语义写的，
+          # 这里显式关掉 pipefail：否则「... | head -1」这类管道会因 head 提前退出（SIGPIPE）
+          # 或 grep 无匹配而被判成步骤失败——之前 CI 的 1~2 秒红灯就是这个。
+          if [ -n "${BASH_VERSION:-}" ]; then set +o pipefail; fi
           V_HTML=$(sed -n 's/.*VAULTHUB_ASSET_VERSION *= *"\([^"]*\)".*/\1/p' index.html | head -1)
           V_JS=$(sed -n 's/.*VAULTHUB_SCRIPT_VERSION *= *"\([^"]*\)".*/\1/p' web/js/01-state.js | head -1)
 
@@ -131,6 +143,10 @@ jobs:
       - name: 发布说明文件检查
         run: |
           set -eu
+          # Gitea/act 用 bash -eo pipefail 执行 run 块；本脚本是按 set -eu 语义写的，
+          # 这里显式关掉 pipefail：否则「... | head -1」这类管道会因 head 提前退出（SIGPIPE）
+          # 或 grep 无匹配而被判成步骤失败——之前 CI 的 1~2 秒红灯就是这个。
+          if [ -n "${BASH_VERSION:-}" ]; then set +o pipefail; fi
           . /tmp/vh-version.env
           NOTES=".github/RELEASE_NOTES_${VERSION}.md"
           if [ -f "$NOTES" ]; then
@@ -149,6 +165,10 @@ jobs:
       - name: 前端测试套件
         run: |
           set -eu
+          # Gitea/act 用 bash -eo pipefail 执行 run 块；本脚本是按 set -eu 语义写的，
+          # 这里显式关掉 pipefail：否则「... | head -1」这类管道会因 head 提前退出（SIGPIPE）
+          # 或 grep 无匹配而被判成步骤失败——之前 CI 的 1~2 秒红灯就是这个。
+          if [ -n "${BASH_VERSION:-}" ]; then set +o pipefail; fi
           if ! command -v python3 >/dev/null 2>&1; then echo "跳过：镜像里没有 python3，测试套件未执行"; exit 0; fi
           pass=0; fail=0; skip=0; failed=""; skipped=""
           for f in tests/test_*.py; do
@@ -181,6 +201,10 @@ jobs:
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
           set -eu
+          # Gitea/act 用 bash -eo pipefail 执行 run 块；本脚本是按 set -eu 语义写的，
+          # 这里显式关掉 pipefail：否则「... | head -1」这类管道会因 head 提前退出（SIGPIPE）
+          # 或 grep 无匹配而被判成步骤失败——之前 CI 的 1~2 秒红灯就是这个。
+          if [ -n "${BASH_VERSION:-}" ]; then set +o pipefail; fi
           . /tmp/vh-version.env
           SHORT=$(git rev-parse --short HEAD)
           # 标签规则与原 docker/metadata-action 一致：
@@ -225,6 +249,10 @@ jobs:
           GITEA_RELEASE_TOKEN: ${{ secrets.GITEA_RELEASE_TOKEN }}
         run: |
           set -eu
+          # Gitea/act 用 bash -eo pipefail 执行 run 块；本脚本是按 set -eu 语义写的，
+          # 这里显式关掉 pipefail：否则「... | head -1」这类管道会因 head 提前退出（SIGPIPE）
+          # 或 grep 无匹配而被判成步骤失败——之前 CI 的 1~2 秒红灯就是这个。
+          if [ -n "${BASH_VERSION:-}" ]; then set +o pipefail; fi
           . /tmp/vh-version.env
           if [ "${TAG:-}" = "" ]; then echo "分支推送，不创建 Release"; exit 0; fi
           if [ -z "${GITEA_RELEASE_TOKEN:-}" ]; then
