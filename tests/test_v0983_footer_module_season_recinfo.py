@@ -128,12 +128,12 @@ check("5k 简介排版与 16:9 画框保留（旧契约不破）",
 
 print("6. 版本")
 check("6a 页面与脚本版本一致",
-      'VAULTHUB_ASSET_VERSION = "0.9.89"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.89"' in STATE)
+      'VAULTHUB_ASSET_VERSION = "0.9.90"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.90"' in STATE)
 check("6b 关于 / 侧栏 / 页脚标语一致",
-      HTML.count("v0.9.89 · 崩溃修复·NFO 本地化·阈值辅助") == 3)
+      HTML.count("v0.9.90 · ") == 3)   # v0.9.90：标语随版本推进，只校验版本前缀 + 三处一致
 check("6c Update Log 有 v0.9.85 段",
-      (ROOT / "Update Log.md").read_text(encoding="utf-8").startswith("# VaultHub 蜀鼠之家 v0.9.89"))
-check("6d Release Notes 存在", (ROOT / ".github/RELEASE_NOTES_0.9.89.md").exists())
+      (ROOT / "Update Log.md").read_text(encoding="utf-8").startswith("# VaultHub 蜀鼠之家 v0.9.90"))
+check("6d Release Notes 存在", (ROOT / ".github/RELEASE_NOTES_0.9.90.md").exists())
 
 if FAILS:
     print(f"\nFAIL: {len(FAILS)} 项未通过：")

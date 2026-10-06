@@ -199,6 +199,8 @@ let bookShelfOffset = 0;
 let bookShelfPage = 0;                    /* 分页浏览时的当前页（0 基） */
 let bookShelfCountsCache = {};             /* 整库统计：{libId: {shelf, like, completed, all}} */
 let bookShelfIndexCache = {};
+/* v0.9.90：不分页视图的渐进渲染窗口（每次「继续加载」扩大）。 */
+let bookShelfRenderLimit = 0;
 let bookShelfVisibleCache = [];      /* 当前书架视图（筛选+排序后）的完整列表 */              /* 整库文件索引：{libId: {at, files}} —— 翻页/筛选不重复拉取 */
 const BOOK_SHELF_PREFS_KEY = "vaultHubBookShelf";
 const BOOK_FAVORITES_KEY = "vaultHubBookFavorites";
@@ -219,24 +221,42 @@ const BOOK_DENSITIES = [
   { cols: 5, label: "标准" },
   { cols: 4, label: "宽松" }
 ];
+let bookShelfPrefsCache = null;
 function bookShelfPrefs() {
+  /* v0.9.90：渲染 3000 张卡时旧实现每张都 JSON.parse 一次偏好，这里加一层内存缓存。 */
+  if (bookShelfPrefsCache) return bookShelfPrefsCache;
   /* paged=false 是默认：v0.9.70 起书刊视图保证「一次展开全部」（未读/历史阅读
      都不因单页全已读而空白）；开启分页浏览后才按每页数量切片并显示分页器。 */
   const def = { tab: "shelf", sort: "name", cols: 5, showFav: true, paged: false, pageSize: 20 };
-  try { return Object.assign(def, JSON.parse(localStorage.getItem(BOOK_SHELF_PREFS_KEY) || "{}") || {}); } catch (e) { return def; }
+  try { bookShelfPrefsCache = Object.assign(def, JSON.parse(localStorage.getItem(BOOK_SHELF_PREFS_KEY) || "{}") || {}); } catch (e) { bookShelfPrefsCache = def; }
+  return bookShelfPrefsCache;
 }
 function saveBookShelfPrefs(patch) {
   const next = Object.assign(bookShelfPrefs(), patch || {});
+  bookShelfPrefsCache = next;
   try { localStorage.setItem(BOOK_SHELF_PREFS_KEY, JSON.stringify(next)); } catch (e) {}
   return next;
 }
+/* v0.9.90：大库性能 —— 收藏表读缓存。
+   旧实现每次调用都 JSON.parse 整个收藏表，而书刊架对 18.4 万条文件逐条调
+   isBookFavorite()，等于 18 万次整表解析（主线程卡死、「页面无法响应」）。 */
+const bookFavoritesCache = { map: null };
 function readBookFavorites() {
+  if (bookFavoritesCache.map) return bookFavoritesCache.map;
+  let map = {};
   try {
-    const map = JSON.parse(localStorage.getItem(BOOK_FAVORITES_KEY) || "{}");
-    return map && typeof map === "object" ? map : {};
-  } catch (e) { return {}; }
+    const parsed = JSON.parse(localStorage.getItem(BOOK_FAVORITES_KEY) || "{}");
+    map = parsed && typeof parsed === "object" ? parsed : {};
+  } catch (e) { map = {}; }
+  /* v0.9.90 修复：冷读必须回填缓存。旧写法只在 writeBookFavorites 里写缓存，
+     首次打开页面时每次 isBookFavorite() 都要整表 JSON.parse —— 18.4 万条库
+     就是 18 万次整表解析，正是「页面无法响应」的主因之一。 */
+  bookFavoritesCache.map = map;
+  return map;
 }
 function writeBookFavorites(map) {
+  /* 内存为权威副本：写入后立即生效，避免下一次读取又整表解析。 */
+  bookFavoritesCache.map = (map && typeof map === "object") ? map : {};
   try { localStorage.setItem(BOOK_FAVORITES_KEY, JSON.stringify(map || {})); } catch (e) {}
 }
 function bookFavoriteKey(libId, path) { return String(libId) + "::" + String(path); }
@@ -405,6 +425,23 @@ function gotoBookShelfPage(page) {
   bookShelfOffset = bookShelfPage * size;
   renderBookShelfPage();
 }
+/* v0.9.90 修复：把「渲染窗口」抽成公共切片。
+   旧写法只有 renderComicShelf 会窗口化，而切密度 / 改每页 / 关掉分页 / 换标签
+   都走 renderBookShelfPage()，它在「完整展开」模式下直接把整库（18.4 万条）
+   一次性 innerHTML 塞进 DOM —— 改个列数就把页面再次卡死。 */
+function bookShelfWindowSlice(visible, prefs) {
+  const list = Array.isArray(visible) ? visible : [];
+  const p = prefs || bookShelfPrefs();
+  const size = Math.max(1, Number(p.pageSize) || mediaPageSize || 20);
+  if (p.paged) return { pageFiles: list.slice(bookShelfOffset, bookShelfOffset + size), more: "" };
+  if (list.length <= BOOK_SHELF_AUTO_MAX) return { pageFiles: list, more: "" };
+  const limit = Math.max(BOOK_SHELF_RENDER_WINDOW, Number(bookShelfRenderLimit) || 0);
+  const shown = list.slice(0, limit);
+  const more = list.length > shown.length
+    ? `<div class="media-actions"><button class="btn" type="button" onclick="bookShelfLoadMore()">继续加载（已显示 ${shown.length} / ${list.length}）</button></div>`
+    : "";
+  return { pageFiles: shown, more };
+}
 function renderBookShelfPage() {
   const host = document.getElementById("local-media-content-comic");
   const lib = findMediaLibrary(localMediaSelection.comic);
@@ -414,8 +451,8 @@ function renderBookShelfPage() {
   const size = bookPageSizeValue(prefs);
   const pages = Math.max(1, Math.ceil(visible.length / size));
   bookShelfPage = Math.min(Math.max(0, bookShelfPage), pages - 1);
-  const pageFiles = prefs.paged ? visible.slice(bookShelfPage * size, bookShelfPage * size + size) : visible;
-  host.innerHTML = bookShelfPageHtml(lib, pageFiles, bookShelfCountsCache[lib.id], visible.length);
+  const slice = bookShelfWindowSlice(visible, prefs);
+  host.innerHTML = bookShelfPageHtml(lib, slice.pageFiles, bookShelfCountsCache[lib.id], visible.length) + slice.more;
   if (typeof scrapeVisibleBookCovers === "function") scrapeVisibleBookCovers(host);
   closeBookViewSettings();
 }
@@ -1547,6 +1584,14 @@ async function localizeMovieEntry(lib, path) {
   writeMovieMetadata(fresh);
 }
 
+/* v0.9.90：剧集条目的「分集名」取文件名解析结果（show_title 存在时 title 视为分集名）。
+   修「刮削后仍显示文件名解析出的剧名」问题的配套函数。 */
+function seriesEpisodeTitleOf(path) {
+  try {
+    const parsed = parseSeriesEpisode(path);
+    return String((parsed && parsed.title) || "").trim();
+  } catch (e) { return ""; }
+}
 /* 单条刮削：返回是否成功。所有请求用 no-store —— 空结果不再被浏览器缓存成永久失败。 */
 async function scrapeOneMovie(lib, files, file) {
   const all = readMovieMetadata();
@@ -1581,8 +1626,15 @@ async function scrapeOneMovie(lib, files, file) {
       const item = tvdbBest && tvdbBest.matched ? tvdbBest.item : null;
       if (!item && tvdbList.length) note(titleMatchReason(tvdbBest, scrapeMinMatchThreshold()));
       if (item) {
+        const tvdbName = String(item.name || item.title || "").trim();
         return mark({
-          tvdb_id: item.id, media_type: mediaType, title: item.name || title,
+          tvdb_id: item.id, media_type: mediaType,
+          /* v0.9.90：剧集把「当前选中语言」刮到的剧名写入 show_title ——
+             剧集卡片与播放器标题优先用它，不再回落到文件名解析值
+             （例如「康熙王朝.Kang.Xi.Kingdom.S01E01…」旧显示「康熙王朝 Kang Xi Kingdom」，
+             现在显示 TMDB 中文命名「康熙王朝」）。 */
+          show_title: mediaType === "series" ? (tvdbName || base.show_title || "") : (base.show_title || ""),
+          title: (mediaType === "series" ? (seriesEpisodeTitleOf(path) || tvdbName) : tvdbName) || title,
           year: String(item.first_air_date || base.year).slice(0, 4),
           poster: item.poster_path || "", overview: item.overview || "",
           provider: "TVDB · 剧集", checkedAt: Date.now(), scrape_state: "ok", reason: "",
@@ -1601,8 +1653,13 @@ async function scrapeOneMovie(lib, files, file) {
       const item = best && best.matched ? best.item : null;
       if (item) {
         const imgBase = scraperStatus.tmdb_image_base || "https://image.tmdb.org/t/p";
+        /* v0.9.90：剧名取当前语言（tmdbLangTag()）的 TMDB 命名，写入 show_title。 */
+        const tmdbName = String(item.name || item.title || "").trim();
         return mark({
-          tmdb_id: item.id, media_type: mediaType, title: item.title || item.name || title,
+          tmdb_id: item.id, media_type: mediaType,
+          show_title: mediaType === "series" ? (tmdbName || base.show_title || "") : (base.show_title || ""),
+          original_title: String(item.original_name || item.original_title || base.original_title || "").trim(),
+          title: (mediaType === "series" ? (seriesEpisodeTitleOf(path) || tmdbName) : (item.title || item.name)) || title,
           year: String(item.release_date || item.first_air_date || base.year).slice(0, 4),
           poster: item.poster_path ? `${imgBase}/w342${item.poster_path}` : "",
           backdrop: item.backdrop_path ? `${imgBase}/w1280${item.backdrop_path}` : "",
@@ -1628,7 +1685,12 @@ async function scrapeOneMovie(lib, files, file) {
     const douban = await fetch(`https://movie.douban.com/j/subject_suggest?q=${encodeURIComponent(title)}`, { cache: "no-store" });
     const item = douban.ok ? (await douban.json())?.[0] : null;
     if (item) {
-      return mark({ title: item.title || title, year: item.year || base.year, poster: item.img || "", provider: "豆瓣", checkedAt: Date.now(), scrape_state: "ok", reason: "" });
+      const doubanName = String(item.title || "").trim();
+      return mark({
+        show_title: mediaType === "series" ? (doubanName || base.show_title || "") : (base.show_title || ""),
+        title: (mediaType === "series" ? (seriesEpisodeTitleOf(path) || doubanName) : doubanName) || title,
+        year: item.year || base.year, poster: item.img || "", provider: "豆瓣", checkedAt: Date.now(), scrape_state: "ok", reason: "",
+      });
     }
   } catch (e) { /* 豆瓣无 CORS，浏览器直连基本必失败 → 记失败原因，交给下次重试 */ }
   return mark({ provider: "文件名展示", scrape_state: movieFallbackState(path), reason: movieFallbackReason(path) });
@@ -1646,22 +1708,41 @@ async function scrapeMovieMetadata(host, lib, files) {
   const backfilled = queueLocalizationBacklog(lib, files);
   if (backfilled) console.info(`[scrape] 本地化回填：${backfilled} 条已刮削条目排队写 NFO / 本地图`);
   const localPaths = new Set();
-  for (const file of files) {
-    const path = String(file.path);
+  const applyLocal = (path, local) => {
+    if (!local || !(local.nfo || local.poster || local.logo || local.fanart || local.backdrop || local.tags?.length || local.watched || local.subtitles?.length)) return;
+    all[path] = {
+      ...movieBaseMetadata(path), ...(all[path] || {}), ...local,
+      title: local.title || (all[path] && all[path].title) || movieBaseMetadata(path).title,
+      provider: local.provider || "本地元数据",
+      media_type: lib?.type === "series" ? "series" : "movie",
+      checkedAt: Date.now(), scrape_state: "ok", reason: "",
+    };
+    localPaths.add(path);
+  };
+  /* v0.9.90：本地元数据水合由「每个文件一次串行请求」改为批量（200 条/次）。
+     旧实现进一次影视库要发 1000+ 次请求，是「链接大媒体库后非常慢」的主因之一。 */
+  const allPaths = files.map(file => String(file.path));
+  for (let i = 0; i < allPaths.length; i += 200) {
+    const batch = allPaths.slice(i, i + 200);
+    let items = null;
     try {
-      const res = await fetch(`/api/media/metadata?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}`, { cache: "no-store" });
-      const local = res.ok ? await res.json() : null;
-      if (local && (local.nfo || local.poster || local.logo || local.fanart || local.backdrop || local.tags?.length || local.watched || local.subtitles?.length)) {
-        all[path] = {
-          ...movieBaseMetadata(path), ...(all[path] || {}), ...local,
-          title: local.title || (all[path] && all[path].title) || movieBaseMetadata(path).title,
-          provider: local.provider || "本地元数据",
-          media_type: lib?.type === "series" ? "series" : "movie",
-          checkedAt: Date.now(), scrape_state: "ok", reason: "",
-        };
-        localPaths.add(path);
+      const res = await fetch("/api/media/metadata/batch", {
+        method: "POST", cache: "no-store", credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: lib.id, paths: batch }),
+      });
+      if (res.ok) items = (await res.json()).items || null;
+    } catch (e) { /* 批量接口异常 → 回落到逐条 */ }
+    if (!items) {
+      for (const path of batch) {
+        try {
+          const res = await fetch(`/api/media/metadata?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}`, { cache: "no-store" });
+          applyLocal(path, res.ok ? await res.json() : null);
+        } catch (e) { /* 本地元数据缺失不是错误：继续走在线刮削 */ }
       }
-    } catch (e) { /* 本地元数据缺失不是错误：继续走在线刮削 */ }
+      continue;
+    }
+    Object.entries(items).forEach(([path, local]) => applyLocal(path, local));
   }
   writeMovieMetadata(all);
   if (localPaths.size) renderMovieScrapeProgress();
@@ -2010,6 +2091,13 @@ function coverThumbUrl(url, width) {
    版本一致就继续用本地索引，不一致才重新拉全量。 */
 const libraryIndexSession = {};
 const LIBRARY_INDEX_TTL_MS = 120000;
+/* v0.9.90：整库索引分块大小（大库少打来回）与书刊架单次渲染窗口。
+   18.4 万条的电子书库按 2000/块 = 93 次请求（旧实现 500/块 = 370 次）；
+   渲染窗口保证「整库可见」的同时不会一次往 DOM 里塞十几万张卡。 */
+const LIBRARY_INDEX_CHUNK = 2000;
+const BOOK_SHELF_RENDER_WINDOW = 600;
+/* 这个规模以内一次性全量渲染（保持「整库可见」原样）；超过才按窗口渐进渲染。 */
+const BOOK_SHELF_AUTO_MAX = 3000;
 function libraryIndexSessionGet(libId, group) {
   const entry = libraryIndexSession[libId];
   if (!entry || entry.group !== group || !Array.isArray(entry.files) || !entry.files.length) return null;
@@ -2536,12 +2624,55 @@ const readingProgressCache = {};   // v0.9.67: libId -> { path: {progress, page,
 const readingProgressLoaded = {};  // libId -> Promise
 let readingProgressFlushTimer = null;
 const readingProgressPending = new Map(); // `${libId}\n${path}` -> progress
+/* v0.9.90：大库性能 —— 阅读进度改「按库一次性建索引」。
+   旧实现每条文件一次 JSON.parse(localStorage)：18.4 万条书刊的统计 + 筛选两趟
+   约 37 万次主线程解析，书架 / 历史阅读 / 喜欢 三个标签都会卡死。
+   索引懒加载一次，写入与删除就地更新。 */
+const readingStateIndex = {};       // libId -> { path: {progress,page,total,updatedAt} }
+const readingStateIndexBuilt = {};  // libId -> bool
+function readingStateIndexFor(libId) {
+  const lib = String(libId);
+  if (!readingStateIndexBuilt[lib]) {
+    const prefix = `vaulthub_reading_${lib}_`;
+    const idx = {};
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (!key || key.indexOf(prefix) !== 0) continue;
+        try { idx[key.slice(prefix.length)] = JSON.parse(localStorage.getItem(key)) || {}; } catch (e) {}
+      }
+    } catch (e) {}
+    readingStateIndex[lib] = idx;
+    readingStateIndexBuilt[lib] = true;
+  }
+  return readingStateIndex[lib] || {};
+}
+function readingStateLocal(libId, path) {
+  const item = readingStateIndexFor(libId)[String(path)];
+  return item && typeof item === "object" ? item : {};
+}
+function readingStateInvalidate(libId) { delete readingStateIndexBuilt[String(libId)]; }
+/* v0.9.90 修复：跨标签页一致性。另一个标签页改了收藏 / 阅读进度 / 书架偏好时，
+   localStorage 会派发 storage 事件；此前没有任何监听，本页的内存索引会一直用旧的
+   （表现为「别的窗口收藏了，这边刷新不出来」）。storage 事件不触发时本函数也不做事。 */
+if (typeof window !== "undefined" && window.addEventListener) {
+  window.addEventListener("storage", (ev) => {
+    const key = ev && typeof ev.key === "string" ? ev.key : "";
+    if (!key || key === BOOK_FAVORITES_KEY) bookFavoritesCache.map = null;
+    if (!key || key === BOOK_SHELF_PREFS_KEY) bookShelfPrefsCache = null;
+    if (!key || key.indexOf("vaulthub_reading_") === 0) {
+      Object.keys(readingStateIndexBuilt).forEach((id) => {
+        delete readingStateIndexBuilt[id];
+        delete readingStateIndex[id];
+      });
+    }
+  });
+}
 function readingState(libId, path) {
   /* v0.9.67：进度同时保留百分比与页码。页码是漫画阅读器的权威值
      （百分比在页数变化、不同设备字号下会漂移）；旧数据没有 page 时由调用方按
      total 换算，详见 comicResumePage()。 */
-  let local = {};
-  try { local = JSON.parse(localStorage.getItem(mediaStateKey(libId, path))) || {}; } catch (e) { local = {}; }
+  const local = readingStateLocal(libId, path);
   const remote = readingProgressCache[libId];
   const item = remote && Object.prototype.hasOwnProperty.call(remote, path) ? remote[path] : null;
   const src = item && typeof item === "object" ? item : local;
@@ -2598,7 +2729,9 @@ function saveReadingProgress(libId, path, progress, page, total) {
     page: Number(page) > 0 ? Number(page) : prev.page,
     total: Number(total) > 0 ? Number(total) : prev.total
   };
-  try { localStorage.setItem(mediaStateKey(libId, path), JSON.stringify(Object.assign({}, entry, { updatedAt: Date.now() }))); } catch (e) {}
+  const stored = Object.assign({}, entry, { updatedAt: Date.now() });
+  try { localStorage.setItem(mediaStateKey(libId, path), JSON.stringify(stored)); } catch (e) {}
+  readingStateIndexFor(libId)[String(path)] = stored;
   if (!readingProgressCache[libId]) readingProgressCache[libId] = {};
   readingProgressCache[libId][path] = entry;
   /* 滚动会高频触发，合并 800ms 内的写入，避免刷爆后端。 */
@@ -2630,6 +2763,7 @@ async function releaseReadingState(libId, path) {
   readingProgressPending.delete(`${lib}\n${rel}`);
   if (readingProgressCache[lib]) delete readingProgressCache[lib][rel];
   try { localStorage.removeItem(mediaStateKey(lib, rel)); } catch (e) {}
+  if (readingStateIndex[String(lib)]) delete readingStateIndex[String(lib)][String(rel)];
   return true;
 }
 function flushReadingProgressNow() {
@@ -2884,26 +3018,93 @@ function normalizeFilePayload(data) {
   const files = Array.isArray(data) ? data : (data?.files || data?.items || []);
   return files.map(item => typeof item === "string" ? { path: item } : item).filter(item => item?.path);
 }
-async function fetchAllLibraryFiles(libId, firstPage, firstOffset = 0) {
+/* v0.9.90：整库索引改为「大块 + 让出主线程」拉取。
+   旧实现对 18.4 万条的库要顺序发 370 次 limit=500，且过程中从不归还事件循环，
+   远程访问时表现为长时间无响应。 */
+function libraryIndexYield() { return new Promise(resolve => setTimeout(resolve, 0)); }
+async function fetchAllLibraryFiles(libId, firstPage, firstOffset = 0, opts = {}) {
+  const chunk = Math.max(500, Number(opts.chunk) || LIBRARY_INDEX_CHUNK);
   const files = normalizeFilePayload(firstPage);
   let offset = firstOffset + files.length;
   while (firstPage.has_more) {
-    const res = await fetch(`/api/media/files?id=${encodeURIComponent(libId)}&offset=${offset}&limit=500`, { cache: "no-store" });
+    const res = await fetch(`/api/media/files?id=${encodeURIComponent(libId)}&offset=${offset}&limit=${chunk}`, { cache: "no-store" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const page = await res.json();
     const list = normalizeFilePayload(page);
     files.push(...list);
+    if (typeof opts.onProgress === "function") {
+      try { opts.onProgress(files.length, page); }
+      catch (e) { if (typeof console !== "undefined") console.debug("索引进度回调异常（不影响拉取）", e); }
+    }
     if (!page.has_more || !list.length) break;
     const nextOffset = offset + list.length;
     if (nextOffset <= offset) throw new Error("媒体列表分页游标未前进");
     offset = nextOffset;
     firstPage = page;
+    /* 归还一次事件循环：大库拉取期间页面依然可点、可滚动。 */
+    await libraryIndexYield();
   }
   return files;
 }
 /* 影视库和剧集聚合统一加载全部索引，不显示固定数量分页。 */
 async function fetchRemainingLibraryFiles(libId, startOffset) {
   return { files: await fetchAllLibraryFiles(libId, { has_more: true }, startOffset), truncated: false };
+}
+/* v0.9.90：书刊架（含电子书大库）独立成函数 —— 索引未到齐时可先出首屏，
+   到齐后再重绘。筛选 / 排序 / 统计 / 翻页仍在本地做，保持「整库可见」语义。 */
+function renderComicShelf(lib, index, offset, opts = {}) {
+  const target = document.getElementById("local-media-content-comic");
+  if (!target) return;
+  const prefs = bookShelfPrefs();
+  const cached = bookShelfIndexCache[lib.id];
+  const fresh = opts.force === true || (offset === 0 || !cached || (Date.now() - Number(cached.at || 0)) > 60000);
+  const files = (fresh || !cached) ? index.slice() : cached.files.slice();
+  if (fresh && !opts.preview) bookShelfIndexCache[lib.id] = { at: Date.now(), files };
+  if (fresh || opts.preview) {
+    const counts = { shelf: 0, like: 0, completed: 0, all: files.length };
+    /* v0.9.90：readingState / isBookFavorite 已是 O(1) 内存索引，
+       18.4 万条也只是几次线性遍历（旧实现是 37 万次 localStorage 解析）。 */
+    files.forEach(file => {
+      const path = String(file.path);
+      const progress = Number(readingState(lib.id, path).progress || 0);
+      if (progress >= COMPLETED_PROGRESS) counts.completed++; else counts.shelf++;
+      if (isBookFavorite(lib.id, path)) counts.like++;
+    });
+    if (!opts.preview) bookShelfCountsCache[lib.id] = counts;
+  }
+  bookShelfTab = BOOK_SHELF_TABS.some(x => x.id === bookShelfTab) ? bookShelfTab : (prefs.tab || "shelf");
+  comicShelfView = bookShelfTab === "completed" ? "completed" : "shelf";
+  const visible = bookSortFiles(files.filter(file => {
+    const path = String(file.path);
+    const progress = Number(readingState(lib.id, path).progress || 0);
+    /* v0.9.74：「全部」标签移除 —— 扫描到的文件统一先进「书架」，
+       书架/历史阅读之外不再提供整库视图；counts.all 仅作为页头全库计数保留。 */
+    if (bookShelfTab === "like") return isBookFavorite(lib.id, path);
+    if (bookShelfTab === "completed") return progress >= COMPLETED_PROGRESS;
+    return progress < COMPLETED_PROGRESS;
+  }), prefs.sort);
+  const size = Math.max(1, Number(prefs.pageSize) || mediaPageSize || 20);
+  const pages = Math.max(1, Math.ceil(visible.length / size));
+  bookShelfPage = Math.min(Math.max(0, Number(bookShelfPage) || 0), pages - 1);
+  bookShelfOffset = bookShelfPage * size;
+  bookShelfVisibleCache = visible;
+  /* v0.9.90：不分页视图按窗口渐进渲染（整库仍可达，只是分批进 DOM）。
+     旧写法把 18.4 万张卡一次性塞进 DOM，浏览器直接假死。 */
+  /* 中小库一次全部渲染（与旧版行为一致）；超过 BOOK_SHELF_AUTO_MAX 才走窗口。 */
+  const slice = bookShelfWindowSlice(visible, prefs);
+  const pageFiles = slice.pageFiles, more = slice.more;
+  const head = opts.notice ? `<div class="shelf-loading">${esc(opts.notice)}</div>` : "";
+  target.innerHTML = head + bookShelfPageHtml(lib, pageFiles || [], bookShelfCountsCache[lib.id], visible.length) + more;
+  scrapeVisibleBookCovers(target);
+}
+/* 「继续加载」按钮：不动索引与筛选结果，只把渲染窗口再放大一屏。 */
+function bookShelfLoadMore() {
+  const lib = findMediaLibrary(localMediaSelection.comic);
+  if (!lib) return;
+  bookShelfRenderLimit = Math.max(BOOK_SHELF_RENDER_WINDOW, Number(bookShelfRenderLimit) || 0) + BOOK_SHELF_AUTO_MAX;
+  const cached = bookShelfIndexCache[lib.id];
+  if (!cached) return;
+  renderComicShelf(lib, cached.files.slice(), 0, { force: true, keepCount: true });
 }
 async function loadLocalFiles(group, lib, offset = 0) {
   const target = document.getElementById("local-media-content-" + group);
@@ -2939,7 +3140,19 @@ async function loadLocalFiles(group, lib, offset = 0) {
       data = await res.json();
       files = normalizeFilePayload(data);
       if (group === "comic" && data.status !== "indexing") {
-        files = await fetchAllLibraryFiles(lib.id, data, offset);
+        /* v0.9.90：先拿第一页立刻出画面，整库索引随后分块补齐再重绘。
+           旧写法要等 18.4 万条全部到手才渲染，期间页面一片空白且频繁无响应。 */
+        if (data.has_more && files.length) {
+          bookShelfRenderLimit = 0;
+          renderComicShelf(lib, files.slice(), offset, { preview: true, notice: t("shelfLoadingIndex") });
+        }
+        files = await fetchAllLibraryFiles(lib.id, data, offset, {
+          chunk: LIBRARY_INDEX_CHUNK,
+          onProgress: (count) => {
+            const el = document.querySelector("#local-media-content-comic .shelf-loading");
+            if (el) el.textContent = tf("shelfLoadingIndexN", { n: count, total: Number(data.total) || 0 });
+          },
+        });
         data.has_more = false;
       }
     }
@@ -2985,44 +3198,7 @@ async function loadLocalFiles(group, lib, offset = 0) {
     if (!fromSession && (group === "movie" || group === "comic" || group === "audio") && data.status !== "indexing") {
       libraryIndexSession[lib.id] = { at: Date.now(), group, version: String(data.version || ""), total: Number(data.total) || files.length, status: data.status, files: files.slice() };
     }
-    let bookPageFiles = null, bookTotal = 0;
-    if (group === "comic") {
-      /* v0.9.74：书刊页一次拿整库索引（沿用 v0.9.70 的展开保证），
-         筛选 / 排序 / 统计 / 翻页全部在本地做 —— 翻页不会再打服务端，
-         也就不会出现「翻到第 2 页把已读整段跳过」的老毛病。
-         索引缓存 60 秒，切库或重新扫描后第一次进入会重新拉全量。 */
-      const prefs = bookShelfPrefs();
-      const cached = bookShelfIndexCache[lib.id];
-      const fresh = offset === 0 || !cached || (Date.now() - Number(cached.at || 0)) > 60000;
-      const index = fresh ? files.slice() : cached.files.slice();
-      if (fresh) bookShelfIndexCache[lib.id] = { at: Date.now(), files: index };
-      if (fresh) {
-        const counts = { shelf: 0, like: 0, completed: 0, all: index.length };
-        index.forEach(file => {
-          const progress = Number(readingState(lib.id, String(file.path)).progress || 0);
-          if (progress >= COMPLETED_PROGRESS) counts.completed++; else counts.shelf++;
-          if (isBookFavorite(lib.id, String(file.path))) counts.like++;
-        });
-        bookShelfCountsCache[lib.id] = counts;
-      }
-      bookShelfTab = BOOK_SHELF_TABS.some(x => x.id === bookShelfTab) ? bookShelfTab : (prefs.tab || "shelf");
-      comicShelfView = bookShelfTab === "completed" ? "completed" : "shelf";
-      const visible = bookSortFiles(index.filter(file => {
-        const progress = Number(readingState(lib.id, String(file.path)).progress || 0);
-        /* v0.9.74：「全部」标签移除 —— 扫描到的文件统一先进「书架」，
-           书架/历史阅读之外不再提供整库视图；counts.all 仅作为页头全库计数保留。 */
-        if (bookShelfTab === "like") return isBookFavorite(lib.id, String(file.path));
-        if (bookShelfTab === "completed") return progress >= COMPLETED_PROGRESS;
-        return progress < COMPLETED_PROGRESS;
-      }), prefs.sort);
-      const size = Math.max(1, Number(prefs.pageSize) || mediaPageSize || 20);
-      const pages = Math.max(1, Math.ceil(visible.length / size));
-      bookShelfPage = Math.min(Math.max(0, Number(bookShelfPage) || 0), pages - 1);
-      bookShelfOffset = bookShelfPage * size;
-      bookShelfVisibleCache = visible;
-      bookPageFiles = prefs.paged ? visible.slice(bookShelfOffset, bookShelfOffset + size) : visible;
-      bookTotal = visible.length;
-    }
+    /* v0.9.90：书刊架的计算与渲染已抽到 renderComicShelf()（首屏/重绘复用）。 */
     const prev = offset > 0 ? `<button class="btn" onclick="loadLocalFiles('${esc(group)}',findMediaLibrary('${esc(lib.id)}'),${Math.max(0, offset - pageSize)})">← 上一页</button>` : "";
     const next = data.has_more ? `<button class="btn" onclick="loadLocalFiles('${esc(group)}',findMediaLibrary('${esc(lib.id)}'),${offset + pageSize})">下一页 →</button>` : "";
     /* 过滤后可能一条不剩（例如整页都是已读，或整页都是不支持的扩展名）。
@@ -3036,8 +3212,8 @@ async function loadLocalFiles(group, lib, offset = 0) {
     if (group === "comic") {
       /* v0.9.74：书刊展示页 = 页头（库名 / 条目 / 路径 / 扫描时间）
          + 工具栏（书架视图分段标签 + 排序 + 网格密度 + 视图设置）+ 封面网格 + 分页。 */
-      target.innerHTML = bookShelfPageHtml(lib, bookPageFiles || [], bookShelfCountsCache[lib.id], bookTotal);
-      scrapeVisibleBookCovers(target);
+      bookShelfRenderLimit = 0;
+      renderComicShelf(lib, files, offset, { force: true });
     } else if (group === "audio") {
       /* v0.9.57：专辑/歌手分组播放时（audioGroupLock 活跃）挂起 audioFiles 覆盖 ——
          歌手刮削完成等异步重载如果无条件重赋分页列表，会把「播放队列=该专辑/歌手」冲回整库；
@@ -5291,8 +5467,17 @@ function browserSaysVideoContainerUnsupported(path) {
   return !video.canPlayType(mime);
 }
 function setMovieCompatStatus(root, text) {
-  const el = root?.querySelector(".movie-compat-status");
-  if (el) el.textContent = text;
+  /* v0.9.90：转码 / 限档提示不再压在画面上，改为「获取信息」面板里的独立一行
+     （客户要求：放到播放器的获取信息栏目中查看）。保留 .movie-compat-status 类名，
+     既有样式与回归测试仍可定位该节点。 */
+  const el = root?.querySelector("[data-video-compat]") || root?.querySelector(".movie-compat-status");
+  if (el) {
+    el.textContent = text || "";
+    el.classList.toggle("show", !!text);
+  }
+  /* 面板收起时也能看出「有转码提示」：信息按钮加一个小圆点。 */
+  const btn = root?.querySelector(".video-info-button");
+  if (btn) btn.classList.toggle("has-note", !!text);
 }
 function formatMediaTime(value) {
   if (!Number.isFinite(value)) return "--:--";
@@ -6165,7 +6350,6 @@ async function openLocalMedia(group, libId, path) {
 <div class="vc-top">
 <button class="vc-icon vc-collapse" type="button" title="${esc(t("vpMinimize"))}" aria-label="${esc(t("vpMinimize"))}" onclick="minimizeVideoPlayer(this)">${videoIcon("collapse")}</button>
 <div class="vc-heading"><strong class="vc-title" data-video-title>${esc(t("vpTitleLoading"))}</strong><span class="vc-sub" data-video-meta-line></span></div>
-<span class="movie-compat-status">${esc(t("vpPreparing"))}</span>
 <button class="vc-icon vc-fullscreen" type="button" title="${esc(t("vpFullscreen"))}" aria-label="${esc(t("vpFullscreen"))}" aria-pressed="false" onclick="toggleVideoFullscreen(this)">${videoIcon("fullscreen")}</button>
 </div>
 <div class="vc-bottom">
@@ -6216,7 +6400,7 @@ async function openLocalMedia(group, libId, path) {
 <h4>${esc(t("vpPlaylist"))}</h4>
 <div class="video-playlist-items" data-video-playlist>${esc(t("vpPlaylistLoading"))}</div>
 </div>
-<div class="video-status-panel"><span class="status-main" data-video-status>准备播放</span><span class="status-detail" data-video-detail>--:-- / --:-- · 媒体元数据待识别</span></div>
+<div class="video-status-panel"><span class="status-main" data-video-status>准备播放</span><span class="status-detail" data-video-detail>--:-- / --:-- · 媒体元数据待识别</span><span class="status-compat movie-compat-status" data-video-compat></span></div>
 </div>`;
   else if (["jpg","jpeg","png","webp","gif","bmp","avif"].includes(ext)) body = `<img src="${esc(url)}" alt="${esc(path)}">`;
   /* v0.9.77：PDF 的 iframe 分支已移除 —— 任何库里的 PDF 都由上面的应用内阅读器处理，

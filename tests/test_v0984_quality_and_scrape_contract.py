@@ -106,7 +106,7 @@ check("4k 保留原盘真实视频片段（.m2ts 不跳过）", '".m2ts": true' 
 # 入口统一在「系统设置 → 媒体库 → 已添加的媒体库」的自动 / 逐项扫描。
 # 只判定代码：注释里保留「为什么删」的说明，不应被当成残留实现。
 MEDIA_CODE = re.sub(r"/\*.*?\*/", " ", MEDIA, flags=re.S)
-check("4l 影视页头的刮削按钮整块移除（v0.9.89 客户要求）",
+check("4l 影视页头的刮削按钮整块移除（v0.9.90 客户要求）",
       "movieScrapeControls" not in MEDIA_CODE and "刮削设置</span>" not in MEDIA_CODE)
 check("4m 电影库与剧集库标题只带库名与统计（不再挂刮削入口）",
       MEDIA.count("movieScrapeControls(files)") == 0 and MEDIA.count("mediaLibraryHeading(lib, ") >= 2)
@@ -128,11 +128,11 @@ check("4s 原盘镜像（ISO）在卡片上单独标注", 'return n > 1 ? `原�
 check("4t ISO 与同目录 BDMV 并存时标注双形态", "原盘 · ISO + BDMV" in MEDIA)
 
 print("5. 版本与文档")
-check("5a 版本号已升至 0.9.89", 'VAULTHUB_ASSET_VERSION = "0.9.89"' in HTML and 'const VAULTHUB_SCRIPT_VERSION = "0.9.89"' in STATE)
-check("5b 关于 / 侧栏 / 页脚标语一致", HTML.count("v0.9.89 · ") == 3)
-check("5c 脚本引用带新版本号", 'web/js/03-quality.js?v=0.9.89' in HTML and 'web/js/02-media.js?v=0.9.89' in HTML)
-check("5d Update Log 顶部为 v0.9.89", LOG.startswith("# VaultHub 蜀鼠之家 v0.9.89"))
-check("5e Release Notes 存在", (ROOT / ".github/RELEASE_NOTES_0.9.89.md").exists())
+check("5a 版本号已升至 0.9.90", 'VAULTHUB_ASSET_VERSION = "0.9.90"' in HTML and 'const VAULTHUB_SCRIPT_VERSION = "0.9.90"' in STATE)
+check("5b 关于 / 侧栏 / 页脚标语一致", HTML.count("v0.9.90 · ") == 3)
+check("5c 脚本引用带新版本号", 'web/js/03-quality.js?v=0.9.90' in HTML and 'web/js/02-media.js?v=0.9.90' in HTML)
+check("5d Update Log 顶部为 v0.9.90", LOG.startswith("# VaultHub 蜀鼠之家 v0.9.90"))
+check("5e Release Notes 存在", (ROOT / ".github/RELEASE_NOTES_0.9.90.md").exists())
 
 if FAILS:
     print(f"\nFAIL: {len(FAILS)} 项未通过：")

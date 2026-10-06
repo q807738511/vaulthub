@@ -104,7 +104,7 @@ chk("C5 扫描完成 → 成功/失败/跳过", run(media, `libraryScanPillHtml(
 run(media, `libraryScanState["m1"] = {running:false,message:"HTTP 500"}`);
 chk("C6 失败 → 扫描失败胶囊", run(media, `libraryScanPillHtml({id:"m1",type:"movie"})`).includes("扫描失败"));
 
-/* ============ 四、库页刮削区整块移除（v0.9.89） ============ */
+/* ============ 四、库页刮削区整块移除（v0.9.90） ============ */
 const mediaSource = fs.readFileSync(ROOT + "/web/js/02-media.js", "utf8");
 /* 注释里保留了「曾经有什么 / 为什么删」的说明，判定只针对真实代码。 */
 const mediaCode = mediaSource.replace(/\/\*[\s\S]*?\*\//g, " ");

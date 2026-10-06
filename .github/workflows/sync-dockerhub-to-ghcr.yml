@@ -1,0 +1,230 @@
+name: Sync All GHCR vaulthub Tags to Docker Hub
+# v0.9.70 复盘：本次 tag 构建里「Create GitHub Release for version tags」步骤返回非 0
+# （Release 本身已创建并发布，说明文件与仓库内的 RELEASE_NOTES_0.9.70.md 完全一致），
+# 但整条工作流被判为 failure → 本工作流因下方 if 条件「构建失败不同步半成品」被跳过，
+# 于是 Docker Hub 的 v0.9.70 / latest 停留在 v0.9.69 摘要。
+# 处置：① publish-image.yml 的发布步骤已改为幂等 + 重试 + 发布后读回校验，根治该红灯；
+#       ② 本次通过只修改本文件触发一次全量同步（下方 push.paths 的设计用途）恢复 Docker Hub。
+on:
+  workflow_dispatch:
+  # 镜像构建完成后再同步：直接用 push 触发会和「Build and publish container」并发，
+  # 新的 sha-<commit> / latest 标签此时还没推到 GHCR，同步必然把它们记成失败。
+  workflow_run:
+    workflows: ["Build and publish container"]
+    types: [completed]
+  # 没有 GitHub API 调度令牌时，可通过仅修改本工作流来安全触发一次；
+  # 普通源码提交不会重复执行全量镜像同步。
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/sync-dockerhub-to-ghcr.yml'
+  schedule:
+    - cron: '0 2 * * *'
+concurrency:
+  group: sync-all-ghcr-tags-to-dockerhub
+  cancel-in-progress: true
+jobs:
+  sync-all-tags:
+    runs-on: ubuntu-latest
+    # 构建失败时不要同步半成品镜像。
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: 安装Skopeo同步工具
+        run: sudo apt update && sudo apt install -y skopeo jq
+      - name: 登录GHCR源仓库
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: printf '%s' "$GH_TOKEN" | skopeo login ghcr.io -u q807738511 --password-stdin
+      - name: 登录Docker Hub目标仓库
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: printf '%s' "$DOCKERHUB_TOKEN" | skopeo login docker.io -u "$DOCKERHUB_USERNAME" --password-stdin
+      - name: 检测摘要并增量同步镜像标签
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+
+          SOURCE_REPO=docker://ghcr.io/q807738511/vaulthub
+          TARGET_REPO=docker://docker.io/q807738511/vaulthub
+          REPO_PATH=q807738511/vaulthub
+          # 两端都用同一组 Accept 头做 HEAD 请求读 Docker-Content-Digest。
+          # 不能用 skopeo inspect 比摘要：本仓库的 manifest 是 OCI image index，
+          # Docker Hub 会为不接受 OCI 的客户端即时转换成 docker manifest list，
+          # 于是 skopeo 在两端读到不同摘要，把内容完全一致的历史标签误判成「需要重推」。
+          ACCEPT_MANIFESTS='application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json'
+
+          ghcr_pull_token() {
+            curl -fsSL -u "q807738511:$GH_TOKEN" \
+              "https://ghcr.io/token?service=ghcr.io&scope=repository:${REPO_PATH}:pull" |
+              jq -r '.token // empty'
+          }
+          hub_pull_token() {
+            curl -fsSL -u "$DOCKERHUB_USERNAME:$DOCKERHUB_TOKEN" \
+              "https://auth.docker.io/token?service=registry.docker.io&scope=repository:${REPO_PATH}:pull" |
+              jq -r '.token // empty'
+          }
+          GHCR_TOKEN=$(ghcr_pull_token)
+          HUB_TOKEN=$(hub_pull_token)
+          if [ -z "$GHCR_TOKEN" ] || [ -z "$HUB_TOKEN" ]; then
+            echo "获取 registry 读取令牌失败" >&2
+            exit 1
+          fi
+
+          # registry_digest <host> <token> <tag> -> 打印 Docker-Content-Digest（不存在则空）
+          registry_digest() {
+            local host="$1" token="$2" tag="$3"
+            curl -sSI \
+              -H "Authorization: Bearer $token" \
+              -H "Accept: $ACCEPT_MANIFESTS" \
+              "https://${host}/v2/${REPO_PATH}/manifests/${tag}" 2>/dev/null |
+              tr -d '\r' |
+              awk 'tolower($1) == "docker-content-digest:" { print $2 }' |
+              tail -n 1
+          }
+
+          mapfile -t ALL_TAGS < <(
+            skopeo list-tags "$SOURCE_REPO" |
+              jq -r '.Tags[]' |
+              awk 'NF && !seen[$0]++'
+          )
+          LATEST_TAG=$(
+            printf '%s\n' "${ALL_TAGS[@]}" |
+              grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' |
+              sort -V |
+              tail -n 1 || true
+          )
+          if [ -z "$LATEST_TAG" ]; then
+            echo "未在 GHCR 找到 vX.Y.Z 格式的版本标签" >&2
+            exit 1
+          fi
+
+          mapfile -t TAGS < <(
+            printf '%s\n' "$LATEST_TAG" "${ALL_TAGS[@]}" |
+              awk 'NF && !seen[$0]++'
+          )
+          echo "最新版本：$LATEST_TAG"
+          echo "GHCR 标签总数：${#TAGS[@]}"
+
+          UPDATED=0
+          REPUSHED=0
+          MATCHED=0
+          IMMUTABLE=()
+          FAILED_TAGS=()
+          LAST_ERROR=""
+
+          for TAG in "${TAGS[@]}"; do
+            echo "::group::检查标签 $TAG"
+            SOURCE_DIGEST=$(registry_digest ghcr.io "$GHCR_TOKEN" "$TAG")
+            if [ -z "$SOURCE_DIGEST" ]; then
+              echo "无法读取 GHCR 标签 $TAG 的摘要，记为失败并继续" >&2
+              FAILED_TAGS+=("$TAG")
+              echo "::error title=同步失败 $TAG::无法读取 GHCR 摘要"
+              echo "::endgroup::"
+              continue
+            fi
+            TARGET_DIGEST=$(registry_digest registry-1.docker.io "$HUB_TOKEN" "$TAG")
+            echo "GHCR 摘要：$SOURCE_DIGEST"
+            echo "Docker Hub 摘要：${TARGET_DIGEST:-不存在}"
+
+            if [ "$SOURCE_DIGEST" = "$TARGET_DIGEST" ]; then
+              echo "标签 $TAG 两端摘要一致，无需推送"
+              MATCHED=$((MATCHED + 1))
+              echo "::endgroup::"
+              continue
+            fi
+
+            # 默认按新增推送；已存在且摘要不同时由下方分支置 1 走覆盖重推。
+            REPUSH_MODE=0
+
+            if [ -n "$TARGET_DIGEST" ]; then
+              # 标签已存在但摘要不同 → 尝试覆盖重推。Docker Hub 默认允许可变标签
+              # （仓库设置 Tag mutability settings = All tags are mutable）。
+              # 若仓库仍开启 immutable tags，重推会收到 403 DENIED
+              # "cannot be updated due to immutability settings"，届时归入不可变警告而非失败。
+              REPUSH_MODE=1
+              echo "标签 $TAG 已存在但摘要不同，尝试覆盖重推（$TARGET_DIGEST → $SOURCE_DIGEST）"
+            fi
+
+            SYNCED=0
+            for ATTEMPT in 1 2 3; do
+              if [ "$REPUSH_MODE" -eq 1 ]; then
+                echo "第 $ATTEMPT 次覆盖重推标签 $TAG"
+              else
+                echo "第 $ATTEMPT 次推送新标签 $TAG"
+              fi
+              if skopeo copy --all --preserve-digests "$SOURCE_REPO:$TAG" "$TARGET_REPO:$TAG" 2>"/tmp/skopeo-$ATTEMPT.err"; then
+                # 写入后必须从目标仓库读回并核对摘要，不能只依赖退出码。
+                HUB_TOKEN=$(hub_pull_token)
+                READBACK=$(registry_digest registry-1.docker.io "$HUB_TOKEN" "$TAG")
+                if [ "$READBACK" = "$SOURCE_DIGEST" ]; then
+                  echo "标签 $TAG 推送并读回校验成功：$READBACK"
+                  SYNCED=1
+                  if [ "$REPUSH_MODE" -eq 1 ]; then
+                    REPUSHED=$((REPUSHED + 1))
+                  else
+                    UPDATED=$((UPDATED + 1))
+                  fi
+                  break
+                fi
+                LAST_ERROR="读回摘要 ${READBACK:-不存在} != 源摘要 $SOURCE_DIGEST"
+                echo "标签 $TAG $LAST_ERROR" >&2
+              else
+                LAST_ERROR=$(tr '\n' ' ' <"/tmp/skopeo-$ATTEMPT.err" | tail -c 400)
+                echo "标签 $TAG 推送失败：$LAST_ERROR" >&2
+              fi
+              sleep 10
+            done
+
+            if [ "$SYNCED" -ne 1 ]; then
+              if printf '%s' "$LAST_ERROR" | grep -qiE 'immutab|cannot be updated|denied'; then
+                # Docker Hub immutable tags 拒绝覆盖（403 DENIED "cannot be updated due to
+                # immutability settings"）。语义版本标签本就应不可变；latest 若被冻结属于
+                # 仓库设置问题 → 归入警告不判失败（与结尾 latest 一致性护栏互不干扰）。
+                IMMUTABLE+=("$TAG")
+                echo "::warning title=标签不可变 $TAG::Docker Hub immutable tags 拒绝覆盖重推 $TAG → $SOURCE_DIGEST；请在仓库设置 Tag mutability settings 选择 All tags are mutable 后重跑"
+              else
+                FAILED_TAGS+=("$TAG")
+                # 用 ::error:: 输出，失败原因才会写进 check-run annotations，
+                # 不必下载完整日志就能定位是哪个标签、什么原因失败。
+                echo "::error title=同步失败 $TAG::${LAST_ERROR:-未知错误}"
+              fi
+            fi
+            echo "::endgroup::"
+          done
+
+          {
+            echo "## GHCR → Docker Hub 增量同步"
+            echo "- 最新版本：\`$LATEST_TAG\`"
+            echo "- 新推送：$UPDATED"
+            echo "- 已存在标签覆盖重推成功：$REPUSHED"
+            echo "- 摘要一致并跳过：$MATCHED"
+            echo "- 重推被拒（Docker Hub immutable tags）：${#IMMUTABLE[@]}"
+            if [ "${#IMMUTABLE[@]}" -gt 0 ]; then
+              echo "- 不可变标签：\`${IMMUTABLE[*]}\`"
+              echo "  > 这些标签覆盖重推时被 Docker Hub immutable tags 拒绝（403 DENIED）。"
+              echo "  > 若希望 \`latest\` 跟随最新版本，请在仓库设置 Tag mutability settings 选择 All tags are mutable 后重跑本工作流。"
+            fi
+            echo "- 失败：${#FAILED_TAGS[@]}"
+            if [ "${#FAILED_TAGS[@]}" -gt 0 ]; then
+              echo "- 失败标签：\`${FAILED_TAGS[*]}\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # 最新版本必须两端摘要一致（新推送成功或本来就一致）。
+          LATEST_SOURCE=$(registry_digest ghcr.io "$GHCR_TOKEN" "$LATEST_TAG")
+          HUB_TOKEN=$(hub_pull_token)
+          LATEST_TARGET=$(registry_digest registry-1.docker.io "$HUB_TOKEN" "$LATEST_TAG")
+          if [ -z "$LATEST_SOURCE" ] || [ "$LATEST_SOURCE" != "$LATEST_TARGET" ]; then
+            echo "最新版本 $LATEST_TAG 两端摘要不一致：GHCR=$LATEST_SOURCE Docker Hub=${LATEST_TARGET:-不存在}" >&2
+            exit 1
+          fi
+          echo "最新版本 $LATEST_TAG 两端摘要一致：$LATEST_SOURCE"
+
+          # 真正的推送失败仍然保留红灯；不可变标签只是警告，不判失败。
+          test "${#FAILED_TAGS[@]}" -eq 0
+          echo "所有标签增量同步检查完成"

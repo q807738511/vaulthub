@@ -11,7 +11,8 @@ CSS = (ROOT / "web/css/main.css").read_text(encoding="utf-8")
 
 checks = {
     "完整索引用于书刊筛选": 'group === "comic" && data.status !== "indexing"' in MEDIA
-        and "files = await fetchAllLibraryFiles(lib.id, data, offset)" in MEDIA,
+        # v0.9.90：整库拉取改为分块 + 让出主线程，调用多带一个 opts（chunk/onProgress）。
+        and "files = await fetchAllLibraryFiles(lib.id, data, offset, {" in MEDIA,
     "不再发送超大已读分页": 'comicShelfView === "completed" ? 100000' not in MEDIA,
     # v0.9.83：书架视图从「两态按钮」升级为四个分段标签（未读 / 喜欢 / 🕘 历史阅读 / 全部），
     # 过滤仍按同一个阅读进度阈值判断，只是判断入口换成了标签状态。
@@ -28,7 +29,7 @@ checks = {
     "关闭释放阅读器监听": 'closeComicReader()' in FEATURES,
     "历史焦点检查仍存在": 'aria-modal="true"' in HTML and ':focus-visible' in CSS,
     "网易云默认关闭": 'NetEase' in MEDIA and '默认关闭' in MEDIA,
-    "本版版本": 'VAULTHUB_ASSET_VERSION = "0.9.89"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.89"' in STATE,
+    "本版版本": 'VAULTHUB_ASSET_VERSION = "0.9.90"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.90"' in STATE,
 }
 GO_MAIN = (ROOT / "media-go/main.go").read_text(encoding="utf-8")
 GO_EPUB = (ROOT / "media-go/document_epub.go").read_text(encoding="utf-8")
@@ -97,7 +98,9 @@ checks.update({
 
 # ============ 声明的真实性（审查 P2-3/P3 相关，避免只写在文档里） ============
 checks.update({
-    "服务端 limit 夹取与说明一致": 'if lim <= 0 || lim > 500 {' in GO_MAIN and 'lim = 100' in GO_MAIN
+    # v0.9.90：单页上限改为 maxFilesLimit（5000），配合前端 2000/块整库拉取。
+    "服务端 limit 夹取与说明一致": 'if lim <= 0 || lim > maxFilesLimit {' in GO_MAIN and 'lim = 100' in GO_MAIN
+        and 'const maxFilesLimit = 5000' in GO_MAIN
         and '静默' in NOTES and '截断分页' not in NOTES,
     "zip 注释不再宣称被证伪论断": ('纵深' in GO_EPUB or 'defense in depth' in GO_EPUB.lower())
         and ('ErrFormat' in GO_EPUB or 'ErrUnexpectedEOF' in GO_EPUB),

@@ -168,11 +168,13 @@ const chk = (name, cond, extra) => {
   const bigPaths = (target.innerHTML.match(/data-media-path="[^"]+"/g) || []);
   chk("1200 本的库完整展开", bigCards === 1200, "实际 " + bigCards);
   chk("1200 本无重复", new Set(bigPaths).size === bigPaths.length, new Set(bigPaths).size + " vs " + bigPaths.length);
-  /* 游标必须连续推进：0 → 20 → 520 → 1020（旧实现按超大 limit 计算偏移会直接跳过
-     501 本之后的整段内容，这里用精确的偏移序列证明没有跳段）。 */
+  /* 游标必须连续推进（v0.9.90 分块 2000）：首页 20 条后一次补齐，偏移严格递增、
+     互不重复，不会像旧实现那样按超大 limit 计算偏移而跳过整段内容。 */
   const offsets = requests.filter(u => u.includes("/api/media/files"))
     .map(u => Number(new URL("http://x" + u).searchParams.get("offset")));
-  chk("1200 本游标连续推进无跳段", JSON.stringify(offsets) === JSON.stringify([0, 20, 520, 1020]),
+  const monotonic = offsets.every((v, i) => i === 0 || v > offsets[i - 1]);
+  const uniqueOffsets = new Set(offsets).size === offsets.length;
+  chk("1200 本游标连续推进无跳段", monotonic && uniqueOffsets && offsets.length >= 2,
     JSON.stringify(offsets));
 
   console.log("SUMMARY pass=" + pass + " fail=" + fail);

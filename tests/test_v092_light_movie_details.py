@@ -16,5 +16,6 @@ assert '.movie-detail-strip article small' in CSS and 'color:var(--text2)' in CS
 assert 'id="topLibStat"' not in HTML and 'id="homeCount"' not in HTML
 assert '<section class="view settings-view" id="view-settings">' in HTML
 assert 'v0.9.56' in HTML
-assert 'docker.io/q807738511/vaulthub:latest' in COMPOSE, "镜像主仓库已迁到 Docker Hub"
+# v0.9.90：镜像主仓库迁到 Docker Hub
+assert 'docker.io/q807738511/vaulthub:latest' in COMPOSE
 print('PASS: v0.9.56 light movie details and prior UI fixes')

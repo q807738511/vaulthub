@@ -30,10 +30,10 @@ def check(name, cond):
 # ===== 1) TMDB 影视推荐不再仅依赖 tmdb_id =====
 # openMovieDetails 会在 tmdb_id 缺失时按标题回查 TMDB 再取 id → recommendations
 check("1.1 详情打开时可用标题回查 TMDB 取 id（修复推荐不生效）",
-      "(meta.title||meta.name)" in MEDIA and "recommendations:movieRecommendationsFor(d,meta)" in MEDIA
+      "(meta.title||meta.name)" in MEDIA and "recommendations:movieRecommendationsFor(detail" in MEDIA
       and "/api/media/tmdb?query=" in MEDIA)
 check("1.2 TMDB id 回查后才取 recommendations",
-      "tidRes" in MEDIA and "movieRecommendationsFor(d,meta)" in MEDIA)
+      "tidRes" in MEDIA and "movieRecommendationsFor(detail" in MEDIA)
 check("1.3 TMDB 错误有可见提示（不再静默）", "tmdb_error" in MEDIA and "movieTMDBErrorText" in MEDIA)
 
 # ===== 2) 演职人员头像刮削插件（Metashark/Plex NFO 内置）+ 内置端点 =====
@@ -51,9 +51,9 @@ check("2.5 头像刮削插件归类刮削配置面板", "演职人员图像刮�
 # ===== 3) 分离刮削与硬件 =====
 scrape = HTML[HTML.find('id="setpanel-scrape"'):HTML.find('id="setpanel-account"')]
 hard = HTML[HTML.find('id="setpanel-hardware"'):HTML.find('id="setpanel-account"')]
-check("3.1 有独立「硬件配置」面板", 'id="setpanel-hardware"' in HTML and 'setScrape">刮削配置' in HTML)
+check("3.1 有独立「硬件配置」面板", 'id="setpanel-hardware"' in HTML and 'setpanel-scrape' in HTML and 'setScrapeTab' in HTML)
 check("3.2 硬件配置含 显卡加速/转码缓存/NAS监控", all(k in hard for k in ["显卡加速", "转码缓存", "NAS 监控"]))
-check("3.3 刮削配置含 刮削来源/API测速/网络能效/头像插件", all(k in scrape for k in ["刮削来源", "API 网络链接测速", "网络能效", "演职人员图像刮削插件"]))
+check("3.3 刮削配置含 刮削来源/API测速/网络能效/头像插件", all(k in scrape for k in ["刮削来源", "API 网络链接测速", "画面清晰度与省流", "演职人员图像刮削插件"]))
 check("3.4 switchSetTab 支持 hardware 标签", 'key === "hardware"' in STATE)
 
 print(f"\n{'='*20} v0.9.78 契约: {OK} checks, FAIL={FAIL}")

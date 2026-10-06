@@ -43,7 +43,7 @@ check("1e 通知中心支持同 key 就地更新（不刷屏）",
 check("1f 就地更新保留已读状态（未读徽标不虚高）",
       "existing.read = false" in TOPNAV and "entry.unread === true" in TOPNAV)
 MEDIA_CODE = re.sub(r"/\*.*?\*/", " ", MEDIA, flags=re.S)
-check("1g 库页不再有任何刮削按钮/状态（v0.9.89 客户要求：继续删除刮削设置按钮）",
+check("1g 库页不再有任何刮削按钮/状态（v0.9.90 客户要求：继续删除刮削设置按钮）",
       "movieScrapeControls" not in MEDIA_CODE and "movieScrapeStatus" not in MEDIA_CODE)
 check("1h 系统设置里的扫描胶囊不受影响（扫描中 n/m 仍在设置页）",
       "扫描中 ${Number(st.done" in MEDIA)

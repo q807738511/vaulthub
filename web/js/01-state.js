@@ -18,7 +18,7 @@ let vaultHubSessionPingedAt = 0;
    历史故障：v0.8.3→v0.8.5 的前端修改在服务端已生效，但浏览器仍执行缓存里的
    旧 02-media.js，用户看到「没有更新」。现在入口页 no-store、静态资源带 ?v=，
    并在启动时做一次一致性自查，不一致就绕过缓存强制重载一次。 */
-const VAULTHUB_SCRIPT_VERSION = "0.9.89";
+const VAULTHUB_SCRIPT_VERSION = "0.9.90";
 function ensureFreshAssets() {
   /* expected 为空 = 浏览器执行的 index.html 早于 v0.8.6（旧版本入口页没有声明
      版本号），同样属于"页面是旧的"，也需要换 URL 重新取一次。 */
@@ -406,6 +406,8 @@ const I18N = {
     vpCollapse: "最小化整个播放器",
     vpExpand: "还原播放器",
     vpPreparing: "正在准备播放…",
+    shelfLoadingIndex: "正在加载完整索引…",
+    shelfLoadingIndexN: "正在加载完整索引：{n} / {total} 条",
     vpFullscreen: "全屏切换",
     vpFullscreenExit: "退出全屏",
     vpPrev: "上一个",
@@ -775,6 +777,8 @@ const I18N = {
     vpCollapse: "最小化整個播放器",
     vpExpand: "還原播放器",
     vpPreparing: "正在準備播放…",
+    shelfLoadingIndex: "正在載入完整索引…",
+    shelfLoadingIndexN: "正在載入完整索引：{n} / {total} 條",
     vpFullscreen: "全螢幕切換",
     vpFullscreenExit: "退出全螢幕",
     vpPrev: "上一個",
@@ -1048,6 +1052,8 @@ const I18N = {
     vpCollapse: "Minimize player",
     vpExpand: "Restore player",
     vpPreparing: "Preparing playback…",
+    shelfLoadingIndex: "Loading full library index…",
+    shelfLoadingIndexN: "Loading full library index: {n} / {total}",
     vpFullscreen: "Toggle fullscreen",
     vpFullscreenExit: "Exit fullscreen",
     vpPrev: "Previous",

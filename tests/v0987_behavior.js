@@ -116,7 +116,7 @@ const mediaSource = fs.readFileSync(ROOT + "/web/js/02-media.js", "utf8");
 /* 注释里保留了「曾经有什么 / 为什么删」的说明，判定只针对真实代码。 */
 const mediaCode = mediaSource.replace(/\/\*[\s\S]*?\*\//g, " ");
 chk("B1 库页不再出现刮削队列徽标", !mediaCode.includes("movieScrapeStatus"));
-chk("B2 库页刮削设置按钮整块删除（v0.9.89）", !mediaCode.includes("movieScrapeControls") && !mediaCode.includes("刮削设置</span>"));
+chk("B2 库页刮削设置按钮整块删除（v0.9.90）", !mediaCode.includes("movieScrapeControls") && !mediaCode.includes("刮削设置</span>"));
 chk("B3 库页标题只带库名与统计（无第三参数入口）",
     /mediaLibraryHeading\(lib, `\$\{files\.length\} 部`\)/.test(mediaCode)
     && /mediaLibraryHeading\(lib, `\$\{shows\.length\} 部剧/.test(mediaCode));

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""v0.9.89 契约测试：4 项客户修正的静态落点。
+"""v0.9.90 契约测试：4 项客户修正的静态落点。
 
 1. 继续删除媒体库中的刮削设置按钮
 2. TMDB 标题匹配阈值（最低识别字符占比 70%，异常靠手动改名辅助）
@@ -32,7 +32,7 @@ def check(name, cond, detail=""):
         fails.append(name)
 
 
-print("v0.9.89 契约检查")
+print("v0.9.90 契约检查")
 
 # ============================================================ 1. 库页刮削按钮删除
 check("1a 媒体库页头的刮削按钮函数已删除",
@@ -159,18 +159,18 @@ check("4m Go 侧原盘单测存在（候选链 / 缓存 / 提示）",
       and "TestV0988ResolveDiscInputChainAndCache" in (ROOT / "media-go/v0988_disc_input_test.go").read_text(encoding="utf-8"))
 
 # ============================================================ 5. 版本与文档
-check("5a 版本号已升至 0.9.89",
-      'VAULTHUB_ASSET_VERSION = "0.9.89"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.89"' in STATE)
+check("5a 版本号已升至 0.9.90",
+      'VAULTHUB_ASSET_VERSION = "0.9.90"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.90"' in STATE)
 check("5b 关于 / 侧栏 / 页脚标语一致",
-      HTML.count("v0.9.89 · ") >= 2)
+      HTML.count("v0.9.90 · ") >= 2)
 check("5c 脚本引用带新版本号",
-      "?v=0.9.89" in HTML and HTML.count("?v=0.9.89") >= 5)
-check("5d Update Log 顶部为 v0.9.89",
-      (ROOT / "Update Log.md").read_text(encoding="utf-8").startswith("# VaultHub 蜀鼠之家 v0.9.89"))
+      "?v=0.9.90" in HTML and HTML.count("?v=0.9.90") >= 5)
+check("5d Update Log 顶部为 v0.9.90",
+      (ROOT / "Update Log.md").read_text(encoding="utf-8").startswith("# VaultHub 蜀鼠之家 v0.9.90"))
 check("5e Release Notes 存在",
-      (ROOT / ".github/RELEASE_NOTES_0.9.89.md").exists())
+      (ROOT / ".github/RELEASE_NOTES_0.9.90.md").exists())
 check("5f README 未被改动（发布说明只进 Update Log）",
-      "v0.9.89" not in (ROOT / "README.md").read_text(encoding="utf-8"))
+      "v0.9.90" not in (ROOT / "README.md").read_text(encoding="utf-8"))
 
 print()
 if fails:
@@ -178,4 +178,4 @@ if fails:
     for f in fails:
         print("  -", f)
     sys.exit(1)
-print(f"PASS: v0.9.89 契约（4 项修正 + 版本文档）全部通过")
+print(f"PASS: v0.9.90 契约（4 项修正 + 版本文档）全部通过")

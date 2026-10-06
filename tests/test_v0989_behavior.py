@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""v0.9.89 行为测试：跑 tests/v0989_behavior.js（Node VM 桩，真实执行源文件）。
+"""v0.9.90 行为测试：跑 tests/v0989_behavior.js（Node VM 桩，真实执行源文件）。
 
 覆盖：阈值辅助口径（识别字符占比为主判据、综合分只挑候选）、
 匹配不足 → review（待确认）且不进自动重试、网络/凭据 → failed、
@@ -16,7 +16,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 if shutil.which("node") is None:
-    print("SKIP: 本机没有 node，跳过 v0.9.89 行为测试")
+    print("SKIP: 本机没有 node，跳过 v0.9.90 行为测试")
     sys.exit(0)
 
 r = subprocess.run(["node", str(ROOT / "tests/v0989_behavior.js")],

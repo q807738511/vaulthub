@@ -41,7 +41,7 @@ check("7 showRecInfo 弹窗", "function showRecInfo" in MEDIA and "recInfoModal"
 check("7 Bangumi 回落", "api.bgm.tv/v0/search/subjects" in MEDIA and "Bangumi" in MEDIA)
 
 # 版本
-check("8 版本 0.9.89", 'VAULTHUB_ASSET_VERSION = "0.9.89"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.89"' in (ROOT/"web/js/01-state.js").read_text(encoding="utf-8"))
+check("8 版本 0.9.90", 'VAULTHUB_ASSET_VERSION = "0.9.90"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.90"' in (ROOT/"web/js/01-state.js").read_text(encoding="utf-8"))
 
 print(f"v0.9.85 {OK}/{OK+FAIL} 项剧集/季/集/推荐契约通过" if FAIL==0 else f"v0.9.85 契约 {FAIL} 项未通过")
 raise SystemExit(1 if FAIL else 0)

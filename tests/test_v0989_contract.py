@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""v0.9.89 契约测试（静态落点）：生产事故修复 + 三项客户要求。
+"""v0.9.90 契约测试（静态落点）：生产事故修复 + 三项客户要求。
 
 跑法：python3 tests/test_v0989_contract.py
 """
@@ -35,7 +35,7 @@ def strip_comments(src):
     """先剥 // 行注释，再剥 /* */ 块注释。
 
     顺序很重要：源码注释里出现 /api/* 这类字面量时，直接剥块注释会把后面的
-    代码整段吃掉（v0.9.89 实测 6.4 KB 代码被吞、契约断言全部误报失败）。"""
+    代码整段吃掉（v0.9.90 实测 6.4 KB 代码被吞、契约断言全部误报失败）。"""
     src = re.sub(r"//[^\n]*", " ", src)
     return re.sub(r"/\*.*?\*/", " ", src, flags=re.S)
 
@@ -132,13 +132,14 @@ check("3j 不做物理改名（无 rename 媒体文件调用）",
       "renameMediaFile" not in MEDIA and "/api/media/rename" not in MEDIA)
 
 # ============================================================ 版本与文档
-check("4a index.html 资源版本 0.9.89", HTML.count("?v=0.9.89") == 10)
-check("4b ASSET_VERSION 0.9.89", 'window.VAULTHUB_ASSET_VERSION = "0.9.89";' in HTML)
-check("4c SCRIPT_VERSION 0.9.89", 'const VAULTHUB_SCRIPT_VERSION = "0.9.89";' in STATE)
-check("4d 标语含 v0.9.89", "v0.9.89 · 崩溃修复·NFO 本地化·阈值辅助" in HTML)
-check("4e 更新日志有 v0.9.89 章节", LOG.lstrip().startswith("# VaultHub 蜀鼠之家 v0.9.89"))
+check("4a index.html 资源版本 0.9.90", HTML.count("?v=0.9.90") == 10)
+check("4b ASSET_VERSION 0.9.90", 'window.VAULTHUB_ASSET_VERSION = "0.9.90";' in HTML)
+check("4c SCRIPT_VERSION 0.9.90", 'const VAULTHUB_SCRIPT_VERSION = "0.9.90";' in STATE)
+# v0.9.90：标语随版本推进 —— 校验版本前缀 + 侧栏/页脚/关于三处一致。
+check("4d 标语含 v0.9.90", HTML.count("v0.9.90 · ") == 3)
+check("4e 更新日志有 v0.9.90 章节", LOG.lstrip().startswith("# VaultHub 蜀鼠之家 v0.9.90"))
 check("4f 更新日志写明并发写根因", "fatal error: concurrent map read and map write" in LOG)
-check("4g 发布说明文件存在", (ROOT / ".github/RELEASE_NOTES_0.9.89.md").is_file())
+check("4g 发布说明文件存在", (ROOT / ".github/RELEASE_NOTES_0.9.90.md").is_file())
 check("4h README 未被改动（固定项目介绍）",
       subprocess.run(["git", "diff", "--stat", "HEAD", "--", "README.md"], cwd=ROOT,
                      capture_output=True, text=True).stdout.strip() == "")

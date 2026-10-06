@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -334,6 +335,48 @@ func seriesShowDirs(lib Library, startDir string) []string {
 		}
 	}
 	return dirs
+}
+
+/* v0.9.90：批量本地元数据。
+   前端进影视库时原实现对每个文件串行 GET /api/media/metadata —— 1000+ 部剧集就是
+   1000+ 次往返，大库进库极慢（用户报告「链接大媒体库后非常慢」）。这里提供一次
+   最多 500 条的批量读，前端按 200 条一批，请求数降到个位数。
+   结果与单条接口逐字段一致（同一个 readLocalMediaMetadata + 覆盖层合并）。 */
+func (a *App) localMetadataBatch(w http.ResponseWriter, r *http.Request) {
+	if !writeAuth(r) {
+		errJSON(w, 401, "login required")
+		return
+	}
+	if r.Method != http.MethodPost {
+		errJSON(w, 405, "method not allowed")
+		return
+	}
+	var req struct {
+		ID    string   `json:"id"`
+		Paths []string `json:"paths"`
+	}
+	if e := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); e != nil {
+		errJSON(w, 400, "invalid json")
+		return
+	}
+	lib, ok := a.find(req.ID)
+	if !ok {
+		errJSON(w, 404, "invalid media path")
+		return
+	}
+	if len(req.Paths) > 500 {
+		req.Paths = req.Paths[:500]
+	}
+	items := make(map[string]any, len(req.Paths))
+	for _, path := range req.Paths {
+		m, err := readLocalMediaMetadata(lib, path)
+		if err != nil {
+			continue
+		}
+		a.mergeMetadataOverride(lib, path, &m)
+		items[path] = m
+	}
+	writeJSON(w, 200, map[string]any{"items": items})
 }
 
 func (a *App) localMetadata(w http.ResponseWriter, r *http.Request) {

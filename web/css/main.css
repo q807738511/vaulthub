@@ -2103,3 +2103,24 @@ html[data-quality="minimal"] :is(.audio-expand, .audio-fullscreen, .audio-player
 .lib-scan-name b { display:block; font-size:13.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .lib-scan-name small { display:block; margin-top:3px; color:var(--text3); font-size:11.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .lib-scan-row .row-acts { flex:0 0 auto; }
+
+/* ===== v0.9.90：转码 / 限档提示从画面顶栏移入「获取信息」面板 =====
+   客户要求：提示不要压在视频画面上，要能在播放器的「获取信息」栏目里查看。
+   旧实现是 .vc-top 里的绝对定位红条，这里改为面板内的独立一行。 */
+.video-status-panel .status-compat {
+  display:none; margin-top:6px; color:#ffd48a; font-size:12px; line-height:1.55;
+  word-break:break-word; text-align:left;
+}
+.video-status-panel .status-compat.show { display:block; }
+.media-reader-overlay.movie-player.reader-theme-light .video-status-panel .status-compat { color:#8a5a00; }
+/* 信息按钮上的小圆点：面板收起时也能看出里面存着一条转码 / 限档提示。 */
+.video-info-button { position:relative; }
+.video-info-button.has-note::after {
+  content:""; position:absolute; top:3px; right:3px; width:7px; height:7px;
+  border-radius:50%; background:#ff6b57; box-shadow:0 0 0 2px rgba(0,0,0,.35);
+}
+/* v0.9.90：大库整库索引分块加载时的进度提示（书刊架顶部）。 */
+.shelf-loading {
+  margin:0 0 10px; padding:8px 12px; border-radius:8px;
+  background:rgba(127,127,127,.12); color:var(--text-dim,#9aa4b2); font-size:13px;
+}

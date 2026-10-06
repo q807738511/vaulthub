@@ -20,7 +20,7 @@ FEATURES = (ROOT / "web/js/03-features.js").read_text(encoding="utf-8")
 BOOT = (ROOT / "web/js/04-boot.js").read_text(encoding="utf-8")
 HOME = (ROOT / "web/js/05-home.js").read_text(encoding="utf-8")
 TOPNAV = (ROOT / "web/js/07-topnav.js").read_text(encoding="utf-8")
-NOTES = (ROOT / ".github/RELEASE_NOTES_0.9.89.md").read_text(encoding="utf-8")
+NOTES = (ROOT / ".github/RELEASE_NOTES_0.9.90.md").read_text(encoding="utf-8")
 LOG = (ROOT / "Update Log.md").read_text(encoding="utf-8")
 
 checks: list[tuple[str, bool, str]] = []
@@ -52,7 +52,7 @@ check("A6 品牌与信息区仍在（旧契约不破）",
       'id="accountWrap"' in HEADER and 'id="topScanStat"' in HEADER
       and HEADER.index('id="accountWrap"') < HEADER.index('class="tb-info"'))
 check("A7 独立脚本 07-topnav.js 已挂载且在主题引擎之后",
-      "/web/js/07-topnav.js?v=0.9.89" in HTML
+      "/web/js/07-topnav.js?v=0.9.90" in HTML
       and HTML.index("06-theme.js") < HTML.index("07-topnav.js") < HTML.index("03-audio-zoom.js"))
 check("A8 顶栏渲染器读真实媒体库并保序渲染",
       "function renderTopLibTabs()" in TOPNAV and "localMediaLibraries" in TOPNAV
@@ -115,13 +115,15 @@ check("B4 视图设置含分页浏览 / 网格密度 / 封面收藏按钮",
       "分页浏览" in MEDIA and "网格密度" in MEDIA and "封面收藏按钮" in MEDIA
       and "function setBookPageSize(size)" in MEDIA and "function setBookCols(cols)" in MEDIA)
 check("B5 默认完整展开（v0.9.70 保证不被分页吞掉）",
-      "paged: false" in MEDIA and "prefs.paged ? visible.slice" in MEDIA
-      and "已展开全部" in MEDIA)
+      "paged: false" in MEDIA and "function bookShelfWindowSlice" in MEDIA
+      and 'return { pageFiles: list, more: "" };' in MEDIA
+      and "继续加载（已显示" in MEDIA and "已展开全部" in MEDIA)
 check("B6 分页为本地切片，翻页不重新请求",
       "function gotoBookShelfPage(page)" in MEDIA and "function renderBookShelfPage()" in MEDIA
       and "bookShelfVisibleCache" in MEDIA)
 check("B7 整库索引缓存（含 60 秒新鲜度与媒体库变化失效）",
-      "bookShelfIndexCache[lib.id] = { at: Date.now(), files: index }" in MEDIA
+      # v0.9.90：索引缓存的写入已随渲染逻辑搬进 renderComicShelf()。
+        "bookShelfIndexCache[lib.id] = { at: Date.now(), files }" in MEDIA
       and "(Date.now() - Number(cached.at || 0)) > 60000" in MEDIA
       and "bookShelfIndexCache = {};" in MEDIA and "bookShelfCountsCache = {};" in MEDIA)
 check("B8 分页器带页码直跳与统计",
@@ -169,12 +171,14 @@ check("C 侧栏模式下顶栏不重复媒体库与主导航",
 
 # ---------------------------------------------------------------- D. 文档与版本
 check("D1 发布说明存在且包含本版修正（发布说明随版本推进）",
-      "并发" in NOTES and ("502" in NOTES or "fatal" in NOTES)
-      and "NFO" in NOTES and "本地" in NOTES and ("原文件名称" in NOTES or "原文件名" in NOTES))
-check("D2 Update Log 有对应条目", "持续登录" in LOG and "通知喇叭" in LOG and "硬盘和网络" in LOG and "v0.9.89" in LOG)
-check("D3 版本号为 0.9.89",
-      'VAULTHUB_ASSET_VERSION = "0.9.89"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.89"' in STATE
-      and "?v=0.9.89" in HTML and "?v=0.9.78" not in HTML)
+      # v0.9.90：大库响应修复（三条链路）+ 转码提示移入获取信息 + 刮削命名跟随语言。
+      ("184,693" in NOTES or "18.4 万" in NOTES or "37 万" in NOTES)
+      and "获取信息" in NOTES and "转码" in NOTES
+      and "show_title" in NOTES and "语言" in NOTES)
+check("D2 Update Log 有对应条目", "持续登录" in LOG and "通知喇叭" in LOG and "硬盘和网络" in LOG and "v0.9.90" in LOG)
+check("D3 版本号为 0.9.90",
+      'VAULTHUB_ASSET_VERSION = "0.9.90"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.90"' in STATE
+      and "?v=0.9.90" in HTML and "?v=0.9.78" not in HTML)
 
 fails = [(n, d) for n, ok, d in checks if not ok]
 for n, ok, d in checks:

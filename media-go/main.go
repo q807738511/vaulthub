@@ -350,6 +350,10 @@ CREATE INDEX IF NOT EXISTS idx_files_lib ON files(lib);
 -- lower(path) 做范围约束（虽不能直接用前置通配符，但可为到库的候选集预过滤），
 -- 且对「按首字母/browse」这类前缀匹配直接可用。开销：写入时多维护一棵索引。
 CREATE INDEX IF NOT EXISTS idx_files_lib_lower_path ON files(lib, lower(path));
+-- v0.9.90：首页「最近入库」等按 mtime 排序的查询此前走 USING TEMP B-TREE（整库排序）。
+-- 复合索引覆盖 (lib, mtime, path)，既满足 WHERE lib=? 又直接给出 ORDER BY mtime DESC, path，
+-- 实测查询计划由 TEMP B-TREE 变为走索引扫描。
+CREATE INDEX IF NOT EXISTS idx_files_lib_mtime ON files(lib, mtime, path);
 CREATE TABLE IF NOT EXISTS scan_staging(
   lib        TEXT NOT NULL,
   generation INTEGER NOT NULL,
@@ -1508,6 +1512,9 @@ func (a *App) indexStatus(w http.ResponseWriter, r *http.Request) {
 // filesystem, so it stays fast even during a rebuild. If a library has never
 // been indexed it kicks off a background scan and returns an empty page.
 // v0.9.56: 文件列表读取需要登录会话（readAuth）。
+/* v0.9.90：单次列表请求的最大条数（整库索引分块拉取用）。 */
+const maxFilesLimit = 5000
+
 func (a *App) files(w http.ResponseWriter, r *http.Request) {
 	if !readAuth(r) {
 		errJSON(w, 401, "login required")
@@ -1549,7 +1556,10 @@ func (a *App) files(w http.ResponseWriter, r *http.Request) {
 
 	off, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 	lim, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	if lim <= 0 || lim > 500 {
+	/* v0.9.90：单页上限 500 → maxFilesLimit。
+	   前端整库索引用 2000/块拉取，18.4 万条的库从 370 次请求降到 93 次；
+	   响应仍是逐行扫描 + 流式写 JSON，内存占用与单页上限无关。 */
+	if lim <= 0 || lim > maxFilesLimit {
 		lim = 100
 	}
 	if off < 0 {
@@ -2523,6 +2533,7 @@ func main() {
 	mux.HandleFunc("/api/media/cast/avatar", a.castAvatar)
 	mux.HandleFunc("/api/media/tvdb", a.tvdb)
 	mux.HandleFunc("/api/media/metadata", a.localMetadata)
+	mux.HandleFunc("/api/media/metadata/batch", a.localMetadataBatch)
 	mux.HandleFunc("/api/media/metadata/override", a.metadataOverride)
 	mux.HandleFunc("/api/media/metadata/artwork", a.artworkCandidates)
 	mux.HandleFunc("/api/media/reading/progress", a.readingProgress)

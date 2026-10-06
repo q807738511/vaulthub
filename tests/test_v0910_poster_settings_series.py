@@ -6,7 +6,7 @@ CSS = (ROOT / "web/css/main.css").read_text(encoding="utf-8")
 JS = (ROOT / "web/js/02-media.js").read_text(encoding="utf-8")
 STATE = (ROOT / "web/js/01-state.js").read_text(encoding="utf-8")
 COMPOSE = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
-PUB = (ROOT / ".workflow/publish.yml").read_text(encoding="utf-8")
+SYNC = (ROOT / ".github/workflows/sync-dockerhub-to-ghcr.yml").read_text(encoding="utf-8")
 
 # 1. 影视详情背景必须优先使用读取到的 poster；poster 存在时不再套用主题 no-art 背景。
 assert "function movieHeroArt(meta)" in JS
@@ -45,14 +45,14 @@ assert "S01E01" in JS and "Season 01" in JS
 
 # 4. v0.9.56 发布引用与增量同步工作流。
 assert 'v0.9.56' in HTML
+# v0.9.90：镜像主仓库由 GHCR 迁到 Docker Hub（GitHub 账户停用后 ghcr 已 403）
 assert 'docker.io/q807738511/vaulthub:latest' in COMPOSE
-# v0.9.90：镜像主仓库由 GHCR 迁到 Docker Hub。原来那套「GHCR → Docker Hub 摘要对齐」
-# （registry_digest / Docker-Content-Digest / skopeo copy --preserve-digests）随
-# sync-dockerhub-to-ghcr.yml 一并作废 —— GHCR 已不在发布链路的任何一环。
-# 改为约束新的流水线：必须真的推 Docker Hub，发行版必须走带读回校验的脚本。
-assert 'repository: docker.io' in PUB, '镜像必须推到 Docker Hub'
-assert 'q807738511/vaulthub:' in PUB, '镜像名必须指向 Docker Hub 的 vaulthub（registry 由 repository 字段给出）'
-assert 'scripts/ci-release.sh' in PUB, '发行版必须走幂等+重试+读回校验的脚本'
+# v0.9.30：摘要比较改为两端统一的 registry HEAD（Docker Hub 会为不接受 OCI 的
+# 客户端即时转换 manifest，skopeo inspect 在两端读到的摘要因此不同）；
+# 真正的推送仍然用 skopeo copy --all --preserve-digests。
+assert 'registry_digest()' in SYNC, '需要统一的 registry 摘要读取函数'
+assert 'docker-content-digest' in SYNC.lower(), '摘要必须来自 registry 的 Docker-Content-Digest'
+assert 'skopeo copy --all --preserve-digests' in SYNC
 print('PASS: v0.9.56 poster hero, sidebar settings and Plex/Emby-style series grouping')
 
 # 折叠按钮必须有独立 id，避免 document.querySelector(".rail-btn") 命中侧栏设置按钮
