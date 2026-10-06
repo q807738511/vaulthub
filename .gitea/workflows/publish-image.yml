@@ -43,6 +43,31 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
+      - name: 准备工作区（自行克隆）
+        run: |
+          set -eu
+          # 实测：act_runner 交下来的工作目录是空的（连 .git 都没有），因此所有读文件的
+          # 步骤都会在第 1~2 步就退出，看起来像校验逻辑写错了，其实是没代码可校验。
+          # actions/checkout@v4 在内网 runner 上拉不到 github.com，所以这里用纯 git 克隆。
+          if [ -f index.html ] && [ -d scripts ]; then echo "工作区已有代码，无需克隆"; exit 0; fi
+          BASE="${GITHUB_SERVER_URL:-}"
+          SLUG="${GITHUB_REPOSITORY:-}"
+          REF="${GITHUB_REF:-refs/heads/main}"
+          if [ -z "$BASE" ] || [ -z "$SLUG" ]; then
+            echo "::error title=缺少仓库地址::GITHUB_SERVER_URL / GITHUB_REPOSITORY 没注入，无法自行克隆"
+            exit 1
+          fi
+          echo "自行克隆 $BASE/$SLUG.git  引用 $REF"
+          git init -q .
+          git remote remove origin 2>/dev/null || true
+          git remote add origin "$BASE/$SLUG.git"
+          if [ -n "${GITEA_CLONE_TOKEN:-}" ]; then
+            git config --global url."https://${GITEA_CLONE_TOKEN}@${BASE#https://}/".insteadOf "${BASE}/"
+          fi
+          git fetch -q --depth=1 origin "$REF"
+          git checkout -q -f FETCH_HEAD
+          echo "克隆完成：$(git rev-parse --short HEAD)"
+          ls -a | head -20
       - name: 环境与身份自检
         run: |
           set -eu
