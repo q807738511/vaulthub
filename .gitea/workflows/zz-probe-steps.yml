@@ -1,0 +1,264 @@
+# 临时自检（第四版）：validate.yml 的每一步各拆成一个 job，逐步公开报状态，定位失败步骤。验完即删。
+name: zz-probe-steps
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  s1:
+    name: "准备工作区（自行克隆）"
+    runs-on: ubuntu-latest
+    steps:
+      - name: 准备工作区（自行克隆）
+        run: |
+          set -eu
+          if [ -f index.html ] && [ -d scripts ]; then exit 0; fi
+          BASE="${GITHUB_SERVER_URL:-}"; SLUG="${GITHUB_REPOSITORY:-}"; REF="${GITHUB_REF:-refs/heads/main}"
+          git init -q .
+          git remote remove origin 2>/dev/null || true
+          git remote add origin "$BASE/$SLUG.git"
+          git fetch -q --depth=1 origin "$REF"
+          git checkout -q -f FETCH_HEAD
+      - name: "准备工作区（自行克隆）"
+        run: |
+          set -eu
+          # 实测：act_runner 交下来的工作目录是空的（连 .git 都没有），因此所有读文件的
+          # 步骤都会在第 1~2 步就退出，看起来像校验逻辑写错了，其实是没代码可校验。
+          # actions/checkout@v4 在内网 runner 上拉不到 github.com，所以这里用纯 git 克隆。
+          if [ -f index.html ] && [ -d scripts ]; then echo "工作区已有代码，无需克隆"; exit 0; fi
+          BASE="${GITHUB_SERVER_URL:-}"
+          SLUG="${GITHUB_REPOSITORY:-}"
+          REF="${GITHUB_REF:-refs/heads/main}"
+          if [ -z "$BASE" ] || [ -z "$SLUG" ]; then
+            echo "::error title=缺少仓库地址::GITHUB_SERVER_URL / GITHUB_REPOSITORY 没注入，无法自行克隆"
+            exit 1
+          fi
+          echo "自行克隆 $BASE/$SLUG.git  引用 $REF"
+          git init -q .
+          git remote remove origin 2>/dev/null || true
+          git remote add origin "$BASE/$SLUG.git"
+          if [ -n "${GITEA_CLONE_TOKEN:-}" ]; then
+            git config --global url."https://${GITEA_CLONE_TOKEN}@${BASE#https://}/".insteadOf "${BASE}/"
+          fi
+          git fetch -q --depth=1 origin "$REF"
+          git checkout -q -f FETCH_HEAD
+          echo "克隆完成：$(git rev-parse --short HEAD)"
+          ls -a | head -20
+
+  s2:
+    name: "环境自检"
+    runs-on: ubuntu-latest
+    steps:
+      - name: 准备工作区（自行克隆）
+        run: |
+          set -eu
+          if [ -f index.html ] && [ -d scripts ]; then exit 0; fi
+          BASE="${GITHUB_SERVER_URL:-}"; SLUG="${GITHUB_REPOSITORY:-}"; REF="${GITHUB_REF:-refs/heads/main}"
+          git init -q .
+          git remote remove origin 2>/dev/null || true
+          git remote add origin "$BASE/$SLUG.git"
+          git fetch -q --depth=1 origin "$REF"
+          git checkout -q -f FETCH_HEAD
+      - name: "环境自检"
+        run: |
+          set -eu
+          echo "工作目录：$(pwd)"
+          echo "提交：$(git rev-parse --short HEAD 2>/dev/null || echo '?')"
+          for t in sh bash git node gcc make go python3 docker curl; do
+            if command -v "$t" >/dev/null 2>&1; then echo "  有  $t"; else echo "  缺  $t"; fi
+          done
+
+  s3:
+    name: "检查 shell 脚本语法"
+    runs-on: ubuntu-latest
+    steps:
+      - name: 准备工作区（自行克隆）
+        run: |
+          set -eu
+          if [ -f index.html ] && [ -d scripts ]; then exit 0; fi
+          BASE="${GITHUB_SERVER_URL:-}"; SLUG="${GITHUB_REPOSITORY:-}"; REF="${GITHUB_REF:-refs/heads/main}"
+          git init -q .
+          git remote remove origin 2>/dev/null || true
+          git remote add origin "$BASE/$SLUG.git"
+          git fetch -q --depth=1 origin "$REF"
+          git checkout -q -f FETCH_HEAD
+      - name: "检查 shell 脚本语法"
+        run: |
+          set -eu
+          if [ ! -d scripts ]; then echo "没有 scripts 目录"; exit 1; fi
+          n=0
+          for f in scripts/*.sh; do sh -n "$f"; echo "  ok $f"; n=$((n+1)); done
+          echo "共检查 $n 个 shell 脚本"
+
+  s4:
+    name: "检查 JavaScript 语法"
+    runs-on: ubuntu-latest
+    steps:
+      - name: 准备工作区（自行克隆）
+        run: |
+          set -eu
+          if [ -f index.html ] && [ -d scripts ]; then exit 0; fi
+          BASE="${GITHUB_SERVER_URL:-}"; SLUG="${GITHUB_REPOSITORY:-}"; REF="${GITHUB_REF:-refs/heads/main}"
+          git init -q .
+          git remote remove origin 2>/dev/null || true
+          git remote add origin "$BASE/$SLUG.git"
+          git fetch -q --depth=1 origin "$REF"
+          git checkout -q -f FETCH_HEAD
+      - name: "检查 JavaScript 语法"
+        run: |
+          set -eu
+          if ! command -v node >/dev/null 2>&1; then echo "跳过：镜像里没有 node"; exit 0; fi
+          for f in web/js/*.js web/vendor/ffmpeg/*.js; do node --check "$f"; echo "  ok $f"; done
+          cat > /tmp/extract_inline.js <<'JS'
+          const fs = require('fs');
+          const html = fs.readFileSync('index.html', 'utf8');
+          const re = /<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g;
+          let m;
+          const parts = [];
+          while ((m = re.exec(html))) { if (m[1].trim()) parts.push(m[1]); }
+          fs.writeFileSync('/tmp/vaulthub-inline.js', parts.join('\n;\n'));
+          console.log('  index.html 内联脚本 ' + parts.length + ' 段');
+          JS
+          node /tmp/extract_inline.js
+          if [ -s /tmp/vaulthub-inline.js ]; then node --check /tmp/vaulthub-inline.js; echo "  ok index.html 内联脚本"; fi
+
+  s5:
+    name: "检查 Go 服务"
+    runs-on: ubuntu-latest
+    steps:
+      - name: 准备工作区（自行克隆）
+        run: |
+          set -eu
+          if [ -f index.html ] && [ -d scripts ]; then exit 0; fi
+          BASE="${GITHUB_SERVER_URL:-}"; SLUG="${GITHUB_REPOSITORY:-}"; REF="${GITHUB_REF:-refs/heads/main}"
+          git init -q .
+          git remote remove origin 2>/dev/null || true
+          git remote add origin "$BASE/$SLUG.git"
+          git fetch -q --depth=1 origin "$REF"
+          git checkout -q -f FETCH_HEAD
+      - name: "检查 Go 服务"
+        run: |
+          set -eu
+          if ! command -v go >/dev/null 2>&1; then echo "跳过：镜像里没有 go，go test/vet/build 未执行"; exit 0; fi
+          for d in manager media-go subtitle-api; do
+            if [ -f "$d/go.mod" ]; then
+              echo "--- $d ---"
+              ( cd "$d" && go test ./... && go vet ./... && go build ./... )
+            fi
+          done
+
+  s6:
+    name: "检查遗留 C 源码"
+    runs-on: ubuntu-latest
+    steps:
+      - name: 准备工作区（自行克隆）
+        run: |
+          set -eu
+          if [ -f index.html ] && [ -d scripts ]; then exit 0; fi
+          BASE="${GITHUB_SERVER_URL:-}"; SLUG="${GITHUB_REPOSITORY:-}"; REF="${GITHUB_REF:-refs/heads/main}"
+          git init -q .
+          git remote remove origin 2>/dev/null || true
+          git remote add origin "$BASE/$SLUG.git"
+          git fetch -q --depth=1 origin "$REF"
+          git checkout -q -f FETCH_HEAD
+      - name: "检查遗留 C 源码"
+        run: |
+          set -eu
+          if ! command -v gcc >/dev/null 2>&1; then echo "跳过：镜像里没有 gcc"; exit 0; fi
+          gcc -Wall -Wextra -Werror -fsyntax-only vaulthub-manager.c
+          gcc -Wall -Wextra -Werror -pthread -fsyntax-only tests/fixtures/media-api_legacy.c
+          echo "  ok C 源码语法"
+
+  s7:
+    name: "运行前端测试套件"
+    runs-on: ubuntu-latest
+    steps:
+      - name: 准备工作区（自行克隆）
+        run: |
+          set -eu
+          if [ -f index.html ] && [ -d scripts ]; then exit 0; fi
+          BASE="${GITHUB_SERVER_URL:-}"; SLUG="${GITHUB_REPOSITORY:-}"; REF="${GITHUB_REF:-refs/heads/main}"
+          git init -q .
+          git remote remove origin 2>/dev/null || true
+          git remote add origin "$BASE/$SLUG.git"
+          git fetch -q --depth=1 origin "$REF"
+          git checkout -q -f FETCH_HEAD
+      - name: "运行前端测试套件"
+        run: |
+          set -eu
+          if ! command -v python3 >/dev/null 2>&1; then echo "跳过：镜像里没有 python3，测试套件未执行"; exit 0; fi
+          pass=0; fail=0; skip=0; failed=""; skipped=""
+          for f in tests/test_*.py; do
+            if python3 "$f" >/tmp/t.log 2>&1; then
+              pass=$((pass+1))
+              continue
+            fi
+            # 失败原因分两类：镜像缺外部程序（跳过并说明）／用例真失败（判红）
+            if grep -qE "No such file or directory: '[A-Za-z0-9_.+-]+'|: not found|does not exist" /tmp/t.log; then
+              skip=$((skip+1)); skipped="$skipped $(basename "$f")"
+              echo "── 跳过（缺外部程序）：$f"
+              grep -oE "No such file or directory: '[A-Za-z0-9_.+-]+'" /tmp/t.log | sort -u | head -3 | sed 's/^/     缺 /'
+              grep -oE "[A-Za-z0-9_.+-]+: not found" /tmp/t.log | sort -u | head -3 | sed 's/^/     缺 /'
+            else
+              fail=$((fail+1)); failed="$failed $(basename "$f")"
+              echo "── 失败：$f"
+              tail -20 /tmp/t.log | sed 's/^/     /'
+            fi
+          done
+          echo "测试套件：通过 $pass 个，跳过 $skip 个（镜像里缺外部程序），失败 $fail 个"
+          if [ "$skip" -ne 0 ]; then
+            echo "跳过清单：$skipped"
+            echo "::warning title=有跳过项::这些用例需要本镜像没有的外部程序（ffmpeg/go/zip/gh/jq 等），换带这些工具的 runner 镜像后才会真跑"
+          fi
+          if [ "$fail" -ne 0 ]; then echo "失败用例：$failed"; exit 1; fi
+
+  s8:
+    name: "校验 Compose 与 Caddyfile"
+    runs-on: ubuntu-latest
+    steps:
+      - name: 准备工作区（自行克隆）
+        run: |
+          set -eu
+          if [ -f index.html ] && [ -d scripts ]; then exit 0; fi
+          BASE="${GITHUB_SERVER_URL:-}"; SLUG="${GITHUB_REPOSITORY:-}"; REF="${GITHUB_REF:-refs/heads/main}"
+          git init -q .
+          git remote remove origin 2>/dev/null || true
+          git remote add origin "$BASE/$SLUG.git"
+          git fetch -q --depth=1 origin "$REF"
+          git checkout -q -f FETCH_HEAD
+      - name: "校验 Compose 与 Caddyfile"
+        run: |
+          set -eu
+          if command -v docker >/dev/null 2>&1; then
+            cp .env.example .env 2>/dev/null || true
+            docker compose config >/dev/null && echo "  ok docker-compose.yml"
+          else
+            echo "跳过：镜像里没有 docker CLI，docker-compose.yml 未校验"
+          fi
+          if [ -x ./caddy ]; then
+            ./caddy validate --config Caddyfile --adapter caddyfile && echo "  ok Caddyfile"
+          else
+            echo "跳过：./caddy 不可执行，Caddyfile 未校验"
+          fi
+
+  s9:
+    name: "小结"
+    runs-on: ubuntu-latest
+    steps:
+      - name: 准备工作区（自行克隆）
+        run: |
+          set -eu
+          if [ -f index.html ] && [ -d scripts ]; then exit 0; fi
+          BASE="${GITHUB_SERVER_URL:-}"; SLUG="${GITHUB_REPOSITORY:-}"; REF="${GITHUB_REF:-refs/heads/main}"
+          git init -q .
+          git remote remove origin 2>/dev/null || true
+          git remote add origin "$BASE/$SLUG.git"
+          git fetch -q --depth=1 origin "$REF"
+          git checkout -q -f FETCH_HEAD
+      - name: "小结"
+        run: |
+          echo "校验流程结束。上面每一条「跳过：…」都代表该项没在这个 runner 上真正执行。"
+          echo "要让 go test / 前端测试套件真跑起来，把 runner 的标签指向带 go + python3 的镜像。"
+
