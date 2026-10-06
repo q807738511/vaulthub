@@ -1,0 +1,113 @@
+# =============================================================================
+# 临时自检：把 validate.yml 的每一项检查拆成一个矩阵 job，逐个公开报状态。
+#
+# 为什么要拆：job 日志要登录才能看，但
+#   GET /api/v1/repos/{owner}/{repo}/commits/{sha}/status
+# 对公开仓库是匿名可读的，且会列出每个 job 的结论（context 形如
+#   Validate / validate (push)）。
+# 拆成矩阵后，每项检查都是独立的 job，于是「哪一项红」直接从那个接口就能读出来。
+#
+# fail-fast: false —— 一项红了也要把其余项的结论跑出来，否则只能一个个试。
+# 探完即删。
+# =============================================================================
+name: zz-probe-checks
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        check: [env, shell, js, go, c, tests, compose]
+    steps:
+      - name: 准备工作区（自行克隆）
+        run: |
+          set -eu
+          if [ -f index.html ] && [ -d scripts ]; then echo "工作区已有代码，无需克隆"; exit 0; fi
+          BASE="${GITHUB_SERVER_URL:-}"; SLUG="${GITHUB_REPOSITORY:-}"; REF="${GITHUB_REF:-refs/heads/main}"
+          git init -q .
+          git remote remove origin 2>/dev/null || true
+          git remote add origin "$BASE/$SLUG.git"
+          git fetch -q --depth=1 origin "$REF"
+          git checkout -q -f FETCH_HEAD
+          echo "克隆完成：$(git rev-parse --short HEAD)"
+
+      - name: 检查 ${{ matrix.check }}
+        run: |
+          set -eu
+          echo "=== 检查项：${{ matrix.check }} ==="
+          case "${{ matrix.check }}" in
+            env)
+              for t in sh bash git node gcc make go python3 docker curl caddy; do
+                if command -v "$t" >/dev/null 2>&1; then echo "  有  $t  $($t --version 2>&1 | head -1)"; else echo "  缺  $t"; fi
+              done
+              echo "--- python3 能不能 import yaml / requests ---"
+              python3 - <<'PY' 2>&1 || echo "  python3 不可用或导入失败"
+          for m in ("yaml", "requests"):
+              try:
+                  __import__(m); print("  可导入", m)
+              except Exception as e:
+                  print("  不可导入 %s：%s" % (m, e))
+          PY
+              ;;
+            shell)
+              n=0
+              for f in scripts/*.sh; do sh -n "$f"; echo "  ok $f"; n=$((n+1)); done
+              echo "共 $n 个 shell 脚本"
+              ;;
+            js)
+              for f in web/js/*.js web/vendor/ffmpeg/*.js; do node --check "$f"; echo "  ok $f"; done
+              cat > /tmp/inline.js <<'JS'
+          const fs = require('fs');
+          const html = fs.readFileSync('index.html', 'utf8');
+          const re = /<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g;
+          let m; const parts = [];
+          while ((m = re.exec(html))) { if (m[1].trim()) parts.push(m[1]); }
+          fs.writeFileSync('/tmp/vaulthub-inline.js', parts.join('\n;\n'));
+          console.log('  index.html 内联脚本 ' + parts.length + ' 段');
+          JS
+              node /tmp/inline.js
+              if [ -s /tmp/vaulthub-inline.js ]; then node --check /tmp/vaulthub-inline.js; echo "  ok index.html 内联脚本"; fi
+              ;;
+            go)
+              if ! command -v go >/dev/null 2>&1; then echo "跳过：镜像里没有 go"; exit 0; fi
+              for d in manager media-go subtitle-api; do
+                if [ -f "$d/go.mod" ]; then echo "--- $d ---"; ( cd "$d" && go test ./... && go vet ./... && go build ./... ); fi
+              done
+              ;;
+            c)
+              if ! command -v gcc >/dev/null 2>&1; then echo "跳过：镜像里没有 gcc"; exit 0; fi
+              gcc --version | head -1
+              gcc -Wall -Wextra -Werror -fsyntax-only vaulthub-manager.c
+              gcc -Wall -Wextra -Werror -pthread -fsyntax-only tests/fixtures/media-api_legacy.c
+              echo "  ok C 源码语法"
+              ;;
+            tests)
+              if ! command -v python3 >/dev/null 2>&1; then echo "跳过：镜像里没有 python3"; exit 0; fi
+              python3 --version
+              pass=0; fail=0; failed=""
+              for f in tests/test_*.py; do
+                if python3 "$f" >/tmp/t.log 2>&1; then pass=$((pass+1)); else fail=$((fail+1)); failed="$failed $(basename "$f")"; fi
+              done
+              echo "测试套件：通过 $pass 个，失败 $fail 个"
+              if [ "$fail" -ne 0 ]; then
+                echo "失败用例：$failed"
+                for f in $failed; do echo "===== $f ====="; python3 "tests/$f" 2>&1 | tail -12; done
+                exit 1
+              fi
+              ;;
+            compose)
+              if command -v docker >/dev/null 2>&1; then
+                cp .env.example .env 2>/dev/null || true
+                docker compose config >/dev/null && echo "  ok docker-compose.yml"
+              else
+                echo "跳过：镜像里没有 docker CLI"
+              fi
+              if [ -x ./caddy ]; then ./caddy validate --config Caddyfile --adapter caddyfile && echo "  ok Caddyfile"; else echo "跳过：./caddy 不可执行"; fi
+              ;;
+          esac
