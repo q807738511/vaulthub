@@ -5,7 +5,16 @@ ROOT = Path(__file__).resolve().parents[1]
 JS = (ROOT / "web/js/02-media.js").read_text(encoding="utf-8")
 HTML = (ROOT / "index.html").read_text(encoding="utf-8")
 COMPOSE = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
-SYNC = (ROOT / ".github/workflows/sync-dockerhub-to-ghcr.yml").read_text(encoding="utf-8")
+def _workflow_text(name: str) -> str:
+    """工作流可能处于停用状态（.disabled）：两种命名都要能读到。"""
+    for cand in (ROOT / f".github/workflows/{name}.disabled", ROOT / f".github/workflows/{name}"):
+        if cand.exists():
+            return cand.read_text(encoding="utf-8")
+    raise FileNotFoundError(f".github/workflows/{name}[.disabled] 都不存在")
+
+
+SYNC = _workflow_text("sync-dockerhub-to-ghcr.yml")
+
 
 assert 'watched: !!meta.watched' in JS, "剧集聚合未保存首集持久化 watched 状态"
 assert 'watched: show.watched' in JS, "剧集紧凑缓存未保存 watched 状态"

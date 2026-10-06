@@ -62,15 +62,35 @@ jobs:
           set -eu
           V_HTML=$(sed -n 's/.*VAULTHUB_ASSET_VERSION *= *"\([^"]*\)".*/\1/p' index.html | head -1)
           V_JS=$(sed -n 's/.*VAULTHUB_SCRIPT_VERSION *= *"\([^"]*\)".*/\1/p' web/js/01-state.js | head -1)
-          echo "index.html 资源版本 = $V_HTML"
-          echo "01-state.js 脚本版本 = $V_JS"
+
+          # tag 名必须有兜底：Gitea 不保证注入 GITHUB_REF_NAME。
+          # 之前只认 GITHUB_REF_NAME，它一旦缺失，tag 名就成了空串，
+          # 「tag 与版本号不符」会把每一次 tag 发版都拦在这一步（1 秒红灯）。
+          REF_FULL="${GITHUB_REF:-}"
+          TAG_FROM_REF=""
+          case "$REF_FULL" in
+            refs/tags/*) TAG_FROM_REF="${REF_FULL#refs/tags/}" ;;
+          esac
+          TAG_NAME="${GITHUB_REF_NAME:-}"
+          if [ -z "$TAG_NAME" ]; then TAG_NAME="$TAG_FROM_REF"; fi
+
+          echo "index.html 资源版本 = ${V_HTML:-<读不到>}"
+          echo "01-state.js 脚本版本 = ${V_JS:-<读不到>}"
+          echo "GITHUB_REF       = ${REF_FULL:-<未注入>}"
+          echo "GITHUB_REF_NAME  = ${GITHUB_REF_NAME:-<未注入>}"
+          echo "推导出的 tag 名   = ${TAG_NAME:-<空>}"
+
           if [ -z "$V_HTML" ] || [ -z "$V_JS" ]; then echo "::error title=版本号读不到::index.html / 01-state.js 里的版本常量没解析出来"; exit 1; fi
           if [ "$V_HTML" != "$V_JS" ]; then echo "::error title=版本号不一致::index.html=$V_HTML 与 01-state.js=$V_JS 必须相同"; exit 1; fi
           echo "VERSION=$V_HTML" > /tmp/vh-version.env
 
-          case "${GITHUB_REF:-}" in
+          case "$REF_FULL" in
             refs/tags/*)
-              TAG="${GITHUB_REF_NAME:-}"
+              TAG="$TAG_NAME"
+              if [ -z "$TAG" ]; then
+                echo "::error title=拿不到 tag 名::GITHUB_REF=$REF_FULL，但 GITHUB_REF_NAME 没注入、也推导不出 tag 名。这是 CI 环境问题，不是版本号问题——把上面几行贴回来即可定位"
+                exit 1
+              fi
               WANT="${TAG#v}"
               echo "这是一个 tag 构建：$TAG（期望版本 $WANT）"
               if [ "$WANT" != "$V_HTML" ]; then
@@ -80,10 +100,9 @@ jobs:
               echo "TAG=$TAG" >> /tmp/vh-version.env
               ;;
             *)
-              echo "这是分支推送（${GITHUB_REF_NAME:-?}）：不做 tag 与版本号的绑定校验"
+              echo "这是分支推送（${TAG_NAME:-?}）：不做 tag 与版本号的绑定校验"
               ;;
           esac
-
       - name: 发布说明文件检查
         run: |
           set -eu

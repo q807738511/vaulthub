@@ -20,7 +20,17 @@ import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-WF = ROOT / ".github/workflows/publish-image.yml"
+def _workflow_path(name: str) -> Path:
+    """工作流可能处于停用状态（.disabled）：GitHub 原版按约定改名保留，
+    两种命名都要能读到，否则一执行「停用保留」测试就先红了。"""
+    for cand in (ROOT / f".github/workflows/{name}.disabled", ROOT / f".github/workflows/{name}"):
+        if cand.exists():
+            return cand
+    raise FileNotFoundError(f".github/workflows/{name}[.disabled] 都不存在")
+
+
+WF = _workflow_path("publish-image.yml")
+
 
 
 def extract_run_script(workflow_text: str, step_name: str) -> str:

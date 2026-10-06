@@ -6,7 +6,16 @@ CSS = (ROOT / "web/css/main.css").read_text(encoding="utf-8")
 JS = (ROOT / "web/js/02-media.js").read_text(encoding="utf-8")
 STATE = (ROOT / "web/js/01-state.js").read_text(encoding="utf-8")
 COMPOSE = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
-SYNC = (ROOT / ".github/workflows/sync-dockerhub-to-ghcr.yml").read_text(encoding="utf-8")
+def _workflow_text(name: str) -> str:
+    """工作流可能处于停用状态（.disabled）：两种命名都要能读到。"""
+    for cand in (ROOT / f".github/workflows/{name}.disabled", ROOT / f".github/workflows/{name}"):
+        if cand.exists():
+            return cand.read_text(encoding="utf-8")
+    raise FileNotFoundError(f".github/workflows/{name}[.disabled] 都不存在")
+
+
+SYNC = _workflow_text("sync-dockerhub-to-ghcr.yml")
+
 
 # 1. 影视详情背景必须优先使用读取到的 poster；poster 存在时不再套用主题 no-art 背景。
 assert "function movieHeroArt(meta)" in JS
