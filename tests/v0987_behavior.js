@@ -6,7 +6,8 @@
      E. 设置读写带 scrape_region
    三个源文件各自独立 vm 上下文：它们都定义 esc/t 等同名 const，同上下文重复声明会 SyntaxError。 */
 const fs = require("fs"), vm = require("vm");
-const ROOT = "/opt/data/vaulthub-github";
+/* 仓库根目录由本文件位置推导，不写死开发机路径（否则 CI 上必然 ENOENT）。需要时可设 VH_ROOT 覆盖。 */
+const ROOT = process.env.VH_ROOT || require("path").resolve(__dirname, "..");
 let passed = 0, failed = 0;
 
 /* 真实 i18n 词典：01-state.js 里的 I18N / t / tf 都是词法作用域，外部拿不到对象，

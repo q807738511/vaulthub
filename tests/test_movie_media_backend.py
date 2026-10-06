@@ -18,7 +18,8 @@ def request(method, path, body=None, raw=False, headers=None):
         content = err.read()
         return err.code, dict(err.headers), (content if raw else json.loads(content or b"{}"))
 
-with tempfile.TemporaryDirectory(prefix="vaulthub-movie-test-", dir="/opt/data") as td:
+with tempfile.TemporaryDirectory(prefix="vaulthub-movie-test-",
+                                  dir=os.environ.get("VH_TMPDIR") or None) as td:
     root = pathlib.Path(td)
     library = root / "movies"
     library.mkdir()

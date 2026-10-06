@@ -17,7 +17,8 @@ def request(method, path, body=None, raw=False):
         content = err.read()
         return err.code, (content if raw else json.loads(content or b"{}"))
 
-with tempfile.TemporaryDirectory(prefix="vaulthub-media-test-", dir="/opt/data") as td:
+with tempfile.TemporaryDirectory(prefix="vaulthub-media-test-",
+                                  dir=os.environ.get("VH_TMPDIR") or None) as td:
     root = pathlib.Path(td)
     library = root / "mapped-books"
     library.mkdir()

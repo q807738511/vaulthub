@@ -1,6 +1,7 @@
 // v0.9.76 行为测试：推荐函数 + UI 模式，直接对 02-media.js/06-theme.js 做 Node VM 沙盒
 const fs = require("fs"), vm = require("vm");
-const ROOT = "/opt/data/vaulthub-github";
+/* 仓库根目录由本文件位置推导，不写死开发机路径（否则 CI 上必然 ENOENT）。需要时可设 VH_ROOT 覆盖。 */
+const ROOT = process.env.VH_ROOT || require("path").resolve(__dirname, "..");
 const MEDIA = fs.readFileSync(ROOT + "/web/js/02-media.js", "utf8");
 const THEME = fs.readFileSync(ROOT + "/web/js/06-theme.js", "utf8");
 let passed = 0, failed = 0;

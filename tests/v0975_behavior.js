@@ -1,6 +1,8 @@
 
 const fs = require("fs"), vm = require("vm");
-const MEDIA = fs.readFileSync("/opt/data/vaulthub-github/web/js/02-media.js", "utf8");
+/* 仓库根目录由本文件位置推导，不写死开发机路径（否则 CI 上必然 ENOENT）。VH_ROOT 可覆盖。 */
+const ROOT = process.env.VH_ROOT || require("path").resolve(__dirname, "..");
+const MEDIA = fs.readFileSync(require("path").join(ROOT, "web/js/02-media.js"), "utf8");
 let passed = 0, failed = 0;
 const chk = (name, ok, extra) => { if (ok) { passed++; console.log("PASS:", name); } else { failed++; console.log("FAIL:", name, extra || ""); } };
 

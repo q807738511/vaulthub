@@ -2,7 +2,8 @@
    三个源文件各用独立 vm 上下文 —— 它们都定义了 esc/t 等同名 const，
    同一个上下文里重复声明会直接抛 SyntaxError。 */
 const fs = require("fs"), vm = require("vm");
-const ROOT = "/opt/data/vaulthub-github";
+/* 仓库根目录由本文件位置推导，不写死开发机路径（否则 CI 上必然 ENOENT）。需要时可设 VH_ROOT 覆盖。 */
+const ROOT = process.env.VH_ROOT || require("path").resolve(__dirname, "..");
 let passed = 0, failed = 0;
 const chk = (name, ok, extra) => {
   if (ok) { passed++; console.log("PASS:", name); }

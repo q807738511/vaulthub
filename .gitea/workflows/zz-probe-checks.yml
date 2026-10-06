@@ -1,9 +1,4 @@
-# =============================================================================
-# 临时自检（第二版）：把 tests/ 下每个用例文件都拆成一个 job，逐个公开报状态。
-# 公开接口会列出每个 job 的结论（context 形如
-#   zz-probe-checks / check (test_xxx.py) (push)），于是「CI 镜像里到底哪些用例不过」
-# 无需登录、无需令牌就能看全。探完即删。
-# =============================================================================
+# 临时自检（第三版）：只盯这 10 个重点用例，逐个 job 公开报状态，验完即删。
 name: zz-probe-checks
 
 on:
@@ -18,102 +13,16 @@ jobs:
       fail-fast: false
       matrix:
         file:
-          - test_audio_metadata_and_player.py
-          - test_audio_onclick_escaping.py
-          - test_builtin_monitoring.py
-          - test_comic_reader.py
-          - test_compat_audio_backend.py
-          - test_dashboard_responsive_and_container_scan.py
-          - test_direct_playback_window.py
-          - test_go_subtitle_service.py
-          - test_gpu_and_long_text_reader.py
-          - test_gpu_status_and_long_txt_ranges.py
-          - test_manager_caddy_migration.py
-          - test_media_file_and_covers.py
-          - test_media_formats_and_movie.py
-          - test_media_index.py
-          - test_media_ui_v0621.py
-          - test_merge_env.py
-          - test_movie_media_backend.py
-          - test_nvidia_ffmpeg_runtime.py
-          - test_phase2_go_media_and_auth.py
-          - test_phase3_sqlite_index.py
-          - test_phase4_frontend_split.py
-          - test_ui_top_layer_compact.py
-          - test_v0628_media_fixes.py
-          - test_v0630_branch_i18n_and_audio_match.py
-          - test_v0630_metrics_compat_subs.py
-          - test_v0631_session_caddy_hw_cache.py
-          - test_v070_nav_account_library.py
-          - test_v080_media_architecture.py
-          - test_v084_media_settings_and_detail.py
-          - test_v086_asset_cache_busting.py
-          - test_v087_nav_title_compose.py
-          - test_v0910_poster_settings_series.py
-          - test_v0913_media_metadata.py
-          - test_v0915_series_watched_persistence.py
-          - test_v0916_media_listing_search_books.py
-          - test_v0917_account_search_libnames.py
-          - test_v091_local_metadata_settings_layer.py
-          - test_v092_light_movie_details.py
-          - test_v0930_settings_page_readers_scan.py
-          - test_v0940_floating_video_controls.py
-          - test_v0942_deploy_latest_env_optional.py
-          - test_v0950_player_skins.py
-          - test_v0954_lyrics_cover_auth_return.py
-          - test_v0955_mobile_auth_download.py
-          - test_v0956_music_series_readme.py
-          - test_v0956_txt_encoding.py
-          - test_v0957_buttons_and_audio_groups.py
-          - test_v0958_auth_hardening.py
-          - test_v0959_media_session_keepalive.py
-          - test_v0960_audio_edit_jump.py
-          - test_v0964_media_player_overhaul.py
-          - test_v0965_poster_and_sidebar_polish.py
-          - test_v0966_overlay_alignment_and_a11y.py
-          - test_v0967_comic_reader_and_lyrics.py
-          - test_v0967_reader_close_behavior.py
-          - test_v0967_reader_logic.py
-          - test_v0968_audit_hardening.py
-          - test_v0969_p3_hardening.py
-          - test_v0970_epub_chapter_jump.py
-          - test_v0970_reader_documents.py
-          - test_v0970_release_step_logic.py
-          - test_v0970_shelf_reopen_behavior.py
-          - test_v0971_lyrics_panel_and_weak_network_behavior.py
-          - test_v0971_scrape_and_weak_network.py
-          - test_v0972_scrape_status_and_performance.py
-          - test_v0973_history_release_behavior.py
-          - test_v0973_theme_engine_behavior.py
-          - test_v0973_theme_playlist_history.py
-          - test_v0973_topnav_bookshelf.py
-          - test_v0973_topnav_bookshelf_behavior.py
           - test_v0975_movie_detail_behavior.py
-          - test_v0975_movie_detail_polish.py
-          - test_v0976_movie_rating_rec_uimode.py
           - test_v0976_movie_rating_rec_uimode_behavior.py
-          - test_v0978_tmdb_rec_cast_config.py
-          - test_v0979_1_panel_structure.py
-          - test_v0979_hw_account_env_lag.py
-          - test_v0980_series_rec_features.py
-          - test_v0981_series_grid_layout.py
-          - test_v0982_remote_accel_ui.py
-          - test_v0983_footer_module_season_recinfo.py
-          - test_v0984_quality_and_scrape_contract.py
-          - test_v0984_quality_and_scrape_logic.py
-          - test_v0985_contract.py
-          - test_v0985_persistent_login_and_ui_logic.py
           - test_v0986_behavior.py
-          - test_v0986_contract.py
           - test_v0987_behavior.py
-          - test_v0987_contract.py
           - test_v0988_behavior.py
-          - test_v0988_contract.py
           - test_v0989_behavior.py
-          - test_v0989_contract.py
-          - test_v0990_behavior.py
-          - test_v0990_contract.py
-          - test_video_tracks_subtitles_and_buffer.py
+          - test_media_index.py
+          - test_movie_media_backend.py
+          - test_compat_audio_backend.py
+          - test_manager_caddy_migration.py
     steps:
       - name: 准备工作区（自行克隆）
         run: |
@@ -132,5 +41,5 @@ jobs:
           rc=0
           python3 "tests/${{ matrix.file }}" >/tmp/one.log 2>&1 || rc=$?
           echo "=== ${{ matrix.file }} 退出码 $rc ==="
-          tail -12 /tmp/one.log
+          tail -10 /tmp/one.log
           exit $rc

@@ -7,7 +7,7 @@
    E. 跨标签页一致性：storage 事件必须让内存索引失效（审查发现并已修）
    源文件各自独立 vm 上下文（都定义同名 const，同上下文会 SyntaxError）。 */
 const fs = require("fs"), vm = require("vm");
-const ROOT = process.env.VH_ROOT || "/opt/data/vaulthub-github";
+const ROOT = process.env.VH_ROOT || require("path").resolve(__dirname, "..");
 let passed = 0, failed = 0;
 const chk = (name, ok, extra) => {
   if (ok) { passed++; console.log("PASS:", name); }

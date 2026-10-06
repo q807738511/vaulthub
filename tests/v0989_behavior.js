@@ -7,7 +7,8 @@
      F. 版本推进
    源文件各自独立 vm 上下文（都定义同名 const，同上下文会 SyntaxError）。 */
 const fs = require("fs"), vm = require("vm");
-const ROOT = "/opt/data/vaulthub-github";
+/* 仓库根目录由本文件位置推导，不写死开发机路径（否则 CI 上必然 ENOENT）。需要时可设 VH_ROOT 覆盖。 */
+const ROOT = process.env.VH_ROOT || require("path").resolve(__dirname, "..");
 let passed = 0, failed = 0;
 
 const I18N_DICTS = (() => {
