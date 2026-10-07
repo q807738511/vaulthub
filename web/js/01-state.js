@@ -18,7 +18,7 @@ let vaultHubSessionPingedAt = 0;
    历史故障：v0.8.3→v0.8.5 的前端修改在服务端已生效，但浏览器仍执行缓存里的
    旧 02-media.js，用户看到「没有更新」。现在入口页 no-store、静态资源带 ?v=，
    并在启动时做一次一致性自查，不一致就绕过缓存强制重载一次。 */
-const VAULTHUB_SCRIPT_VERSION = "0.9.90";
+const VAULTHUB_SCRIPT_VERSION = "0.9.91";
 function ensureFreshAssets() {
   /* expected 为空 = 浏览器执行的 index.html 早于 v0.8.6（旧版本入口页没有声明
      版本号），同样属于"页面是旧的"，也需要换 URL 重新取一次。 */
@@ -589,6 +589,20 @@ const I18N = {
     typeAudio: "音乐", typeMusicvideo: "音乐视频（歌曲 MV）", typeComic: "漫画",
     typeBook: "电子书", typeMovie: "电影", typeSeries: "电视剧集",
     hwAuto: "自动选择（推荐）", hwCpu: "CPU", hwVaapi: "VAAPI（Intel/AMD）",
+    /* ---- v0.9.91：解/转码风向标 + 下滑翻页 ---- */
+    setSt: "服务端转/解码", setStLbl: "解/转码风向标（服务器算力弱时禁用）",
+    stAuto: "自动（服务端按需转码）", stOff: "禁用（本机设备解码）",
+    stSaved: "✅ 服务端转/解码策略已保存",
+    stCompassServer: "服务端转码", stCompassClient: "本机设备解码",
+    stCompassFmt: "解/转码风向标：{path}",
+    stWeak: "服务器算力偏弱（{cores} 核 · 仅软件编码），建议改为「禁用（本机设备解码）」",
+    stHint: "禁用后服务端不做任何转码或重封装：原文件直出、由播放设备解码，服务器 CPU 不再被转码占满。原盘镜像（ISO/BDMV）与浏览器不支持的编码将无法播放。",
+    vpDecodePath: "解码路径：{path}",
+    vpCapOff: " · 画质上限不生效",
+    vpDecodeWarn: "⚠ {msg}",
+    pagerScrollHint: "下滑自动翻页 · 每滑一次翻一页",
+    pagerLoading: "正在载入第 {n} 页…",
+    pagerPrefetched: "下一页已就绪",
     hwQsv: "Intel QSV", hwCuda: "NVIDIA CUDA/NVENC",
     diskFreeShort: "剩余", noVolumes: "未配置监控卷",
     hwBadgeFmt: "当前：{selected} · 可用：{available}", hwBadgeFail: "后端检测不可用 · 播放时回退 CPU",
@@ -864,6 +878,20 @@ const I18N = {
     typeAudio: "音樂", typeMusicvideo: "音樂影片（歌曲 MV）", typeComic: "漫畫",
     typeBook: "電子書", typeMovie: "電影", typeSeries: "電視劇集",
     hwAuto: "自動選擇（推薦）", hwCpu: "CPU", hwVaapi: "VAAPI（Intel/AMD）",
+    /* ---- v0.9.91：解/轉碼風向標 + 下滑翻頁 ---- */
+    setSt: "服務端轉/解碼", setStLbl: "解/轉碼風向標（伺服器算力弱時停用）",
+    stAuto: "自動（服務端按需轉碼）", stOff: "停用（本機裝置解碼）",
+    stSaved: "✅ 服務端轉/解碼策略已儲存",
+    stCompassServer: "服務端轉碼", stCompassClient: "本機裝置解碼",
+    stCompassFmt: "解/轉碼風向標：{path}",
+    stWeak: "伺服器算力偏弱（{cores} 核 · 僅軟體編碼），建議改為「停用（本機裝置解碼）」",
+    stHint: "停用後服務端不做任何轉碼或重封裝：原始檔直出、由播放裝置解碼，伺服器 CPU 不再被轉碼佔滿。原盤映像（ISO/BDMV）與瀏覽器不支援的編碼將無法播放。",
+    vpDecodePath: "解碼路徑：{path}",
+    vpCapOff: " · 畫質上限不生效",
+    vpDecodeWarn: "⚠ {msg}",
+    pagerScrollHint: "下滑自動翻頁 · 每滑一次翻一頁",
+    pagerLoading: "正在載入第 {n} 頁…",
+    pagerPrefetched: "下一頁已就緒",
     hwQsv: "Intel QSV", hwCuda: "NVIDIA CUDA/NVENC",
     diskFreeShort: "剩餘", noVolumes: "未設定監控卷",
     hwBadgeFmt: "目前：{selected} · 可用：{available}", hwBadgeFail: "後端偵測不可用 · 播放時回退 CPU",
@@ -1139,6 +1167,20 @@ const I18N = {
     typeAudio: "Music", typeMusicvideo: "Music video", typeComic: "Comic",
     typeBook: "E-book", typeMovie: "Movie", typeSeries: "TV series",
     hwAuto: "Auto (recommended)", hwCpu: "CPU", hwVaapi: "VAAPI (Intel/AMD)",
+    /* ---- v0.9.91: decode/transcode compass + scroll paging ---- */
+    setSt: "Server decode/transcode", setStLbl: "Decode/transcode compass (disable when the server CPU is weak)",
+    stAuto: "Auto (server transcodes on demand)", stOff: "Disabled (this device decodes)",
+    stSaved: "✅ Server decode/transcode policy saved",
+    stCompassServer: "server transcode", stCompassClient: "local device decode",
+    stCompassFmt: "Decode/transcode: {path}",
+    stWeak: "Server CPU looks weak ({cores} cores · software encode only) — consider \"Disabled (this device decodes)\"",
+    stHint: "When disabled the server never transcodes or remuxes: the original file is served as-is and the playback device decodes it, so the server CPU is never saturated. Disc images (ISO/BDMV) and codecs the browser cannot play will not play.",
+    vpDecodePath: "Decoding: {path}",
+    vpCapOff: " · quality cap inactive",
+    vpDecodeWarn: "⚠ {msg}",
+    pagerScrollHint: "Scroll down to page · one scroll = one page",
+    pagerLoading: "Loading page {n}…",
+    pagerPrefetched: "Next page ready",
     hwQsv: "Intel QSV", hwCuda: "NVIDIA CUDA/NVENC",
     diskFreeShort: "free", noVolumes: "No configured volumes",
     hwBadgeFmt: "Active: {selected} · available: {available}", hwBadgeFail: "Backend detection unavailable · falls back to CPU",
@@ -1211,6 +1253,9 @@ let settings = {
   uiMode: "auto",         /* v0.9.76 UI 设备模式：auto(按设备识别) | phone | tv | pc */       /* v0.9.74 布局层：topnav（媒体库平铺顶栏，默认）| sidebar（v0.9.73 的侧栏） */
   reduceMotion: false,    /* 动效：减弱过渡与动画 */
   hardwareAcceleration: "auto",
+  /* v0.9.91 解/转码风向标：auto = 服务端按需转/解码；off = 禁用服务端转/解码，
+     改由播放设备本地解码（服务器 CPU 算力弱时用，避免转码把整机打满）。 */
+  serverTranscode: "auto",
   /* 容器版默认经同源 Caddy 代理；外部浏览器无需直连家庭内网地址 */
   mp: { mpUrl: "/api/mp", username: "", password: "", token: "", tokenUser: "" }
 };
@@ -1254,6 +1299,7 @@ function loadSettings() {
     if (typeof s.customBg === "boolean") settings.customBg = s.customBg;
     settings.reduceMotion = !!s.reduceMotion;
     if (["auto","cpu","vaapi","qsv","cuda"].includes(s.hardwareAcceleration)) settings.hardwareAcceleration = s.hardwareAcceleration;
+    if (["auto","off"].includes(s.serverTranscode)) settings.serverTranscode = s.serverTranscode;
     if (s.mp && typeof s.mp === "object") Object.assign(settings.mp, s.mp);
     settings.mp.mpUrl = preferContainerProxy(settings.mp.mpUrl, "/api/mp");
     /* 兼容旧版本 mpInstances 数组 */
@@ -1493,12 +1539,45 @@ async function refreshHardwareStatus(notify) {
       detail.textContent = parts.join(" · ");
     }
     if (notify) toast(selected === "cpu" ? "ℹ️ " + t("hwNoneToast") : "✅ " + tf("hwFoundToast", { selected: selected.toUpperCase() }));
+    /* v0.9.91：硬件探测结果同时驱动「解/转码风向标」。 */
+    updateTranscodeCompass(data);
   } catch (e) {
     badge.textContent = t("hwBadgeFail");
     badge.className = "badge red";
     if (detail) detail.textContent = tf("hwProbeError", { error: e.message });
     if (notify) toast("⚠️ " + tf("hwProbeError", { error: e.message }));
+    updateTranscodeCompass(null);
   }
+}
+
+/* v0.9.91：解/转码风向标 —— 显示当前策略（服务端转码 / 本机设备解码）与服务器算力提示。
+   服务器 CPU 算力弱（无硬件编码器且核数少）时提示用户改用「禁用（本机设备解码）」。 */
+function saveServerTranscode() {
+  const value = document.getElementById("serverTranscode")?.value;
+  settings.serverTranscode = value === "off" ? "off" : "auto";
+  saveSettings();
+  updateTranscodeCompass(window.__vhHardwareInfo || null);
+  toast(t("stSaved"));
+}
+function updateTranscodeCompass(info) {
+  const select = document.getElementById("serverTranscode");
+  if (select) select.value = settings.serverTranscode || "auto";
+  const badge = document.getElementById("transcodeCompass");
+  if (!badge) return;
+  const off = (settings.serverTranscode || "auto") === "off";
+  const hw = (info && typeof info === "object") ? info : null;
+  if (hw) window.__vhHardwareInfo = hw;
+  const path = off ? t("stCompassClient") : t("stCompassServer");
+  let extra = "";
+  if (hw) {
+    const cores = Number(hw.cores || 0);
+    if (cores) extra += ` · ${cores} 核`;
+    extra += ` · ${String(hw.selected || "cpu").toUpperCase()}`;
+  }
+  badge.textContent = tf("stCompassFmt", { path }) + extra;
+  badge.className = off ? "badge green" : (hw && hw.weak_cpu === true ? "badge warn" : "badge");
+  const hint = document.getElementById("transcodeCompassHint");
+  if (hint) hint.textContent = (hw && hw.weak_cpu === true && !off) ? tf("stWeak", { cores: Number(hw.cores || 0) }) : t("stHint");
 }
 
 /* ================= 导航 =================

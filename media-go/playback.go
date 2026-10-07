@@ -157,6 +157,38 @@ func applyNetworkCap(plan playbackPlan, quality string, networkBps int64) playba
 	return plan
 }
 
+/* v0.9.91：解/转码风向标 —— 客户端可显式禁用服务端转/解码。
+   场景：服务器 CPU 算力弱（无硬件编码或核数很少）时，转码会把整机 CPU 打满，
+   连带 WebUI 与所有接口一起变卡。此时改由播放设备（PC/手机/电视盒子）本地解码：
+   服务端只做原文件直出，不派生任何 ffmpeg 进程。
+
+   forceClientDirectPlan 把任何转码/重封装计划改写为直连原画，并给出诚实的提醒：
+   浏览器不支持源编码时，只有换用支持该编码的播放器（或重新开启服务端转码）。 */
+func forceClientDirectPlan(plan playbackPlan, m playbackMedia, c playbackClient) playbackPlan {
+	videoOK := (m.VideoCodec == "h264" && c.H264) || (m.VideoCodec == "hevc" && c.HEVC) || ((m.VideoCodec == "vp9" || m.VideoCodec == "vp09") && c.VP9)
+	audioOK := m.AudioCodec == "" || (m.AudioCodec == "aac" && c.AAC) || (m.AudioCodec == "opus" && c.Opus) || m.AudioCodec == "mp3"
+	containerOK := (m.Container == "mp4" || m.Container == "m4v") && c.MP4
+	capped := plan.MaxHeight > 0
+	plan.Layer = "direct_play"
+	plan.Mode = "direct"
+	plan.Hardware = "client"
+	plan.VideoAction, plan.AudioAction = "copy", "copy"
+	plan.MaxHeight = 0
+	plan.Reason = "服务端转/解码已禁用 · 由播放设备本地解码"
+	plan.Warn = ""
+	switch {
+	case capped:
+		plan.Warn = "已禁用服务端转码，所选画质限制不生效，按原画直出"
+	case !videoOK:
+		plan.Warn = "本机浏览器可能不支持该视频编码（" + strings.ToUpper(m.VideoCodec) + "），如无法播放请改用支持的播放器或重新开启服务端转码"
+	case !containerOK:
+		plan.Warn = "浏览器可能不支持该封装（" + strings.ToUpper(m.Container) + "），如无法播放请重新开启服务端转码"
+	case !audioOK:
+		plan.Warn = "浏览器可能不支持该音轨编码（" + strings.ToUpper(m.AudioCodec) + "），可能出现无声，必要时重新开启服务端转码"
+	}
+	return plan
+}
+
 func (a *App) playbackPlan(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		errJSON(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -171,6 +203,8 @@ func (a *App) playbackPlan(w http.ResponseWriter, r *http.Request) {
 		Path      string `json:"path"`
 		Quality   string `json:"quality"`
 		Hardware  string `json:"hardware"`
+		/* v0.9.91：解/转码风向标。off = 禁用服务端转/解码（改由播放设备本地解码）。 */
+		ServerTranscode string `json:"server_transcode"`
 		/* v0.9.77：当天测速得到的下行带宽（bit/s），仅用于自动档限高。 */
 		NetworkBps int64          `json:"network_bps"`
 		Client     playbackClient `json:"client"`
@@ -208,6 +242,15 @@ func (a *App) playbackPlan(w http.ResponseWriter, r *http.Request) {
 	if disc.Kind != discInputPlain {
 		plan.Disc = string(disc.Kind)
 		plan.Reason = "原盘" + map[discInputKind]string{discInputBluRay: "蓝光", discInputDVD: "DVD"}[disc.Kind] + " · " + plan.Reason
+	}
+	/* v0.9.91：客户端显式禁用服务端转/解码（服务器算力弱）→ 一律直连原文件，
+	   不派生 ffmpeg。原盘镜像浏览器无法直读，这种组合只能如实拒绝并说明原因。 */
+	if strings.EqualFold(req.ServerTranscode, "off") {
+		if disc.Kind != discInputPlain {
+			errJSON(w, http.StatusConflict, "已禁用服务端转码：原盘镜像无法本地直接播放，请重新开启服务端转码")
+			return
+		}
+		plan = forceClientDirectPlan(plan, media, req.Client)
 	}
 	q := url.Values{"id": {lib.ID}, "path": {req.Path}}
 	if plan.Mode == "direct" {

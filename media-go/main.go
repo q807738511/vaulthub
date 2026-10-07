@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -70,6 +71,11 @@ type App struct {
 	config, indexDir  string
 	cacheDir          string
 	cacheMaxBytes     int64
+	/* v0.9.91：转码缓存占用快照（由 cleanCache 更新），用于在设置页显示实际用量 ——
+	   只看配额看不出「实际已超标」，这次生产事故就是这么来的。 */
+	cacheBytes     int64
+	cacheFiles     int
+	cacheCleanedAt int64
 	pageCacheDir      string
 	pageCacheMaxBytes int64
 	scanMaxDepth      int // v0.9.79: Web「媒体库」可在线改的扫描最大深度；0=默认 32
@@ -175,6 +181,8 @@ type playbackPlan struct {
 	/* v0.9.88：原盘输入类型（bluray / dvd），普通文件为空。 */
 	Disc  string        `json:"disc,omitempty"`
 	Media playbackMedia `json:"media"`
+	/* v0.9.91：需要提醒用户的播放风险（例如禁用服务端转码后源编码浏览器可能不认识）。 */
+	Warn string `json:"warn,omitempty"`
 }
 
 type playbackSession struct {
@@ -262,6 +270,13 @@ func (a *App) cacheJanitor() {
 		if interval <= 0 {
 			interval = 24 * time.Hour
 		}
+		/* v0.9.91：兜底间隔不超过 10 分钟。原实现只在启动时 + 每 cache_cleanup_interval_hours
+		   （默认/生产配置 24 小时）清一次 —— 期间只要连续看几个 4K 原盘，两次清理之间就能
+		   写入几十 GB，把 /data 撑满（生产实测：配额 30.7 GB，实际已到 45 GB，/data 81%），
+		   于是 SQLite 索引、转码、接口全部变慢甚至无响应。 */
+		if interval > cacheCleanupFallback {
+			interval = cacheCleanupFallback
+		}
 		timer := time.NewTimer(interval)
 		select {
 		case <-timer.C:
@@ -273,6 +288,31 @@ func (a *App) cacheJanitor() {
 		a.cleanCache()
 	}
 }
+
+const (
+	cacheCleanupFallback = 10 * time.Minute /* 转码缓存兜底清理间隔 */
+	cacheEntryMaxShare   = 4                /* 单条目最多占配额 1/4，超额条目直接淘汰 */
+	cacheFreshGrace      = 5 * time.Minute  /* 刚刚写入的缓存留一个宽限期，避免抖动 */
+	/* v0.9.91：兼容流构建的单次上限。cleanCache 回收 .mp4.bg-<pid> 残留分片的
+	   「陈旧阈值」必须长于它 —— 否则一次超长转码还在进行，它的分片就被当成残留删掉
+	   （审查发现：旧实现是固定 2 小时，短于这里的 6 小时构建上限）。 */
+	compatBuildTimeout = 6 * time.Hour
+)
+
+/* cacheEntryLimit 返回单条缓存条目的字节上限；配额未设置或过小（上限会算成 0）时返回 0，
+   表示不做单条目限制。cleanCache 与 buildCompatCache 共用，避免两处阈值算法漂移
+   （审查发现：旧写法 budget/cacheEntryMaxShare 在配额极小时得到 0，会把任何非空产物立即删掉）。 */
+func cacheEntryLimit(budget int64) int64 {
+	if budget <= 0 {
+		return 0
+	}
+	limit := budget / cacheEntryMaxShare
+	if limit <= 0 {
+		return 0
+	}
+	return limit
+}
+
 func (a *App) cleanCache() {
 	a.mu.RLock()
 	cacheDir, cacheMaxBytes, cacheMaxAge := a.cacheDir, a.cacheMaxBytes, a.cacheMaxAge
@@ -291,16 +331,34 @@ func (a *App) cleanCache() {
 	}
 	items := make([]item, 0, len(ents))
 	var total int64
+	var kept int
 	now := time.Now()
+	/* v0.9.91：后台构建中断留下的 <hash>.mp4.bg-<pid> 片段此前永远不被清理
+	   （扩展名不是 .mp4），生产实测残留 2 GB 级分片。这里一并回收。
+	   陈旧阈值 = 构建上限 + 30 分钟缓冲：正在进行的超长转码（上限 compatBuildTimeout）
+	   的分片绝不能被当成残留删除。 */
+	staleCutoff := now.Add(-(compatBuildTimeout + 30*time.Minute))
 	for _, ent := range ents {
-		if ent.IsDir() || filepath.Ext(ent.Name()) != ".mp4" {
+		if ent.IsDir() {
+			continue
+		}
+		name := ent.Name()
+		ext := filepath.Ext(name)
+		isParts := strings.Contains(name, ".mp4.") /* .mp4.bg-123 这类未完成分片 */
+		if ext != ".mp4" && !isParts {
 			continue
 		}
 		info, e := ent.Info()
 		if e != nil {
 			continue
 		}
-		p := filepath.Join(cacheDir, ent.Name())
+		p := filepath.Join(cacheDir, name)
+		if isParts {
+			if info.ModTime().Before(staleCutoff) {
+				_ = os.Remove(p)
+			}
+			continue
+		}
 		if cacheMaxAge > 0 && now.Sub(info.ModTime()) > cacheMaxAge {
 			_ = os.Remove(p)
 			continue
@@ -309,14 +367,40 @@ func (a *App) cleanCache() {
 		total += info.Size()
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].mod.Before(items[j].mod) })
+	/* v0.9.91：单条目上限。一个 9.7 GB 的整片转码缓存会单独击穿配额 —— 旧逻辑只在
+	   total > max 时才淘汰，而一个超大条目就足以让 total 长期超标且无处可清。
+	   超过配额 1/4 的条目直接淘汰（仍是 LRU 顺序，正在播放的句柄在 Linux 上删除后仍可读）。 */
+	entryMax := cacheEntryLimit(cacheMaxBytes)
 	for _, it := range items {
-		if cacheMaxBytes <= 0 || total <= cacheMaxBytes {
-			break
+		if entryMax <= 0 || it.size <= entryMax {
+			continue
+		}
+		if now.Sub(it.mod) < cacheFreshGrace {
+			continue
 		}
 		if os.Remove(it.path) == nil {
 			total -= it.size
 		}
 	}
+	for _, it := range items {
+		if cacheMaxBytes <= 0 || total <= cacheMaxBytes {
+			break
+		}
+		if now.Sub(it.mod) < cacheFreshGrace {
+			continue
+		}
+		if os.Remove(it.path) == nil {
+			total -= it.size
+		}
+	}
+	for _, it := range items {
+		if _, err := os.Stat(it.path); err == nil {
+			kept++
+		}
+	}
+	a.mu.Lock()
+	a.cacheBytes, a.cacheFiles, a.cacheCleanedAt = total, kept, now.Unix()
+	a.mu.Unlock()
 }
 
 // openDB opens (creating if needed) the SQLite index database and applies the
@@ -508,6 +592,8 @@ func (a *App) runtimeConfigSnapshot(includeSecret bool) map[string]any {
 		"scraper_proxy": "", "scraper_proxy_display": maskedProxyURL(a.scraperProxy), "scraper_proxy_configured": a.scraperProxy != "",
 		"share_public_base": a.sharePublicBase, "share_public_base_set": a.sharePublicBase != "",
 		"cache_max_bytes": a.cacheMaxBytes, "cache_max_age_hours": int64(a.cacheMaxAge / time.Hour),
+		/* v0.9.91：实际缓存占用 / 条目数 / 上次清理时间 —— 设置页据此显示真实用量。 */
+		"cache_bytes": a.cacheBytes, "cache_files": a.cacheFiles, "cache_cleaned_at": a.cacheCleanedAt,
 		"cache_cleanup_interval_hours": int64(a.cacheCleanup / time.Hour),
 		"page_cache_max_bytes":         a.pageCacheMaxBytes, "scan_max_depth": a.scanMaxDepth,
 	}
@@ -2345,6 +2431,11 @@ func detectHardware(ctx context.Context, requested string) map[string]any {
 		"nvidia_device": nvidia,
 		"encoders":      encoders,
 		"ffmpeg":        len(enc) > 0,
+		/* v0.9.91：解/转码风向标用。cores = 容器可见 CPU 核数；software_only = 只能软编；
+		   weak_cpu 只是提示（无硬件编码器且核数 ≤4），是否禁用服务端转码由用户决定。 */
+		"cores":         runtime.NumCPU(),
+		"software_only": selected == "cpu",
+		"weak_cpu":      selected == "cpu" && runtime.NumCPU() <= 4,
 	}
 }
 
@@ -2955,7 +3046,7 @@ func (a *App) buildCompatCache(disc discInput, cache, audioTrack, hw, mode strin
 	compatMu.Unlock()
 	go func() {
 		defer func() { compatMu.Lock(); delete(compatBuilds, cache); compatMu.Unlock() }()
-		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Hour)
+		ctx, cancel := context.WithTimeout(context.Background(), compatBuildTimeout)
 		defer cancel()
 		tmp := cache + fmt.Sprintf(".bg-%d", os.Getpid())
 		pre, mid := compatArgsScaled(ctx, disc.Spec, audioTrack, hw, mode, maxHeight)
@@ -2970,7 +3061,22 @@ func (a *App) buildCompatCache(disc discInput, cache, audioTrack, hw, mode strin
 		}
 		if e := os.Rename(tmp, cache); e != nil {
 			_ = os.Remove(tmp)
+			return
 		}
+		/* v0.9.91：单条目超额直接丢弃。一个 9.7 GB 的整片转码缓存会独占并击穿配额
+		   （生产实测：配额 30.7 GB / 实际 45 GB），而这块盘同时放着索引库 ——
+		   撑满后整个应用（含 WebUI）都会失去响应。缓存只是加速手段，丢弃不影响播放。 */
+		a.mu.RLock()
+		budget := a.cacheMaxBytes
+		a.mu.RUnlock()
+		if limit := cacheEntryLimit(budget); limit > 0 {
+			if info, err := os.Stat(cache); err == nil && info.Size() > limit {
+				_ = os.Remove(cache)
+				fmt.Printf("compat cache entry exceeds per-entry budget, dropped: %s (%d bytes, limit %d)\n", filepath.Base(cache), info.Size(), limit)
+			}
+		}
+		/* 每次构建完立刻按配额清理一次，避免攒到下一次定时清理。 */
+		a.cleanCache()
 	}()
 }
 

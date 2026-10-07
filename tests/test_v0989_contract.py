@@ -132,12 +132,12 @@ check("3j 不做物理改名（无 rename 媒体文件调用）",
       "renameMediaFile" not in MEDIA and "/api/media/rename" not in MEDIA)
 
 # ============================================================ 版本与文档
-check("4a index.html 资源版本 0.9.90", HTML.count("?v=0.9.90") == 10)
-check("4b ASSET_VERSION 0.9.90", 'window.VAULTHUB_ASSET_VERSION = "0.9.90";' in HTML)
-check("4c SCRIPT_VERSION 0.9.90", 'const VAULTHUB_SCRIPT_VERSION = "0.9.90";' in STATE)
+check("4a index.html 资源版本 0.9.90", HTML.count("?v=0.9.91") == 10)
+check("4b ASSET_VERSION 0.9.90", 'window.VAULTHUB_ASSET_VERSION = "0.9.91";' in HTML)
+check("4c SCRIPT_VERSION 0.9.90", 'const VAULTHUB_SCRIPT_VERSION = "0.9.91";' in STATE)
 # v0.9.90：标语随版本推进 —— 校验版本前缀 + 侧栏/页脚/关于三处一致。
-check("4d 标语含 v0.9.90", HTML.count("v0.9.90 · ") == 3)
-check("4e 更新日志有 v0.9.90 章节", LOG.lstrip().startswith("# VaultHub 蜀鼠之家 v0.9.90"))
+check("4d 标语含 v0.9.90", HTML.count("v0.9.91 · ") == 3)
+check("4e 更新日志有 v0.9.90 章节", LOG.lstrip().startswith("# VaultHub 蜀鼠之家 v0.9.91"))
 check("4f 更新日志写明并发写根因", "fatal error: concurrent map read and map write" in LOG)
 check("4g 发布说明文件存在", (ROOT / ".github/RELEASE_NOTES_0.9.90.md").is_file())
 check("4h README 未被改动（固定项目介绍）",

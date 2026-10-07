@@ -2110,9 +2110,29 @@ html[data-quality="minimal"] :is(.audio-expand, .audio-fullscreen, .audio-player
 .video-status-panel .status-compat {
   display:none; margin-top:6px; color:#ffd48a; font-size:12px; line-height:1.55;
   word-break:break-word; text-align:left;
+  /* v0.9.91：面板内是普通说明行，不是顶栏的胶囊标签 —— 重置 .movie-compat-status
+     带过来的深色药丸底色与内边距，否则会显示成一颗多余的深色胶囊。 */
+  background:none; padding:0; border-radius:0;
 }
 .video-status-panel .status-compat.show { display:block; }
 .media-reader-overlay.movie-player.reader-theme-light .video-status-panel .status-compat { color:#8a5a00; }
+/* v0.9.91 解/转码风向标：面板内标注当前解码路径（服务端转码 / 本机设备解码）。 */
+.video-status-panel .status-decode {
+  display:none; margin-top:2px; color:#9fd7ff; font-size:12px; line-height:1.55;
+  word-break:break-word; text-align:left; background:none; padding:0;
+}
+.video-status-panel .status-decode.show { display:block; }
+.media-reader-overlay.movie-player.reader-theme-light .video-status-panel .status-decode { color:#1a5f8a; }
+/* v0.9.91：下滑自动翻页提示（书刊架「继续加载」旁 / 分页器里）。 */
+/* v0.9.91：禁用服务端转码后画质上限不生效，控件上明确标注（否则会与「原画直放」口径打架）。 */
+.video-quality-options.cap-inactive button[data-quality]:not([data-quality="auto"]):not([data-quality="original"]) { opacity: .5; }
+.video-quality-options.cap-inactive button[data-quality].active { text-decoration: line-through; }
+.page-scroll-hint {
+  color:var(--muted, #8a8a8a); font-size:12px; align-self:center; margin-left:8px;
+  white-space:nowrap;
+}
+/* v0.9.91：解/转码风向标徽标（服务器算力偏弱时用告警色）。 */
+.badge.warn { color:#e8a33d; border-color:rgba(232,163,61,.45); }
 /* 信息按钮上的小圆点：面板收起时也能看出里面存着一条转码 / 限档提示。 */
 .video-info-button { position:relative; }
 .video-info-button.has-note::after {

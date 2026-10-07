@@ -204,12 +204,12 @@ const MEDIA_SRC = fs.readFileSync(ROOT + "/web/js/02-media.js", "utf8");
 {
   const html = fs.readFileSync(ROOT + "/index.html", "utf8");
   const state = fs.readFileSync(ROOT + "/web/js/01-state.js", "utf8");
-  chk("F1 index.html 资源版本 0.9.90 ×10", (html.match(/\?v=0\.9\.90/g) || []).length === 10);
-  chk("F2 ASSET_VERSION = 0.9.90", html.includes('window.VAULTHUB_ASSET_VERSION = "0.9.90";'));
+  chk("F1 index.html 资源版本 0.9.91 ×10", (html.match(/\?v=0\.9\.91/g) || []).length === 10);
+  chk("F2 ASSET_VERSION = 0.9.91", html.includes('window.VAULTHUB_ASSET_VERSION = "0.9.91";'));
   /* v0.9.90：标语随版本推进，这里只校验「版本前缀正确 + 三处一致」，避免每个版本都要改测试。 */
-  chk("F3 标语含 v0.9.90（三处一致）",
-      (html.match(/v0\.9\.90 · /g) || []).length === 3);
-  chk("F4 SCRIPT_VERSION = 0.9.90", state.includes('const VAULTHUB_SCRIPT_VERSION = "0.9.90";'));
+  chk("F3 标语含 v0.9.91（三处一致）",
+      (html.match(/v0\.9\.91 · /g) || []).length === 3);
+  chk("F4 SCRIPT_VERSION = 0.9.91", state.includes('const VAULTHUB_SCRIPT_VERSION = "0.9.91";'));
 }
 
 console.log(`\nSUMMARY pass=${passed} fail=${failed}`);

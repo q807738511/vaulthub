@@ -438,7 +438,7 @@ function bookShelfWindowSlice(visible, prefs) {
   const limit = Math.max(BOOK_SHELF_RENDER_WINDOW, Number(bookShelfRenderLimit) || 0);
   const shown = list.slice(0, limit);
   const more = list.length > shown.length
-    ? `<div class="media-actions"><button class="btn" type="button" onclick="bookShelfLoadMore()">继续加载（已显示 ${shown.length} / ${list.length}）</button></div>`
+    ? `<div class="media-actions"><button class="btn" type="button" onclick="bookShelfLoadMore()">继续加载（已显示 ${shown.length} / ${list.length}）</button><span class="page-scroll-hint">${esc(t("pagerScrollHint"))}</span></div>`
     : "";
   return { pageFiles: shown, more };
 }
@@ -454,6 +454,8 @@ function renderBookShelfPage() {
   const slice = bookShelfWindowSlice(visible, prefs);
   host.innerHTML = bookShelfPageHtml(lib, slice.pageFiles, bookShelfCountsCache[lib.id], visible.length) + slice.more;
   if (typeof scrapeVisibleBookCovers === "function") scrapeVisibleBookCovers(host);
+  /* v0.9.91：密度/页签变化后的重绘同样要刷新下滑翻页状态，否则会停在旧模式上。 */
+  mediaPagingSet({ mode: slice.more ? "window" : "", group: "comic", libId: String(lib.id), offset: 0, pageSize: size, hasMore: !!slice.more });
   closeBookViewSettings();
 }
 function bookPagerHtml(total, shown, unit) {
@@ -902,6 +904,33 @@ function movieTitleFromPath(path) {
 function movieYearFromPath(path) { const m = String(path).match(/\b(19|20)\d{2}\b/); return m ? m[0] : ""; }
 function movieBaseMetadata(path) { return { title: movieTitleFromPath(path), year: movieYearFromPath(path), poster: "", overview: "", provider: "文件名展示", checkedAt: 0 }; }
 function movieMetadataFor(path) { const all = readMovieMetadata(); return { ...movieBaseMetadata(path), ...(all[path] || {}) }; }
+/* v0.9.91：剧名修复 —— v0.9.89 把「刮削标题」写在 title 上（当时还没有 show_title），
+   v0.9.90 起剧集的 title 改成「分集名」、剧名单独放 show_title。历史记录于是只有 title，
+   卡片会退回文件名解析出的剧名，表现为「刮削后的媒体名称展示规则没生效」。
+   这里按库类型把「已刮削但缺 show_title」的记录补上剧名，让旧数据同样遵守
+   「一级标题 = 刮削标题」。新记录本身带 show_title，不受影响。 */
+function repairSeriesShowTitle(libId, meta, path) {
+  if (!meta || meta.show_title) return meta;
+  const lib = (typeof findMediaLibrary === "function") ? findMediaLibrary(libId) : null;
+  const isSeries = lib ? lib.type === "series" : meta.media_type === "series";
+  if (!isSeries) return meta;
+  if (meta.scrape_state && meta.scrape_state !== "ok") return meta;
+  const title = String(meta.title || "").trim();
+  if (!title) return meta;
+  const fallback = String(path || meta.original_path || "").trim();
+  if (fallback && title === movieTitleFromPath(fallback)) return meta;
+  /* v0.9.91 审查修复：v0.9.90 起剧集记录的 title 写的是「分集名」，把它当剧名会把
+     分集名提升成剧名（例如整季只有年份的分集名「2024」）。这类记录无法从自身推出
+     剧名，故不补 —— 卡片继续用文件名解析出的剧名展示，与用户预期一致。 */
+  if (fallback && typeof parseSeriesEpisode === "function") {
+    const parsed = parseSeriesEpisode(fallback);
+    const epTitle = String((parsed && parsed.title) || "").trim();
+    const showParsed = String((parsed && parsed.show) || "").trim();
+    if (epTitle && title === epTitle && title !== showParsed) return meta;
+  }
+  meta.show_title = title;
+  return meta;
+}
 /* ==================== v0.9.88：刮削结果服务端持久化 ====================
    客户要求：「影视及音乐及电子书籍刮削，完成刮削后优先将刮削信息返回到服务器内部
    进行持久化保存，防止出现多次批量重复读取的操作从而影响体验」。
@@ -912,7 +941,7 @@ function movieMetadataFor(path) { const all = readMovieMetadata(); return { ...m
    音乐本来就有服务端持久化（v0.9.67：sidecar + SQLite + /api/media/audio/cache），
    同一套思路，不重复造。
    ============================================================================ */
-const MOVIE_SCRAPE_STORE_FIELDS = ["title", "year", "poster", "backdrop", "logo", "fanart", "overview",
+const MOVIE_SCRAPE_STORE_FIELDS = ["title", "show_title", "year", "poster", "backdrop", "logo", "fanart", "overview",
   "rating", "provider", "tmdb_id", "tvdb_id", "media_type", "user_title", "scrape_state", "reason"];
 /* 上传前统一成服务端字段（并剔除空值，避免把空字段写进结果库）。 */
 function movieScrapeStoreShape(meta) {
@@ -942,6 +971,8 @@ async function hydrateMovieMetadataFromServer(libId) {
       if (cur && Number(cur.checkedAt || 0) > serverAt) return; // 本地更新，不覆盖
       const merged = { ...movieBaseMetadata(path), ...(cur || {}), ...item, checkedAt: serverAt || Date.now() };
       delete merged.checked_at;
+      /* v0.9.91：老记录只有 title（v0.9.89 口径）→ 补出剧名，避免退回文件名。 */
+      repairSeriesShowTitle(libId, merged, path);
       /* v0.9.88：服务端记过这次尝试 → 沿用它的时间戳与次数。否则换浏览器 / 换设备后
          整库「失败」条目会被当成从没刮过，每台设备再连打 3 遍（仍是重复批量读取）。
          需要立即重试时走「逐项扫描 → 仅重试失败项」（那里显式复位次数与时间）。 */
@@ -1717,6 +1748,8 @@ async function scrapeMovieMetadata(host, lib, files) {
       media_type: lib?.type === "series" ? "series" : "movie",
       checkedAt: Date.now(), scrape_state: "ok", reason: "",
     };
+    /* v0.9.91：本地 NFO 只有 title（旧口径）时补出剧名，卡片才显示刮削名而不是文件名。 */
+    repairSeriesShowTitle(lib?.id, all[path], path);
     localPaths.add(path);
   };
   /* v0.9.90：本地元数据水合由「每个文件一次串行请求」改为批量（200 条/次）。
@@ -2106,6 +2139,31 @@ function libraryIndexSessionGet(libId, group) {
 function libraryIndexSessionClear(libId) {
   if (libId) delete libraryIndexSession[libId];
   else Object.keys(libraryIndexSession).forEach(key => delete libraryIndexSession[key]);
+}
+/* ================= v0.9.91：长会话内存治理 =================
+   客户反馈「页面打开时间较长后，媒体及页面失去响应」。
+
+   此前每个打开过的媒体库都把重型缓存常驻内存：整库文件索引（电子书库一个库 18.4 万条
+   文件对象）、书架可见列表、阅读状态索引（按库构建的大对象）、整库统计。在库之间来回
+   切换几次后，标签页内存持续上涨，浏览器 GC 抖动加剧，最终表现为操作失去响应。
+
+   策略：只保留「当前正在看的那个库」的重型缓存，其余库进入时释放并按需重建
+   （重建成本已由 v0.9.90 的分块拉取 + 首屏先渲染压到可接受范围）。 */
+function releaseMediaHeavyCaches(keepLibId) {
+  const keep = String(keepLibId || "");
+  let freed = 0;
+  [libraryIndexSession, bookShelfIndexCache, bookShelfCountsCache].forEach((store) => {
+    if (!store) return;
+    Object.keys(store).forEach((id) => {
+      if (id === keep) return;
+      delete store[id];
+      freed++;
+    });
+  });
+  if (typeof readingStateIndexRelease === "function") freed += readingStateIndexRelease(keep);
+  /* 书架可见列表只在看的就是这个库时保留。 */
+  if (String(localMediaSelection.comic || "") !== keep) bookShelfVisibleCache = [];
+  return freed;
 }
 async function libraryIndexVersionProbe(lib) {
   try {
@@ -2652,6 +2710,18 @@ function readingStateLocal(libId, path) {
   return item && typeof item === "object" ? item : {};
 }
 function readingStateInvalidate(libId) { delete readingStateIndexBuilt[String(libId)]; }
+/* v0.9.91：释放非当前库的阅读状态索引（按库构建的大对象；电子书库一个库 18.4 万条）。 */
+function readingStateIndexRelease(keepLibId) {
+  const keep = String(keepLibId || "");
+  let freed = 0;
+  Object.keys(readingStateIndex).forEach((id) => {
+    if (id === keep) return;
+    delete readingStateIndex[id];
+    delete readingStateIndexBuilt[id];
+    freed++;
+  });
+  return freed;
+}
 /* v0.9.90 修复：跨标签页一致性。另一个标签页改了收藏 / 阅读进度 / 书架偏好时，
    localStorage 会派发 storage 事件；此前没有任何监听，本页的内存索引会一直用旧的
    （表现为「别的窗口收藏了，这边刷新不出来」）。storage 事件不触发时本函数也不做事。 */
@@ -2839,6 +2909,33 @@ function browserPlaybackCapabilities() {
     opus: supported('audio/webm; codecs="opus"')
   };
 }
+/* v0.9.91：解/转码风向标。
+   off = 服务端不做任何转码/重封装，原文件直出、由播放设备本地解码 ——
+   服务器 CPU 算力弱时用它，避免转码把整机（连 WebUI 一起）打满。 */
+function serverTranscodeDisabled() { return (settings.serverTranscode || "auto") === "off"; }
+function serverTranscodePolicy() { return serverTranscodeDisabled() ? "off" : "auto"; }
+function videoDecodePathText(plan) {
+  let text = tf("vpDecodePath", { path: (plan && plan.hardware === "client") ? t("stCompassClient") : t("stCompassServer") });
+  /* v0.9.91 审查修复：禁用服务端转码后画质上限不再生效，此前只在 toast 里说一次，
+     面板上仍长期显示「720p」，与实际原画直出不符。这里做成常驻标注。 */
+  if (plan && plan.hardware === "client" && serverTranscodeDisabled()) text += t("vpCapOff");
+  return text;
+}
+/* 画质控件上标出「当前不生效」，避免与上方解码路径口径打架。 */
+function markQualityCapInactive(root, quality) {
+  if (!root) return;
+  const host = root.querySelector("[data-video-quality-options]");
+  if (!host) return;
+  const capped = !!quality && quality !== "auto" && quality !== "original";
+  host.classList.toggle("cap-inactive", capped && serverTranscodeDisabled());
+  host.setAttribute("data-cap-inactive", (capped && serverTranscodeDisabled()) ? "1" : "0");
+}
+function setVideoDecodePath(root, text) {
+  const el = root && root.querySelector("[data-video-decode]");
+  if (!el) return;
+  el.textContent = text || "";
+  el.classList.toggle("show", !!text);
+}
 async function requestPlaybackPlan(lib, path, quality = "auto") {
   /* v0.9.51：播放计划请求必须带超时 —— 之前没有 AbortController，
      后端探测/转码服务异常时「正在准备播放…」会永远卡住，视频点不开。 */
@@ -2849,10 +2946,15 @@ async function requestPlaybackPlan(lib, path, quality = "auto") {
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ library_id: String(lib.id), path: String(path), quality, hardware: settings.hardwareAcceleration || "auto", network_bps: Number(weakNetworkState().speedBps) || 0, client: browserPlaybackCapabilities() }),
+      body: JSON.stringify({ library_id: String(lib.id), path: String(path), quality, hardware: settings.hardwareAcceleration || "auto", network_bps: Number(weakNetworkState().speedBps) || 0, client: browserPlaybackCapabilities(), server_transcode: serverTranscodePolicy() }),
       signal: controller.signal
     });
-    if (!response.ok) throw new Error(`播放计划 HTTP ${response.status}`);
+    if (!response.ok) {
+      /* v0.9.91：把后端的原因带出来（例如禁用服务端转码后点原盘镜像会被如实拒绝）。 */
+      let detail = "";
+      try { const body = await response.clone().json(); detail = body && body.error ? "：" + body.error : ""; } catch (e) { /* 非 JSON 响应 */ }
+      throw new Error(`播放计划 HTTP ${response.status}${detail}`);
+    }
     return await response.json();
   } catch (error) {
     if (error?.name === "AbortError") throw new Error("播放计划请求超时（20s），已转用本地降级策略");
@@ -2862,6 +2964,8 @@ async function requestPlaybackPlan(lib, path, quality = "auto") {
   }
 }
 function playbackModeLabel(plan) {
+  /* v0.9.91：禁用服务端转码时后端把 hardware 标成 client —— 界面直接说明是本地解码。 */
+  if (plan && plan.hardware === "client") return "本机设备解码 · 原画直放";
   const labels = { direct: "Direct Play 原画直放", remux: "Smart Stream · Remux", audio_transcode: "Smart Stream · 仅音频转码", full_transcode: "Smart Stream · 完整转码" };
   return `${labels[plan?.mode] || "Smart Stream"}${plan?.hardware && plan.mode === "full_transcode" ? ` · ${plan.hardware.toUpperCase()}` : ""}`;
 }
@@ -3060,7 +3164,7 @@ function renderComicShelf(lib, index, offset, opts = {}) {
   const fresh = opts.force === true || (offset === 0 || !cached || (Date.now() - Number(cached.at || 0)) > 60000);
   const files = (fresh || !cached) ? index.slice() : cached.files.slice();
   if (fresh && !opts.preview) bookShelfIndexCache[lib.id] = { at: Date.now(), files };
-  if (fresh || opts.preview) {
+  if ((fresh || opts.preview) && opts.keepCount !== true) {
     const counts = { shelf: 0, like: 0, completed: 0, all: files.length };
     /* v0.9.90：readingState / isBookFavorite 已是 O(1) 内存索引，
        18.4 万条也只是几次线性遍历（旧实现是 37 万次 localStorage 解析）。 */
@@ -3072,6 +3176,8 @@ function renderComicShelf(lib, index, offset, opts = {}) {
     });
     if (!opts.preview) bookShelfCountsCache[lib.id] = counts;
   }
+  /* v0.9.91：keepCount=true（下滑翻页 / 「继续加载」只放大渲染窗口）时沿用上次统计 ——
+     窗口扩张不改变整库统计，没必要对 18.4 万条再跑一遍全量遍历。 */
   bookShelfTab = BOOK_SHELF_TABS.some(x => x.id === bookShelfTab) ? bookShelfTab : (prefs.tab || "shelf");
   comicShelfView = bookShelfTab === "completed" ? "completed" : "shelf";
   const visible = bookSortFiles(files.filter(file => {
@@ -3096,6 +3202,8 @@ function renderComicShelf(lib, index, offset, opts = {}) {
   const head = opts.notice ? `<div class="shelf-loading">${esc(opts.notice)}</div>` : "";
   target.innerHTML = head + bookShelfPageHtml(lib, pageFiles || [], bookShelfCountsCache[lib.id], visible.length) + more;
   scrapeVisibleBookCovers(target);
+  /* v0.9.91：下滑自动翻页状态（more 为空 = 整库已渲染完，不再翻页）。 */
+  mediaPagingSet({ mode: more ? "window" : "", group: "comic", libId: String(lib.id), offset: 0, pageSize: size, hasMore: !!more });
 }
 /* 「继续加载」按钮：不动索引与筛选结果，只把渲染窗口再放大一屏。 */
 function bookShelfLoadMore() {
@@ -3106,9 +3214,127 @@ function bookShelfLoadMore() {
   if (!cached) return;
   renderComicShelf(lib, cached.files.slice(), 0, { force: true, keepCount: true });
 }
+
+/* ===================== v0.9.91：下滑自动翻页 =====================
+   客户要求：「聚焦鼠标操作或者键盘操作下滑自动进入下一页（从第一页开始加速渲染，
+   每下滑一下就滑动一页）」。
+
+   设计：
+   1) 只有一份全局监听器（滚轮 + 键盘），不在每次渲染时挂载 —— 长会话不会累积监听器。
+   2) 两种翻页模式共用同一入口 mediaAutoPage()：
+      · mode="window"：书刊架渐进渲染窗口，下滑 = 再展开一屏（等价「继续加载」）；
+      · mode="offset"：服务端分页视图（音乐库 / 文件列表），下滑 = 取下一页 offset。
+   3) 「每滑一下就翻一页」：翻页后进入冷却窗口，且必须真的处于「到底 / 到顶」才触发，
+      一次惯性滚动不会连翻数页。
+   4) 「从第一页开始加速渲染」：第一页先落 DOM（书刊架首屏预览渲染已存在），
+      窗口模式再展开时数据都在内存里，直接同步渲染 —— 每次翻页都是即时可见的。
+   ============================================================================ */
+const MEDIA_SCROLL_TRIGGER_PX = 160;  /* 距底/顶多少像素内算「到底 / 到顶」 */
+const MEDIA_SCROLL_SETTLE_MS = 700;   /* 翻页后的冷却，防惯性滚动连翻 */
+const mediaPagingState = { mode: "", group: "", libId: "", offset: 0, pageSize: 0, hasMore: false, busy: false, at: 0 };
+function mediaPagingSet(state) { Object.assign(mediaPagingState, state || {}, { busy: false }); }
+function mediaPagingReset() { mediaPagingSet({ mode: "", group: "", libId: "", offset: 0, pageSize: 0, hasMore: false }); }
+/* 当前是否停在媒体库视图里（媒体库视图是整页滚动）。 */
+function mediaPagingHost() {
+  const host = document.querySelector(".media-wide-host.show");
+  return host && host.offsetParent !== null ? host : null;
+}
+/* 到底 / 到顶判定：优先看在滚动的那个容器，媒体库通常是整页滚动。 */
+function mediaPagingEdge(host) {
+  const inner = host && mediaPagingState.group
+    ? host.querySelector("#local-media-content-" + mediaPagingState.group) : null;
+  if (inner && inner.scrollHeight > inner.clientHeight + 40) {
+    return {
+      atBottom: inner.scrollTop + inner.clientHeight >= inner.scrollHeight - MEDIA_SCROLL_TRIGGER_PX,
+      atTop: inner.scrollTop <= MEDIA_SCROLL_TRIGGER_PX,
+    };
+  }
+  const doc = document.documentElement;
+  return {
+    atBottom: (window.innerHeight + window.scrollY) >= (doc.scrollHeight - MEDIA_SCROLL_TRIGGER_PX),
+    atTop: window.scrollY <= MEDIA_SCROLL_TRIGGER_PX,
+  };
+}
+/* 翻页：direction 1 = 下一页 / 再展开一屏；-1 = 上一页。返回是否真的翻动了。 */
+function mediaAutoPage(direction) {
+  const st = mediaPagingState;
+  if (st.busy || !st.mode) return false;
+  const now = Date.now();
+  if (now - Number(st.at || 0) < MEDIA_SCROLL_SETTLE_MS) return false;
+  if (direction > 0 && !st.hasMore) return false;
+  if (direction < 0 && !(st.mode === "offset" && st.offset > 0)) return false;
+  st.busy = true;
+  st.at = now;
+  try {
+    if (direction > 0 && st.mode === "window") {
+      /* 「继续加载」把渲染窗口再放大一屏；新卡片接在末尾，翻完顺势往下带一屏。 */
+      bookShelfLoadMore();
+      const step = Math.max(240, Math.round(window.innerHeight * 0.9));
+      try { window.scrollBy({ top: step, behavior: reducedMotionOn() ? "auto" : "smooth" }); } catch (e) { window.scrollBy(0, step); }
+      return true;
+    }
+    const lib = findMediaLibrary(st.libId);
+    if (!lib) return false;
+    const nextOffset = direction > 0 ? st.offset + st.pageSize : Math.max(0, st.offset - st.pageSize);
+    loadLocalFiles(st.group, lib, nextOffset);
+    /* 下一页回顶部、上一页贴底，保持「继续滑一下就是再翻一页」的手感。 */
+    try {
+      window.scrollTo({ top: direction > 0 ? 0 : document.documentElement.scrollHeight, behavior: "auto" });
+    } catch (e) { window.scrollTo(0, direction > 0 ? 0 : document.documentElement.scrollHeight); }
+    return true;
+  } finally {
+    setTimeout(() => { mediaPagingState.busy = false; }, 120);
+  }
+}
+function mediaPagingKeyTargetBlocked(target) {
+  if (!target) return false;
+  const tag = String(target.tagName || "").toLowerCase();
+  if (tag === "input" || tag === "textarea" || tag === "select") return true;
+  if (target.isContentEditable) return true;
+  /* 播放器/阅读器自己有键盘语义（空格播放暂停、左右切集、翻页），不要抢键。 */
+  if (target.closest && (target.closest("[data-video-panel]") || target.closest(".media-video-body") ||
+      target.closest(".media-viewer-doc") || target.closest(".comic-reader"))) return true;
+  return false;
+}
+function installMediaScrollPaging() {
+  if (installMediaScrollPaging.done) return;
+  installMediaScrollPaging.done = true;
+  document.addEventListener("wheel", (event) => {
+    if (!mediaPagingState.mode || mediaPagingKeyTargetBlocked(event.target)) return;
+    const host = mediaPagingHost();
+    if (!host || !event.target || !event.target.closest || !event.target.closest(".media-wide-host")) return;
+    const delta = Number(event.deltaY) || 0;
+    if (Math.abs(delta) < 2) return;
+    const edge = mediaPagingEdge(host);
+    const down = delta > 0;
+    if (down ? !edge.atBottom : !edge.atTop) return;
+    mediaAutoPage(down ? 1 : -1);
+  }, { passive: true });
+  document.addEventListener("keydown", (event) => {
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    if (!mediaPagingState.mode || mediaPagingKeyTargetBlocked(event.target)) return;
+    const downKeys = ["PageDown", "ArrowDown", " "];
+    const upKeys = ["PageUp", "ArrowUp"];
+    const down = downKeys.includes(event.key), up = upKeys.includes(event.key);
+    if (!down && !up) return;
+    const host = mediaPagingHost();
+    if (!host) return;
+    const edge = mediaPagingEdge(host);
+    if (down ? !edge.atBottom : !edge.atTop) return;
+    if (!mediaAutoPage(down ? 1 : -1)) return;
+    event.preventDefault();
+  });
+}
+function reducedMotionOn() {
+  return typeof settings !== "undefined" && !!settings.reduceMotion;
+}
+installMediaScrollPaging();
+
 async function loadLocalFiles(group, lib, offset = 0) {
   const target = document.getElementById("local-media-content-" + group);
   if (!target) return;
+  /* v0.9.91：切库即释放其它库的重型缓存（整库索引 / 书架列表 / 阅读状态索引）。 */
+  if (lib && lib.id) releaseMediaHeavyCaches(lib.id);
   try {
     /* v0.9.70：已读/未读筛选必须基于完整索引。
        旧实现给已读视图发送 limit=100000，服务端会按安全上限截断，导致已读书籍
@@ -3208,7 +3434,7 @@ async function loadLocalFiles(group, lib, offset = 0) {
     const seriesAllLoaded = group === "movie";
     const pager = seriesAllLoaded
       ? `<div class="media-actions"><span class="media-file-meta">已加载全部 ${files.length} / ${total} 项${mediaTruncated ? "（加载未完成）" : ""}</span></div>`
-      : `<div class="media-actions">${prev}<span class="media-file-meta">${range} / ${total}</span>${next}</div>`;
+      : `<div class="media-actions">${prev}<span class="media-file-meta">${range} / ${total}</span>${next}${data.has_more ? `<span class="page-scroll-hint">${esc(t("pagerScrollHint"))}</span>` : ""}</div>`;
     if (group === "comic") {
       /* v0.9.74：书刊展示页 = 页头（库名 / 条目 / 路径 / 扫描时间）
          + 工具栏（书架视图分段标签 + 排序 + 网格密度 + 视图设置）+ 封面网格 + 分页。 */
@@ -3231,6 +3457,15 @@ async function loadLocalFiles(group, lib, offset = 0) {
       else scrapeMovieMetadata(target, lib, files);
     } else {
       target.innerHTML = `${files.length ? `<div class="media-file-list">${files.map(file => renderLocalFileRow(group, lib, file)).join("")}</div>` : '<div class="empty-tip">该媒体库中暂无支持的文件</div>'}${pager}`;
+    }
+    /* v0.9.91：下滑自动翻页状态。书刊架由 renderComicShelf / renderBookShelfPage 自己登记
+       （窗口模式）；其余分组走服务端分页（offset 模式）。整库已加载完则关闭翻页。 */
+    if (group !== "comic") {
+      if (!seriesAllLoaded && data.has_more) {
+        mediaPagingSet({ mode: "offset", group, libId: String(lib.id), offset, pageSize, hasMore: true });
+      } else {
+        mediaPagingReset();
+      }
     }
   } catch (err) {
     target.innerHTML = `<div class="media-error">文件列表读取失败：${esc(err.message)}</div>`;
@@ -5702,6 +5937,10 @@ async function applyVideoQuality(root, lib, path, quality) {
     root.dataset.videoMetadata = formatVideoMetadata(plan.media);
     root.dataset.playbackMode = plan.mode || "auto";
     setMovieCompatStatus(root, `${playbackModeLabel(plan)} · ${plan.reason || "智能选择"}`);
+    /* v0.9.91：画质切换同样要标注解码路径，并在服务端转码被禁用时如实提示限制未生效。 */
+    setVideoDecodePath(root, videoDecodePathText(plan));
+    markQualityCapInactive(root, quality);
+    if (plan.warn) toast("⚠️ " + plan.warn);
     const sessionID = await createVideoPlaybackSession(root, lib, path, plan.mode);
     const url = plan.url && sessionID && plan.mode !== "direct" ? `${plan.url}&task=${encodeURIComponent(sessionID)}` : (plan.url || mediaCompatUrl(lib, path));
     setVideoEngine(root, plan.mode === "direct" ? VIDEO_ENGINE_NATIVE : VIDEO_ENGINE_COMPAT, `${playbackModeLabel(plan)} · ${plan.reason || "画质切换"}`);
@@ -5998,7 +6237,20 @@ if(meta){const _merged=movieMetadataFor(path);const _hero=movieHeroArt(_merged);
   bindVideoStatus(videoRoot, video);
   scheduleVideoChromeHide(videoRoot);
   const useDirect = (reason="原片直连") => { terminateWasmVideo(videoRoot); setVideoEngine(videoRoot, VIDEO_ENGINE_NATIVE, reason); switchMovieSource(video, direct); };
-  const useCompat = (reason, url=compat) => { terminateWasmVideo(videoRoot); setVideoEngine(videoRoot, VIDEO_ENGINE_COMPAT, reason || `Smart Stream · ${settings.hardwareAcceleration}`); switchMovieSource(video, url); };
+  /* v0.9.91 解/转码风向标：禁用服务端转/解码时，一切「切兼容流」的回退都必须拒绝 ——
+     否则服务器还是会被拉去起 ffmpeg 转码，「禁用」形同虚设。这里如实告知用户。 */
+  const useCompat = (reason, url=compat) => {
+    if (serverTranscodeDisabled()) {
+      const why = reason || "该片源需要服务端转码";
+      videoRoot.dataset.videoDeadEnd = "1";
+      setMovieCompatStatus(videoRoot, `已禁用服务端转/解码：${why}`);
+      updateVideoStatus(videoRoot, video, "无法本机直接播放，请在设置里重新开启服务端转/解码");
+      setVideoDecodePath(videoRoot, tf("vpDecodePath", { path: t("stCompassClient") }));
+      toast("⚠️ " + t("stOff") + "：" + why);
+      return;
+    }
+    terminateWasmVideo(videoRoot); setVideoEngine(videoRoot, VIDEO_ENGINE_COMPAT, reason || `Smart Stream · ${settings.hardwareAcceleration}`); switchMovieSource(video, url);
+  };
   /* v0.9.51：设置浮层不再暴露「三层播放」手动引擎选择 —— 引擎自动判定与自动降级保留。 */
   video.addEventListener("loadedmetadata", () => { video.muted = false; video.volume = 1; restoreVideoPlaybackState(video); bindVideoDriftMonitor(videoRoot, video); fetch(`/api/media/streams?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}`,{cache:'no-store'}).then(r=>r.ok?r.json():null).then(info=>{populateVideoTracks(videoRoot,video,info);updateVideoStatus(videoRoot,video,video.paused?"已暂停":"正在播放");}).catch(()=>{}); });
   let engineFailurePending = false;
@@ -6028,12 +6280,23 @@ if(meta){const _merged=movieMetadataFor(path);const _hero=movieHeroArt(_merged);
     videoRoot.dataset.videoMetadata = formatVideoMetadata(plan.media);
     videoRoot.dataset.playbackMode = plan.mode || "auto";
     setMovieCompatStatus(videoRoot, `${playbackModeLabel(plan)} · ${plan.reason || "智能选择"}`);
+    /* v0.9.91：在「获取信息」面板里标注当前解码路径（服务端转码 / 本机设备解码）。 */
+    setVideoDecodePath(videoRoot, videoDecodePathText(plan));
+    markQualityCapInactive(videoRoot, videoRoot.dataset.videoQuality || "auto");
+    if (plan.warn) toast("⚠️ " + plan.warn);
     const sessionID = await createVideoPlaybackSession(videoRoot, lib, path, plan.mode);
     const plannedURL = plan.url && sessionID && plan.mode !== "direct" ? `${plan.url}&task=${encodeURIComponent(sessionID)}` : (plan.url || compat);
     if (plan.mode === "direct") useDirect(`${playbackModeLabel(plan)} · ${plan.reason}`);
     else useCompat(`${playbackModeLabel(plan)} · ${plan.reason}`, plannedURL);
   } catch (error) {
     const extRule = movieExtensionNeedsCompat(path) || browserSaysVideoContainerUnsupported(path);
+    /* v0.9.91：禁用服务端转码时不允许再按容器规则降级到兼容流 —— 直接原画直出并说明。 */
+    if (serverTranscodeDisabled()) {
+      useDirect(`禁用服务端转码，按原画直出：${error.message}`);
+      createVideoPlaybackSession(videoRoot, lib, path, "direct");
+      toast("⚠️ " + error.message);
+      return;
+    }
     if (extRule) useCompat(`播放计划不可用，按容器规则降级：${error.message}`); else useDirect(`播放计划不可用，尝试原画：${error.message}`);
     createVideoPlaybackSession(videoRoot, lib, path, extRule ? "full_transcode" : "direct");
   }
@@ -6400,7 +6663,7 @@ async function openLocalMedia(group, libId, path) {
 <h4>${esc(t("vpPlaylist"))}</h4>
 <div class="video-playlist-items" data-video-playlist>${esc(t("vpPlaylistLoading"))}</div>
 </div>
-<div class="video-status-panel"><span class="status-main" data-video-status>准备播放</span><span class="status-detail" data-video-detail>--:-- / --:-- · 媒体元数据待识别</span><span class="status-compat movie-compat-status" data-video-compat></span></div>
+<div class="video-status-panel"><span class="status-main" data-video-status>准备播放</span><span class="status-detail" data-video-detail>--:-- / --:-- · 媒体元数据待识别</span><span class="status-compat movie-compat-status" data-video-compat></span><span class="status-decode" data-video-decode></span></div>
 </div>`;
   else if (["jpg","jpeg","png","webp","gif","bmp","avif"].includes(ext)) body = `<img src="${esc(url)}" alt="${esc(path)}">`;
   /* v0.9.77：PDF 的 iframe 分支已移除 —— 任何库里的 PDF 都由上面的应用内阅读器处理，

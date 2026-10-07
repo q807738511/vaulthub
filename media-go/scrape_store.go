@@ -55,7 +55,12 @@ const (
 // scrapeCacheItem 是一条持久化下来的刮削结果。字段与前端 movieMetadata 的
 // 子集一一对应，前端 hydrate 时直接并入本地元数据层。
 type scrapeCacheItem struct {
-	Title     string  `json:"title,omitempty"`
+	Title string `json:"title,omitempty"`
+	/* v0.9.91：剧集刮削后的「剧名」必须一起持久化。
+	   旧实现前端把 show_title 写在本地元数据层（一级标题 = 当前语言刮到的剧名），
+	   但上传到服务端结果库时被字段白名单丢掉 —— 换设备 / 清缓存 / 重新进库水合后
+	   show_title 变空，剧名又退回文件名解析结果，表现为「刮削后的媒体名称展示规则没生效」。 */
+	ShowTitle string  `json:"show_title,omitempty"`
 	Year      string  `json:"year,omitempty"`
 	Poster    string  `json:"poster,omitempty"`
 	Backdrop  string  `json:"backdrop,omitempty"`
@@ -357,6 +362,7 @@ func validScrapeCacheURL(raw string) bool {
 func sanitizeScrapeCacheItem(in scrapeCacheItem) (scrapeCacheItem, bool) {
 	out := scrapeCacheItem{
 		Title:     clipScrapeText(in.Title, scrapeCacheMaxTitle),
+		ShowTitle: clipScrapeText(in.ShowTitle, scrapeCacheMaxTitle),
 		Year:      clipScrapeText(in.Year, 12),
 		Overview:  clipScrapeText(in.Overview, scrapeCacheMaxDesc),
 		Provider:  clipScrapeText(in.Provider, scrapeCacheMaxSmall),
@@ -399,7 +405,7 @@ func sanitizeScrapeCacheItem(in scrapeCacheItem) (scrapeCacheItem, bool) {
 }
 
 func scrapeCacheItemEmpty(it scrapeCacheItem) bool {
-	return it.Title == "" && it.Overview == "" && it.Poster == "" && it.Backdrop == "" &&
+	return it.Title == "" && it.ShowTitle == "" && it.Overview == "" && it.Poster == "" && it.Backdrop == "" &&
 		it.Logo == "" && it.Fanart == "" && it.Provider == "" && it.UserTitle == "" &&
 		it.TMDBID == 0 && it.TVDBID == 0
 }
