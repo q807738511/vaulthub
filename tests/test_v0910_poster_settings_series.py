@@ -26,17 +26,14 @@ assert ".movie-detail-hero.poster-art" in CSS
 assert ".movie-detail-hero.poster-art::before" in CSS
 assert "background-image:var(--movie-hero-art" in CSS
 
-# 2. 系统设置按钮迁移到侧边栏底部，位于版本上方，跟随侧栏折叠/缩放。
+# 2. v0.9.93：侧栏（含其底部设置按钮）已整体移除 —— 设置入口改为顶栏头像菜单，
+#    并确认旧的侧栏设置按钮/轨道样式不再残留。
 header = HTML[HTML.index('<header class="topbar">'):HTML.index('</header>')]
-sidebar = HTML[HTML.index('<aside class="sidebar"'):HTML.index('</aside>')]
-foot = HTML[HTML.index('<div class="sidebar-foot">'):HTML.index('</div>\n</aside>')]
 assert "openAccountMenuItem('settingsModal')" not in header
-assert 'id="sidebarSettingsButton"' in sidebar
-assert 'onclick="openSettingsModalFromSidebar()"' in sidebar
-assert foot.index('id="sidebarSettingsButton"') < foot.index('class="ver"')
-assert "function openSettingsModalFromSidebar()" in STATE
-assert ".rail-settings" in CSS and ".sidebar-foot-row" in CSS
-assert "body.sidebar-hidden .rail-settings" in CSS
+assert 'id="topUserButton"' in header and 'role="menu"' in HTML
+assert 'onclick="topUserMenuGo(\'library\')"' in HTML, "头像菜单必须直达系统设置"
+assert 'id="sidebarSettingsButton"' not in HTML and "openSettingsModalFromSidebar" not in STATE
+assert ".rail-settings" not in CSS and ".sidebar-foot-row" not in CSS
 
 # 3. 电视剧集按 Plex/Emby 风格聚合：不再每集外层单独展示卡片。
 assert "function parseSeriesEpisode(path)" in JS
@@ -65,10 +62,9 @@ assert 'skopeo copy --all --preserve-digests' in SYNC
 print('PASS: v0.9.56 poster hero, sidebar settings and Plex/Emby-style series grouping')
 
 # 折叠按钮必须有独立 id，避免 document.querySelector(".rail-btn") 命中侧栏设置按钮
-assert 'id="sidebarCollapseButton"' in HTML, "折叠按钮缺少 sidebarCollapseButton id"
-assert HTML.index('id="sidebarSettingsButton"') < HTML.index('id="sidebarCollapseButton"')
-assert 'document.querySelector(".rail-btn")' not in STATE, "toggleBars 仍用 .rail-btn 泛选择器"
-assert STATE.count('document.getElementById("sidebarCollapseButton")') == 2
+# v0.9.93：侧栏折叠按钮随侧栏一起删除（客户要求不再使用侧栏）。
+assert 'id="sidebarCollapseButton"' not in HTML and "sidebarCollapseButton" not in STATE
+assert 'document.querySelector(".rail-btn")' not in STATE
 
 # CSS url() 注入硬化：外部海报地址进 style 前必须剔除引号/括号/反斜杠
 assert "function cssUrlValue(url)" in JS, "缺少 cssUrlValue 过滤器"

@@ -21,17 +21,15 @@ def check(name, ok, detail=""):
 assert '@media (max-width: 768px)' in CSS
 # 768 段内的滚动增强
 m768 = CSS[CSS.index('@media (max-width: 768px)'):]
-check("T1 scroll-snap 停靠", "scroll-snap-type: x mandatory" in m768)
-check("T1 触摸惯性滚动", "-webkit-overflow-scrolling: touch" in m768 and "touch-action: pan-x" in m768)
-check("T1 overscroll 约束", "overscroll-behavior-x: contain" in m768)
-check("T1 nav-item 停靠对齐", ".sidebar .nav-item { scroll-snap-align: start; }" in m768)
-check("T1 溢出提示 class", ".sidebar.nav-overflow" in m768 and "inset -14px 0 12px -12px" in m768)
-# JS 侧：溢出检测 + MutationObserver
-check("T1 updateSidebarNavOverflow 函数", "function updateSidebarNavOverflow()" in STATE)
-check("T1 initSidebarNavOverflowWatch 函数", "function initSidebarNavOverflowWatch()" in STATE)
-check("T1 scrollWidth/clientWidth 判定", "nav.scrollWidth > nav.clientWidth" in STATE)
-check("T1 MutationObserver 监听异步导航", "MutationObserver" in STATE and "childList: true" in STATE)
-check("T1 boot 挂载", "initSidebarNavOverflowWatch();" in BOOT)
+check("T1 顶栏标签可横滑", ".tn-libs" in CSS and "overflow-x: auto" in CSS)
+check("T1 顶栏标签隐藏滚动条", ".tn-libs::-webkit-scrollbar" in CSS)
+check("T1 顶栏标签定宽不换行", ".tn-libs { display: flex;" in CSS)
+# v0.9.93：侧栏已移除 —— 侧栏的横滑增强与溢出观察（scroll-snap / nav-overflow /
+# updateSidebarNavOverflow / MutationObserver 监听）全部随之删除，这里断言不再残留。
+check("T1 旧侧栏横滑实现已删除",
+      ".sidebar" not in CSS and "nav-overflow" not in CSS
+      and "function updateSidebarNavOverflow" not in STATE and "function initSidebarNavOverflowWatch" not in STATE
+      and "initSidebarNavOverflowWatch();" not in BOOT)
 
 # ============ T2 音乐专辑/歌手点击逻辑 ============
 check("T2 openAudioTracks 整单拉取", "async function openAudioTracks(libId, kind, key)" in JS
@@ -124,7 +122,7 @@ for fname, txt in [("README.md", README), ("Update Log.md", UPDATELOG)]:
 
 # ============ 版本号 ============
 check("版本 HTML >=2", HTML.count("v0.9.56") >= 2)
-check("版本 script 变量", 'VAULTHUB_SCRIPT_VERSION = "0.9.92"' in STATE)
+check("版本 script 变量", 'VAULTHUB_SCRIPT_VERSION = "0.9.93"' in STATE)
 check("版本 release notes 存在", (ROOT / ".github/RELEASE_NOTES_0.9.56.md").exists())
 
 if fails:

@@ -29,16 +29,12 @@ checks = {
         and "translate(-50%,-50%) scale(1.1)" in CSS,
     "左侧封面尺寸自适应": ".audio-player-cover-wrap { position:relative; width:clamp(" in CSS,
 
-    # 3. 遮罩覆盖侧栏折叠后的空缺
-    "遮罩跟随侧栏折叠": "body.sidebar-hidden .audio-fullscreen-overlay" in CSS,
-    # v0.9.66 修正：桌面折叠态是 62px 图标轨（.main 同样 margin-left:62px），
-    # 遮罩必须从 62px 起；仅窄屏侧栏 0 宽时才回到 0。
-    "折叠后左缘贴合图标轨": "body.sidebar-hidden .audio-fullscreen-overlay { left:62px; }" in CSS
-        and ".audio-fullscreen-overlay, body.sidebar-hidden .audio-fullscreen-overlay { left:0; }" in CSS,
+    # 3. v0.9.93：侧栏已移除 —— 全屏海报遮罩不再需要跟随折叠态，左缘恒为 0。
+    "遮罩左缘恒为 0": ".audio-fullscreen-overlay" in CSS and "left:var(--sidebar-w)" in CSS
+        and "body.sidebar-hidden" not in CSS,
 
-    # 4. 移动端侧栏可横向滚出全部页面项
-    "移动端库项容器不成为 flex 项": "#libNavAll" in CSS and "display:contents" in CSS,
-    "移动端导航可横向滚动": ".sidebar .nav {" in CSS and "overflow-x: auto" in CSS
+    # 4. v0.9.93：移动端横向滚动的对象改为顶栏媒体库标签。
+    "移动端导航可横向滚动": ".tn-libs" in CSS and "overflow-x: auto" in CSS
         and "-webkit-overflow-scrolling: touch" in CSS,
 
     # 5. 四周磨砂清晰度 85%
@@ -47,8 +43,8 @@ checks = {
     "磨砂模糊半径降低": "blur(14px) saturate(1.1) brightness(.66)" in CSS,
 
     # 版本与发布资料
-    "HTML版本": 'VAULTHUB_ASSET_VERSION = "0.9.92"' in HTML and HTML.count("?v=0.9.92") >= 7,
-    "脚本版本": 'VAULTHUB_SCRIPT_VERSION = "0.9.92"' in STATE,
+    "HTML版本": 'VAULTHUB_ASSET_VERSION = "0.9.93"' in HTML and HTML.count("?v=0.9.93") >= 7,
+    "脚本版本": 'VAULTHUB_SCRIPT_VERSION = "0.9.93"' in STATE,
     "发布说明": NOTES.exists(),
 }
 

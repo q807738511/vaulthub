@@ -4,10 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VaultHub 蜀鼠之家</title>
-<link rel="stylesheet" href="/web/css/main.css?v=0.9.92">
+<link rel="stylesheet" href="/web/css/main.css?v=0.9.93">
 <script>
 /* 资源版本号：index.html 用它给所有静态资源打查询串。 */
-window.VAULTHUB_ASSET_VERSION = "0.9.92";
+window.VAULTHUB_ASSET_VERSION = "0.9.93";
 </script>
 <script>
 /* v0.9.73 主题防闪：调色板/明暗/强调色必须在首帧渲染前落到 <html> 上，
@@ -58,6 +58,8 @@ window.VAULTHUB_ASSET_VERSION = "0.9.92";
     </label>
     <button class="btn btn-primary" style="width:100%;margin-top:12px;" onclick="vaultHubLogin()">🔐 登录</button>
     <div class="auth-error" id="authError"></div>
+    <!-- v0.9.93：登录页也显示版本标语（原第三处在侧栏页脚，侧栏已移除）。 -->
+    <div class="login-ver"><span id="loginVerLabel" class="ver">v0.9.93 · 播放回缩顶栏·停止即断流·剧集自动归组</span></div>
   </div>
 </div>
 
@@ -101,7 +103,11 @@ window.VAULTHUB_ASSET_VERSION = "0.9.92";
     <nav class="tn-nav" aria-label="主导航">
       <button class="tn-item active" type="button" data-topnav="home" onclick="switchView('home')" title="首页"><span class="ic">🏠</span><span class="nl" data-i18n="navHome">首页</span></button>
       <button class="tn-item" type="button" data-topnav="pt" data-module="pt" onclick="switchView('pt')" title="PT 管理"><span class="ic">🌊</span><span class="nl" data-i18n="navPt">PT 管理</span></button>
+      <!-- v0.9.93：原侧栏的「媒体搜索」入口迁到顶栏（侧栏已移除）。 -->
+      <button class="tn-item" type="button" data-topnav="search" onclick="openMediaSearch()" title="媒体搜索"><span class="ic">🔍</span><span class="nl" data-i18n="navMediaSearch">媒体搜索</span></button>
     </nav>
+    <!-- v0.9.93：自定义模块标签（原侧栏 #customNav 迁到顶栏，渲染由 renderCustomNav 负责）。 -->
+    <div class="tn-nav tn-nav-custom" id="topCustomNav" role="tablist" aria-label="自定义模块"></div>
 
     <span class="tn-sep" aria-hidden="true"></span>
 
@@ -148,41 +154,16 @@ window.VAULTHUB_ASSET_VERSION = "0.9.92";
     </div>
     <button class="tn-popitem" type="button" role="menuitem" onclick="topUserMenuGo('library')"><span class="ic">⚙</span>系统设置<span class="k">媒体库 · 外观 · 刮削 · 账户</span></button>
     <button class="tn-popitem" type="button" role="menuitem" onclick="topUserMenuGo('look')"><span class="ic">🎨</span>外观主题<span class="k" id="topMenuTheme">当前：青瓷</span></button>
+    <button class="tn-popitem" type="button" role="menuitem" onclick="topUserMenuModules()"><span class="ic">★</span>自定义模块<span class="k">添加 / 管理</span></button>
     <button class="tn-popitem" type="button" role="menuitem" onclick="topUserMenuGo('account')"><span class="ic">👤</span>账户与登录<span class="k">会话与退出</span></button>
     <div class="tn-popsep"></div>
     <button class="tn-popitem danger" type="button" role="menuitem" onclick="topUserMenuLogout()"><span class="ic">⏏</span>退出登录</button>
   </div>
 </header>
 
-<!-- ===== 侧边栏：只展示媒体库创建时设置的名称，不再重复展示资源大类 ===== -->
-<aside class="sidebar" id="sidebar">
-  <div class="sidebar-resizer" id="sidebarResizer"></div>
-  <nav class="nav" id="mainNav">
-    <div class="nav-group" data-nav-group="main" data-i18n="navGroupMain">主导航</div>
-    <div class="nav-item active" data-view="home" data-module="home"><span class="ic">🏠</span><span class="txt" data-i18n="navHome">首页</span></div>
-    <div class="nav-item nav-search-settings" data-view="search" onclick="openMediaSearch()"><span class="ic">🔍</span><span class="txt" data-i18n="navMediaSearch">媒体搜索</span></div>
-    <div class="nav-item" data-view="pt" data-module="pt"><span class="ic">🌊</span><span class="txt" data-i18n="navPt">PT 管理</span></div>
-
-    <div class="nav-group" data-nav-group="library">
-      <span data-i18n="navGroupLibrary">媒体库</span>
-      <span class="g-more" onclick="showMediaLibraryConfig()" data-i18n="navManage">管理 ›</span>
-    </div>
-    <div id="libNavAll"></div>
-
-    <div class="nav-group" data-nav-group="custom">
-      <span data-i18n="navGroupCustom">自定义</span>
-      <span class="g-more" onclick="openModuleModal()" data-i18n="navManage">管理 ›</span>
-    </div>
-    <div id="customNav"></div>
-  </nav>
-  <div class="sidebar-foot">
-    <button class="rail-btn rail-settings" id="sidebarSettingsButton" type="button" onclick="openSettingsModalFromSidebar()" title="系统设置" aria-label="系统设置"><span class="ic">⚙</span><span class="txt" data-i18n="settingsTitle">系统设置</span></button>
-    <div class="sidebar-foot-row">
-      <span class="ver">v0.9.92 · 播放铺满窗口·跨页回到播放·封面不入目录</span>
-      <button class="rail-btn rail-collapse" id="sidebarCollapseButton" type="button" onclick="toggleBars()" title="折叠 / 展开侧栏" aria-label="折叠或展开侧栏">⇤</button>
-    </div>
-  </div>
-</aside>
+<!-- v0.9.93：侧栏已彻底移除（客户要求不再使用侧栏）。
+     导航 = 顶栏一级导航 + 媒体库标签 + 自定义模块标签 + 右上角头像菜单。
+     原侧栏里的「媒体搜索」「自定义模块」入口已迁移到顶栏，避免功能丢失。 -->
 
 <!-- ===== 主区域 ===== -->
 <div class="main">
@@ -434,7 +415,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.92";
 
     <!-- ============ 系统设置：v0.9.30 起使用独立配置页，不再是弹窗 ============
          弹窗（dialog + backdrop）会把整页盖住，媒体库表单、Caddy 入口和刮削配置
-         都被压在 720px 的框里。改成 .view 之后侧栏与顶栏保持可用，配置页宽度
+         都被压在 720px 的框里。改成 .view 之后顶栏保持可用，配置页宽度
          跟随内容区，长表单不再需要在弹窗里二次滚动。 -->
     <section class="view settings-view" id="view-settings">
       <div class="section-title">
@@ -619,20 +600,6 @@ window.VAULTHUB_ASSET_VERSION = "0.9.92";
         </div>
         <div class="theme-note" data-i18n="themeNote">主题 = 调色板 × 明暗 × 强调色 三层叠加；每套调色板自带圆角、阴影、标题字族与动效节奏，选择只保存在本浏览器。</div>
 
-        <div class="modal-sec" data-i18n="setLayout">布局</div>
-        <!-- v0.9.74：媒体库导航放顶栏还是放侧栏。顶栏 = 原型布局（默认），
-             侧栏 = v0.9.73 及以前的样子，切换只影响本浏览器。 -->
-        <div class="chips" id="layoutModeChips">
-          <button type="button" data-layout="topnav" aria-pressed="true" onclick="setLayoutMode('topnav')" data-i18n="setLayoutTop">顶部导航</button>
-          <button type="button" data-layout="sidebar" aria-pressed="false" onclick="setLayoutMode('sidebar')" data-i18n="setLayoutSide">侧边导航</button>
-        </div>
-        <div class="hint" data-i18n="setLayoutHint">顶部导航把媒体库平铺在顶栏、设置收进右上角头像菜单；侧边导航保留可折叠侧栏。两种布局下媒体库、阅读进度与播放状态完全相同。</div>
-
-        <div class="modal-sec" data-i18n="setSidebar">侧栏</div>
-        <div class="toggle-row">
-          <div class="l"><span data-i18n="setSidebarMem">侧栏宽度记忆</span><small data-i18n="setSidebarMemSub">拖拽侧栏右边缘调整宽度，自动写入本浏览器</small></div>
-          <button class="btn" type="button" onclick="resetSidebarWidth()" data-i18n="setSidebarReset">恢复默认宽度</button>
-        </div>
       </div>
 
       <!-- 刮削与硬件面板 -->
@@ -760,7 +727,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.92";
          页脚在启动时由 syncAppFooterVersion() 读取并同步，发版不会漏改。 -->
     <footer class="app-footer" id="appFooter">
       <span class="af-name">VaultHub 蜀鼠之家</span>
-      <span id="appFooterVer" class="ver">v0.9.92 · 播放铺满窗口·跨页回到播放·封面不入目录</span>
+      <span id="appFooterVer" class="ver">v0.9.93 · 播放回缩顶栏·停止即断流·剧集自动归组</span>
       <span class="af-note" data-i18n="footerAboutHint">版本与「系统设置 → 账户与登录 → 关于」中的版本参数保持一致</span>
     </footer>
 
@@ -881,7 +848,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.92";
   <div class="modal">
     <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
     <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
-    <div class="about-row" data-about-ver="1"><span data-i18n="aboutVer">版本</span><b>v0.9.92 · 播放铺满窗口·跨页回到播放·封面不入目录</b></div>
+    <div class="about-row" data-about-ver="1"><span data-i18n="aboutVer">版本</span><b>v0.9.93 · 播放回缩顶栏·停止即断流·剧集自动归组</b></div>
     <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>Go (media/manager/subtitle) · Caddy · FFmpeg · SQLite · HTML/CSS/JS</b></div>
     <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>VaultHub 内置系统监控</b></div>
     <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>
@@ -1057,14 +1024,14 @@ window.VAULTHUB_ASSET_VERSION = "0.9.92";
 
 <div class="toast" id="toast"></div>
 
-<script src="/web/js/01-state.js?v=0.9.92"></script>
-<script src="/web/js/03-quality.js?v=0.9.92"></script>
-<script src="/web/js/02-media.js?v=0.9.92"></script>
-<script src="/web/js/03-features.js?v=0.9.92"></script>
-<script src="/web/js/05-home.js?v=0.9.92"></script>
-<script src="/web/js/06-theme.js?v=0.9.92"></script>
-<script src="/web/js/07-topnav.js?v=0.9.92"></script>
-<script src="/web/js/03-audio-zoom.js?v=0.9.92"></script>
-<script src="/web/js/04-boot.js?v=0.9.92"></script>
+<script src="/web/js/01-state.js?v=0.9.93"></script>
+<script src="/web/js/03-quality.js?v=0.9.93"></script>
+<script src="/web/js/02-media.js?v=0.9.93"></script>
+<script src="/web/js/03-features.js?v=0.9.93"></script>
+<script src="/web/js/05-home.js?v=0.9.93"></script>
+<script src="/web/js/06-theme.js?v=0.9.93"></script>
+<script src="/web/js/07-topnav.js?v=0.9.93"></script>
+<script src="/web/js/03-audio-zoom.js?v=0.9.93"></script>
+<script src="/web/js/04-boot.js?v=0.9.93"></script>
 </body>
 </html>

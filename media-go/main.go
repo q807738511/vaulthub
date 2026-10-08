@@ -2932,12 +2932,76 @@ func (a *App) tmdb(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(body)
 }
 
-// compatBuilds tracks which cache keys already have a background build running
-// so a burst of requests never starts the same transcode twice.
+// v0.9.93：后台预转码（为下次打开准备可拖动的缓存）必须可取消。
+//
+// 旧实现用 context.Background() 起后台 ffmpeg：用户关掉播放器后浏览器已断开、
+// 前台流也结束了，后台那个 ffmpeg 仍会把整部片子转完（上限 compatBuildTimeout=6h）——
+// 客户看到的就是「播放器关闭 / 停止播放后，后台还有数据在跑」（CPU 占用、缓存目录持续变大）。
+//
+// 现在：构建注册表保存 cancel，并且按「是否还有人在看」决定生死 ——
+// 最后一个观看者断开（或显式 stop 播放会话）时立即取消后台转码。
+type compatBuildState struct {
+	cancel    context.CancelFunc
+	mediaPath string // 绝对路径，用于按播放会话的库内相对路径后缀匹配
+}
+
 var (
-	compatMu     sync.Mutex
-	compatBuilds = map[string]bool{}
+	compatMu       sync.Mutex
+	compatBuilds   = map[string]*compatBuildState{}
+	compatWatchers = map[string]int{} // cache 文件 → 正在观看该转码流的客户端数
 )
+
+// compatBuildMaxConcurrent 限制同时进行的后台预转码数量：同时打开多部片子时
+// 不能把整机 CPU 交给一堆后台 ffmpeg。
+const compatBuildMaxConcurrent = 2
+
+// noteCompatWatcher / releaseCompatWatcher 维护「这条转码流还有几个人在看」。
+// 归零即取消对应的后台构建（前台流本身由 r.Context() 结束）。
+func noteCompatWatcher(cache string) {
+	compatMu.Lock()
+	compatWatchers[cache]++
+	compatMu.Unlock()
+}
+func releaseCompatWatcher(cache string) {
+	compatMu.Lock()
+	if n := compatWatchers[cache]; n > 1 {
+		compatWatchers[cache] = n - 1
+	} else {
+		delete(compatWatchers, cache)
+	}
+	var cancel context.CancelFunc
+	if compatWatchers[cache] == 0 {
+		if st := compatBuilds[cache]; st != nil {
+			cancel = st.cancel
+		}
+	}
+	compatMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
+// cancelCompatBuildsForMedia 取消所有正在为某个媒体文件做预转码的后台任务。
+// 播放会话 stop 时调用：即便客户端连接还没断，也立刻停掉后台转码。
+func cancelCompatBuildsForMedia(mediaPath string) int {
+	rel := strings.TrimPrefix(mediaPath, "/")
+	compatMu.Lock()
+	var cbs []context.CancelFunc
+	for _, st := range compatBuilds {
+		if st == nil {
+			continue
+		}
+		spec := st.mediaPath
+		if spec == mediaPath || (rel != "" && strings.HasSuffix(spec, "/"+rel)) {
+			cbs = append(cbs, st.cancel)
+		}
+	}
+	compatMu.Unlock()
+	for _, cb := range cbs {
+		cb()
+	}
+	return len(cbs)
+}
 
 // compatArgs assembles the ffmpeg arguments shared by the live stream and the
 // background cache build: pick the video codec (copy when the source is already
@@ -3061,17 +3125,35 @@ func withScaleFilter(post []string, vcodec string, maxHeight int) []string {
 // buildCompatCache produces the seekable (faststart) MP4 in the background so
 // the *next* open is a plain cache hit with full Range support. It deliberately
 // uses a detached context: the user closing the tab must not abort it.
-func (a *App) buildCompatCache(disc discInput, cache, audioTrack, hw, mode string, maxHeight int) {
+// parent 是发起播放的那个客户端请求的 context：客户端断开（关播放器 / 关页面）
+// 时 parent 结束，后台转码立即取消，不再空转。
+func (a *App) buildCompatCache(parent context.Context, disc discInput, cache, audioTrack, hw, mode string, maxHeight int) {
 	compatMu.Lock()
-	if compatBuilds[cache] {
+	if _, running := compatBuilds[cache]; running {
 		compatMu.Unlock()
 		return
 	}
-	compatBuilds[cache] = true
+	if len(compatBuilds) >= compatBuildMaxConcurrent {
+		compatMu.Unlock()
+		fmt.Printf("compat precache skipped: %d builds already running\n", len(compatBuilds))
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), compatBuildTimeout)
+	if parent != nil {
+		/* 父请求结束（客户端断开）→ 取消本次预转码。父 context 生命周期总是
+		   比本构建短：请求结束即无人观看，继续转只是在烧 CPU 和磁盘。 */
+		go func() {
+			select {
+			case <-parent.Done():
+				cancel()
+			case <-ctx.Done():
+			}
+		}()
+	}
+	compatBuilds[cache] = &compatBuildState{cancel: cancel, mediaPath: disc.Spec}
 	compatMu.Unlock()
 	go func() {
 		defer func() { compatMu.Lock(); delete(compatBuilds, cache); compatMu.Unlock() }()
-		ctx, cancel := context.WithTimeout(context.Background(), compatBuildTimeout)
 		defer cancel()
 		tmp := cache + fmt.Sprintf(".bg-%d", os.Getpid())
 		pre, mid := compatArgsScaled(ctx, disc.Spec, audioTrack, hw, mode, maxHeight)
@@ -3193,8 +3275,12 @@ func (a *App) compat(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, 500, "compat playback unavailable")
 		return
 	}
+	/* v0.9.93：登记「有人在看这条转码流」。最后一个观看者断开时，
+	   后台预转码会被取消 —— 关掉播放器后不再有后台数据在跑。 */
+	noteCompatWatcher(cache)
+	defer releaseCompatWatcher(cache)
 	if env("COMPAT_PRECACHE", "1") != "0" {
-		a.buildCompatCache(disc, cache, audioTrack, hw, mode, maxHeight)
+		a.buildCompatCache(r.Context(), disc, cache, audioTrack, hw, mode, maxHeight)
 	}
 	w.Header().Set("Content-Type", "video/mp4")
 	w.Header().Set("Accept-Ranges", "none")

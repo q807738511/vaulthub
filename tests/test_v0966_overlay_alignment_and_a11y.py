@@ -14,12 +14,12 @@ LOG = (ROOT / "Update Log.md").read_text(encoding="utf-8")
 NOTES_0966 = (ROOT / ".github/RELEASE_NOTES_0.9.66.md").read_text(encoding="utf-8")
 
 checks = {
-    # A. 遮罩左缘 = 侧栏实际占位（桌面折叠为 62px 图标轨，窄屏 0）
-    "跟随拖拽宽度": "left:var(--sidebar-w);" in CSS,
-    "桌面折叠对齐图标轨": "body.sidebar-hidden .audio-fullscreen-overlay { left:62px; }" in CSS,
-    "窄屏折叠左缘归零": ".audio-fullscreen-overlay, body.sidebar-hidden .audio-fullscreen-overlay { left:0; }" in CSS,
-    "图标轨宽度与实际一致": "body.sidebar-hidden .sidebar { width: 62px !important; }" in CSS
-        and "body.sidebar-hidden .main { margin-left: 62px; }" in CSS,
+    # A. v0.9.93：侧栏已移除 —— 遮罩左缘恒为 0（--sidebar-w 已是 0），不再有折叠图标轨。
+    "跟随占位令牌": "left:var(--sidebar-w);" in CSS,
+    "占位令牌归零": "--sidebar-w: 0px;" in CSS,
+    "折叠图标轨已删除": "body.sidebar-hidden .sidebar { width: 62px !important; }" not in CSS
+        and "body.sidebar-hidden .main { margin-left: 62px; }" not in CSS
+        and "body.sidebar-hidden" not in CSS,
 
     # B. z-index 独立取值（不再与视频停靠栏同为 650）
     "遮罩独立层级": "z-index:660" in CSS and CSS.count("z-index:650") == 1,
@@ -53,8 +53,8 @@ checks = {
     "更新日志记载": "v0.9.69" in LOG,
 
     # 版本
-    "HTML版本": 'VAULTHUB_ASSET_VERSION = "0.9.92"' in HTML and HTML.count("?v=0.9.92") >= 7,
-    "脚本版本": 'VAULTHUB_SCRIPT_VERSION = "0.9.92"' in STATE,
+    "HTML版本": 'VAULTHUB_ASSET_VERSION = "0.9.93"' in HTML and HTML.count("?v=0.9.93") >= 7,
+    "脚本版本": 'VAULTHUB_SCRIPT_VERSION = "0.9.93"' in STATE,
 }
 
 failed = [name for name, ok in checks.items() if not ok]

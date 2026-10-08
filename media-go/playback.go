@@ -353,7 +353,10 @@ func (a *App) playbackSessionAction(w http.ResponseWriter, r *http.Request) {
 			cancel()
 			delete(a.tasks, id)
 		}
-		writeJSON(w, 200, map[string]any{"ok": true})
+		/* v0.9.93：显式「停止播放」要连后台预转码一起停 —— 否则客户端连接
+		   还没断（暂停态）时后台 ffmpeg 仍在把整部片子转完。 */
+		stopped := cancelCompatBuildsForMedia(s.Path)
+		writeJSON(w, 200, map[string]any{"ok": true, "precache_cancelled": stopped})
 		return
 	}
 	if action != "progress" {

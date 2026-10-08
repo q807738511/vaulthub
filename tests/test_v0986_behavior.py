@@ -12,6 +12,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# v0.9.93：把仓库根显式传给 Node 夹具（默认的 /opt/data/vaulthub-github 可能指向旧的检出）。
+import os as _os
+_os.environ.setdefault("VH_ROOT", str(ROOT))
+
 if shutil.which("node") is None:
     print("SKIP: 本机没有 node，跳过 v0.9.86 行为测试")
     sys.exit(0)

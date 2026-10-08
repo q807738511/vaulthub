@@ -32,13 +32,16 @@ def main():
     # 768px 媒体查询里 sidebar 变顶栏
     m768 = css[css.find("@media (max-width: 768px)"):]
     m768 = m768[: m768.find("/* ================= v0.9.51")]
-    check("T1 768px 段含 sidebar 顶栏化", "top: var(--topbar-h); bottom: auto;" in m768 and "width: 100% !important" in m768)
-    check("T1 顶栏高度 44px", "height: 44px" in m768)
-    check("T1 nav 横向滚动", ".sidebar .nav {" in m768 and "flex-direction: row" in m768 and "overflow-x: auto" in m768)
-    check("T1 main 边距归零", ".main { margin-left: 0 !important" in m768)
-    check("T1 折叠按钮隐藏", ".rail-collapse { display: none; }" in m768)
-    check("T1 resizer 隐藏", ".sidebar-resizer { display: none; }" in m768)
-    check("T1 nav-group 隐藏", ".sidebar .nav-group { display: none; }" in m768)
+    # v0.9.93：侧栏已移除，窄屏不再需要「侧栏顶栏化」规则；改为断言老规则确实清掉。
+    check("T1 窄屏不再有侧栏顶栏化规则", ".sidebar" not in m768)
+    # v0.9.93：侧栏整体移除后，窄屏也不再需要这些「侧栏顶栏化 / 折叠 / resizer / 分组」
+    # 规则；媒体库标签在顶栏（.tn-libs）自身可横向滚动。这里断言新口径。
+    check("T1 窄屏窄边距", ".topbar { padding:0 12px; }" in m768)
+    check("T1 媒体库标签横向滚动", "overflow-x: auto" in css and ".tn-libs {" in css)
+    check("T1 窄屏内容区占满宽度", ".main { margin-left:0; width:100%; }" in m768)
+    check("T1 阅读器窄屏仍给顶栏留位", "inset:var(--topbar-h) 0 0 0" in m768)
+    for dead in (".rail-collapse", ".sidebar-resizer", ".sidebar .nav-group", ".sidebar .nav {"):
+        check(f"T1 旧侧栏规则已删除 {dead}", dead not in css)
 
     # ---------- T2 密码验证鉴权 ----------
     mgr = read("manager/main.go")

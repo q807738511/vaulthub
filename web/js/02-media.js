@@ -5,7 +5,7 @@
 const MEDIA_VIEWS = ["comic", "movie", "audio"];
 
 /* v0.9.62：播放影视/音乐时，海报/封面作为主区域背景虚化。
-   背景层仅在 .main 内容区渲染，不影响侧栏与顶栏。 */
+   背景层仅在 .main 内容区渲染，不影响顶栏与播放器浮层。 */
 function setPlaybackBg(imageUrl) {
   const main = document.querySelector(".main");
   if (!main) return;
@@ -58,6 +58,74 @@ function claimExclusivePlayback(kind, exceptVideo = null) {
   }
 }
 
+/* ================= v0.9.93：播放占用（顶栏回缩）与「彻底停止」 =================
+   两项客户反馈的落点：
+     ① 播放影视时顶栏回缩、窗口空间真正释放 —— body.player-immersive 把 --topbar-h
+        归零：.main 的 padding-top 与播放器浮层的 top 一起变成 0，顶栏同时滑出视口。
+        不是「拿浮层盖住顶栏」，而是真的不再占位。
+     ② 关闭 / 停止后不能还有后台数据在跑 —— 只 pause() 会留着 src：浏览器继续读流、
+        服务端继续转码（生产实测：关掉播放器后 ffmpeg 仍在写缓存、磁盘还在涨）。
+        这里统一断源 + load() 让网络请求立刻结束，并中止分片下载 / Worker / 播放会话。 */
+function setPlayerImmersive(on) {
+  const next = !!on;
+  if (document.body.classList.contains("player-immersive") === next) return next;
+  document.body.classList.toggle("player-immersive", next);
+  return next;
+}
+/* 只有「完整播放器可见」才回缩顶栏：缩成控制器小窗、离开播放页（浮标接管）、
+   关闭播放器三种情况都要把顶栏还回来。 */
+function syncPlayerImmersive() {
+  let on = false;
+  try {
+    const cur = typeof activePlayback === "function" ? activePlayback() : null;
+    if (cur && cur.kind === "video" && playbackSurfaceVisible(cur)) {
+      const video = liveActiveVideoElement(cur);
+      const overlay = video && video.closest(".media-reader-overlay");
+      on = !(overlay && overlay.classList.contains("video-minimized"));
+    }
+  } catch (e) { on = false; }
+  return setPlayerImmersive(on);
+}
+/* 断开一个 <video>/<audio>：暂停 → 去 src → load()。load() 会立刻中止进行中的
+   网络读取（含分片流），这是「关闭后不再有后台数据」的关键一步。 */
+function teardownMediaElement(el) {
+  if (!el || typeof el.pause !== "function") return false;
+  try {
+    el.pause();
+    el.removeAttribute("src");
+    [...(el.querySelectorAll ? el.querySelectorAll("source") : [])].forEach(node => node.remove());
+    if (typeof el.load === "function") el.load();
+    if (Number.isFinite(el.currentTime)) el.currentTime = 0;
+  } catch (e) {}
+  return true;
+}
+/* 彻底停止一个视频播放会话：Worker / 分片下载 / 转码会话 / 元素 / 计时器一次清干净。 */
+function hardStopVideoPlayback(root) {
+  if (!root) return;
+  if (root.__wasmAbort) { try { root.__wasmAbort.abort(); } catch (e) {} root.__wasmAbort = null; }
+  terminateWasmVideo(root);
+  teardownMediaElement(root.querySelector && root.querySelector("video[data-movie-player]"));
+  if (root.querySelectorAll) root.querySelectorAll("audio").forEach(teardownMediaElement);
+  stopVideoPlaybackSession(root);
+  clearTimeout(root.__videoProgressTimer);
+  clearTimeout(root.__videoChromeTimer);
+  mediaKeepAliveStop("video");
+}
+/* 页面卸载（刷新 / 关标签）时也要停掉播放会话：否则服务端会话与后台转码会挂到超时。
+   sendBeacon 在卸载流程里仍然发得出去（同源，带会话 Cookie）。 */
+function flushPlaybackOnUnload() {
+  document.querySelectorAll("video[data-movie-player], #audioPlayerElement").forEach(el => { try { el.pause(); } catch (e) {} });
+  const ids = [...document.querySelectorAll("[data-playback-session]")]
+    .map(root => String(root.dataset.playbackSession || "")).filter(Boolean);
+  if (!ids.length || !navigator.sendBeacon) return;
+  ids.forEach(id => { try { navigator.sendBeacon(`/api/media/playback/sessions/${encodeURIComponent(id)}/stop`, new Blob([], { type: "application/json" })); } catch (e) {} });
+}
+if (typeof window !== "undefined" && window.addEventListener && !window.__vhPlaybackUnloadBound) {
+  window.__vhPlaybackUnloadBound = true;
+  window.addEventListener("pagehide", flushPlaybackOnUnload);
+  window.addEventListener("beforeunload", flushPlaybackOnUnload);
+}
+
 /* ================= 外连服务（v0.7.0：从「资料库」页迁入系统设置） =================
    过去每个大类页面里都内嵌一份 Komga/Emby/Navidrome 的表单，导致侧边栏和顶栏
    反复出现同样的大类入口。现在外连服务和本地媒体库一样，只是「媒体库」的一种
@@ -89,14 +157,14 @@ function addExternalMediaService() {
   document.getElementById("extLibLan").value = "";
   document.getElementById("extLibProxy").value = "";
   renderExternalServiceList();
-  if (typeof renderHomeLibraryNav === "function") renderHomeLibraryNav();
+  if (typeof renderLibraryNav === "function") renderLibraryNav();
   toast("✅ " + tf("extLibAdded", { name }));
 }
 function removeExternalMediaService(id) {
   externalServices = externalServices.filter(x => x.id !== id);
   saveExternalServices();
   renderExternalServiceList();
-  if (typeof renderHomeLibraryNav === "function") renderHomeLibraryNav();
+  if (typeof renderLibraryNav === "function") renderLibraryNav();
   toast("✅ " + t("extLibRemoved"));
 }
 function renderExternalServiceList() {
@@ -777,17 +845,95 @@ function parseSeriesEpisode(path) {
   title = clean(title) || `第 ${episode || "?"} 集`;
   return { show, key: show.toLowerCase(), season: season || 1, episode: episode || 0, title, label: `S${String(season || 1).padStart(2,"0")}E${String(episode || 0).padStart(2,"0")}` };
 }
+/* v0.9.93：归组键只看路径，不看刮削状态。
+   旧实现键 = meta.show_title || parsed.show：第一集刮到中文剧名后键就变了，
+   其余还没刮到的分集仍用文件名解析出的名字 → 同一部剧被拆成两张卡片，
+   客户看到的就是「刮削出正确的媒体名称，但出现第一集后其他集完全没同步到同一剧集」。
+   路径口径下同一部剧的所有分集键恒定，刮削只影响显示名，不再影响归组。 */
+function seriesGroupKeyOf(path, parsed) {
+  const parts = String(path || "").split(/[\\/]+/).filter(Boolean);
+  parts.pop();                                   /* 去掉文件名，只看目录 */
+  const root = [];
+  for (const seg of parts) {
+    if (/^Season\s*\d+$/i.test(seg) || /^第\s*\d+\s*季$/.test(seg)) break;  /* 季目录之上才是剧根 */
+    root.push(seg);
+  }
+  const dirKey = String(root[root.length - 1] || "").trim();
+  const showKey = String((parsed && (parsed.key || parsed.show)) || "").trim();
+  return (dirKey + "|" + showKey).toLowerCase();
+}
 function buildSeriesShows(files) {
   const shows = new Map();
   files.forEach(file => {
     const path = String(file.path), parsed = parseSeriesEpisode(path), meta = movieMetadataFor(path);
-    const title = meta.show_title || parsed.show, key = title.toLowerCase();
-    if (!shows.has(key)) shows.set(key, { key, title, poster: meta.poster || "", logo: meta.logo || "", fanart: meta.fanart || "", backdrop: meta.backdrop || "", watched: !!meta.watched, overview: meta.overview || "", year: meta.year || "", provider: meta.provider || "文件名展示", seasons: new Map(), files: [] });
-    const show = shows.get(key); show.poster ||= meta.poster || ""; show.logo ||= meta.logo || ""; show.fanart ||= meta.fanart || ""; show.backdrop ||= meta.backdrop || ""; show.watched ||= !!meta.watched; show.overview ||= meta.overview || ""; show.year ||= meta.year || "";
+    const key = seriesGroupKeyOf(path, parsed);
+    if (!shows.has(key)) shows.set(key, { key, title: "", scrapedTitle: "", poster: "", logo: "", fanart: "", backdrop: "", watched: false, overview: "", year: "", provider: "文件名展示", seasons: new Map(), files: [] });
+    const show = shows.get(key);
+    /* 剧名：任一分集刮到 show_title 就用它（整组统一显示），否则回落文件名解析结果。 */
+    const scrapedTitle = String(meta.show_title || "").trim();
+    if (scrapedTitle && !show.scrapedTitle) show.scrapedTitle = scrapedTitle;
+    if (!show.scrapedTitle) show.title = String(parsed.show || "").trim();
+    else show.title = show.scrapedTitle;
+    show.poster ||= meta.poster || ""; show.logo ||= meta.logo || ""; show.fanart ||= meta.fanart || ""; show.backdrop ||= meta.backdrop || ""; show.watched ||= !!meta.watched; show.overview ||= meta.overview || ""; show.year ||= meta.year || ""; show.provider = show.scrapedTitle ? (meta.provider || show.provider) : show.provider;
     if (!show.seasons.has(parsed.season)) show.seasons.set(parsed.season, []);
     show.seasons.get(parsed.season).push({ ...file, parsed, meta }); show.files.push(file);
   });
   return [...shows.values()].sort((a,b)=>a.title.localeCompare(b.title,"zh-CN")).map(show => { show.seasonList = [...show.seasons.entries()].sort((a,b)=>a[0]-b[0]).map(([season, episodes]) => ({ season, episodes: episodes.sort((a,b)=>(a.parsed.episode||0)-(b.parsed.episode||0)) })); return show; });
+}
+/* v0.9.93：把「这部剧的刮削信息」同步到它名下每一条分集记录。
+   客户反馈的另一半：「出现第一集后其他媒体完全没同步到同一剧集上」——
+   刮削只写回了被刮的那一集，同剧其它集的记录仍是空的。这里按路径归组一次补齐，
+   只补空字段，不覆盖各集自己的分集名/评分。 */
+function syncSeriesShowMetadata(libId, show) {
+  if (!libId || !show) return 0;
+  const paths = (typeof seriesShowEpisodePaths === "function") ? seriesShowEpisodePaths(show) : [];
+  if (!paths.length) return 0;
+  const title = String(show.title || "").trim();
+  const all = readMovieMetadata();
+  let changed = 0;
+  paths.forEach(path => {
+    /* v0.9.93：还没刮过的分集在本地根本没有记录 —— 旧写法 `if (!cur) return` 会跳过它们，
+       于是「第一集有剧名、其他集什么都没有」。这里按基线记录补出来。 */
+    const cur = all[path] || movieBaseMetadata(path);
+    const patch = {};
+    if (title && cur.show_title !== title) patch.show_title = title;
+    if (show.poster && !cur.poster) patch.poster = show.poster;
+    if (show.fanart && !cur.fanart) patch.fanart = show.fanart;
+    if (show.backdrop && !cur.backdrop) patch.backdrop = show.backdrop;
+    if (show.logo && !cur.logo) patch.logo = show.logo;
+    if (show.overview && !cur.overview) patch.overview = show.overview;
+    if (show.year && !cur.year) patch.year = show.year;
+    if (show.provider && cur.provider !== show.provider) patch.provider = show.provider;
+    if (cur.media_type !== "series") patch.media_type = "series";
+    if (!Object.keys(patch).length) return;
+    all[path] = { ...cur, ...patch };
+    changed++;
+  });
+  if (!changed) return 0;
+  writeMovieMetadata(all);
+  pushMovieScrapeResults(libId, paths);
+  return changed;
+}
+/* 刮到剧名的那一刻就把剧名同步给同一部剧的所有分集（不等下一次整库渲染）。 */
+function syncSeriesShowTitleToSiblings(lib, files, path, showTitle) {
+  const title = String(showTitle || "").trim();
+  if (!title || !lib || lib.type !== "series") return 0;
+  const key = seriesGroupKeyOf(path, parseSeriesEpisode(path));
+  const all = readMovieMetadata();
+  const touched = [];
+  (files || []).forEach(file => {
+    const p = String(file && file.path || "");
+    if (!p || p === path) return;
+    if (seriesGroupKeyOf(p, parseSeriesEpisode(p)) !== key) return;
+    const cur = all[p] || movieBaseMetadata(p);
+    if (cur.show_title === title) return;
+    all[p] = { ...cur, show_title: title, media_type: "series" };
+    touched.push(p);
+  });
+  if (!touched.length) return 0;
+  writeMovieMetadata(all);
+  pushMovieScrapeResults(lib.id, touched);
+  return touched.length;
 }
 const seriesShowMemory = {};
 function seriesShowStoreKey(libId, showKey) { return `vaulthub_series_show_${libId}_${showKey}`; }
@@ -1639,7 +1785,11 @@ async function scrapeOneMovie(lib, files, file) {
     writeMovieMetadata(all);
     /* v0.9.89：命中即本地化 —— 图片落盘 + 写 NFO，让下一次进库（含换设备/换浏览器）
        直接读媒体目录里的本地元数据，不再整库联网刮削。串行队列，避免并发写盘风暴。 */
-    if (patch.scrape_state === "ok") queueMovieLocalization(lib, path);
+    if (patch.scrape_state === "ok") {
+      queueMovieLocalization(lib, path);
+      /* v0.9.93：剧集刮到剧名后立刻同步给同一部剧的其它分集。 */
+      if (mediaType === "series" && patch.show_title) syncSeriesShowTitleToSiblings(lib, files, path, patch.show_title);
+    }
     return patch.scrape_state === "ok";
   };
   /* 文件名没有任何可识别标题（原盘片段、音轨编号等）→ 不发请求，标记 skip，
@@ -1828,7 +1978,10 @@ function renderMovieLibraryContent(host, lib, files) {
   host.innerHTML = `<section class="content-collection">${mediaLibraryHeading(lib, `${files.length} 部`)}${body}</section>`;
 }
 function renderSeriesLibraryContent(host, lib, files) {
-  const shows = buildSeriesShows(files); shows.forEach(show => rememberSeriesShow(lib.id, show));
+  const shows = buildSeriesShows(files);
+  /* v0.9.93：先把每部剧的刮削信息补齐到全部同剧分集，再写卡片缓存 —— 卡片与
+     详情页看到的就是同一份数据，不再出现「第一集有剧名、其他集还停在文件名」。 */
+  shows.forEach(show => { syncSeriesShowMetadata(lib.id, show); rememberSeriesShow(lib.id, show); });
   const body = shows.length ? `<div class="series-show-grid">${shows.map(show => renderSeriesShowCard(lib, show)).join("")}</div>` : '<div class="empty-tip">该电视剧库暂无支持的剧集文件</div>';
   host.innerHTML = `<section class="content-collection">${mediaLibraryHeading(lib, `${shows.length} 部剧 · ${files.length} 集`)}${body}</section>`;
 }
@@ -1887,7 +2040,7 @@ function closeEpisodeDetail() {
   closeMovieDetails();
   if (target) openSeriesDetails(target.libId, target.showKey);
 }
-async function openSeriesDetails(libId, showKey) { enterMovieDetailSidebarMode(); const lib=findMediaLibrary(libId), viewer=document.getElementById("local-media-viewer-movie"); if(!lib||!viewer)return; const show=readSeriesShow(libId,showKey); if(!show)return; activeSeriesDetail={libId, showKey}; seriesEpisodeReturn=null; const hero={title:show.title,overview:seriesHeroOverview(show),scrape_ok:hasScrapedInfo(show),poster:show.poster,logo:show.logo,fanart:show.fanart,backdrop:show.backdrop,year:show.year,provider:show.provider,watched:show.watched,media_type:"series"}; /* v0.9.51：进入剧集详情即把该剧的分集按季/集顺序设为播放队列，
+async function openSeriesDetails(libId, showKey) { const lib=findMediaLibrary(libId), viewer=document.getElementById("local-media-viewer-movie"); if(!lib||!viewer)return; const show=readSeriesShow(libId,showKey); if(!show)return; activeSeriesDetail={libId, showKey}; seriesEpisodeReturn=null; const hero={title:show.title,overview:seriesHeroOverview(show),scrape_ok:hasScrapedInfo(show),poster:show.poster,logo:show.logo,fanart:show.fanart,backdrop:show.backdrop,year:show.year,provider:show.provider,watched:show.watched,media_type:"series"}; /* v0.9.51：进入剧集详情即把该剧的分集按季/集顺序设为播放队列，
      这样播放器的「上一个 / 下一个 / 播放列表」走的是同一部剧而不是整库。 */
   setVideoPlaylist(libId, (show.seasonList||[]).flatMap(season=>(season.episodes||[]).map(ep=>({path:ep.path}))));
   const firstPath = show.files?.[0]?.path || "";
@@ -2462,7 +2615,7 @@ async function shareMovie(libId, path, title) {
   }
   openShareDialog({ libId, path, title, url, external, reachable });
 }
-async function openMovieDetails(libId,path){enterMovieDetailSidebarMode();const lib=findMediaLibrary(libId),viewer=document.getElementById("local-media-viewer-movie");if(!lib||!viewer)return;try{scraperStatus._recLibId = libId;}catch(e){}let meta=movieMetadataFor(path);/* v0.9.85：演职人员/推荐缓存是「某一种语言」的结果，界面语言变了必须重取。 */if(meta.cast_lang && meta.cast_lang!==tmdbLangTag()){meta={...meta,cast:undefined,recommendations:undefined,cast_lang:undefined};}activeMovieDetail={libId,path};viewer.innerHTML=renderMovieDetails(lib,path,meta);try{const res=await fetch(`/api/media/metadata?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}`,{cache:"no-store"});if(res.ok){const local=await res.json();if(local.nfo||local.poster||local.logo||local.fanart||local.backdrop||local.tags?.length||local.watched||local.user_rating||local.subtitles?.length){meta={...meta,...local,title:local.title||meta.title,year:local.year||meta.year};const all=readMovieMetadata();all[path]=meta;writeMovieMetadata(all);viewer.innerHTML=renderMovieDetails(lib,path,meta);}}}catch(e){}/* v0.9.78：修复「影视按 TMDB 评分推荐依旧无法生效」——
+async function openMovieDetails(libId,path){const lib=findMediaLibrary(libId),viewer=document.getElementById("local-media-viewer-movie");if(!lib||!viewer)return;try{scraperStatus._recLibId = libId;}catch(e){}let meta=movieMetadataFor(path);/* v0.9.85：演职人员/推荐缓存是「某一种语言」的结果，界面语言变了必须重取。 */if(meta.cast_lang && meta.cast_lang!==tmdbLangTag()){meta={...meta,cast:undefined,recommendations:undefined,cast_lang:undefined};}activeMovieDetail={libId,path};viewer.innerHTML=renderMovieDetails(lib,path,meta);try{const res=await fetch(`/api/media/metadata?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}`,{cache:"no-store"});if(res.ok){const local=await res.json();if(local.nfo||local.poster||local.logo||local.fanart||local.backdrop||local.tags?.length||local.watched||local.user_rating||local.subtitles?.length){meta={...meta,...local,title:local.title||meta.title,year:local.year||meta.year};const all=readMovieMetadata();all[path]=meta;writeMovieMetadata(all);viewer.innerHTML=renderMovieDetails(lib,path,meta);}}}catch(e){}/* v0.9.78：修复「影视按 TMDB 评分推荐依旧无法生效」——
    旧逻辑只在 meta.tmdb_id 存在且非「本地 NFO」时才调 TMDB 详情接口，
    而默认豆瓣/文件名刮削的影片没有 tmdb_id → 推荐与 TMDB 评分整段被跳过，
    用户看到的就是「推荐永远不生效」。
@@ -3009,9 +3162,9 @@ async function refreshMediaLibraries(notify) {
     /* v0.9.74：媒体库列表变化后，书刊页的整库索引与统计缓存一并失效。 */
     bookShelfIndexCache = {};
     bookShelfCountsCache = {};
-    /* 媒体库列表变化后，系统设置里的表格、侧栏条目和顶栏统计都要跟着更新。 */
+    /* 媒体库列表变化后，系统设置里的表格、顶栏标签与顶栏统计都要跟着更新。 */
     if (typeof renderHomeLibTable === "function") renderHomeLibTable();
-    if (typeof renderHomeLibraryNav === "function") renderHomeLibraryNav();
+    if (typeof renderLibraryNav === "function") renderLibraryNav();
     if (typeof renderHomeCount === "function") renderHomeCount();
     ["comic", "movie", "audio"].forEach(group => renderLocalMedia(group));
     if (notify) toast("✅ 本地媒体库已刷新");
@@ -3048,7 +3201,7 @@ function selectLocalLibrary(group, id) {
 }
 
 /* ================= 媒体搜索（v0.9.17） =================
-   侧栏「媒体搜索」不再打开系统设置，而是切到 #view-search 页面并
+   顶栏「媒体搜索」不再打开系统设置，而是切到 #view-search 页面并
    直接检索所有已索引媒体库的文件名，命中结果可直接打开播放/阅读。 */
 let mediaSearchTimer = null;
 let mediaSearchToken = 0;
@@ -3201,6 +3354,7 @@ function resumeActivePlayback(cur) {
     switchView("movie", cur.libId);
     const overlay = video.closest(".media-reader-overlay");
     if (overlay) overlay.classList.remove("video-minimized", "video-controller-docked");
+    syncPlayerImmersive();
     video.closest(".media-video-body")?.querySelector(".video-chrome")?.classList.remove("video-chrome-minimized");
     expandVideoPlayer(video);
     if (video.paused) video.play().catch(() => {});
@@ -3236,7 +3390,8 @@ function stopActivePlayback() {
   if (!cur) return;
   if (cur.kind === "audio") { audioStop(); return; }
   const video = liveActiveVideoElement(cur);
-  if (video) { try { video.pause(); } catch (e) {} }
+  if (video) hardStopVideoPlayback(video.closest(".media-video-body"));
+  setPlayerImmersive(false);
   clearActivePlayback("video");
 }
 function normalizeFilePayload(data) {
@@ -4977,7 +5132,7 @@ function viewerShell(group, lib, path, body, url, opts = {}) {
      PDF/图片/音频仍用固定一屏高度（iframe 需要 height:100%）。 */
   const doc = !opts.player && opts.doc === true;
   /* v0.9.92（需求）：播放影视媒体时自动占满整个窗口 —— 旧布局是
-     top:var(--topbar-h); left:var(--sidebar-w)，右侧永远留一列侧栏、
+     top:var(--topbar-h)；v0.9.92 起 player-fullbleed 把浮层拉到 inset:0，
      上方留一条顶栏。player-fullbleed 把浮层拉到 inset:0（CSS 里定义），
      全屏按钮（浏览器全屏）仍然保留，二者互不冲突。 */
   return `<div class="media-reader-overlay ${readerThemeClass()}${doc ? " reader-doc" : ""}${opts.player ? " movie-player player-fullbleed" : ""}">${head}<div class="media-reader-body" data-reader-scroll onscroll="trackReaderProgress(this)">${chapterHtml}<div class="media-reader-wrap">${body}</div></div></div>`;
@@ -5723,7 +5878,10 @@ function terminateWasmVideo(root) {
 async function startWasmVideoFallback(root, video, direct) {
   if (!detectWasmSimd()) throw new Error("当前浏览器不支持 WebAssembly SIMD");
   setVideoEngine(root, VIDEO_ENGINE_WASM, "加载原片并启动软件解码");
-  const response = await fetch(direct, { cache: "no-store" });
+  /* v0.9.93：整片下载必须可中止 —— 关闭播放器后不能继续把几百 MB 拉进内存。 */
+  const abort = new AbortController();
+  root.__wasmAbort = abort;
+  const response = await fetch(direct, { cache: "no-store", signal: abort.signal });
   if (!response.ok) throw new Error(`原片读取失败 HTTP ${response.status}`);
   const size = Number(response.headers.get("Content-Length") || 0);
   if (size > WASM_INPUT_LIMIT) {
@@ -5936,6 +6094,8 @@ function minimizeVideoPlayer(el) {
   root.dataset.videoControlsVisible = "true";
   closeVideoPanels(root);
   root.querySelector(".video-chrome")?.classList.add("video-chrome-minimized");
+  /* v0.9.93：小窗停靠时不占用整个窗口 —— 顶栏还给用户。 */
+  syncPlayerImmersive();
 }
 function expandVideoPlayer(el) {
   const root = videoRootOf(el);
@@ -5945,6 +6105,7 @@ function expandVideoPlayer(el) {
   root.querySelector(".video-chrome")?.classList.remove("video-chrome-minimized");
   root.dataset.videoChromeCollapsed = "false";
   scheduleVideoChromeHide(root);
+  syncPlayerImmersive();
 }
 /* 右上角全屏：优先整块播放区全屏（控制栏一起进全屏），浏览器拒绝时回落到 video 元素。 */
 async function toggleVideoFullscreen(el) {

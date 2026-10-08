@@ -56,9 +56,11 @@ check("2b show_title 覆盖 TMDB / TVDB / 豆瓣 三条命中路径",
       MEDIA.count('base.show_title || ""') >= 3)
 check("2c 剧集 title 改为分集名（不再重复剧名）", "function seriesEpisodeTitleOf(" in MEDIA
       and MEDIA.count("seriesEpisodeTitleOf(path)") >= 2)
+# v0.9.93：归组键改为路径口径（刮削状态不再影响分组），剧名仍优先取刮削的 show_title。
 check("2d 剧集卡片与播放器标题仍优先用 show_title",
-      "const title = meta.show_title || parsed.show" in MEDIA
-      and "return { main: `${meta.show_title || parsed.show} · ${parsed.label}`" in MEDIA)
+      "const scrapedTitle = String(meta.show_title || \"\").trim();" in MEDIA
+      and "if (scrapedTitle && !show.scrapedTitle) show.scrapedTitle = scrapedTitle;" in MEDIA
+      and "show.title = show.scrapedTitle;" in MEDIA)
 check("2e NFO 落盘带 show_title（showtitle）", 'show_title: meta.show_title || ""' in MEDIA
       and 'xml:"showtitle' in (ROOT / "media-go/local_metadata.go").read_text(encoding="utf-8"))
 check("2f 语言开关仍由 tmdbLangTag() 驱动", "&lang=${tmdbLangTag()}" in MEDIA)
@@ -109,14 +111,14 @@ check("3k i18n 三语言都补了索引加载提示",
       and STATE.count("{n} / {total}") == 3)
 
 # ============ 版本与文档 ============
-check("4a index.html 资源版本 0.9.90 ×10", HTML.count("?v=0.9.92") == 10)
-check("4b ASSET_VERSION 0.9.90", 'window.VAULTHUB_ASSET_VERSION = "0.9.92";' in HTML)
-check("4c SCRIPT_VERSION 0.9.90", 'const VAULTHUB_SCRIPT_VERSION = "0.9.92";' in STATE)
+check("4a index.html 资源版本 0.9.90 ×10", HTML.count("?v=0.9.93") == 10)
+check("4b ASSET_VERSION 0.9.90", 'window.VAULTHUB_ASSET_VERSION = "0.9.93";' in HTML)
+check("4c SCRIPT_VERSION 0.9.90", 'const VAULTHUB_SCRIPT_VERSION = "0.9.93";' in STATE)
 # v0.9.92（上轮审查项）：标语整串一致，而不是只数版本前缀。
 _slogans_4d = re.findall(r"v0\.9\.9\d · [^<\"]+", HTML)
 check("4d 标语三处整串一致",
       len(_slogans_4d) == 3 and len(set(_slogans_4d)) == 1, sorted(set(_slogans_4d)))
-check("4e 更新日志顶部为 v0.9.90", LOG.lstrip().startswith("# VaultHub 蜀鼠之家 v0.9.92"))
+check("4e 更新日志顶部为 v0.9.90", LOG.lstrip().startswith("# VaultHub 蜀鼠之家 v0.9.93"))
 check("4f 更新日志写明「整库可见不变 + 三条链路根因」",
       "整库可见" in LOG and "37 万次主线程 JSON 解析" in LOG and "370 次请求" in LOG)
 check("4g 发布说明文件存在且含本版内容",

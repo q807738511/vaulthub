@@ -22,6 +22,10 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+
+# v0.9.93：把仓库根显式传给 Node 夹具（默认的 /opt/data/vaulthub-github 可能指向旧的检出）。
+import os as _os
+_os.environ.setdefault("VH_ROOT", str(ROOT))
 MEDIA = ROOT / "web/js/02-media.js"
 TOPNAV = ROOT / "web/js/07-topnav.js"
 
@@ -136,7 +140,7 @@ vm.runInContext(mediaSrc + "\n" + topnavSrc + `
 ;this.__api = {
   loadLocalFiles, setBookShelfTab, setComicShelfView, toggleBookFavorite, readBookFavorites,
   gotoBookShelfPage, setBookPageSize, cycleBookSort, setBookCols, cycleBookDensity,
-  bookShelfPrefs, renderTopLibTabs, syncTopLibTabs, setLayoutMode, currentLayoutMode, toggleBookFavButtons,
+  bookShelfPrefs, renderTopLibTabs, syncTopLibTabs, applyLayoutMode, currentLayoutMode, toggleBookFavButtons,
   localMediaLibraries, localMediaSelection, externalServices, getTab: () => bookShelfTab, getPage: () => bookShelfPage
 };`, ctx);
 const api = sb.__api;
@@ -256,11 +260,14 @@ const chk = (name, cond, extra) => {
   const states = fakeTabs.map(t => t.attrs["aria-current"]);
   chk("高亮精确落在同组的目标库上", states.join(",") === "false,false,true", states.join(","));
 
-  /* 布局模式 */
-  api.setLayoutMode("sidebar");
-  chk("切到侧边导航时 body 类与偏好同步", !bodyClasses.has("layout-topnav") && JSON.parse(store["dwu_settings"]).layout === "sidebar");
-  api.setLayoutMode("topnav");
-  chk("切回顶部导航", bodyClasses.has("layout-topnav") && api.currentLayoutMode() === "topnav");
+  /* 布局模式：v0.9.93 起侧栏已移除，布局恒为顶栏（旧参数按顶栏处理）。 */
+  api.applyLayoutMode();
+  chk("布局恒为顶栏", bodyClasses.has("layout-topnav") && api.currentLayoutMode() === "topnav");
+  chk("侧栏相关函数已删除（不会留下死调用）",
+      api.renderLayoutChips === undefined && api.toggleBars === undefined
+      && api.initSidebarResizer === undefined && api.loadSidebarWidth === undefined);
+  chk("本地偏好里不再写 layout 字段",
+      !store["dwu_settings"] || !("layout" in JSON.parse(store["dwu_settings"])));
 
   console.log("SUMMARY pass=" + pass + " fail=" + fail);
   process.exit(fail ? 1 : 0);

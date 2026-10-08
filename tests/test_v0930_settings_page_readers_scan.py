@@ -34,7 +34,9 @@ assert 'id="settingsModal"' not in HTML, "settingsModal 容器必须删除"
 assert "#settingsModal" not in CSS, "settingsModal 相关样式必须删除"
 assert "function openSettingsPage(" in STATE and "function closeSettingsPage(" in STATE, "缺少配置页开关函数"
 assert 'switchView("settings")' in STATE, "打开系统设置必须切到 settings 视图"
-assert "function openSettingsModalFromSidebar() { openSettingsPage(); }" in STATE, "侧栏设置按钮必须打开配置页"
+# v0.9.93：侧栏设置按钮已移除 —— 改为断言顶栏头像菜单直达配置页，且旧入口不再残留。
+assert "function openSettingsModalFromSidebar" not in STATE, "侧栏设置入口必须删除"
+assert 'onclick="topUserMenuGo(\'library\')"' in HTML, "头像菜单必须直达系统设置"
 assert "openSettingsPage(\"account\")" in STATE, "账户入口必须直达账户与登录页"
 assert 'onclick="closeSettingsPage()"' in SETTINGS, "配置页必须有返回入口"
 assert "settingsReturnView" in STATE, "关闭配置页要回到进入前的视图"
@@ -115,9 +117,9 @@ assert ".media-reader-overlay.reader-theme-custom .media-reader-body" in CSS, "�
 assert "readerThemeClass()" in JS, "阅读器必须应用主题类"
 
 # ---------------------------------------------------------------- 版本与发布引用
-assert HTML.count("v0.9.92") >= 1, "关于与侧栏版本必须是 v0.9.92"
-assert 'VAULTHUB_ASSET_VERSION = "0.9.92"' in HTML, "资源版本必须是 0.9.91"
-assert 'VAULTHUB_SCRIPT_VERSION = "0.9.92"' in STATE, "脚本版本必须是 0.9.91"
+assert HTML.count("v0.9.93") >= 1, "关于与侧栏版本必须是 v0.9.93"
+assert 'VAULTHUB_ASSET_VERSION = "0.9.93"' in HTML, "资源版本必须是 0.9.91"
+assert 'VAULTHUB_SCRIPT_VERSION = "0.9.93"' in STATE, "脚本版本必须是 0.9.91"
 assert "docker.io/q807738511/vaulthub:latest" in COMPOSE, "v0.9.56 起 Compose 跟随 latest（v0.9.90 起主仓库为 Docker Hub）"
 assert (ROOT / ".github/RELEASE_NOTES_0.9.56.md").exists(), "缺少 v0.9.56 release notes"
 

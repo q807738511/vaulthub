@@ -18,7 +18,7 @@ let vaultHubSessionPingedAt = 0;
    历史故障：v0.8.3→v0.8.5 的前端修改在服务端已生效，但浏览器仍执行缓存里的
    旧 02-media.js，用户看到「没有更新」。现在入口页 no-store、静态资源带 ?v=，
    并在启动时做一次一致性自查，不一致就绕过缓存强制重载一次。 */
-const VAULTHUB_SCRIPT_VERSION = "0.9.92";
+const VAULTHUB_SCRIPT_VERSION = "0.9.93";
 function ensureFreshAssets() {
   /* expected 为空 = 浏览器执行的 index.html 早于 v0.8.6（旧版本入口页没有声明
      版本号），同样属于"页面是旧的"，也需要换 URL 重新取一次。 */
@@ -206,7 +206,7 @@ async function initVaultHubAuth() {
 
 /* ---------- 退出登录 ---------- */
 /* 主动退出：先让服务端销毁 Session，再复位前端状态并显示登录遮罩。
-   本地界面偏好（主题/语言/侧栏宽度）保留，不做清理。 */
+   本地界面偏好（主题/语言）保留，不做清理。 */
 async function logoutVaultHub() {
   vaultHubAuthEpoch++;
   try { await fetch('/api/logout', { method: 'POST', credentials: 'same-origin' }); } catch (_) {}
@@ -338,7 +338,7 @@ const I18N = {
   "zh-CN": {
     mpToken: "MoviePilot API Token",
 
-    setModuleSub: "侧栏不再放「添加模块」按钮，模块的显隐与自定义网页在这里管理", setModuleOpen: "打开模块设置",
+    setModuleSub: "导航里不再放「添加模块」按钮，模块的显隐与自定义网页在这里管理", setModuleOpen: "打开模块设置",
 
     /* ---- v0.7.0：媒体库优先导航、账户菜单、头像、构建进度 ---- */
     navGroupLibrary: "媒体库", navManage: "管理 ›",
@@ -367,7 +367,7 @@ const I18N = {
     editTitleLabel: "媒体名称（用于刮削搜索）",
     editYearLabel: "年份",
     editScrapeHint: "名称与年份会作为刮削搜索词：保存后立即按新名称重刮一次，跨设备一致。",
-    setLibExistingHint: "侧边栏只展示这里创建时填写的库名称。每个库都可以单独重新扫描、打开或删除。",
+    setLibExistingHint: "顶栏只展示这里创建时填写的库名称。每个库都可以单独重新扫描、打开或删除。",
     setLibAdd: "媒体库增加",
     setLibAddHint: "先选来源：本地媒体库使用容器内已挂载的绝对路径；外连服务接入 Emby / Navidrome / Komga 等现成服务器。",
     setLibCustomModule: "自定义模块",
@@ -376,10 +376,10 @@ const I18N = {
     setLibCustomModuleTip: "模块的显示 / 隐藏与删除都在模块设置里管理。",
     footerAboutHint: "版本与「系统设置 → 账户与登录 → 关于」中的版本参数保持一致",
     libSrcLocal: "本地媒体库", libSrcExternal: "外连服务",
-    libPathHint: "路径必须是容器内已挂载且存在的绝对目录；库名称会直接作为侧边栏与刮削标识。",
+    libPathHint: "路径必须是容器内已挂载且存在的绝对目录；库名称会直接作为顶栏标签与刮削标识。",
     extLibName: "服务名称", extLibLan: "内网地址", extLibProxy: "反代 / 外网域名（可选）",
     extLibAdd: "添加外连服务", extLibList: "已添加的外连服务",
-    extLibHint: "内网访问自动走内网地址，外网访问自动走反代域名；添加后会在侧边栏媒体库中出现。",
+    extLibHint: "内网访问自动走内网地址，外网访问自动走反代域名；添加后会在顶栏媒体库标签中出现。",
     extLibEmpty: "尚未添加外连服务", extLibNeed: "请填写服务名称与内网地址",
     extLibAdded: "外连服务「{name}」已添加", extLibRemoved: "外连服务已删除",
     libNavEmpty: "尚未添加媒体库", libCountBadge: "{n} 个媒体库",
@@ -482,7 +482,6 @@ const I18N = {
     caddyOpenPage: "打开 Caddy 配置页面", caddyPageHint: "Caddyfile 内容较长，单独占用一整页编辑，避免在弹窗里挤成一团。",
     caddyPageTitle: "Caddy 反向代理配置", caddyPageClose: "关闭",
     caddyRoutesHint: "维护服务域名与内网上游地址的映射，保存后由内置 Caddy 校验并热加载，失败会自动回滚。",
-    setSidebar: "侧栏", setSidebarMem: "侧栏宽度记忆", setSidebarMemSub: "拖拽侧栏右边缘调整宽度，自动写入本浏览器", setSidebarReset: "恢复默认宽度",
     setScrapeSrc: "刮削来源", setScrapeHint: "媒体库按大类使用不同刮削源：电子书刊用 Google Books / Bangumi，影视作品用 TMDB / 豆瓣，音视作品用 MusicBrainz / 网易云。",
     setHw: "显卡加速", setHwLbl: "视频兼容流硬件加速", setHwDetect: "检测显卡",
     setHwHint: "需要在 Docker Compose 中透传 /dev/dri 或配置 NVIDIA Container Toolkit。硬件不可用时会自动回退 CPU，不影响播放。",
@@ -845,9 +844,6 @@ const I18N = {
     setLook: "外觀主題", setScrape: "刮削與硬體", setScrapeTab: "刮削設定", setHwTab: "硬體設定",
     caddyRoutes: "反向代理服務網域",
     caddyRoutesHint: "維護服務網域與內網上游位址的對應，儲存後由內建 Caddy 校驗並熱載入，失敗會自動回滾。",
-    setSidebar: "側欄", setSidebarMem: "側欄寬度記憶",
-    setSidebarMemSub: "拖曳側欄右邊緣調整寬度，自動寫入本瀏覽器",
-    setSidebarReset: "恢復預設寬度",
     setScrapeSrc: "刮削來源",
     setScrapeHint: "媒體庫按大類使用不同刮削源：電子書刊用 Google Books / Bangumi，影視作品用 TMDB / 豆瓣，音視作品用 MusicBrainz / 網易雲。",
     setHw: "顯卡加速", setHwLbl: "視訊相容流硬體加速", setHwDetect: "偵測顯卡",
@@ -916,7 +912,7 @@ const I18N = {
   "en": {
     mpToken: "MoviePilot API token",
 
-    setModuleSub: "The sidebar no longer has an Add Module button; module visibility and custom pages live here", setModuleOpen: "Open module settings",
+    setModuleSub: "The nav bar no longer has an Add Module button; module visibility and custom pages live here", setModuleOpen: "Open module settings",
 
     navGroupLibrary: "Libraries", navManage: "Manage ›",
     accountMenu: "Account & settings", avatarSettings: "Avatar settings",
@@ -943,7 +939,7 @@ const I18N = {
     editTitleLabel: "Title (used as the scrape query)",
     editYearLabel: "Year",
     editScrapeHint: "Title and year are used as the scrape query: saving re-scrapes this item by the new title.",
-    setLibExistingHint: "The sidebar shows only the library names you enter here. Each library can be rescanned, opened or removed.",
+    setLibExistingHint: "The top bar shows only the library names you enter here. Each library can be rescanned, opened or removed.",
     setLibAdd: "Add a library",
     setLibAddHint: "Pick a source: local libraries use absolute paths mounted inside the container; external services connect to Emby / Navidrome / Komga and friends.",
     setLibCustomModule: "Custom modules",
@@ -952,10 +948,10 @@ const I18N = {
     setLibCustomModuleTip: "Show / hide and delete modules in the module settings.",
     footerAboutHint: "Version is kept in sync with 系统设置 → 账户与登录 → 关于",
     libSrcLocal: "Local library", libSrcExternal: "External service",
-    libPathHint: "The path must be an absolute directory mounted inside the container; the library name is used in the sidebar and for scraping.",
+    libPathHint: "The path must be an absolute directory mounted inside the container; the library name is used as the top-bar tab label and for scraping.",
     extLibName: "Service name", extLibLan: "LAN address", extLibProxy: "Reverse-proxy / public domain (optional)",
     extLibAdd: "Add external service", extLibList: "Existing external services",
-    extLibHint: "LAN visitors use the LAN address, external visitors use the proxy domain. Added services show up in the sidebar libraries.",
+    extLibHint: "LAN visitors use the LAN address, external visitors use the proxy domain. Added services show up as top-bar library tabs.",
     extLibEmpty: "No external service added yet", extLibNeed: "Enter a service name and LAN address",
     extLibAdded: "External service \"{name}\" added", extLibRemoved: "External service removed",
     libNavEmpty: "No library added yet", libCountBadge: "{n} libraries",
@@ -1136,9 +1132,6 @@ const I18N = {
     setLook: "Appearance", setScrape: "Scraping & hardware", setScrapeTab: "Scraping", setHwTab: "Hardware",
     caddyRoutes: "Reverse proxy hostnames",
     caddyRoutesHint: "Maintain hostname to LAN upstream mappings. Saving validates and hot-reloads the built-in Caddy; failures roll back automatically.",
-    setSidebar: "Sidebar", setSidebarMem: "Sidebar width memory",
-    setSidebarMemSub: "Drag the sidebar's right edge to resize; the width is stored in this browser",
-    setSidebarReset: "Reset to default width",
     setScrapeSrc: "Scraping sources",
     setScrapeHint: "Each category uses its own scrapers: Books & Comics via Google Books / Bangumi, Movies & TV via TMDB / Douban, Music & MV via MusicBrainz / NetEase.",
     setHw: "GPU acceleration", setHwLbl: "Hardware acceleration for compat streams", setHwDetect: "Detect GPU",
@@ -1224,24 +1217,7 @@ function applyI18n() {
   });
   document.querySelectorAll("[data-i18n-ph]").forEach(el => { el.placeholder = t(el.dataset.i18nPh); });
 }
-function toggleBars() {
-  const willHide = !document.body.classList.contains("sidebar-hidden");
-  document.body.classList.toggle("sidebar-hidden", willHide);
-  const btn = document.getElementById("sidebarCollapseButton");
-  if (btn) {
-    btn.textContent = willHide ? "⇥" : "⇤";
-    btn.title = willHide ? "展开侧栏" : "折叠侧栏";
-    btn.setAttribute("aria-label", btn.title);
-  }
-  try { localStorage.setItem("vaulthub_sidebar_rail", willHide ? "1" : "0"); } catch (e) {}
-}
-function loadSidebarRail() {
-  let rail = false;
-  try { rail = localStorage.getItem("vaulthub_sidebar_rail") === "1"; } catch (e) {}
-  document.body.classList.toggle("sidebar-hidden", rail);
-  const btn = document.getElementById("sidebarCollapseButton");
-  if (btn) btn.textContent = rail ? "⇥" : "⇤";
-}
+/* v0.9.93：侧栏折叠/展开（toggleBars / loadSidebarRail）已随侧栏一并移除。 */
 
 
 /* ================= 状态持久化 ================= */
@@ -1255,7 +1231,6 @@ let settings = {
   palette: "emerald",     /* 调色板层：emerald | plum | neon | clay */
   accent: "theme",        /* 强调色层：theme（跟随调色板）| teal | indigo | rose | amber | violet */
   customBg: false,        /* 背景图层：是否启用自定义背景图片 */
-  layout: "topnav",
   uiMode: "auto",         /* v0.9.76 UI 设备模式：auto(按设备识别) | phone | tv | pc */       /* v0.9.74 布局层：topnav（媒体库平铺顶栏，默认）| sidebar（v0.9.73 的侧栏） */
   reduceMotion: false,    /* 动效：减弱过渡与动画 */
   hardwareAcceleration: "auto",
@@ -1299,7 +1274,6 @@ function loadSettings() {
     else settings.mode = s.theme === "light" ? "light" : "dark";
     if (["emerald", "plum", "neon", "clay"].includes(s.palette)) settings.palette = s.palette;
     if (["theme", "teal", "indigo", "rose", "amber", "violet"].includes(s.accent)) settings.accent = s.accent;
-    if (s.layout === "sidebar" || s.layout === "topnav") settings.layout = s.layout;
     if (UI_MODES.includes(s.uiMode)) settings.uiMode = s.uiMode;
     if (s.theme === "custom") settings.customBg = true;
     if (typeof s.customBg === "boolean") settings.customBg = s.customBg;
@@ -1587,23 +1561,23 @@ function updateTranscodeCompass(info) {
 }
 
 /* ================= 导航 =================
-   v0.7.0：顶栏不再有「首页 / 资料库」按钮，侧边栏也不再重复展示三个资源大类。
-   媒体视图由侧边栏的媒体库条目驱动，大类只在系统设置的媒体库配置里出现。
+   v0.7.0：顶栏不再有「首页 / 资料库」按钮，导航里也不再重复展示三个资源大类。
+   v0.9.93：媒体视图由顶栏的媒体库标签驱动（侧栏已移除），大类只在系统设置的媒体库配置里出现。
    （v0.9.16 删掉了 titleMap：顶栏标题去掉后它已无任何引用点。） */
 
 function switchView(v, libId) {
-  const items = [...document.querySelectorAll(".nav-item[data-view]")];
-  items.forEach(n => n.classList.remove("active"));
+  /* v0.9.93：侧栏已移除 —— 选中态由顶栏媒体库标签（syncTopLibTabs）与一级导航
+     （syncTopNavView）承担，这里不再遍历已不存在的 .nav-item。 */
   /* 漫画与电子书同属 data-view="comic"，音乐与 MV 同属 "audio"。
      旧写法 querySelector('.nav-item[data-view="comic"]') 永远命中排在前面的那一个，
-     于是点「电子书」后侧栏高亮仍停在「漫画」，看起来像是又跳回了漫画。
-     侧栏条目现在带唯一的 data-nav-key，这里按它精确匹配；
+     于是点「电子书」后导航高亮仍停在「漫画」，看起来像是又跳回了漫画。
+     顶栏标签现在带唯一的 data-nav-key，这里按它精确匹配；
      直接比较 dataset 而不是拼接选择器，媒体库名或 id 含引号时也不会选歪。
 
-     未显式传 libId 时（首页「更多 ›」、侧栏事件委托等旧调用点）回落到该视图
+     未显式传 libId 时（首页「更多 ›」等旧调用点）回落到该视图
      当前选中的媒体库，避免高亮与页面内容对不上。
-     选中态还要记到 window 上：侧栏每 5 秒整体重绘一次，只把 active 打在 DOM
-     节点上会在重绘后丢失，表现为「点完 5 秒后侧栏什么都不亮」。 */
+     选中态还要记到 window 上：媒体库标签每 5 秒整体重绘一次，只把 active 打在 DOM
+     节点上会在重绘后丢失，表现为「点完 5 秒后导航什么都不亮」。 */
   let navKey = "";
   if (libId) {
     navKey = v + ":" + libId;
@@ -1615,16 +1589,10 @@ function switchView(v, libId) {
      （同组媒体库靠 navKey 区分，所以必须把 navKey 一起传下去）。 */
   if (typeof syncTopLibTabs === "function") syncTopLibTabs(navKey);
   if (typeof syncTopNavView === "function") syncTopNavView("view-" + v);
-  const navItem = (navKey && items.find(n => n.dataset.navKey === navKey))
-    || items.find(n => n.dataset.view === v && !n.dataset.libId)
-    || items.find(n => n.dataset.view === v);
-  if (navItem) navItem.classList.add("active");
   document.querySelectorAll(".view").forEach(s => s.classList.remove("active"));
   const view = document.getElementById("view-" + v);
   if (view) view.classList.add("active");
-  /* v0.9.30：系统设置是独立配置页，侧栏底部的设置按钮要跟着高亮，
-     否则进入设置后侧栏没有任何选中态，用户不知道自己在哪一页。 */
-  document.getElementById("sidebarSettingsButton")?.classList.toggle("active", v === "settings");
+  /* v0.9.93：侧栏底部设置按钮已随侧栏移除；设置页的选中态由顶栏头像菜单承接。 */
   /* 音乐播放器只在音视作品视图显示，出现方式为屏幕居中浮层。 */
   const player = document.getElementById("audio-bottom-player");
   if (player) player.classList.toggle("show", v === "audio" && typeof audioHasActivePlayback === "function" && audioHasActivePlayback());
@@ -1691,6 +1659,9 @@ function clearActivePlayback(kind) {
 }
 function playbackDockEl() { return document.getElementById("playbackDock"); }
 function updatePlaybackDock() {
+  /* v0.9.93：播放占用（顶栏回缩）与浮标同一时刻刷新，且必须在任何早退之前—— 
+     浮标没显示时也要把顶栏还回来。 */
+  if (typeof syncPlayerImmersive === "function") syncPlayerImmersive();
   const dock = playbackDockEl();
   if (!dock) return;
   const cur = activePlayback();
@@ -1711,30 +1682,10 @@ function updatePlaybackDock() {
   if (returnBtn) returnBtn.textContent = t("dockReturn");
 }
 
-/* 侧边栏媒体库条目是 JS 注入的，用事件委托绑定，避免注入后丢事件。 */
-document.addEventListener("click", event => {
-  const item = event.target.closest("#mainNav .nav-item[data-view]");
-  if (!item || event.target.closest(".nav-tools, .del")) return;
-  const v = item.dataset.view;
-  if (!v) return;
-  if (v.startsWith("custom-")) { openCustomBoard(v); return; }
-  if (item.dataset.libId) return; /* 媒体库条目自己有 onclick */
-  switchView(v);
-});
-
 /* ---------- 账户与登录：v0.9.17 起登录状态 / 关于 / 退出登录都在
    系统设置 → 账户与登录 里，顶栏 logo 不再是菜单按钮 ---------- */
-let movieDetailSidebarWasHidden = null;
-function enterMovieDetailSidebarMode() {
-  if (movieDetailSidebarWasHidden === null) movieDetailSidebarWasHidden = document.body.classList.contains("sidebar-hidden");
-  document.body.classList.add("sidebar-hidden");
-}
-function leaveMovieDetailSidebarMode() {
-  if (movieDetailSidebarWasHidden === null) return;
-  document.body.classList.toggle("sidebar-hidden", movieDetailSidebarWasHidden);
-  movieDetailSidebarWasHidden = null;
-}
-function openSettingsModalFromSidebar() { openSettingsPage(); }
+/* v0.9.93：详情页不再需要「临时收起侧栏」（侧栏已移除）。 */
+
 /* 打开系统设置并直接跳到账户与登录页（登录状态 / Caddy / 关于 / 退出登录）。 */
 function openAccountSettings() { openSettingsPage("account"); }
 /* v0.9.30：系统设置改为独立配置页 #view-settings。
@@ -1857,79 +1808,9 @@ function resetAvatarSettings() {
   toast("🗑 " + t("avatarResetDone"));
 }
 
-/* ================= 侧栏宽度：拖拽自适应 + 记忆 ================= */
-const LS_SIDEBAR_W = "vaulthub_sidebar_w";
-const SIDEBAR_DEFAULT_W = 236;
-const SIDEBAR_MIN_W = 62;
-const SIDEBAR_MAX_W = 340;
-function applySidebarWidth(px) {
-  const w = Math.min(SIDEBAR_MAX_W, Math.max(SIDEBAR_MIN_W, Number(px) || SIDEBAR_DEFAULT_W));
-  document.documentElement.style.setProperty("--sidebar-w", w + "px");
-  return w;
-}
-function loadSidebarWidth() {
-  try {
-    const saved = localStorage.getItem(LS_SIDEBAR_W);
-    if (saved) applySidebarWidth(saved);
-  } catch (e) {}
-}
-function resetSidebarWidth() {
-  applySidebarWidth(SIDEBAR_DEFAULT_W);
-  try { localStorage.removeItem(LS_SIDEBAR_W); } catch (e) {}
-  document.body.classList.remove("sidebar-hidden");
-  toast("✅ 侧栏宽度已恢复默认");
-}
-function initSidebarResizer() {
-  const bar = document.getElementById("sidebarResizer");
-  const side = document.getElementById("sidebar");
-  if (!bar || !side) return;
-  let dragging = false;
-  const move = e => {
-    if (!dragging) return;
-    const x = e.touches ? e.touches[0].clientX : e.clientX;
-    applySidebarWidth(x);
-  };
-  const stop = () => {
-    if (!dragging) return;
-    dragging = false;
-    side.classList.remove("dragging");
-    const w = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--sidebar-w"), 10);
-    try { localStorage.setItem(LS_SIDEBAR_W, String(w)); } catch (e) {}
-  };
-  const start = e => { dragging = true; side.classList.add("dragging"); e.preventDefault(); };
-  bar.addEventListener("mousedown", start);
-  bar.addEventListener("touchstart", start, { passive: false });
-  window.addEventListener("mousemove", move);
-  window.addEventListener("touchmove", move, { passive: true });
-  window.addEventListener("mouseup", stop);
-  window.addEventListener("touchend", stop);
-}
-
-/* v0.9.56：移动端顶栏（侧栏改顶栏）可横向滚动查看更多 —— 当导航项总宽超过
-   可视宽度时给 .sidebar 加 .nav-overflow（右侧渐隐提示「还有更多」），
-   滚动到最右端后移除提示。桌面端此函数无副作用（class 只被 ≤768px 媒体查询消费）。 */
-function updateSidebarNavOverflow() {
-  const side = document.getElementById("sidebar");
-  const nav = side ? side.querySelector(":scope > .nav") : null;
-  if (!side || !nav) return;
-  const hasOverflow = nav.scrollWidth > nav.clientWidth + 2;
-  const atEnd = hasOverflow && nav.scrollLeft + nav.clientWidth >= nav.scrollWidth - 2;
-  side.classList.toggle("nav-overflow", hasOverflow && !atEnd);
-}
-function initSidebarNavOverflowWatch() {
-  const nav = document.querySelector("#sidebar > .nav");
-  if (!nav) return;
-  const update = () => requestAnimationFrame(updateSidebarNavOverflow);
-  nav.addEventListener("scroll", update, { passive: true });
-  window.addEventListener("resize", update);
-  /* 自定义导航项 / 媒体库导航项是异步渲染进 .nav 的（renderCustomNav /
-     refreshMediaLibraries），用 MutationObserver 兜底，DOM 变化后重测一次。 */
-  if (typeof MutationObserver !== "undefined") {
-    const mo = new MutationObserver(update);
-    mo.observe(nav, { childList: true, subtree: true });
-  }
-  update();
-}
+/* v0.9.93：侧栏宽度记忆 / 拖拽 resizer / 移动端侧栏溢出提示（applySidebarWidth、
+   loadSidebarWidth、resetSidebarWidth、initSidebarResizer、updateSidebarNavOverflow、
+   initSidebarNavOverflowWatch）已随侧栏一并移除；--sidebar-w 恒为 0。 */
 
 /* ================= v0.9.56 系统设置 → 账户与登录：登录凭据与鉴权模式 ================= */
 async function loadAccountCredentialsUI() {

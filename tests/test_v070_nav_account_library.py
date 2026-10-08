@@ -62,21 +62,22 @@ assert ".bp-bar.indeterminate" in css, \
     "phase 1 has no total yet, so an indeterminate bar is required"
 
 # ---------------------------------------------------------------- 2. sidebar dedupe
-nav = index[index.index('<aside class="sidebar"'):index.index('</aside>')]
+# v0.9.93：侧栏结构已删除，导航只存在于顶栏 —— 同一组断言改为对顶栏导航块生效。
+nav = index[index.index('<header class="topbar"'):index.index('</header>')]
 # The three category groups and their duplicate category entries must be gone.
 for gone in ['data-nav-group="book"', 'data-nav-group="video"', 'data-nav-group="audio"',
              'data-module="comic"', 'data-module="movie"', 'data-module="audio"',
              'id="libNavComic"', 'id="libNavMovie"', 'id="libNavAudio"']:
     assert gone not in nav, f"sidebar must not still contain {gone}"
-assert 'data-nav-group="library"' in nav, "sidebar needs one flat 媒体库 group"
-assert 'id="libNavAll"' in nav, "sidebar needs a single flat library list host"
-# Only home and PT stay as fixed sidebar entries.
-assert nav.count('data-module=') == 2, "only 首页 and PT 管理 may remain as fixed modules"
-# The flat list is built from the user-entered library names.
-assert 'const host = document.getElementById("libNavAll");' in home, \
-    "renderHomeLibraryNav must fill the flat list"
-assert 'esc(lib.name)' in home, "sidebar entries must show the library name"
-assert "libNavEmpty" in home and "libNavEmpty" in state, "empty sidebar needs a translated hint"
+assert 'id="topLibTabs"' in nav, "顶栏需要媒体库标签宿主（原侧栏扁平列表）"
+assert 'id="libNavAll"' not in index, "侧栏容器必须彻底删除"
+# 固定导航项只剩「首页 + PT 管理」（媒体搜索已并入顶栏一级导航）。
+assert nav.count('data-module=') == 1, "只有 PT 管理保留模块开关"
+# 扁平列表由顶栏标签渲染（07-topnav.js），数据源仍是用户填写的库名。
+_topnav = (ROOT / "web/js/07-topnav.js").read_text(encoding="utf-8")
+assert 'getElementById("topLibTabs")' in _topnav, "顶栏标签必须由 renderTopLibTabs 填充"
+assert 'esc(lib.name)' in _topnav, "标签必须显示库名"
+assert "libNavEmpty" in _topnav and "libNavEmpty" in state, "空标签需要翻译后的提示"
 # Category labels only survive as scraping-source descriptions inside settings.
 settings_block = index[index.index('id="setpanel-library"'):index.index('id="setpanel-look"')]
 for label in ['navGroupBook', 'navGroupVideo', 'navGroupAudio']:
@@ -103,8 +104,12 @@ assert 'add-board-btn' not in index and 'add-board-btn' not in css, \
 assert 'onclick="openModuleModal()"' in index, "module settings must still be reachable"
 look_panel = index[index.index('id="setpanel-look"'):index.index('id="setpanel-scrape"')]
 assert 'openModuleModal()' not in look_panel, "模块设置 must no longer live in 外观主题"
-assert 'data-nav-group="custom"' in index and index.index('data-nav-group="custom"') < index.index('id="customNav"'), \
-    "the 自定义 sidebar group must host the module settings entry"
+# v0.9.93：侧栏已移除 —— 自定义模块入口改由顶栏标签容器 + 头像菜单承接，
+# 旧的侧栏分组标题/自定义容器都必须消失。
+assert 'data-nav-group="custom"' not in index and 'id="customNav"' not in index, \
+    "旧的侧栏自定义分组必须删除"
+assert 'id="topCustomNav"' in index and 'onclick="topUserMenuModules()"' in index, \
+    "顶栏必须承接自定义模块入口"
 # Every library row keeps rescrape / open / delete actions.
 for act in ['rebuildOneLibrary(', 'openHomeLibrary(', 'deleteMediaLibrary(']:
     assert act in home, f"library rows must keep the {act} action"
@@ -196,7 +201,9 @@ assert "function serviceAccessUrl(svc" in media, "LAN/proxy auto-switch must be 
 assert "isPrivateHostname(pageHostname)" in media, \
     "external browsers must fall back to the proxy domain"
 # External services also show up in the flat sidebar list.
-assert "externalServices.forEach" in home, "external services must appear in the sidebar"
+# v0.9.93：侧栏已移除 —— 外连服务改为出现在顶栏标签里（同一个数据源）。
+assert "externalServices.forEach" in (ROOT / "web/js/07-topnav.js").read_text(encoding="utf-8"), \
+    "顶栏标签必须渲染外连服务"
 
 # ------------------------------------------------- login race + reader scroll regressions
 # A slow /api/system/runtime probe used to land after an explicit login and re-show the

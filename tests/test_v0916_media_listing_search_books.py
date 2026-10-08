@@ -17,9 +17,10 @@ assert "seriesTruncated" not in JS or "20,000" not in JS
 assert "openMediaSearch" in JS
 assert "媒体搜索" in HTML or "mediaSearch" in HTML
 
-# 影视详情打开时临时收起侧栏，关闭后恢复原来的用户状态。
-assert "sidebar-hidden" in STATE or "sidebar-hidden" in JS
-assert "movieDetailSidebar" in STATE or "enterMovieDetailSidebarMode" in STATE or "enterMovieDetailSidebarMode" in JS
+# v0.9.93：侧栏已彻底移除 —— 影视详情不再需要「临时收起侧栏」，
+# 改为断言旧机制确实清干净、且详情页关闭逻辑仍在。
+assert "sidebar-hidden" not in STATE and "sidebar-hidden" not in JS
+assert "enterMovieDetailSidebarMode" not in STATE and "enterMovieDetailSidebarMode" not in JS
 assert "closeMovieDetails" in JS
 
 # 电子书/漫画的常见格式和压缩包格式应统一识别，且书籍不能被误判为电影。

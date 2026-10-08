@@ -41,9 +41,10 @@ media = read("web/js/02-media.js")
 
 # 侧栏条目必须带唯一标识；漫画与电子书都是 data-view="comic"，
 # 因此高亮必须按 data-nav-key（或 libId）匹配，不能只按 data-view。
-check("侧栏条目带唯一 data-nav-key",
-      'data-nav-key="' in home,
-      "05-home.js 未输出 data-nav-key")
+# v0.9.93：侧栏已移除，媒体库条目的唯一键由顶栏标签（07-topnav.js）负责。
+check("媒体库标签带唯一 data-nav-key",
+      'data-nav-key="' in read("web/js/07-topnav.js"),
+      "07-topnav.js 未输出 data-nav-key")
 
 check("switchView 不再用 data-view 单选择器取首个节点",
       'querySelector(`.nav-item[data-view="${v}"]`)' not in state
@@ -63,16 +64,18 @@ check("switchView 把选中键记到 window",
 check("switchView 无 libId 时用当前选中媒体库兜底",
       "localMediaSelection[v]" in state,
       "01-state.js 未回落到 localMediaSelection")
-nav_fn = re.search(r"function renderHomeLibraryNav\(\)\s*\{(.*?)\n\}", home, re.S)
-check("renderHomeLibraryNav 存在", bool(nav_fn))
+# v0.9.93：侧栏重绘函数 renderHomeLibraryNav 已改名 renderLibraryNav，只负责重建顶栏标签
+# 并重新套用选中态（顶栏标签用 aria-current 表示选中）。
+nav_fn = re.search(r"function renderLibraryNav\(\)\s*\{(.*?)\n\}", home, re.S)
+check("renderLibraryNav 存在", bool(nav_fn))
 if nav_fn:
     body = nav_fn.group(1)
-    check("侧栏重绘后重新套用高亮",
-          "vaultHubActiveNavKey" in body and 'classList.add("active")' in body,
-          "重绘后未恢复 active")
-    check("恢复高亮发生在 innerHTML 重建之后",
-          body.index("host.innerHTML") < body.index("vaultHubActiveNavKey"),
-          "顺序错误，会被 innerHTML 覆盖")
+    check("标签重绘后重新套用选中态",
+          "vaultHubActiveNavKey" in body and 'setAttribute("aria-current", "true")' in body,
+          "重绘后未恢复选中态")
+    check("先重建标签再套用选中态",
+          body.index("renderTopLibTabs") < body.index("vaultHubActiveNavKey"),
+          "顺序错误，会被重建覆盖")
 
 # openHomeLibrary 必须把当前选中的媒体库传给 switchView，
 # 否则 switchView 无从知道该高亮哪一个同组媒体库。

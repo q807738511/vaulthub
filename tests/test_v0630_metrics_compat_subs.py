@@ -60,7 +60,9 @@ assert "function openCaddyModal(" in state, "openCaddyModal must still exist as 
 # v0.9.30 turned 系统设置 into a dedicated page, so the entry opens that page.
 assert "openSettingsPage('account')" in state, "openCaddyModal must open the 账户与登录 page"
 assert 'onclick="openCaddyPage()"' in html, "the settings page must expose the Caddy editor entry"
-assert 'id="sidebarSettingsButton"' in html and "openSettingsModalFromSidebar()" in html
+# v0.9.93：侧栏（含其底部设置按钮）已移除 —— 设置入口改为顶栏右上角头像菜单。
+assert 'id="topUserButton"' in html and "topUserMenuGo(" in html \
+    and 'onclick="topUserMenuGo(\'library\')"' in html, "顶栏头像菜单必须提供系统设置入口"
 # Dead Caddy fields removed
 assert 'id="caddyToken"' not in html, "obsolete Caddy token field must be removed"
 assert 'id="caddyOrigin"' not in html, "obsolete Caddy origin field must be removed"

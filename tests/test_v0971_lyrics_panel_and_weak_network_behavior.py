@@ -20,6 +20,10 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+
+# v0.9.93：把仓库根显式传给 Node 夹具（默认的 /opt/data/vaulthub-github 可能指向旧的检出）。
+import os as _os
+_os.environ.setdefault("VH_ROOT", str(ROOT))
 MEDIA = ROOT / "web/js/02-media.js"
 ZOOM = ROOT / "web/js/03-audio-zoom.js"
 
@@ -170,7 +174,7 @@ const windowStub = {
   performance: performanceStub, requestIdleCallback: undefined,
   matchMedia: () => ({ matches: false, addEventListener: noop }),
   localStorage, navigator: navigatorStub,
-  innerWidth: 1440, innerHeight: 900, VAULTHUB_ASSET_VERSION: "0.9.92"
+  innerWidth: 1440, innerHeight: 900, VAULTHUB_ASSET_VERSION: "0.9.93"
 };
 const ctx = vm.createContext({
   window: windowStub, document, localStorage, navigator: navigatorStub,

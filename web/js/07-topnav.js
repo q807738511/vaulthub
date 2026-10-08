@@ -2,14 +2,13 @@
    原型：VaultHub-TopNav-Emerald。这一层只做「导航壳」：
 
      顶栏        品牌 · 一级导航（首页/媒体搜索/PT）· 媒体库标签 · 全局搜索 · 头像菜单
-     媒体库标签  直接读 localMediaLibraries / externalServices，与侧栏同一份数据源，
+     媒体库标签  直接读 localMediaLibraries / externalServices，与首页监控同一份数据源，
                  点击走的还是 openHomeLibrary / openExternalService，不复制业务逻辑
      全局搜索    边输入边过滤当前媒体库已渲染的条目（[data-media-path] / 行 / 卡片），
                  回车把关键词交给已有的「媒体搜索」页做全库检索
      头像菜单    系统设置 / 外观主题 / 自定义模块 / 账户与登录 / 退出登录 →
                  全部落回已有的 openSettingsPage(tab) 与 logoutVaultHub()
-     布局        顶栏（默认，body.layout-topnav，侧栏让位）或侧栏（v0.9.73 及以前），
-                 存在 settings.layout，只影响本浏览器
+     布局        只有顶栏一种（v0.9.93 起侧栏已彻底移除，settings.layout 不再被读取）
 
    同组媒体库（漫画 / 电子书都落在 comic 视图）靠 data-nav-key 区分，
    与 switchView 的高亮规则一致，避免「点了电子书却高亮漫画」。 */
@@ -26,33 +25,16 @@ function topNavIconForType(type) {
   return TOPNAV_TYPE_ICON[key] || "📁";
 }
 
-/* ---------- 布局模式（顶栏 / 侧栏） ---------- */
-function currentLayoutMode() {
-  return (typeof settings !== "undefined" && settings && settings.layout === "sidebar") ? "sidebar" : "topnav";
-}
+/* ---------- 布局模式 ----------
+   v0.9.93：侧栏已彻底移除（结构 + 样式 + 交互），布局只剩顶栏一种。
+   这里保留 applyLayoutMode 作为「把顶栏布局落到 body 上」的唯一样板，
+   并且仍然兼容旧调用点 —— 旧参数（"sidebar"）一律按顶栏处理。 */
 function applyLayoutMode() {
-  const mode = currentLayoutMode();
-  document.body.classList.toggle("layout-topnav", mode === "topnav");
-  renderLayoutChips();
-  return mode;
+  document.body.classList.add("layout-topnav");
+  return "topnav";
 }
-function setLayoutMode(mode) {
-  const next = mode === "sidebar" ? "sidebar" : "topnav";
-  if (typeof settings !== "undefined" && settings) {
-    settings.layout = next;
-    if (typeof saveSettings === "function") saveSettings();
-  }
-  applyLayoutMode();
-  if (typeof toast === "function") toast(next === "topnav" ? "🧭 已切换为顶部导航" : "🧭 已切换为侧边导航");
-}
-function renderLayoutChips() {
-  const host = document.getElementById("layoutModeChips");
-  if (!host) return;
-  const mode = currentLayoutMode();
-  host.querySelectorAll("button[data-layout]").forEach(btn => {
-    btn.setAttribute("aria-pressed", String(btn.dataset.layout === mode));
-  });
-}
+/* 兼容历史调用点：布局模式恒为顶栏。 */
+function currentLayoutMode() { return "topnav"; }
 
 /* ---------- 媒体库标签 ---------- */
 function renderTopLibTabs() {
@@ -175,7 +157,7 @@ function fillTopUserMenu() {
   if (buttonEl) buttonEl.textContent = initial;
   if (metaEl) {
     const version = window.VAULTHUB_ASSET_VERSION || "";
-    metaEl.textContent = (version ? "v" + version + " · " : "") + (currentLayoutMode() === "topnav" ? "顶部导航" : "侧边导航");
+    metaEl.textContent = version ? "v" + version : "";
   }
   if (themeK && typeof settings !== "undefined" && settings) {
     const palette = typeof themePaletteDef === "function" ? themePaletteDef(settings.palette) : null;
@@ -195,6 +177,11 @@ function toggleTopUserMenu(event) {
   fillTopUserMenu();
   menu.classList.add("open");
   if (btn) btn.setAttribute("aria-expanded", "true");
+}
+/* v0.9.93：侧栏移除后，自定义模块的管理入口落在头像菜单（原侧栏「自定义 › 管理」）。 */
+function topUserMenuModules() {
+  closeTopUserMenu();
+  if (typeof openModuleModal === "function") openModuleModal();
 }
 function topUserMenuGo(tab) {
   closeTopUserMenu();

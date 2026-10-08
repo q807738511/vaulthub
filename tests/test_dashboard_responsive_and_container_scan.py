@@ -6,7 +6,9 @@ _sys.path.insert(0, _os.path.dirname(__file__))
 from _frontend import frontend_source as _fs
 s=_fs()
 checks={
- 'responsive sidebar toggle':'@media (max-width: 768px)' in s and 'toggleBars()' in s and 'sidebar-hidden' in s,
+ # v0.9.93：侧栏（含折叠 toggleBars）已移除 —— 窄屏改为断言顶栏导航自适应。
+ 'responsive top nav':'@media (max-width: 768px)' in s and '.topbar { padding:0 12px; }' in s
+   and 'toggleBars()' not in s and 'sidebar-hidden' not in s,
  'video status element':'data-video-status' in s,
  'video status events':'waiting' in s and 'timeupdate' in s and 'loadedmetadata' in s,
  # v0.6.30.Branch-update removed 容器管理 (Docker scan) entirely: the view, the

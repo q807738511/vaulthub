@@ -6,7 +6,7 @@
    E. 版本与脱敏
    源文件各自独立 vm 上下文（都定义同名 const，同上下文会 SyntaxError）。 */
 const fs = require("fs"), vm = require("vm");
-const ROOT = process.env.VH_ROOT || "/opt/data/vaulthub-github";
+const ROOT = process.env.VH_ROOT || require("path").resolve(__dirname, "..");
 let passed = 0, failed = 0;
 const chk = (name, ok, extra) => {
   if (ok) { passed++; console.log("PASS:", name); }
@@ -257,10 +257,10 @@ const GO_SCAN = fs.readFileSync(ROOT + "/media-go/scan_walk.go", "utf8");
 
   /* ================= E. 版本与脱敏 ================= */
   {
-    chk("E1 资源版本 0.9.92 ×10", (HTML_SRC.match(/\?v=0\.9\.92/g) || []).length === 10);
-    chk("E2 ASSET_VERSION / SCRIPT_VERSION = 0.9.92",
-        HTML_SRC.includes('window.VAULTHUB_ASSET_VERSION = "0.9.92";')
-        && STATE_SRC.includes('const VAULTHUB_SCRIPT_VERSION = "0.9.92";'));
+    chk("E1 资源版本 0.9.93 ×10", (HTML_SRC.match(/\?v=0\.9\.93/g) || []).length === 10);
+    chk("E2 ASSET_VERSION / SCRIPT_VERSION = 0.9.93",
+        HTML_SRC.includes('window.VAULTHUB_ASSET_VERSION = "0.9.93";')
+        && STATE_SRC.includes('const VAULTHUB_SCRIPT_VERSION = "0.9.93";'));
     const slogans = (HTML_SRC.match(/v0\.9\.9\d · [^<"]+/g) || []);
     chk("E3 三处标语整串一致", slogans.length === 3 && new Set(slogans).size === 1, [...new Set(slogans)]);
     const notes = fs.readFileSync(ROOT + "/.github/RELEASE_NOTES_0.9.92.md", "utf8");

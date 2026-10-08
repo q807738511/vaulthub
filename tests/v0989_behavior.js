@@ -7,7 +7,7 @@
      F. 版本推进
    源文件各自独立 vm 上下文（都定义同名 const，同上下文会 SyntaxError）。 */
 const fs = require("fs"), vm = require("vm");
-const ROOT = "/opt/data/vaulthub-github";
+const ROOT = process.env.VH_ROOT || require("path").resolve(__dirname, "..");
 let passed = 0, failed = 0;
 
 const I18N_DICTS = (() => {
@@ -157,7 +157,9 @@ const MEDIA_SRC = fs.readFileSync(ROOT + "/web/js/02-media.js", "utf8");
   const stored = JSON.parse(sb.storage["vaulthub_movie_metadata_v1"]);
   const entry = stored["Water.Boys.2001/Water.Boys.2001.1080p.mkv"];
   chk("C5 本地化结果写回元数据（本地图 + nfo + 原文件名 + 标记）", !!entry.localized_at && entry.nfo === "Water.Boys.2001/Water.Boys.2001.nfo" && String(entry.poster).startsWith("/api/media/cover") && entry.original_path === "Water.Boys.2001/Water.Boys.2001.1080p.mkv", entry);
-  chk("C6 源码：mark 命中时排队本地化", MEDIA_SRC.includes('if (patch.scrape_state === "ok") queueMovieLocalization(lib, path);'));
+  /* v0.9.93：命中后的处理从单行变成语句块（块内新增「同剧分集同步」），断言改为块兼容。 */
+  chk("C6 源码：mark 命中时排队本地化",
+      /if \(patch\.scrape_state === "ok"\)\s*\{[\s\S]{0,240}queueMovieLocalization\(lib, path\);/.test(MEDIA_SRC));
   chk("C7 源码：已本地化条目跳过重复写盘", /meta\.localized_at && meta\.nfo/.test(MEDIA_SRC));
   chk("C8 源码：本地化串行（不会并发写盘风暴）", /movieLocalizeBusy/.test(MEDIA_SRC) && /while \(movieLocalizeQueue\.length\)/.test(MEDIA_SRC));
 
@@ -203,15 +205,15 @@ const MEDIA_SRC = fs.readFileSync(ROOT + "/web/js/02-media.js", "utf8");
 {
   const html = fs.readFileSync(ROOT + "/index.html", "utf8");
   const state = fs.readFileSync(ROOT + "/web/js/01-state.js", "utf8");
-  chk("F1 index.html 资源版本 0.9.92 ×10", (html.match(/\?v=0\.9\.92/g) || []).length === 10);
-  chk("F2 ASSET_VERSION = 0.9.90", html.includes('window.VAULTHUB_ASSET_VERSION = "0.9.92";'));
+  chk("F1 index.html 资源版本 0.9.93 ×10", (html.match(/\?v=0\.9\.93/g) || []).length === 10);
+  chk("F2 ASSET_VERSION = 0.9.90", html.includes('window.VAULTHUB_ASSET_VERSION = "0.9.93";'));
   /* v0.9.90：标语随版本推进，这里只校验「版本前缀正确 + 三处一致」，避免每个版本都要改测试。 */
   /* v0.9.92（上轮审查项）：整串一致，而不是只数版本前缀。 */
   chk("F3 三处标语整串一致", (() => {
     const s = (html.match(/v0\.9\.9\d · [^<"]+/g) || []);
     return s.length === 3 && new Set(s).size === 1;
   })());
-  chk("F4 SCRIPT_VERSION = 0.9.90", state.includes('const VAULTHUB_SCRIPT_VERSION = "0.9.92";'));
+  chk("F4 SCRIPT_VERSION = 0.9.90", state.includes('const VAULTHUB_SCRIPT_VERSION = "0.9.93";'));
 }
 
 console.log(`\nSUMMARY pass=${passed} fail=${failed}`);

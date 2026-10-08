@@ -7,7 +7,7 @@
    D. 长会话内存治理：非当前库的重型缓存与阅读状态索引被释放，当前库保留
    源文件各自独立 vm 上下文（都定义同名 const，同上下文会 SyntaxError）。 */
 const fs = require("fs"), vm = require("vm");
-const ROOT = process.env.VH_ROOT || "/opt/data/vaulthub-github";
+const ROOT = process.env.VH_ROOT || require("path").resolve(__dirname, "..");
 let passed = 0, failed = 0;
 const chk = (name, ok, extra) => {
   if (ok) { passed++; console.log("PASS:", name); }
@@ -289,10 +289,10 @@ const GO_SCRAPE = fs.readFileSync(ROOT + "/media-go/scrape_store.go", "utf8");
 
   /* ================= E. 版本与审查项 ================= */
   {
-    chk("E1 资源版本 0.9.92 ×10", (HTML_SRC.match(/\?v=0\.9\.92/g) || []).length === 10);
-    chk("E2 ASSET_VERSION / SCRIPT_VERSION = 0.9.92",
-        HTML_SRC.includes('window.VAULTHUB_ASSET_VERSION = "0.9.92";') &&
-        STATE_SRC.includes('const VAULTHUB_SCRIPT_VERSION = "0.9.92";'));
+    chk("E1 资源版本 0.9.93 ×10", (HTML_SRC.match(/\?v=0\.9\.93/g) || []).length === 10);
+    chk("E2 ASSET_VERSION / SCRIPT_VERSION = 0.9.93",
+        HTML_SRC.includes('window.VAULTHUB_ASSET_VERSION = "0.9.93";') &&
+        STATE_SRC.includes('const VAULTHUB_SCRIPT_VERSION = "0.9.93";'));
     /* 审查项：标语断言必须校验「三处完全一致」，而不是各自存在。 */
     const slogans = (HTML_SRC.match(/v0\.9\.9\d · [^<"]+/g) || []);
     chk("E3 三处标语完全一致（审查项：断言强度）",

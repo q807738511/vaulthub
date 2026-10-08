@@ -46,8 +46,10 @@ check("1g 页脚样式齐备", ".app-footer {" in CSS and ".app-footer .af-note 
       and "@media (max-width:640px) { .app-footer {" in CSS)
 
 print("2. 自定义模块入口移入「系统设置 → 媒体库」")
-check("2a 头像弹窗不再有自定义模块入口",
-      "topUserMenuGo('custom')" not in TOP_MENU and "自定义模块" not in TOP_MENU)
+# v0.9.93：侧栏移除后，自定义模块入口重新回到头像菜单（原入口在已删除的侧栏里）。
+check("2a 头像弹窗承接自定义模块入口",
+      "topUserMenuModules()" in TOP_MENU and "自定义模块" in TOP_MENU
+      and "topUserMenuGo('custom')" not in TOP_MENU)
 check("2b 头像弹窗其余入口保留",
       all(f"topUserMenuGo('{t}')" in TOP_MENU for t in ["library", "look", "account"])
       and "topUserMenuLogout()" in TOP_MENU)
@@ -128,14 +130,14 @@ check("5k 简介排版与 16:9 画框保留（旧契约不破）",
 
 print("6. 版本")
 check("6a 页面与脚本版本一致",
-      'VAULTHUB_ASSET_VERSION = "0.9.92"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.92"' in STATE)
+      'VAULTHUB_ASSET_VERSION = "0.9.93"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.93"' in STATE)
 # v0.9.92（上轮发布前审查项）：标语断言升级为「整串完全一致」——
 # 旧写法只数 "v0.9.9x · " 出现 3 次，三处文案不一致也能过。
 _slogans_6b = re.findall(r"v0\.9\.9\d · [^<\"]+", HTML)
 check("6b 关于 / 侧栏 / 页脚标语整串一致",
       len(_slogans_6b) == 3 and len(set(_slogans_6b)) == 1)
 check("6c Update Log 有 v0.9.85 段",
-      (ROOT / "Update Log.md").read_text(encoding="utf-8").startswith("# VaultHub 蜀鼠之家 v0.9.92"))
+      (ROOT / "Update Log.md").read_text(encoding="utf-8").startswith("# VaultHub 蜀鼠之家 v0.9.93"))
 check("6d Release Notes 存在", (ROOT / ".github/RELEASE_NOTES_0.9.90.md").exists())
 
 if FAILS:

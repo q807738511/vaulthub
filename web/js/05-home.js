@@ -22,52 +22,27 @@ function homeGroupOfType(type) {
   return "audio";
 }
 
-/* ---------- 侧栏：一个扁平的媒体库列表 ----------
+/* ---------- 媒体库导航：一个扁平的媒体库列表（v0.9.93 起只渲染顶栏标签） ----------
    v0.7.0：不再按「电子书刊 / 影视作品 / 音视作品」三个大类各起一节，
-   也不再重复出现大类本身的入口。侧栏只显示媒体库创建时填写的名称
+   也不再重复出现大类本身的入口。导航只显示媒体库创建时填写的名称
    （本地媒体库 + 外连服务），大类只在系统设置的媒体库配置里出现。 */
-function renderHomeLibraryNav() {
-  const host = document.getElementById("libNavAll");
-  if (!host) return;
-  const rows = [];
-  (localMediaLibraries || []).forEach(lib => {
-    const group = homeGroupOfType(lib.type);
-    const count = Number(homeIndexStatus[lib.id]?.total || 0);
-    /* data-nav-key 唯一标识一个媒体库条目。漫画与电子书都落在 data-view="comic"，
-       只靠 data-view 无法区分，switchView 会永远高亮排在前面的那一个。 */
-    rows.push(`<div class="nav-item" data-view="${esc(group)}" data-lib-id="${esc(lib.id)}" `
-      + `data-nav-key="${esc(group + ":" + lib.id)}" `
-      + `onclick="openHomeLibrary('${esc(group)}',${jsAttrArg(lib.id)})" title="${esc(lib.name)}">`
-      + `<span class="ic">${HOME_TYPE_ICON[lib.type] || "📄"}</span>`
-      + `<span class="txt">${esc(lib.name)}</span>`
-      + `<span class="cnt">${count ? formatHomeCount(count) : ""}</span></div>`);
-  });
-  if (typeof externalServices !== "undefined") {
-    externalServices.forEach(svc => {
-      rows.push(`<div class="nav-item" data-view="${esc(svc.group)}" data-lib-id="${esc(svc.id)}" `
-        + `data-nav-key="${esc(svc.group + ":" + svc.id)}" `
-        + `onclick="openExternalService(${jsAttrArg(svc.id)})" title="${esc(svc.name)}">`
-        + `<span class="ic">🔗</span><span class="txt">${esc(svc.name)}</span>`
-        + `<span class="cnt">↗</span></div>`);
-    });
-  }
-  host.innerHTML = rows.length ? rows.join("")
-    : `<div class="nav-empty">${esc(t("libNavEmpty"))}</div>`;
-  /* v0.9.74：顶栏媒体库标签与侧栏同一份数据源、同一时刻渲染。 */
+/* v0.9.93：侧栏移除后本函数只负责「媒体库标签」的刷新与选中态保持
+   （原侧栏 #libNavAll 的 DOM 写入已删除）。每 5 秒被首页定时器整体重建一次，
+   重建出来的节点都不带 active，故按 switchView 记下的选中键重新套用高亮，
+   否则用户点完媒体库 5 秒后导航就什么都不亮了。 */
+function renderLibraryNav() {
+  /* 顶栏标签与这里同一份数据源（localMediaLibraries / externalServices）。 */
   if (typeof renderTopLibTabs === "function") renderTopLibTabs();
-  /* 这里每 5 秒被 initHome 的定时器整体重建一次（为了刷新计数与索引进度）。
-     重建出来的节点都是新的、都不带 active，因此必须按 switchView 记下的
-     选中键重新套用高亮，否则用户点完媒体库 5 秒后侧栏就什么都不亮了。 */
+  const host = document.getElementById("topLibTabs");
   const activeKey = window.vaultHubActiveNavKey;
-  if (activeKey) {
-    const keep = [...host.querySelectorAll(".nav-item[data-nav-key]")]
-      .find(n => n.dataset.navKey === activeKey);
-    if (keep) keep.classList.add("active");
-  }
+  if (!host || !activeKey) return;
+  const keep = [...host.querySelectorAll(".libtab[data-nav-key]")]
+    .find(n => n.dataset.navKey === activeKey);
+  if (keep) keep.setAttribute("aria-current", "true");
 }
 function openHomeLibrary(group, libId) {
   /* 先把当前媒体库切过去再切视图，并把 libId 传给 switchView，
-     否则同组的漫画与电子书无法区分，侧栏高亮会停在排在前面的那一个。 */
+     否则同组的漫画与电子书无法区分，导航高亮会停在排在前面的那一个。 */
   selectLocalLibrary(group, libId);
   switchView(group, libId);
 }
@@ -568,7 +543,7 @@ function initLibKindCards() {
 async function refreshHomeData() {
   await Promise.all([loadHomeIndexStatus(), loadHomeScrapeStatus()]);
   renderHomeCount();
-  renderHomeLibraryNav();
+  renderLibraryNav();
   renderHomeLibTable();
   renderNowPlaying();
   await renderHomeRecent();
@@ -588,6 +563,6 @@ function initHome() {
     const signature=JSON.stringify([homeIndexStatus,homeScrapeStatus]);
     if(signature===lastHomeStatus) return;
     lastHomeStatus=signature;
-    renderHomeCount(); renderHomeLibraryNav(); renderHomeLibTable();
+    renderHomeCount(); renderLibraryNav(); renderHomeLibTable();
   }, 5000);
 }

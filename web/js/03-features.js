@@ -5,9 +5,16 @@
 function closeLocalViewer(group) {
   const prior = activeReader;
   const el = document.getElementById("local-media-viewer-" + group);
-  /* v0.9.92：关闭视频播放器 = 真的不播了，跨页「正在播放」入口随之收起。 */
+  /* v0.9.92：关闭视频播放器 = 真的不播了，跨页「正在播放」入口随之收起。
+     v0.9.93：不只暂停 —— 断源 + 停会话（否则浏览器继续读流、服务端继续转码）。 */
   if (group === "movie" && typeof clearActivePlayback === "function") clearActivePlayback("video");
-  if (el) el.querySelectorAll(".media-video-body").forEach(root => { stopVideoPlaybackSession(root); terminateWasmVideo(root); });
+  if (el) el.querySelectorAll(".media-video-body").forEach(root => {
+    if (typeof hardStopVideoPlayback === "function") hardStopVideoPlayback(root);
+    else { stopVideoPlaybackSession(root); terminateWasmVideo(root); }
+  });
+  /* 其它分组（书刊内嵌 <audio controls autoplay> 等）同样要断源，否则关掉阅读器后仍在放。 */
+  if (el && typeof teardownMediaElement === "function") el.querySelectorAll("video, audio").forEach(teardownMediaElement);
+  if (typeof setPlayerImmersive === "function") setPlayerImmersive(false);
   if (el) el.innerHTML = "";
   /* v0.9.67：关闭读者时同步释放漫画阅读器的 IntersectionObserver 与全局键盘监听，
      否则关闭后方向键仍会改写这本书的阅读进度（DOM 没了，监听还活着）。 */
@@ -647,8 +654,8 @@ function renderPtMock() {
 /* ================= 模块管理 ================= */
 const BOARD_TYPE_VIEW = { comic: "view-comic", movie: "view-movie", audio: "view-audio" };
 const BOARD_TYPE_NAV = { comic: "navComic", movie: "navMovie", audio: "navAudio" };
-/* 内置模块：v0.7.0 起侧栏只有首页与 PT 管理两个固定项，
-   三个资源大类不再作为独立侧栏条目，因此也不再出现在模块显隐列表里。 */
+/* 内置模块：导航里只有首页与 PT 管理两个固定项（v0.9.93 起侧栏已移除），
+   三个资源大类不再作为独立导航条目，因此也不再出现在模块显隐列表里。 */
 const BUILTIN_MODULES = [
   { id: "home", icon: "🏠", type: "web", nameKey: "navHome" },
   { id: "pt", icon: "🌊", type: "pt", nameKey: "navPt" }
@@ -695,26 +702,19 @@ function toggleModule(id) {
   applyModuleVisibility();
   renderBoardList();
   if (hiding) {
-    const active = document.querySelector(".nav-item.active[data-view]");
+    const active = document.querySelector(".tn-item.active[data-topnav]");
     if (active && active.dataset.module === id) switchView("home");
   }
 }
 
-/* 根据隐藏模块列表应用侧边栏可见性 */
+/* 根据隐藏模块列表应用导航可见性（v0.9.93：只剩顶栏标签） */
 function applyModuleVisibility() {
   document.body.classList.toggle("module-hidden-pt", hiddenModules.includes("pt"));
-  /* v0.9.74：模块开关同时作用于侧栏条目与顶栏一级导航项（PT 管理两处都有入口）。 */
-  document.querySelectorAll(".nav-item[data-module], .tn-item[data-module]").forEach(item => {
+  /* v0.9.74：模块开关作用于顶栏一级导航项与自定义模块标签（PT 管理两处都有入口）。 */
+  /* v0.9.93：侧栏（含其分组标题 .nav-group）已移除，模块开关只作用于顶栏标签。 */
+  document.querySelectorAll(".tn-item[data-module]").forEach(item => {
     item.style.display = hiddenModules.includes(item.dataset.module) ? "none" : "";
   });
-  /* v0.7.0：侧栏不再有三个资源大类分组，只有主导航 / 媒体库 / 自定义。 */
-  const mainIds = Object.keys(MODULE_GROUP).filter(k => MODULE_GROUP[k] === "main");
-  const mainHeader = document.querySelector('.nav-group[data-nav-group="main"]');
-  if (mainHeader) mainHeader.style.display = mainIds.every(id => hiddenModules.includes(id)) ? "none" : "";
-  /* v0.9.17：自定义分组标题里带「管理 ›」（模块设置入口），
-     即使还没有自定义模块也必须保持可见，否则模块设置无处可进。 */
-  const customHeader = document.querySelector(`.nav-group[data-nav-group="custom"]`);
-  if (customHeader) customHeader.style.display = "";
 }
 
 
@@ -814,14 +814,16 @@ function deleteBoard(id) {
   toast(t("boardDeleted"));
 }
 
-/* 自定义模块导航渲染 */
+/* 自定义模块标签（v0.9.93：容器从已删除的侧栏 #customNav 迁到顶栏 #topCustomNav）
+   删除入口不再塞在标签里 —— 点标签右侧的垃圾键容易误删；删除统一走
+   头像菜单 → 自定义模块 → 模块列表里的 🗑（renderBoardList）。 */
 function renderCustomNav() {
-  const wrap = document.getElementById("customNav");
-  wrap.innerHTML = customBoards.map(b => `
-    <div class="nav-item" data-view="${b.id}" onclick="openCustomBoard('${b.id}')">
-      <span class="ic">${esc(b.icon)}</span><span class="txt">${esc(b.name)}</span>
-      <button class="del" onclick="event.stopPropagation();deleteBoard('${b.id}')">🗑</button>
-    </div>`).join("");
+  const wrap = document.getElementById("topCustomNav");
+  if (!wrap) return;
+  wrap.innerHTML = (customBoards || []).map(b => `
+    <button class="tn-item" type="button" role="tab" aria-current="false" data-topnav="${esc(b.id)}" data-module="${esc(b.id)}" title="${esc(b.name)}" onclick="openCustomBoard('${esc(b.id)}')">
+      <span class="ic">${esc(b.icon)}</span><span class="nl">${esc(b.name)}</span>
+    </button>`).join("");
   applyModuleVisibility();
 }
 
@@ -833,8 +835,9 @@ function openCustomBoard(id) {
     applyBoardToView(b);
     return;
   }
-  document.querySelectorAll(".nav-item[data-view]").forEach(n => n.classList.remove("active"));
-  const navItem = document.querySelector(`.nav-item[data-view="${id}"]`);
+  /* v0.9.93：侧栏已移除，自定义模块的选中态落在顶栏标签上。 */
+  document.querySelectorAll(".tn-item[data-topnav]").forEach(n => n.classList.remove("active"));
+  const navItem = [...document.querySelectorAll(".tn-item[data-topnav]")].find(n => n.dataset.topnav === String(id));
   if (navItem) navItem.classList.add("active");
   document.querySelectorAll(".view").forEach(s => s.classList.remove("active"));
   let view = document.getElementById("view-" + id);
@@ -908,7 +911,6 @@ function setLang(l) {
   /* v0.9.73：主题面板里的调色板/明暗/强调色文案由 06-theme.js 动态生成，
      applyI18n 只覆盖带 data-i18n 的静态节点，所以这里要显式重渲染。 */
   if (typeof renderThemePanel === "function") renderThemePanel();
-  if (typeof renderLayoutChips === "function") renderLayoutChips();
   if (typeof renderTopLibTabs === "function") renderTopLibTabs();
   if (typeof fillTopUserMenu === "function") fillTopUserMenu();
   renderBoardList();
@@ -916,7 +918,7 @@ function setLang(l) {
   /* 首页与媒体库表单里的动态文案（库名列、子类型 option、海报占位、
      最近入库轨）都由 JS 生成，applyI18n 只覆盖静态 data-i18n 节点，
      所以语言切换后必须重跑这些渲染器，否则残留上一个语言。 */
-  if (typeof renderHomeLibraryNav === "function") renderHomeLibraryNav();
+  if (typeof renderLibraryNav === "function") renderLibraryNav();
   if (typeof renderHomeLibTable === "function") renderHomeLibTable();
   if (typeof renderHomeCount === "function") renderHomeCount();
   if (typeof syncHomeLibTypes === "function") syncHomeLibTypes();

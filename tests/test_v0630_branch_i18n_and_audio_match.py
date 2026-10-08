@@ -78,7 +78,8 @@ assert 'mediaTypeName' in media and '"type" + String(type)' in media, \
 # --- setLang must re-render the JS-generated home copy. ---
 set_lang = features[features.index("function setLang("):]
 set_lang = set_lang[:set_lang.index("\n}") + 2]
-for call in ["renderHomeLibraryNav", "renderHomeLibTable", "renderHomeCount",
+# v0.9.93：侧栏移除后媒体库导航刷新函数改名为 renderLibraryNav（只刷顶栏标签）。
+for call in ["renderLibraryNav", "renderHomeLibTable", "renderHomeCount",
              "syncHomeLibTypes", "renderHomeRecent", "renderNowPlaying", "refreshHardwareStatus"]:
     assert call in set_lang, f"setLang() must re-render {call}"
 

@@ -22,8 +22,6 @@ if (typeof ensureFreshAssets !== "function") {
 loadSettings();
 loadBoards();
 loadHiddenModules();
-loadSidebarWidth();
-loadSidebarRail();
 /* v0.9.56：先探测鉴权模式 —— 开放模式自动登录（无登录遮罩），密码模式沿用登录探测。 */
 initVaultHubAuth();
 
@@ -38,7 +36,7 @@ else {
   applyBgImage();
 }
 
-/* v0.9.74：顶栏导航（媒体库标签 / 全局搜索 / 头像菜单 / 布局模式）初始化。
+/* v0.9.74：顶栏导航（媒体库标签 / 全局搜索 / 头像菜单）初始化；v0.9.93 起为唯一布局。
    同样用 typeof 守卫：升级瞬间新 04-boot.js 可能配着缓存里的旧脚本集。 */
 if (typeof initTopNav === "function") initTopNav();
 /* v0.9.83：启动时把「关于」里的版本参数同步到页面最下端的页脚。 */
@@ -54,8 +52,6 @@ refreshSessionStatus(false);
 setInterval(() => refreshSessionStatus(false), 60000);
 
 applyI18n();
-initSidebarResizer();
-initSidebarNavOverflowWatch();
 renderCustomNav();
 initMediaLogin();
 renderPtLoginState();

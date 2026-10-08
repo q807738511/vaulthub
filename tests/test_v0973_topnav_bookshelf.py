@@ -36,23 +36,25 @@ HEADER = HTML[HTML.index('<header class="topbar">'):HTML.index("</header>")]
 check("A1 顶栏有媒体库标签容器", 'id="topLibTabs"' in HEADER and 'role="tablist"' in HEADER)
 check("A2 顶栏有全局搜索（快捷键提示按平台渲染，v0.9.85 去掉 ⌘ 乱码）", 'id="topSearch"' in HEADER and 'id="topSearchKbd"' in HEADER
       and "oninput=\"onTopSearchInput()\"" in HEADER and "onkeydown=\"onTopSearchKey(event)\"" in HEADER)
-check("A3 顶栏一级导航（首页 / PT）—— v0.9.84 移除媒体搜索按钮（右侧已有搜索框）",
-      all(f'data-topnav="{k}"' in HEADER for k in ["home", "pt"])
-      and 'data-topnav="search"' not in HEADER)
+# v0.9.93：侧栏移除后「媒体搜索」回到顶栏一级导航（否则该入口无处可去）。
+check("A3 顶栏一级导航（首页 / PT / 媒体搜索）",
+      all(f'data-topnav="{k}"' in HEADER for k in ["home", "pt", "search"])
+      and 'onclick="openMediaSearch()"' in HEADER)
 check("A4 右上角头像菜单入口", 'id="topUserButton"' in HEADER and 'id="topUserMenu"' in HEADER
       and 'aria-expanded="false"' in HEADER and 'aria-controls="topUserMenu"' in HEADER)
 _TOP_MENU = HEADER[HEADER.index('id="topUserMenu"'):]
-check("A5 头像菜单含系统设置/外观主题/账户/退出（v0.9.84 自定义模块移入媒体库）",
+# v0.9.93：侧栏移除后自定义模块入口回到头像菜单（同时顶层标签也渲染自定义模块）。
+check("A5 头像菜单含系统设置/外观主题/自定义模块/账户/退出",
       all(f"topUserMenuGo('{t}')" in _TOP_MENU for t in ["library", "look", "account"])
-      and "topUserMenuGo('custom')" not in _TOP_MENU
-      and "自定义模块" not in _TOP_MENU
+      and "topUserMenuModules()" in _TOP_MENU
+      and "自定义模块" in _TOP_MENU
       and "topUserMenuLogout()" in _TOP_MENU
       and 'id="setLibCustomModule"' in HTML and 'onclick="openModuleModal()"' in HTML)
 check("A6 品牌与信息区仍在（旧契约不破）",
       'id="accountWrap"' in HEADER and 'id="topScanStat"' in HEADER
       and HEADER.index('id="accountWrap"') < HEADER.index('class="tb-info"'))
 check("A7 独立脚本 07-topnav.js 已挂载且在主题引擎之后",
-      "/web/js/07-topnav.js?v=0.9.92" in HTML
+      "/web/js/07-topnav.js?v=0.9.93" in HTML
       and HTML.index("06-theme.js") < HTML.index("07-topnav.js") < HTML.index("03-audio-zoom.js"))
 check("A8 顶栏渲染器读真实媒体库并保序渲染",
       "function renderTopLibTabs()" in TOPNAV and "localMediaLibraries" in TOPNAV
@@ -68,35 +70,38 @@ check("A12 全局搜索先本地过滤、回车转交全库检索",
       "function applyTopSearchFilter()" in TOPNAV and "tn-search-hidden" in TOPNAV
       and "function runTopSearchGo()" in TOPNAV and 'id="mediaSearchInput"' in HTML)
 check("A13 ⌘K / Ctrl+K 聚焦搜索框", 'String(event.key).toLowerCase() === "k"' in TOPNAV and "event.metaKey" in TOPNAV)
-check("A14 布局模式：顶栏默认、可切回侧栏",
-      "function currentLayoutMode()" in TOPNAV and 'settings.layout === "sidebar"' in TOPNAV
-      and 'classList.toggle("layout-topnav", mode === "topnav")' in TOPNAV
-      and "function setLayoutMode(mode)" in TOPNAV)
-check("A15 settings 默认顶栏 + loadSettings 白名单",
-      'layout: "topnav"' in STATE and 'if (s.layout === "sidebar" || s.layout === "topnav") settings.layout = s.layout;' in STATE)
+# v0.9.93：侧栏已彻底移除 —— 布局收敛为顶栏一种（不再有可切回的侧边导航）。
+check("A14 布局只剩顶栏一种",
+      "function currentLayoutMode() { return \"topnav\"; }" in TOPNAV
+      and 'document.body.classList.add("layout-topnav");' in TOPNAV
+      and "function setLayoutMode(mode)" not in TOPNAV and "renderLayoutChips" not in TOPNAV)
+# v0.9.93：settings.layout 不再被读取（本地保存的旧偏好自然失效）。
+check("A15 settings 里不再有 layout 字段（旧偏好不再被读取）",
+      'layout: "topnav"' not in STATE and 'settings.layout' not in STATE
+      and 's.layout ===' not in STATE)
 check("A16 switchView 同步顶栏高亮与一级导航",
       "if (typeof syncTopLibTabs === \"function\") syncTopLibTabs(navKey);" in STATE
       and "if (typeof syncTopNavView === \"function\") syncTopNavView(\"view-\" + v);" in STATE)
-check("A17 侧栏渲染时同时渲染顶栏标签",
-      "if (typeof renderTopLibTabs === \"function\") renderTopLibTabs();" in HOME)
+check("A17 媒体库导航刷新时重建顶栏标签",
+      "if (typeof renderTopLibTabs === \"function\") renderTopLibTabs();" in HOME
+      and "function renderLibraryNav()" in HOME)
 check("A18 启动时初始化顶栏（typeof 守卫）", "if (typeof initTopNav === \"function\") initTopNav();" in BOOT)
-check("A19 模块开关同时作用于顶栏一级导航",
-      '.nav-item[data-module], .tn-item[data-module]' in FEATURES)
-check("A20 语言切换重绘顶栏标签与布局选项",
-      "if (typeof renderLayoutChips === \"function\") renderLayoutChips();" in FEATURES
+check("A19 模块开关作用于顶栏一级导航",
+      'document.querySelectorAll(".tn-item[data-module]").forEach(item => {' in FEATURES)
+check("A20 语言切换重绘顶栏标签与自定义模块标签",
+      "if (typeof renderLayoutChips === \"function\") renderLayoutChips();" not in FEATURES
       and "if (typeof renderTopLibTabs === \"function\") renderTopLibTabs();" in FEATURES)
-check("A21 设置页提供布局切换入口",
-      'id="layoutModeChips"' in HTML and 'data-layout="topnav"' in HTML
-      and 'data-layout="sidebar"' in HTML and 'onclick="setLayoutMode(\'topnav\')"' in HTML)
+# v0.9.93：系统设置里的「UI 设置」（布局 / 侧栏两节）已按要求移除。
+check("A21 设置页不再有布局切换入口",
+      'id="layoutModeChips"' not in HTML and 'data-layout="sidebar"' not in HTML
+      and 'data-i18n="setLayout"' not in HTML and 'data-i18n="setSidebar"' not in HTML)
 check("A22 顶栏样式齐备",
       all(sel in CSS for sel in [".tn-wrap {", ".tn-nav {", ".libtab {", '.libtab[aria-current="true"] {',
                                  ".tn-search {", ".tn-search:focus-within {", ".tn-avatar {", ".tn-pop {",
                                  ".tn-popitem {", ".tn-search-hidden {"]))
-check("A23 顶栏模式下侧栏让位（含遮罩左边界）",
-      "body.layout-topnav { --sidebar-w: 0px; }" in CSS
-      and "body.layout-topnav #sidebar { display: none !important; }" in CSS
-      and "body.layout-topnav .main { margin-left: 0 !important; }" in CSS
-      and "body.layout-topnav .media-reader-overlay," in CSS)
+check("A23 侧栏占位恒为 0（含遮罩左边界）",
+      "--sidebar-w: 0px;" in CSS and "body.layout-topnav" not in CSS
+      and "body.sidebar-hidden" not in CSS and ".sidebar {" not in CSS)
 
 # ---------------------------------------------------------------- B. 书刊展示页
 check("B1 三个书架标签（书架/喜欢/历史阅读）—— v0.9.84 未读改名书架、移除全部",
@@ -158,16 +163,18 @@ check("B17 历史阅读释放按钮仍在卡片上",
       'class="book-card-release"' in MEDIA and "releaseBookFromHistory(" in MEDIA)
 
 # ---------------------------------------------------------------- C. 令牌回归守卫
-for token, value in [("--topbar-h", "52px"), ("--sidebar-w", "236px"), ("--ebook-font-size", "17px")]:
+# v0.9.93：侧栏移除后 --sidebar-w 恒为 0（仍必须是显式定义的令牌，不能丢）。
+for token, value in [("--topbar-h", "52px"), ("--sidebar-w", "0px"), ("--ebook-font-size", "17px")]:
     check(f"C 布局令牌 {token} 已定义（{value}）",
           f"{token}: {value};" in CSS,
           f"v0.9.84 曾漏掉 {token}，顶栏/侧栏会当场塌掉")
 check("C CSS 花括号平衡", CSS.count("{") == CSS.count("}"), f"{CSS.count('{')} vs {CSS.count('}')}")
 # 切回侧栏时顶栏不该把媒体库/主导航再铺一遍（侧栏已经提供了同样的入口）
-check("C 侧栏模式下顶栏不重复媒体库与主导航",
-      "body:not(.layout-topnav) .topbar #topLibTabs { display: none !important; }" in CSS
-      and "body:not(.layout-topnav) .topbar .tn-nav," in CSS,
-      "否则侧栏 + 顶栏会出现两套一样的入口")
+# v0.9.93：只剩顶栏一种布局，不可能再出现「侧栏 + 顶栏两套入口」；
+# 原先为侧栏模式写的条件隐藏规则也随之一并删除。
+check("C 不再有「非顶栏模式隐藏顶栏导航」的条件规则",
+      "body:not(.layout-topnav)" not in CSS and ".sidebar" not in CSS,
+      "侧栏移除后这些规则属于死代码")
 
 # ---------------------------------------------------------------- D. 文档与版本
 check("D1 发布说明存在且包含本版修正（发布说明随版本推进）",
@@ -175,10 +182,10 @@ check("D1 发布说明存在且包含本版修正（发布说明随版本推进�
       ("184,693" in NOTES or "18.4 万" in NOTES or "37 万" in NOTES)
       and "获取信息" in NOTES and "转码" in NOTES
       and "show_title" in NOTES and "语言" in NOTES)
-check("D2 Update Log 有对应条目", "持续登录" in LOG and "通知喇叭" in LOG and "硬盘和网络" in LOG and "v0.9.92" in LOG)
+check("D2 Update Log 有对应条目", "持续登录" in LOG and "通知喇叭" in LOG and "硬盘和网络" in LOG and "v0.9.93" in LOG)
 check("D3 版本号为 0.9.90",
-      'VAULTHUB_ASSET_VERSION = "0.9.92"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.92"' in STATE
-      and "?v=0.9.92" in HTML and "?v=0.9.78" not in HTML)
+      'VAULTHUB_ASSET_VERSION = "0.9.93"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.93"' in STATE
+      and "?v=0.9.93" in HTML and "?v=0.9.78" not in HTML)
 
 fails = [(n, d) for n, ok, d in checks if not ok]
 for n, ok, d in checks:
