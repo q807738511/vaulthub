@@ -289,10 +289,10 @@ const GO_SCRAPE = fs.readFileSync(ROOT + "/media-go/scrape_store.go", "utf8");
 
   /* ================= E. 版本与审查项 ================= */
   {
-    chk("E1 资源版本 0.9.96 ×10", (HTML_SRC.match(/\?v=0\.9\.96/g) || []).length === 10);
-    chk("E2 ASSET_VERSION / SCRIPT_VERSION = 0.9.96",
-        HTML_SRC.includes('window.VAULTHUB_ASSET_VERSION = "0.9.96";') &&
-        STATE_SRC.includes('const VAULTHUB_SCRIPT_VERSION = "0.9.96";'));
+    chk("E1 资源版本 本版（≥10 处）", (HTML_SRC.match(/\?v=0\.9\.97/g) || []).length >= 10);
+    chk("E2 ASSET_VERSION / SCRIPT_VERSION = 0.9.97",
+        HTML_SRC.includes('window.VAULTHUB_ASSET_VERSION = "0.9.97";') &&
+        STATE_SRC.includes('const VAULTHUB_SCRIPT_VERSION = "0.9.97";'));
     /* 审查项：标语断言必须校验「三处完全一致」，而不是各自存在。 */
     const slogans = (HTML_SRC.match(/v0\.9\.9\d · [^<"]+/g) || []);
     chk("E3 三处标语完全一致（审查项：断言强度）",

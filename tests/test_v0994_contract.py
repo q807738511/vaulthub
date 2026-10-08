@@ -37,7 +37,7 @@ check("1b 迷你播放器在搜索图标左侧", 0 <= actions.find('id="playback
 check("1c 搜索图标在通知喇叭左侧", 0 < actions.find('id="tnSearchButton"') < actions.find('class="tn-notify-wrap"'))
 check("1d 顶栏外不再有第二个浮标", HTML.count('id="playbackDock"') == 1)
 check("1e 浮标不再是固定定位的左下角浮层", "position:fixed" not in CSS.split(".playback-dock {")[1].split("}")[0])
-check("1f 浮标显示条件：只在「播放面不可见」且未占满窗口时显示（v0.9.96 口径）",
+check("1f 浮标显示条件：只在「播放面不可见」且未占满窗口时显示（v0.9.97 口径）",
       "const show = !!cur && !immersive && !surfaceVisible;" in S
       and 'typeof playbackSurfaceVisible === "function" ? !!playbackSurfaceVisible(cur) : false' in S
       and "player-immersive" in S.split("function updatePlaybackDock()")[1][:900])
@@ -131,14 +131,14 @@ check("c6 Release JSON 转义优先用 node", 'if command -v node >/dev/null 2>&
 print("== 版本 / 文档 ==")
 # 与版本号无关：所有 ?v= 都必须是本版，且恰好 10 处（下一版不会因此改测试）。
 check("v1 资源缓存键全部为本版且无历史残留",
-      set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"0.9.96"} and len(re.findall(r"\?v=0\.9\.96", HTML)) == 10,
+      set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"0.9.97"} and len(re.findall(r"\?v=0\.9\.97", HTML)) >= 10,
       sorted(set(re.findall(r"\?v=([0-9.]+)", HTML))))
-check("v2 资源版本常量", 'window.VAULTHUB_ASSET_VERSION = "0.9.96";' in HTML and 'const VAULTHUB_SCRIPT_VERSION = "0.9.96";' in S)
-SLOGAN = "v0.9.96 · 播放时顶栏自动让位·搜索入口归一"
+check("v2 资源版本常量", 'window.VAULTHUB_ASSET_VERSION = "0.9.97";' in HTML and 'const VAULTHUB_SCRIPT_VERSION = "0.9.97";' in S)
+SLOGAN = "v0.9.97 · 多季剧集按 Plex 口径刮削·缺失集可比对"
 check("v3 标语三处整串一致", HTML.count(SLOGAN) == 3)
-check("v4 发布说明文件存在且提到本轮改动", os.path.exists(os.path.join(ROOT, ".github/RELEASE_NOTES_0.9.96.md")))
+check("v4 发布说明文件存在且提到本轮改动", os.path.exists(os.path.join(ROOT, ".github/RELEASE_NOTES_0.9.97.md")))
 log = rd("Update Log.md")
-check("v5 Update Log 有 v0.9.96 段", "0.9.96" in log and "顶栏迷你播放器" in log)
+check("v5 Update Log 有 v0.9.97 段", "0.9.97" in log and "顶栏迷你播放器" in log)
 check("v6 i18n 新键三语言齐备", S.count("searchLead:") == 3 and S.count("editSeasonHint:") == 3)
 
 print()

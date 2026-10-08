@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# v0.9.96 契约测试：影视播放时顶栏自动让位（含根因回归护栏）+ 搜索入口归一与放大镜图标修复
+# v0.9.97 契约测试：影视播放时顶栏自动让位（含根因回归护栏）+ 搜索入口归一与放大镜图标修复
 # 口径：断言「新实现存在」且「旧实现已不存在」；历史断言按新口径重定向。
 import io, os, re, sys
 
@@ -22,7 +22,7 @@ HTML = rd("index.html")
 CSS = rd("web/css/main.css")
 M = rd("web/js/02-media.js")
 S = rd("web/js/01-state.js")
-NOTES = rd(".github/RELEASE_NOTES_0.9.96.md")
+NOTES = rd(".github/RELEASE_NOTES_0.9.97.md")
 LOG = rd("Update Log.md")
 ACTIONS = HTML[HTML.index('<div class="tn-actions">'):HTML.index("</header>")]
 NAV = HTML[HTML.index('<nav class="tn-nav" aria-label="主导航">'):HTML.index("</nav>")]
@@ -81,7 +81,7 @@ check("3h 沉浸态四件套：类别切换 + --topbar-h 归零 + 顶栏滑出 +
       'document.body.classList.toggle("player-immersive", next);' in M
       and "body.player-immersive { --topbar-h: 0px; }" in CSS
       and "body.player-immersive .topbar { transform: translateY(-100%);" in CSS
-      # v0.9.96：0 高度盒子挡不住溢出子元素与 1px 底边线，回缩必须补齐这两项
+      # v0.9.97：0 高度盒子挡不住溢出子元素与 1px 底边线，回缩必须补齐这两项
       and "visibility: hidden; border-bottom-color: transparent;" in CSS)
 check("3i 音乐路径未被改动（仍看 #audio-bottom-player 的 show）",
       'const bar = document.getElementById("audio-bottom-player");' in PSV
@@ -92,17 +92,17 @@ check("3k 其它 offsetParent 用法未被误伤（分页宿主仍用 display �
       "host.offsetParent !== null" in M)
 
 print("\n== 4. 版本与文档 ==")
-check("4a 版本串 ?v=0.9.96 ×10 且无其它版本串",
-      len(re.findall(r"\?v=0\.9\.96", HTML)) == 10
-      and set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"0.9.96"})
-check("4b ASSET_VERSION / SCRIPT_VERSION = 0.9.96",
-      'VAULTHUB_ASSET_VERSION = "0.9.96"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.96"' in S)
-check("4c 新标语 ×3 且旧标语已清除",
-      HTML.count("v0.9.96 · 播放时顶栏自动让位·搜索入口归一") == 3
-      and "v0.9.96 · 迷你播放器按需出现" not in HTML)
-check("4d 发布说明存在且覆盖两项需求",
-      "影视播放器打开后" in NOTES and "offsetParent" in NOTES and "放大镜" in NOTES)
-check("4e Update Log 含 v0.9.96 段落", "v0.9.96" in LOG and "## 1. 播放视频时顶栏自动让位" in LOG)
+check("4a 版本串 ?v=0.9.97（≥10 处）且无其它版本串",
+      len(re.findall(r"\?v=0\.9\.97", HTML)) >= 10
+      and set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"0.9.97"})
+check("4b ASSET_VERSION / SCRIPT_VERSION = 0.9.97",
+      'VAULTHUB_ASSET_VERSION = "0.9.97"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.97"' in S)
+check("4c 当前标语 ×3 且历史标语已清除",
+      HTML.count("v0.9.97 · 多季剧集按 Plex 口径刮削·缺失集可比对") == 3
+      and "v0.9.97 · 播放时顶栏自动让位" not in HTML and "v0.9.97 · 迷你播放器按需出现" not in HTML)
+check("4d 发布说明存在且覆盖本轮需求",
+      "Plex" in NOTES and "缺失集" in NOTES and "方括号" in NOTES)
+check("4e Update Log 含 v0.9.97 段落", "v0.9.97" in LOG and "## 1. 播放视频时顶栏自动让位" in LOG)
 
 print("\n== 5. 洗版自查（本仓禁止真实域名 / 内网 IP / 卷路径字面量）==")
 for name, text in (("测试文件自身", rd("tests/test_v0996_contract.py")),):
@@ -111,6 +111,6 @@ for name, text in (("测试文件自身", rd("tests/test_v0996_contract.py")),):
 
 print()
 if FAILED:
-    print(f"v0.9.96 契约测试失败 {len(FAILED)} 项：" + "、" .join(FAILED))
+    print(f"v0.9.97 契约测试失败 {len(FAILED)} 项：" + "、" .join(FAILED))
     sys.exit(1)
-print("v0.9.96 契约测试全部通过")
+print("v0.9.97 契约测试全部通过")

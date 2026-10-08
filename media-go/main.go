@@ -2660,6 +2660,9 @@ func main() {
 	mux.HandleFunc("/api/media/scrape-cache", a.scrapeCacheHandler)
 	// v0.9.89：NFO 元数据本地化（刮削结果写回媒体目录，下次直接读本地，不再重复联网）。
 	mux.HandleFunc("/api/media/nfo", a.nfoHandler)
+	/* v0.9.97：Plex 口径的多季剧集方案（命名体检 / 季集结构）与缺失集比对。 */
+	mux.HandleFunc("/api/media/series/plan", a.seriesPlan)
+	mux.HandleFunc("/api/media/series/missing", a.seriesMissing)
 	mux.HandleFunc("/api/media/scrapers", func(w http.ResponseWriter, r *http.Request) {
 		out := a.runtimeConfigSnapshot(false)
 		out["default"], out["types"] = out["scraper_mode"], []string{"movie", "series"}

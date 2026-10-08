@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""v0.9.96 行为测试：跑 tests/v0996_behavior.js（Node VM 桩，真实执行 web/js/02-media.js）。
+"""v0.9.97 行为测试：跑 tests/v0996_behavior.js（Node VM 桩，真实执行 web/js/02-media.js）。
 
 覆盖：
   A. elementRendered 真值表（固定定位元素的 offsetParent 恒为 null，必须按渲染盒子判定）
@@ -18,7 +18,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 if shutil.which("node") is None:
-    print("SKIP: 本机没有 node，跳过 v0.9.96 行为测试")
+    print("SKIP: 本机没有 node，跳过 v0.9.97 行为测试")
     sys.exit(0)
 
 env = dict(os.environ)

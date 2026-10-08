@@ -1,4 +1,4 @@
-/* v0.9.96 行为测试（Node VM 桩，真实执行源文件 web/js/02-media.js）：
+/* v0.9.97 行为测试（Node VM 桩，真实执行源文件 web/js/02-media.js）：
    A. elementRendered 真值表 —— 固定定位元素（offsetParent 恒为 null）必须有盒子才算可见，
       这正是本次客户反馈「顶栏遮挡播放器」的根因所在
    B. playbackSurfaceVisible 的影视/音频两条分支（真实函数）

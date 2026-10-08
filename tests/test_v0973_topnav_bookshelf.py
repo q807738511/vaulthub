@@ -40,7 +40,7 @@ check("A2 顶栏搜索入口 = 放大镜图标按钮（点击弹窗，旧内联�
       'id="tnSearchButton"' in HEADER and "toggleMediaSearchModal()" in HEADER
       and 'id="topSearch"' not in HEADER and 'id="topSearchKbd"' not in HEADER)
 # v0.9.93：侧栏移除后「媒体搜索」回到顶栏一级导航。
-# v0.9.96（需求2）：顶栏右侧已有放大镜按钮，左侧那个导航项属于重复入口，已移除；
+# v0.9.97（需求2）：顶栏右侧已有放大镜按钮，左侧那个导航项属于重复入口，已移除；
 # 搜索入口归一为 #tnSearchButton（A2 已断言），旧书签落点 #view-search 仍会自动弹窗。
 check("A3 顶栏一级导航（首页 / PT），媒体搜索入口归一到右侧放大镜",
       all(f'data-topnav="{k}"' in HEADER for k in ["home", "pt"])
@@ -60,7 +60,7 @@ check("A6 品牌与信息区仍在（旧契约不破）",
       'id="accountWrap"' in HEADER and 'id="topScanStat"' in HEADER
       and HEADER.index('id="accountWrap"') < HEADER.index('class="tb-info"'))
 check("A7 独立脚本 07-topnav.js 已挂载且在主题引擎之后",
-      "/web/js/07-topnav.js?v=0.9.96" in HTML
+      "/web/js/07-topnav.js?v=0.9.97" in HTML
       and HTML.index("06-theme.js") < HTML.index("07-topnav.js") < HTML.index("03-audio-zoom.js"))
 check("A8 顶栏渲染器读真实媒体库并保序渲染",
       "function renderTopLibTabs()" in TOPNAV and "localMediaLibraries" in TOPNAV
@@ -200,10 +200,10 @@ check("D1 发布说明存在且包含本版修正（发布说明随版本推进�
       ("184,693" in NOTES or "18.4 万" in NOTES or "37 万" in NOTES)
       and "获取信息" in NOTES and "转码" in NOTES
       and "show_title" in NOTES and "语言" in NOTES)
-check("D2 Update Log 有对应条目", "持续登录" in LOG and "通知喇叭" in LOG and "硬盘和网络" in LOG and "v0.9.96" in LOG)
+check("D2 Update Log 有对应条目", "持续登录" in LOG and "通知喇叭" in LOG and "硬盘和网络" in LOG and "v0.9.97" in LOG)
 check("D3 版本号为 0.9.90",
-      'VAULTHUB_ASSET_VERSION = "0.9.96"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.96"' in STATE
-      and "?v=0.9.96" in HTML and "?v=0.9.78" not in HTML)
+      'VAULTHUB_ASSET_VERSION = "0.9.97"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.97"' in STATE
+      and "?v=0.9.97" in HTML and "?v=0.9.78" not in HTML)
 
 fails = [(n, d) for n, ok, d in checks if not ok]
 for n, ok, d in checks:

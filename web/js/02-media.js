@@ -826,22 +826,111 @@ function collapseDiscFragments(files) {
 /* 影视文件名常见的发布组/规格标记，展示标题时剔除 */
 const MOVIE_NOISE_RE = /\b(2160p|1080p|1080i|720p|480p|4k|8k|uhd|hdr10\+?|hdr|dv|dolby[\s.]?vision|remux|bluray|blu-ray|bdrip|brrip|webrip|web-?dl|hdtv|dvdrip|x264|x265|h\.?264|h\.?265|hevc|avc|aac|ac3|eac3|dts(?:-hd)?|truehd|atmos|flac|10bit|8bit|s\d{1,2}e\d{1,3}|s\d{1,2}|e\d{1,3}|repack|proper|extended|imax|cn|chs|cht|zh|eng)\b/gi;
 
+/* v0.9.97：季集解析升级为 Plex 口径（多季剧集精准刮削的基础）。
+   规则与官方 Plex 一致：
+     - **方括号内容整体忽略**（[组名]、[s01e05]、【字幕组】都会被 Plex 丢掉），
+       解析前先剥离，季集号只认方括号以外的部分；
+     - 季目录（Season 03 / S03 / 第 3 季 / Specials / Season 00）**优先于**文件名里的季号；
+     - 文件名支持 sXXeYY、sXXeYY-eZZ（多集合并）、1x02、第X季第Y集、第Y集，
+       以及有季目录时的 E05 简写；
+     - 纯数字命名（仅季目录内）按序数兜底但标记 by="number" —— Plex 并不认这种写法，
+       会在「命名体检」里提示改名；
+     - 完全解析不出来时以**文件名**当展示名，条目不丢。
+   返回结构在旧字段（show/key/season/episode/title/label）之外新增
+   episodeEnd / multi / by / fromFile / seasonDir，供多季刮削与命名体检使用。 */
+const PLEX_BRACKET_STRIP_RE = /\[[^\]]*\]|【[^】]*】/g;
+const PLEX_SEASON_DIR_RE = /^(?:season|s)\s*0*(\d{1,2})$/i;
+const PLEX_SEASON_CN_RE = /^第\s*(\d{1,2})\s*[季部]$/;
+const PLEX_SPECIAL_DIR_RE = /^(?:specials?|sp|extras?|特别篇|特別篇|特别集|特典|花絮|番外)$/i;
+const PLEX_EP_SE_RE = /(?:^|[^a-z0-9])s\s*(\d{1,2})\s*e\s*(\d{1,3})(?:\s*[-–—~_]\s*(?:e|ep)?\s*(\d{1,3}))?/i;
+const PLEX_EP_X_RE = /(?:^|[^0-9a-z])(\d{1,2})\s*x\s*(\d{1,3})(?:\s*[-–—~]\s*(\d{1,3}))?/i;
+const PLEX_EP_CN_RE = /第\s*(\d{1,2})\s*季\s*第\s*(\d{1,3})\s*[集话話]/;
+const PLEX_EP_CN2_RE = /第\s*(\d{1,3})\s*[集话話]/;
+const PLEX_EP_E_RE = /(?:^|[\s._\-])e(?:p)?\s*(\d{1,3})(?:\s*[-–—~]\s*(?:e|ep)?\s*(\d{1,3}))?(?:[\s._\-]|$)/i;
+const PLEX_BARE_NUM_RE = /(?:^|[\s._\-])(\d{1,3})(?:[\s._\-]|$)/;
+function plexStripBracketsLocal(text) { return String(text == null ? "" : text).replace(PLEX_BRACKET_STRIP_RE, " ").replace(/\s+/g, " ").trim(); }
+/* 剧根目录名 → 剧名：剥离方括号、末尾首播年份（`剧名 (2014)` / `剧名 2014`）与
+   v0.9.94 的季标签（`幽游白书S04` / `幽游白书 第3季`）。与服务端 plexParseShowDir 同口径，
+   保证「同名不同季标签 / 年份写法不同」的目录聚到同一部剧。 */
+const PLEX_SHOW_SEASON_TAG_RE = /^(.*?)[\s._\-·、，,]*s\s*0*(\d{1,2})(?:[\s._\-]*e\s*\d{1,3})?$/i;
+const PLEX_SHOW_SEASON_CN_RE = /^(.*?)[\s._\-·、，,]*第\s*(\d{1,2})\s*季$/;
+const PLEX_SHOW_YEAR_RE = /^(.*?)[\s._\-]*[（(\[【]?\s*(19\d{2}|20\d{2})\s*[)）\]】]?$/;
+function plexShowTitleLocal(dir) {
+  let title = plexStripBracketsLocal(dir);
+  if (!title) return "";
+  let m = title.match(PLEX_SHOW_YEAR_RE);
+  if (m && String(m[1] || "").trim()) title = String(m[1]).trim();
+  m = title.match(PLEX_SHOW_SEASON_TAG_RE);
+  if (!m) m = title.match(PLEX_SHOW_SEASON_CN_RE);
+  if (m && String(m[1] || "").trim()) title = String(m[1]).trim();
+  return title.replace(/[\s._\-·、，,]+$/, "").replace(/\s+/g, " ").trim();
+}
+/* 季目录名 → 季号；null 表示不是季目录。特别篇（Season 00 / Specials / 花絮）一律第 0 季。 */
+function plexSeasonDirNumberLocal(dir) {
+  const d = String(dir == null ? "" : dir).trim();
+  if (!d) return null;
+  if (PLEX_SPECIAL_DIR_RE.test(d)) return 0;
+  let m = d.match(PLEX_SEASON_DIR_RE);
+  if (m) { const n = Number(m[1]); return (n >= 0 && n <= 99) ? n : null; }
+  m = d.match(PLEX_SEASON_CN_RE);
+  if (m) { const n = Number(m[1]); return (n >= 0 && n <= 99) ? n : null; }
+  return null;
+}
+/* 取标记之后的部分当分集标题（`剧集名 - s03e05 - 标题` 里的标题）。 */
+function plexEpisodeTitleLocal(stem, token) {
+  const idx = String(stem == null ? "" : stem).indexOf(token);
+  if (idx < 0) return "";
+  return String(stem).slice(idx + token.length).replace(/^[\s._\-–—~\[\]【】]+/, "");
+}
 function parseSeriesEpisode(path) {
   const raw = String(path || "");
   const parts = raw.split(/[\\/]+/).filter(Boolean);
   const filename = parts.pop() || raw;
-  const stem = filename.replace(/\.[^.]+$/, "");
-  const seasonDir = [...parts].reverse().find(p => /^Season\s*\d+$/i.test(p) || /^第\s*\d+\s*季$/.test(p));
-  const patterns = [/^(.*?)\s*-?\s*[sS](\d{1,2})[eE](\d{1,3})\s*-?\s*(.*)$/, /^(.*?)\s+(\d{1,2})x(\d{1,3})\s*-?\s*(.*)$/, /^(.*?)第\s*(\d{1,2})\s*季\s*第\s*(\d{1,3})\s*集\s*(.*)$/];
-  let show = "", season = 1, episode = 0, title = "";
-  for (const re of patterns) { const m = stem.match(re); if (m) { show = m[1]; season = Number(m[2]); episode = Number(m[3]); title = m[4] || ""; break; } }
-  if (!show) { const m = stem.match(/[sS](\d{1,2})[eE](\d{1,3})/); if (m) { season = Number(m[1]); episode = Number(m[2]); title = stem.replace(m[0], " "); } }
-  if (!show) { const seasonIndex = parts.findIndex(p => /^Season\s*\d+$/i.test(p) || /^第\s*\d+\s*季$/.test(p)); show = seasonIndex > 0 ? parts[seasonIndex - 1] : (parts[0] || movieTitleFromPath(path)); }
-  if (seasonDir) { const sm = seasonDir.match(/(\d+)/); if (sm) season = Number(sm[1]); }
-  const clean = s => String(s || "").replace(MOVIE_NOISE_RE, " ").replace(/[._]+/g, " ").replace(/\s+-\s*$/g, "").replace(/\s+/g, " ").trim();
-  show = clean(show) || movieTitleFromPath(path);
-  title = clean(title) || `第 ${episode || "?"} 集`;
-  return { show, key: show.toLowerCase(), season: season || 1, episode: episode || 0, title, label: `S${String(season || 1).padStart(2,"0")}E${String(episode || 0).padStart(2,"0")}` };
+  const dot = filename.lastIndexOf(".");
+  const ext = dot > 0 ? filename.slice(dot) : "";
+  const stem = plexStripBracketsLocal(dot > 0 ? filename.slice(0, dot) : filename);
+  const dirs = parts;
+  let dirSeason = -1, seasonDir = "";
+  for (let i = dirs.length - 1; i >= 0; i--) {
+    const n = plexSeasonDirNumberLocal(dirs[i]);
+    if (n !== null) { dirSeason = n; seasonDir = dirs[i]; break; }
+  }
+  let season = -1, episode = 0, episodeEnd = 0, title = "", by = "";
+  const pad = n => String(Math.max(0, Number(n) || 0)).padStart(2, "0");
+  const assign = (m, kind, hasSeason) => {
+    let ep, end = 0;
+    if (hasSeason) { season = Number(m[1]); ep = Number(m[2]); if (m[3]) end = Number(m[3]); }
+    else { ep = Number(m[1]); if (m[2]) end = Number(m[2]); season = dirSeason; }
+    episode = ep; by = kind;
+    if (end > 0 && end !== ep) { episodeEnd = Math.max(ep, end); episode = Math.min(ep, end); }
+    title = plexEpisodeTitleLocal(stem, m[0]);
+  };
+  let m = stem.match(PLEX_EP_SE_RE);
+  if (m) assign(m, "sxxexx", true);
+  if (!episode) { m = stem.match(PLEX_EP_X_RE); if (m) assign(m, "x", true); }
+  if (!episode) { m = stem.match(PLEX_EP_CN_RE); if (m) assign(m, "cn", true); }
+  if (!episode) { m = stem.match(PLEX_EP_CN2_RE); if (m) assign(m, "cn_ep", false); }
+  if (!episode && dirSeason >= 0) { m = stem.match(PLEX_EP_E_RE); if (m) assign(m, "e", false); }
+  if (!episode && dirSeason >= 0) { m = stem.match(PLEX_BARE_NUM_RE); if (m) { assign(m, "number", false); title = ""; } }
+  /* 季目录优先：目录写 Season 03 时文件名里的 s02 不生效（与 Plex 一致）。 */
+  if (dirSeason >= 0) season = dirSeason;
+  if (season < 0) season = 1;
+  /* 剧根目录：季目录的上一层；没有季目录时取第一层目录名。 */
+  const sIdx = seasonDir ? dirs.indexOf(seasonDir) : -1;
+  const showIdx = sIdx > 0 ? sIdx - 1 : 0;
+  const clean = s => String(s || "").replace(MOVIE_NOISE_RE, " ").replace(/[._]+/g, " ").replace(/^\s*-\s*/, "").replace(/[\s-]+$/, "").replace(/\s+/g, " ").trim();
+  let show = clean(plexShowTitleLocal(dirs[showIdx] || dirs[0] || ""));
+  if (!show) show = clean(movieTitleFromPath(path));
+  title = clean(title);
+  if (!title) title = episode > 0 ? `第 ${episode} 集` : clean(stem);
+  const label = episode > 0
+    ? (episodeEnd > episode ? `S${pad(season)}E${pad(episode)}-E${pad(episodeEnd)}` : `S${pad(season)}E${pad(episode)}`)
+    : clean(stem);
+  return {
+    show, key: show.toLowerCase(), season: (season >= 0 ? season : 1), episode: episode || 0,
+    episodeEnd: episodeEnd || 0, multi: episodeEnd > episode, by, title, label,
+    fromFile: episode > 0, seasonDir: seasonDir || "", ext
+  };
 }
 /* v0.9.94（需求9）：多季度分离刮削的「标签」——
    形如「幽游白书S04」（也接受 幽游白书 S4 / 幽游白书 第4季）表示
@@ -2158,7 +2247,7 @@ async function openSeriesDetails(libId, showKey) { const lib=findMediaLibrary(li
   const renderPage = (extras) => {
     const meta = { ...hero, ...(extras||{}) };
     const seasons = (show.seasonList||[]).map(season => renderSeriesSeasonCard(lib, show, season)).join("");
-    viewer.innerHTML = `<div class="media-reader-overlay movie-detail-page series-detail-page media-detail-backdrop" style="${esc(detailBackdropStyle(meta))}"><div class="movie-detail-scroll">${movieDetailCloseButton()}${renderMovieHero(lib,firstPath,meta)}${renderCastPanel(meta)}${renderRecPanel(meta)}<section><h3>季度</h3></section>${seasons}${renderSeriesInfoPanel(show, meta.rating)}</div></div>`;
+    viewer.innerHTML = `<div class="media-reader-overlay movie-detail-page series-detail-page media-detail-backdrop" style="${esc(detailBackdropStyle(meta))}"><div class="movie-detail-scroll">${movieDetailCloseButton()}${renderMovieHero(lib,firstPath,meta)}${renderCastPanel(meta)}${renderRecPanel(meta)}<section><h3>季度</h3>${seriesPlexToolbarHtml(lib.id, show.key)}</section>${seasons}${renderSeriesInfoPanel(show, meta.rating)}</div></div>`;
     scrollViewerIntoView(viewer);
   };
   renderPage();
@@ -2829,7 +2918,7 @@ function renderSeriesSeasonCard(lib, show, season) {
   const seasonOverview = String(season.overview || "").trim();
   const headExtra = seasonName ? ` · ${esc(seasonName)}` : "";
   const overviewLine = seasonOverview ? `<p class="series-season-overview">${esc(seasonOverview)}</p>` : "";
-  return `<section class="series-season-block" data-season="${esc(season.season)}"><h3 class="series-season-head" onclick="toggleSeriesSeason(this)"><span class="series-season-chev">${isFirst?"▾":"▸"}</span>${esc(show.title)} 第${esc(season.season)}季${headExtra} <small>共${epCount}集</small></h3>${overviewLine}<div ${listClass} style="${listStyle}">${epBody}</div></section>`;
+  return `<section class="series-season-block" data-season="${esc(season.season)}"><h3 class="series-season-head" onclick="toggleSeriesSeason(this)"><span class="series-season-chev">${isFirst?"▾":"▸"}</span>${esc(show.title)} ${esc(seriesPlexSeasonLabel(season.season))}${headExtra} <small>共${epCount}集</small></h3>${overviewLine}<div ${listClass} style="${listStyle}">${epBody}</div></section>`;
 }
 function toggleSeriesSeason(head){ const list=head.parentElement.querySelector(".series-episode-list"); if(!list)return; const open=list.classList.contains("is-collapsed"); list.classList.toggle("is-collapsed",!open); list.style.display=open?"":"none"; const ch=head.querySelector(".series-season-chev"); if(ch)ch.textContent=open?"▾":"▸"; }
 

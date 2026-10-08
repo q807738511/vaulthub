@@ -47,7 +47,7 @@ function makeSandbox(extra) {
       createElement: () => el(), body: { classList: { _s: new Set(), add(c) { this._s.add(c); }, remove(c) { this._s.delete(c); }, contains(c) { return this._s.has(c); }, toggle(c, on) { const w = on === undefined ? !this._s.has(c) : !!on; w ? this._s.add(c) : this._s.delete(c); return w; } }, appendChild() {} },
       documentElement: { scrollHeight: 2000, style: { setProperty() {} } },
     },
-    window: { handlers: [], addEventListener(ev, fn) { this.handlers.push([ev, fn]); }, isSecureContext: false, scrollY: 0, innerHeight: 800, scrollBy() {}, scrollTo() {}, VAULTHUB_ASSET_VERSION: "0.9.96" },
+    window: { handlers: [], addEventListener(ev, fn) { this.handlers.push([ev, fn]); }, isSecureContext: false, scrollY: 0, innerHeight: 800, scrollBy() {}, scrollTo() {}, VAULTHUB_ASSET_VERSION: "0.9.97" },
     navigator: {},
     location: { origin: "http://192.0.2.10:8088", pathname: "/", href: "http://192.0.2.10:8088/" },
     curLang: "zh-CN",
@@ -86,7 +86,7 @@ const MEDIA_SRC = fs.readFileSync(ROOT + "/web/js/02-media.js", "utf8");
      所以这里让真实的元素查找（document.querySelectorAll → closest → dataset）能找到视频。 */
   {
     const overlay = fakeEl();
-    /* v0.9.96（需求1）：源文件改为按「有没有渲染盒子」判定播放面可见 ——
+    /* v0.9.97（需求1）：源文件改为按「有没有渲染盒子」判定播放面可见 ——
        浮层是 position:fixed，offsetParent 恒为 null，用它判会永远判成不可见。
        fakeEl 没有 getClientRects / getComputedStyle 时 elementRendered 视为已渲染。 */
     const viewEl = { classList: { contains: c => c === "active" }, querySelector: () => overlay };
@@ -99,7 +99,7 @@ const MEDIA_SRC = fs.readFileSync(ROOT + "/web/js/02-media.js", "utf8");
       /* playbackSurfaceVisible 同样由源文件定义，必须让真实的可见性判定成立 */
       document: {
         getElementById: id => (id === "view-movie" ? viewEl : null), querySelector: () => null, addEventListener() {},
-        /* v0.9.96（需求1）：沉浸判定改为直接查 .media-reader-overlay，桩要同时喂这两条查询 */
+        /* v0.9.97（需求1）：沉浸判定改为直接查 .media-reader-overlay，桩要同时喂这两条查询 */
         querySelectorAll: sel => (sel === "video[data-movie-player]" ? [videoEl]
           : (sel === ".media-reader-overlay.movie-player" ? [overlay] : [])),
         createElement: () => ({ style: {}, classList: { add() {} }, addEventListener() {} }),
@@ -132,7 +132,7 @@ const MEDIA_SRC = fs.readFileSync(ROOT + "/web/js/02-media.js", "utf8");
     const css = fs.readFileSync(ROOT + "/web/css/main.css", "utf8");
     chk("A9 CSS body.player-immersive 把 --topbar-h 归零", css.includes("body.player-immersive { --topbar-h: 0px; }"));
     chk("A10 CSS 顶栏滑出视口且禁用点击",
-        /* v0.9.96：回缩规则补齐 visibility:hidden 与透明底边（0 高度盒子挡不住溢出子元素/1px 线），
+        /* v0.9.97：回缩规则补齐 visibility:hidden 与透明底边（0 高度盒子挡不住溢出子元素/1px 线），
            断言按归一化关键声明检查，兼容续行与新增属性。 */
         (() => { const c = css.replace(/\s+/g, " ");
           return c.includes("body.player-immersive .topbar { transform: translateY(-100%); opacity: 0; pointer-events: none;")

@@ -2066,3 +2066,40 @@ html[data-quality="minimal"] :is(.audio-expand, .audio-fullscreen, .audio-player
 
 /* v0.9.93：登录卡片底部的版本标语（侧栏页脚移除后，标语第三处落在登录页）。 */
 .login-ver { margin-top:10px; text-align:center; font-size:10.5px; color:var(--text3); }
+
+/* ==================== v0.9.97：多季剧集诊断面板 ====================
+   剧集详情「季度」区的工具条 + 弹窗内的季/集表、命名体检、建议路径。 */
+.series-plex-toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0 10px; }
+.series-plex-toolbar .btn { font-size: 12px; padding: 4px 10px; }
+.series-plex-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.series-plex-head b { display: block; font-size: 15px; }
+.series-plex-head small { display: block; color: var(--muted, #8a9a99); font-size: 12px; margin-top: 2px; }
+.series-plex-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.series-plex-actions .btn { font-size: 12px; padding: 4px 10px; }
+.series-plex-check { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted, #8a9a99); }
+.series-plex-stats { display: flex; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--muted, #8a9a99); margin-bottom: 10px; }
+.series-plex-stats span { background: rgba(127, 127, 127, .12); border-radius: 10px; padding: 2px 8px; }
+.series-plex-stats .series-plex-bad { color: #ff8a7a; }
+.series-plex-stats .series-plex-ok { color: #7fd6a5; }
+.series-plex-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 14px; }
+.series-plex-table th, .series-plex-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid rgba(127, 127, 127, .22); vertical-align: middle; }
+.series-plex-table th { font-weight: 600; color: var(--muted, #8a9a99); font-size: 12px; }
+.series-plex-table td small { display: block; color: var(--muted, #8a9a99); font-size: 11px; }
+.series-plex-missing { color: #ff8a7a; }
+.series-plex-ok { color: #7fd6a5; }
+.series-plex-todo { color: var(--muted, #8a9a99); }
+.series-plex-section { margin: 12px 0; }
+.series-plex-section h4 { margin: 0 0 6px; font-size: 13px; }
+.series-plex-tip { font-size: 12px; color: var(--muted, #8a9a99); margin: 0 0 8px; line-height: 1.6; }
+.series-plex-issues { display: flex; flex-direction: column; gap: 8px; max-height: 340px; overflow: auto; }
+.series-plex-issue { background: rgba(127, 127, 127, .10); border-radius: 8px; padding: 8px 10px; }
+.series-plex-issue-path { font-size: 12px; word-break: break-all; }
+.series-plex-issue-list { margin: 6px 0 0; padding-left: 18px; font-size: 12px; color: #ffb3a7; line-height: 1.6; }
+.series-plex-suggest { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 6px; font-size: 12px; }
+.series-plex-suggest span { color: var(--muted, #8a9a99); }
+.series-plex-suggest code { background: rgba(127, 127, 127, .16); border-radius: 6px; padding: 2px 6px; word-break: break-all; }
+.series-plex-notes { margin: 0; padding-left: 18px; font-size: 12px; color: var(--muted, #8a9a99); line-height: 1.7; }
+@media (max-width: 720px) {
+  .series-plex-table th:nth-child(3), .series-plex-table td:nth-child(3) { display: none; }
+  .series-plex-head { flex-direction: column; }
+}

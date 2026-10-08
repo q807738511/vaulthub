@@ -35,7 +35,7 @@ check("随机密码生成器", "func generateRandomPassword() (string, error)" i
 check("无歧义字符集", "ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789" in MANAGER)
 check("must_change 结构字段", "MustChange" in MANAGER and 'json:"must_change,omitempty"' in MANAGER)
 check("一次性消费持久化字段", "BootstrapConsumed bool" in MANAGER and "bootstrap_consumed" in MANAGER)
-check("首启初始密码写 0600 文件（v0.9.96 安全审查 M5：不再直接进容器日志）",
+check("首启初始密码写 0600 文件（v0.9.97 安全审查 M5：不再直接进容器日志）",
       "writeInitialPasswordFile(u, randomPw)" in MANAGER
       and "func writeInitialPasswordFile" in INITPW and "0o600" in INITPW
       and "initialPasswordPath()" in INITPW)
@@ -81,10 +81,10 @@ check("登录后触发强制改密", "if (data.must_change) { vaultHubMustChange
 check("遮罩点击不可关闭", 'm.id !== "forcedPasswordModal"' in (ROOT / "web" / "js" / "03-features.js").read_text(encoding="utf-8"))
 
 # ---------------------------------------------------------------- 版本与发布
-check("版本资源", 'VAULTHUB_ASSET_VERSION = "0.9.96"' in HTML)
-check("脚本版本", 'VAULTHUB_SCRIPT_VERSION = "0.9.96"' in STATE)
-check("缓存串", HTML.count("?v=0.9.96") >= 6)
-check("UI 当前版本角标", "v0.9.96" in HTML)
+check("版本资源", 'VAULTHUB_ASSET_VERSION = "0.9.97"' in HTML)
+check("脚本版本", 'VAULTHUB_SCRIPT_VERSION = "0.9.97"' in STATE)
+check("缓存串", HTML.count("?v=0.9.97") >= 6)
+check("UI 当前版本角标", "v0.9.97" in HTML)
 check("v0.9.58 release notes 保留", NOTES != "" and "VaultHub v0.9.58" in NOTES and "强制改密" in NOTES)
 check("无旧版本缓存串残留", "?v=0.9.57" not in HTML)
 

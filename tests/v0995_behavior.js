@@ -21,7 +21,7 @@ function fakeEl(extra) {
     dataset: {},
     style: {},
     offsetParent: extra && "offsetParent" in extra ? extra.offsetParent : { tagName: "DIV" },
-    /* v0.9.96（需求1）：可见性改为按渲染盒子判定（固定定位元素 offsetParent 恒为 null）。 */
+    /* v0.9.97（需求1）：可见性改为按渲染盒子判定（固定定位元素 offsetParent 恒为 null）。 */
     __cs: (extra && extra.cs) || { display: "block", visibility: "visible" },
     getClientRects: () => ({ length: extra && extra.rects !== undefined ? extra.rects : 1 }),
     textContent: "",
@@ -58,7 +58,7 @@ function makeSandbox(extra) {
       body: { classList: { add(c) { bodyClasses.add(c); }, remove(c) { bodyClasses.delete(c); }, contains(c) { return bodyClasses.has(c); }, toggle(c, on) { const w = on === undefined ? !bodyClasses.has(c) : !!on; w ? bodyClasses.add(c) : bodyClasses.delete(c); return w; } }, appendChild() {} },
       documentElement: { scrollHeight: 2000, style: { setProperty() {} } },
     },
-    window: { handlers: [], addEventListener(ev, fn) { this.handlers.push([ev, fn]); }, isSecureContext: false, scrollY: 0, innerHeight: 800, scrollBy() {}, scrollTo() {}, VAULTHUB_ASSET_VERSION: "0.9.96" },
+    window: { handlers: [], addEventListener(ev, fn) { this.handlers.push([ev, fn]); }, isSecureContext: false, scrollY: 0, innerHeight: 800, scrollBy() {}, scrollTo() {}, VAULTHUB_ASSET_VERSION: "0.9.97" },
     navigator: { userAgent: "Mozilla/5.0 (X11; Linux x86_64)" },
     location: { origin: "http://192.0.2.10:8088", pathname: "/", href: "http://192.0.2.10:8088/" },
     curLang: "zh-CN",
@@ -144,7 +144,7 @@ const call = (sb, expr) => vm.runInContext(expr, sb);
         call(mkMedia(movieViewNoOverlay, barHidden), 'playbackSurfaceVisible({kind:"video", group:"movie", path:"m.mkv"})') === false);
     chk("A6 播放器浮层没有渲染盒子（祖先 display:none）→ 播放面不可见",
         call(mkMedia(movieViewHiddenOverlay, barHidden), 'playbackSurfaceVisible({kind:"video", group:"movie", path:"m.mkv"})') === false);
-    /* v0.9.96（需求1）新增：固定定位元素 offsetParent 恒为 null，但有渲染盒子就必须算可见 ——
+    /* v0.9.97（需求1）新增：固定定位元素 offsetParent 恒为 null，但有渲染盒子就必须算可见 ——
        旧口径（offsetParent 判定）在这里会判 false，正是顶栏压住播放器的根因。 */
     const fixedOverlay = fakeEl({ classes: ["media-reader-overlay", "movie-player"], rects: 1, offsetParent: null });
     const movieViewFixed = fakeEl({ classes: ["view", "active"], id: "view-movie", querySelector: sel => (sel === ".media-reader-overlay.movie-player" ? fixedOverlay : null) });

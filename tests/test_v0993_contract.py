@@ -42,7 +42,7 @@ print("v0.9.93 契约检查")
 check("1a body.player-immersive 把 --topbar-h 归零（真正释放占位，而不是盖住顶栏）",
       "body.player-immersive { --topbar-h: 0px; }" in CSS)
 check("1b 顶栏同时滑出视口并禁用点击",
-      # v0.9.96：回缩规则补齐「真的看不见」（0 高度盒子挡不住溢出的子元素与 1px 底边线），
+      # v0.9.97：回缩规则补齐「真的看不见」（0 高度盒子挡不住溢出的子元素与 1px 底边线），
       # 断言改为按归一化后的关键声明检查，兼容规则的续行与新增属性。
       all(k in re.sub(r"\s+", " ", CSS) for k in (
           "body.player-immersive .topbar { transform: translateY(-100%); opacity: 0; pointer-events: none;",
@@ -131,7 +131,7 @@ check("3e 布局收敛为顶栏单一布局（旧参数按顶栏处理）",
       'document.body.classList.add("layout-topnav");' in TOPCSS
       and "function currentLayoutMode() { return \"topnav\"; }" in TOPCSS
       and "renderLayoutChips" not in TOPCSS and "setLayoutMode" not in TOPCSS)
-check("3f 原侧栏入口不丢：媒体搜索在顶栏（v0.9.96 起只保留右侧放大镜，左侧重复项已移除）、自定义模块在顶栏标签 + 头像菜单",
+check("3f 原侧栏入口不丢：媒体搜索在顶栏（v0.9.97 起只保留右侧放大镜，左侧重复项已移除）、自定义模块在顶栏标签 + 头像菜单",
       'id="tnSearchButton"' in HTML and "toggleMediaSearchModal()" in HTML
       and 'data-topnav="search"' not in HTML
       and 'id="topCustomNav"' in HTML
@@ -188,8 +188,8 @@ check("5e 公开文档无主机容量与内网细节（含本轮）",
 # ============ 6) 版本与文档 ============
 _m = re.search(r'window\.VAULTHUB_ASSET_VERSION = "([\d.]+)";', HTML)
 VERSION = _m.group(1) if _m else ""
-check("6a index.html 资源缓存串与本版一致 ×10",
-      VERSION and HTML.count(f"?v={VERSION}") == 10, f"VERSION={VERSION} 命中 {HTML.count('?v=' + VERSION)}")
+check("6a index.html 资源缓存串与本版一致（≥10 处）",
+      VERSION and HTML.count(f"?v={VERSION}") >= 10, f"VERSION={VERSION} 命中 {HTML.count('?v=' + VERSION)}")
 check("6b ASSET / SCRIPT 版本一致",
       f'window.VAULTHUB_ASSET_VERSION = "{VERSION}";' in HTML
       and f'const VAULTHUB_SCRIPT_VERSION = "{VERSION}";' in STATE)

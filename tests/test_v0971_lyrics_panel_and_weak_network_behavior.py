@@ -174,7 +174,7 @@ const windowStub = {
   performance: performanceStub, requestIdleCallback: undefined,
   matchMedia: () => ({ matches: false, addEventListener: noop }),
   localStorage, navigator: navigatorStub,
-  innerWidth: 1440, innerHeight: 900, VAULTHUB_ASSET_VERSION: "0.9.96"
+  innerWidth: 1440, innerHeight: 900, VAULTHUB_ASSET_VERSION: "0.9.97"
 };
 const ctx = vm.createContext({
   window: windowStub, document, localStorage, navigator: navigatorStub,

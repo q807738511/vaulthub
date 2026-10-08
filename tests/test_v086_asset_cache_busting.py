@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.9.96"
+VERSION = "0.9.97"
 
 failures = []
 
@@ -43,7 +43,7 @@ for ref in asset_refs:
     )
 
 # 六个脚本 + 一个样式都必须在列
-for name in ("01-state.js", "03-quality.js", "02-media.js", "03-features.js", "05-home.js", "03-audio-zoom.js", "04-boot.js", "main.css"):
+for name in ("01-state.js", "03-quality.js", "02-media.js", "03-series-plex.js", "03-features.js", "05-home.js", "03-audio-zoom.js", "04-boot.js", "main.css"):
     check(
         any(name in ref for ref in asset_refs),
         f"index.html 缺少 {name} 的带版本引用",
@@ -57,6 +57,9 @@ expected_order = [
     # 音频码率都要读它，因此紧跟在 01-state.js 之后、02-media.js 之前。
     "/web/js/03-quality.js",
     "/web/js/02-media.js",
+    # v0.9.97：多季剧集刮削（Plex 口径）依赖 02-media.js 的 parseSeriesEpisode 与剧集数据，
+    # 必须排在它之后、03-features.js 之前。
+    "/web/js/03-series-plex.js",
     "/web/js/03-features.js",
     "/web/js/05-home.js",
     # v0.9.83：主题引擎插在 05-home.js 与 03-audio-zoom.js 之间 —— 它依赖
