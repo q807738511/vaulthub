@@ -4,10 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VaultHub 蜀鼠之家</title>
-<link rel="stylesheet" href="/web/css/main.css?v=0.9.91">
+<link rel="stylesheet" href="/web/css/main.css?v=0.9.92">
 <script>
 /* 资源版本号：index.html 用它给所有静态资源打查询串。 */
-window.VAULTHUB_ASSET_VERSION = "0.9.91";
+window.VAULTHUB_ASSET_VERSION = "0.9.92";
 </script>
 <script>
 /* v0.9.73 主题防闪：调色板/明暗/强调色必须在首帧渲染前落到 <html> 上，
@@ -178,7 +178,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.91";
   <div class="sidebar-foot">
     <button class="rail-btn rail-settings" id="sidebarSettingsButton" type="button" onclick="openSettingsModalFromSidebar()" title="系统设置" aria-label="系统设置"><span class="ic">⚙</span><span class="txt" data-i18n="settingsTitle">系统设置</span></button>
     <div class="sidebar-foot-row">
-      <span class="ver">v0.9.91 · 转码风向标·下滑翻页·刮削命名修复</span>
+      <span class="ver">v0.9.92 · 播放铺满窗口·跨页回到播放·封面不入目录</span>
       <button class="rail-btn rail-collapse" id="sidebarCollapseButton" type="button" onclick="toggleBars()" title="折叠 / 展开侧栏" aria-label="折叠或展开侧栏">⇤</button>
     </div>
   </div>
@@ -760,7 +760,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.91";
          页脚在启动时由 syncAppFooterVersion() 读取并同步，发版不会漏改。 -->
     <footer class="app-footer" id="appFooter">
       <span class="af-name">VaultHub 蜀鼠之家</span>
-      <span id="appFooterVer" class="ver">v0.9.91 · 转码风向标·下滑翻页·刮削命名修复</span>
+      <span id="appFooterVer" class="ver">v0.9.92 · 播放铺满窗口·跨页回到播放·封面不入目录</span>
       <span class="af-note" data-i18n="footerAboutHint">版本与「系统设置 → 账户与登录 → 关于」中的版本参数保持一致</span>
     </footer>
 
@@ -881,7 +881,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.91";
   <div class="modal">
     <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
     <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
-    <div class="about-row" data-about-ver="1"><span data-i18n="aboutVer">版本</span><b>v0.9.91 · 转码风向标·下滑翻页·刮削命名修复</b></div>
+    <div class="about-row" data-about-ver="1"><span data-i18n="aboutVer">版本</span><b>v0.9.92 · 播放铺满窗口·跨页回到播放·封面不入目录</b></div>
     <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>Go (media/manager/subtitle) · Caddy · FFmpeg · SQLite · HTML/CSS/JS</b></div>
     <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>VaultHub 内置系统监控</b></div>
     <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>
@@ -890,6 +890,19 @@ window.VAULTHUB_ASSET_VERSION = "0.9.91";
       系统指标由内置接口读取只读挂载的宿主机信息；MoviePilot 与媒体服务继续使用各自接口。
     </div>
   </div>
+</div>
+
+<!-- v0.9.92（需求）：跨页「正在播放」入口。离开播放页后不用重新进库再点一次，
+     点「回到播放」即续播：播放元素还活着就直接回去，已被销毁才按保存进度重开。 -->
+<div class="playback-dock" id="playbackDock" role="status" aria-live="polite">
+  <span class="pd-icon"><svg class="vc-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5Z" fill="currentColor"/></svg></span>
+  <span class="pd-text">
+    <b class="pd-title" data-dock-title>正在播放</b>
+    <i class="pd-sub" data-dock-sub>正在播放</i>
+  </span>
+  <button type="button" class="pd-btn" title="播放 / 暂停" aria-label="播放 / 暂停" onclick="toggleActivePlayback()"><span data-dock-toggle>⏸</span></button>
+  <button type="button" class="pd-return" data-dock-return title="回到播放" onclick="returnToActivePlayback()">回到播放</button>
+  <button type="button" class="pd-close" title="停止并收起" aria-label="停止并收起" onclick="stopActivePlayback()">✕</button>
 </div>
 
 <div class="audio-player" id="audio-bottom-player">
@@ -1044,14 +1057,14 @@ window.VAULTHUB_ASSET_VERSION = "0.9.91";
 
 <div class="toast" id="toast"></div>
 
-<script src="/web/js/01-state.js?v=0.9.91"></script>
-<script src="/web/js/03-quality.js?v=0.9.91"></script>
-<script src="/web/js/02-media.js?v=0.9.91"></script>
-<script src="/web/js/03-features.js?v=0.9.91"></script>
-<script src="/web/js/05-home.js?v=0.9.91"></script>
-<script src="/web/js/06-theme.js?v=0.9.91"></script>
-<script src="/web/js/07-topnav.js?v=0.9.91"></script>
-<script src="/web/js/03-audio-zoom.js?v=0.9.91"></script>
-<script src="/web/js/04-boot.js?v=0.9.91"></script>
+<script src="/web/js/01-state.js?v=0.9.92"></script>
+<script src="/web/js/03-quality.js?v=0.9.92"></script>
+<script src="/web/js/02-media.js?v=0.9.92"></script>
+<script src="/web/js/03-features.js?v=0.9.92"></script>
+<script src="/web/js/05-home.js?v=0.9.92"></script>
+<script src="/web/js/06-theme.js?v=0.9.92"></script>
+<script src="/web/js/07-topnav.js?v=0.9.92"></script>
+<script src="/web/js/03-audio-zoom.js?v=0.9.92"></script>
+<script src="/web/js/04-boot.js?v=0.9.92"></script>
 </body>
 </html>

@@ -56,6 +56,7 @@ type App struct {
 	zipCache          *zipArchiveCache // v0.9.56: ZIP/CBZ 中央目录 LRU 缓存（漫画读取提速）
 	pageCacheMu       sync.Mutex
 	pageCache         *pageCache // v0.9.67: 归档页转码结果磁盘缓存（省流模式）
+	pageCacheDirPinned bool      // v0.9.92: MEDIA_PAGE_CACHE_DIR 显式配置，运行时不再跟随 cache_dir
 	pageJobsMu        sync.Mutex
 	pageJobs          map[string]*pageJob // v0.9.67: 同页并发转码合并
 	transcodeSemOnce  sync.Once
@@ -216,6 +217,7 @@ func (a *App) load() {
 	a.cacheMaxBytes = envInt64("MEDIA_CACHE_MAX_BYTES", 10*1024*1024*1024)
 	/* v0.9.67：归档页转码缓存独立成目录与配额（默认 4GB），默认放在转码缓存卷下，
 	   与 FFmpeg 缓存同卷但不共享配额；上限设 0 即整体关闭转码（请求 w>0 也直出原图）。 */
+	a.pageCacheDirPinned = os.Getenv("MEDIA_PAGE_CACHE_DIR") != ""
 	a.pageCacheDir = env("MEDIA_PAGE_CACHE_DIR", filepath.Join(a.cacheDir, "page-cache"))
 	a.pageCacheMaxBytes = envInt64("MEDIA_PAGE_CACHE_MAX_BYTES", 4*1024*1024*1024)
 	/* v0.9.69：批量歌词串行闸门（容量 1）。必须在 load() 内初始化 —— 未初始化时闸门
@@ -293,6 +295,7 @@ const (
 	cacheCleanupFallback = 10 * time.Minute /* 转码缓存兜底清理间隔 */
 	cacheEntryMaxShare   = 4                /* 单条目最多占配额 1/4，超额条目直接淘汰 */
 	cacheFreshGrace      = 5 * time.Minute  /* 刚刚写入的缓存留一个宽限期，避免抖动 */
+	cacheActiveWindow    = 30 * time.Minute /* v0.9.92：最近 30 分钟内被播放命中的条目视为「正在使用」，
 	/* v0.9.91：兼容流构建的单次上限。cleanCache 回收 .mp4.bg-<pid> 残留分片的
 	   「陈旧阈值」必须长于它 —— 否则一次超长转码还在进行，它的分片就被当成残留删掉
 	   （审查发现：旧实现是固定 2 小时，短于这里的 6 小时构建上限）。 */
@@ -317,11 +320,14 @@ func (a *App) cleanCache() {
 	a.mu.RLock()
 	cacheDir, cacheMaxBytes, cacheMaxAge := a.cacheDir, a.cacheMaxBytes, a.cacheMaxAge
 	a.mu.RUnlock()
-	if cacheMaxBytes <= 0 && cacheMaxAge <= 0 {
-		return
-	}
 	ents, e := os.ReadDir(cacheDir)
 	if e != nil {
+		/* v0.9.92（发布前审查发现的低危项）：目录不可读时也要落一次用量快照。
+		   旧实现在函数入口就 return，cache_bytes / cache_files / cache_cleaned_at
+		   永远停在旧值，设置页显示「未清理」，看起来像清理功能失效。 */
+		a.mu.Lock()
+		a.cacheBytes, a.cacheFiles, a.cacheCleanedAt = 0, 0, time.Now().Unix()
+		a.mu.Unlock()
 		return
 	}
 	type item struct {
@@ -366,6 +372,14 @@ func (a *App) cleanCache() {
 		items = append(items, item{p, info.Size(), info.ModTime()})
 		total += info.Size()
 	}
+	/* v0.9.92：配额与过期都关掉（= 不做自动清理）时仍要写用量快照 ——
+	   清理可以不发生，但「当前占用多少」必须一直刷新（同上，审查低危项）。 */
+	if cacheMaxBytes <= 0 && cacheMaxAge <= 0 {
+		a.mu.Lock()
+		a.cacheBytes, a.cacheFiles, a.cacheCleanedAt = total, len(items), now.Unix()
+		a.mu.Unlock()
+		return
+	}
 	sort.Slice(items, func(i, j int) bool { return items[i].mod.Before(items[j].mod) })
 	/* v0.9.91：单条目上限。一个 9.7 GB 的整片转码缓存会单独击穿配额 —— 旧逻辑只在
 	   total > max 时才淘汰，而一个超大条目就足以让 total 长期超标且无处可清。
@@ -375,7 +389,7 @@ func (a *App) cleanCache() {
 		if entryMax <= 0 || it.size <= entryMax {
 			continue
 		}
-		if now.Sub(it.mod) < cacheFreshGrace {
+		if now.Sub(it.mod) < cacheActiveWindow {
 			continue
 		}
 		if os.Remove(it.path) == nil {
@@ -386,7 +400,7 @@ func (a *App) cleanCache() {
 		if cacheMaxBytes <= 0 || total <= cacheMaxBytes {
 			break
 		}
-		if now.Sub(it.mod) < cacheFreshGrace {
+		if now.Sub(it.mod) < cacheActiveWindow {
 			continue
 		}
 		if os.Remove(it.path) == nil {
@@ -841,6 +855,7 @@ func (a *App) saveRuntimeConfig(c RuntimeConfig) error {
 	a.scrapeRegion = normalizeScrapeRegion(c.ScrapeRegion)
 	/* v0.9.88：标题匹配阈值同样立即生效（下一条刮削即按新阈值判定）。 */
 	a.scrapeMinMatch = normalizeScrapeMinMatch(c.ScrapeMinMatch)
+	oldCacheDir := a.cacheDir
 	a.cacheDir, a.cacheMaxBytes = c.CacheDir, c.CacheMaxBytes
 	a.cacheMaxAge, a.cacheCleanup = time.Duration(c.CacheMaxAgeHours)*time.Hour, time.Duration(c.CacheCleanupIntervalHours)*time.Hour
 	a.pageCacheMaxBytes = c.PageCacheMaxBytes
@@ -849,6 +864,16 @@ func (a *App) saveRuntimeConfig(c RuntimeConfig) error {
 	select {
 	case a.cacheWake <- struct{}{}:
 	default:
+	}
+	/* v0.9.92（需求：缓存目录映射可测/可换）：换了缓存目录，分页缓存与音频转码缓存
+	   必须一起走。音频转码缓存本来就按 a.cacheDir 现算（audio_stream.go），
+	   但分页缓存目录只在启动时派生一次 —— 旧行为是「设置里改了目录，磁盘上看不到变化」。
+	   MEDIA_PAGE_CACHE_DIR 显式配置时以它为准，不覆盖。 */
+	if !a.pageCacheDirPinned && oldCacheDir != c.CacheDir {
+		a.pageCacheMu.Lock()
+		a.pageCacheDir = filepath.Join(c.CacheDir, "page-cache")
+		a.pageCache = nil // 下一次取用时按新目录重建（旧目录里的分页缓存不迁移）
+		a.pageCacheMu.Unlock()
 	}
 	return nil
 }
@@ -3117,6 +3142,12 @@ func (a *App) compat(w http.ResponseWriter, r *http.Request) {
 	// Fully built cache: serve it with byte ranges so seeking works.
 	if f, e := os.Open(cache); e == nil {
 		defer f.Close()
+		/* v0.9.92（审查的中危项）：命中即刷新 mtime。正在播放的条目在 LRU 里
+		   始终保持「最新」，边播边清不会把它删掉；否则播放中拖动进度条正好赶上
+		   清理窗口，同一条转码产物会被删掉再重新转一遍（用户体感：拖一下卡一次）。 */
+		if nowT := time.Now(); true {
+			_ = os.Chtimes(cache, nowT, nowT)
+		}
 		info, _ := f.Stat()
 		w.Header().Set("Content-Type", "video/mp4")
 		w.Header().Set("Accept-Ranges", "bytes")

@@ -18,7 +18,7 @@ let vaultHubSessionPingedAt = 0;
    历史故障：v0.8.3→v0.8.5 的前端修改在服务端已生效，但浏览器仍执行缓存里的
    旧 02-media.js，用户看到「没有更新」。现在入口页 no-store、静态资源带 ?v=，
    并在启动时做一次一致性自查，不一致就绕过缓存强制重载一次。 */
-const VAULTHUB_SCRIPT_VERSION = "0.9.91";
+const VAULTHUB_SCRIPT_VERSION = "0.9.92";
 function ensureFreshAssets() {
   /* expected 为空 = 浏览器执行的 index.html 早于 v0.8.6（旧版本入口页没有声明
      版本号），同样属于"页面是旧的"，也需要换 URL 重新取一次。 */
@@ -589,7 +589,7 @@ const I18N = {
     typeAudio: "音乐", typeMusicvideo: "音乐视频（歌曲 MV）", typeComic: "漫画",
     typeBook: "电子书", typeMovie: "电影", typeSeries: "电视剧集",
     hwAuto: "自动选择（推荐）", hwCpu: "CPU", hwVaapi: "VAAPI（Intel/AMD）",
-    /* ---- v0.9.91：解/转码风向标 + 下滑翻页 ---- */
+    /* ---- v0.9.92：解/转码风向标 + 下滑翻页 ---- */
     setSt: "服务端转/解码", setStLbl: "解/转码风向标（服务器算力弱时禁用）",
     stAuto: "自动（服务端按需转码）", stOff: "禁用（本机设备解码）",
     stSaved: "✅ 服务端转/解码策略已保存",
@@ -599,6 +599,8 @@ const I18N = {
     stHint: "禁用后服务端不做任何转码或重封装：原文件直出、由播放设备解码，服务器 CPU 不再被转码占满。原盘镜像（ISO/BDMV）与浏览器不支持的编码将无法播放。",
     vpDecodePath: "解码路径：{path}",
     vpCapOff: " · 画质上限不生效",
+    dockPlaying: "正在播放", dockPaused: "已暂停", dockReturn: "回到播放",
+    dockHint: "离开播放页后仍可一键回到正在播放的视频/音乐（不重新起播）",
     vpDecodeWarn: "⚠ {msg}",
     pagerScrollHint: "下滑自动翻页 · 每滑一次翻一页",
     pagerLoading: "正在载入第 {n} 页…",
@@ -878,7 +880,7 @@ const I18N = {
     typeAudio: "音樂", typeMusicvideo: "音樂影片（歌曲 MV）", typeComic: "漫畫",
     typeBook: "電子書", typeMovie: "電影", typeSeries: "電視劇集",
     hwAuto: "自動選擇（推薦）", hwCpu: "CPU", hwVaapi: "VAAPI（Intel/AMD）",
-    /* ---- v0.9.91：解/轉碼風向標 + 下滑翻頁 ---- */
+    /* ---- v0.9.92：解/轉碼風向標 + 下滑翻頁 ---- */
     setSt: "服務端轉/解碼", setStLbl: "解/轉碼風向標（伺服器算力弱時停用）",
     stAuto: "自動（服務端按需轉碼）", stOff: "停用（本機裝置解碼）",
     stSaved: "✅ 服務端轉/解碼策略已儲存",
@@ -888,6 +890,8 @@ const I18N = {
     stHint: "停用後服務端不做任何轉碼或重封裝：原始檔直出、由播放裝置解碼，伺服器 CPU 不再被轉碼佔滿。原盤映像（ISO/BDMV）與瀏覽器不支援的編碼將無法播放。",
     vpDecodePath: "解碼路徑：{path}",
     vpCapOff: " · 畫質上限不生效",
+    dockPlaying: "正在播放", dockPaused: "已暫停", dockReturn: "回到播放",
+    dockHint: "離開播放頁後仍可一鍵回到正在播放的影片/音樂（不重新起播）",
     vpDecodeWarn: "⚠ {msg}",
     pagerScrollHint: "下滑自動翻頁 · 每滑一次翻一頁",
     pagerLoading: "正在載入第 {n} 頁…",
@@ -1177,6 +1181,8 @@ const I18N = {
     stHint: "When disabled the server never transcodes or remuxes: the original file is served as-is and the playback device decodes it, so the server CPU is never saturated. Disc images (ISO/BDMV) and codecs the browser cannot play will not play.",
     vpDecodePath: "Decoding: {path}",
     vpCapOff: " · quality cap inactive",
+    dockPlaying: "Now playing", dockPaused: "Paused", dockReturn: "Back to playback",
+    dockHint: "Leave the player page and come back with one click \u2014 video/music keeps playing",
     vpDecodeWarn: "⚠ {msg}",
     pagerScrollHint: "Scroll down to page · one scroll = one page",
     pagerLoading: "Loading page {n}…",
@@ -1539,7 +1545,7 @@ async function refreshHardwareStatus(notify) {
       detail.textContent = parts.join(" · ");
     }
     if (notify) toast(selected === "cpu" ? "ℹ️ " + t("hwNoneToast") : "✅ " + tf("hwFoundToast", { selected: selected.toUpperCase() }));
-    /* v0.9.91：硬件探测结果同时驱动「解/转码风向标」。 */
+    /* v0.9.92：硬件探测结果同时驱动「解/转码风向标」。 */
     updateTranscodeCompass(data);
   } catch (e) {
     badge.textContent = t("hwBadgeFail");
@@ -1550,7 +1556,7 @@ async function refreshHardwareStatus(notify) {
   }
 }
 
-/* v0.9.91：解/转码风向标 —— 显示当前策略（服务端转码 / 本机设备解码）与服务器算力提示。
+/* v0.9.92：解/转码风向标 —— 显示当前策略（服务端转码 / 本机设备解码）与服务器算力提示。
    服务器 CPU 算力弱（无硬件编码器且核数少）时提示用户改用「禁用（本机设备解码）」。 */
 function saveServerTranscode() {
   const value = document.getElementById("serverTranscode")?.value;
@@ -1622,12 +1628,87 @@ function switchView(v, libId) {
   /* 音乐播放器只在音视作品视图显示，出现方式为屏幕居中浮层。 */
   const player = document.getElementById("audio-bottom-player");
   if (player) player.classList.toggle("show", v === "audio" && typeof audioHasActivePlayback === "function" && audioHasActivePlayback());
+  /* v0.9.92：视图切换后刷新「正在播放」浮标 —— 离开播放页要能一键回去，
+     回到播放页要收起提示（播放面可见时浮标不出现）。 */
+  if (typeof updatePlaybackDock === "function") updatePlaybackDock();
   /* v0.9.66：离开音乐视图时归一化关闭海报放大态 —— 遮罩在 #view-audio 内会随视图隐藏，
      但 audioCoverZoomed 仍为 true，切回音乐页会「自动又弹一次」全屏海报。
      放在播放器显隐切换「之后」：底栏已隐藏时按钮 offsetParent 为空，
      closeAudioCoverZoom 会跳过归还焦点，不会把焦点抢到即将消失的按钮上。 */
   if (v !== "audio" && typeof closeAudioCoverZoom === "function") closeAudioCoverZoom();
   window.scrollTo(0, 0);
+}
+
+/* ================= 跨页「正在播放」入口（v0.9.92）=================
+   客户反馈：「离开当前页面后无法快速回到视频/音乐播放当中，需要重新回到
+   对应页面重新播放」。音乐元素与视频元素本来都还在 DOM 里（切视图只是
+   display:none，不会销毁），但没有任何入口能回去，用户只能重新进库、重点一次。
+
+   这里做一层与播放器解耦的「正在播放」状态：
+   - 状态写 localStorage，刷新页面/换设备回来仍在；
+   - 浮标只在「播放面不可见」时出现（播放器可见时它只是噪音）；
+   - 点「回到播放」优先复用仍然活着的播放元素（真正的续播），
+     元素已经销毁才按保存的进度重开（不是从 0 起播）。
+   媒体相关的可见性/播放态判定在 02-media.js（playbackSurfaceVisible /
+   activePlaybackPlaying），此处只做兜底。 */
+const ACTIVE_PLAYBACK_KEY = "vaulthub_active_playback";
+let activePlaybackState = null;
+function activePlayback() {
+  if (!activePlaybackState) {
+    try { activePlaybackState = JSON.parse(localStorage.getItem(ACTIVE_PLAYBACK_KEY) || "null"); } catch (e) { activePlaybackState = null; }
+  }
+  return activePlaybackState;
+}
+function setActivePlayback(entry) {
+  if (!entry || !entry.kind || !entry.path) return;
+  const prev = activePlayback();
+  activePlaybackState = {
+    kind: entry.kind,
+    group: entry.group || (entry.kind === "audio" ? "audio" : "movie"),
+    libId: String(entry.libId || ""),
+    path: String(entry.path || ""),
+    title: String(entry.title || (prev && prev.path === entry.path ? prev.title : "") || ""),
+    paused: entry.paused === true,
+    at: Date.now(),
+  };
+  try { localStorage.setItem(ACTIVE_PLAYBACK_KEY, JSON.stringify(activePlaybackState)); } catch (e) {}
+  updatePlaybackDock();
+}
+function setActivePlaybackPaused(paused) {
+  const cur = activePlayback();
+  if (!cur) return;
+  cur.paused = paused === true;
+  activePlaybackState = cur;
+  try { localStorage.setItem(ACTIVE_PLAYBACK_KEY, JSON.stringify(cur)); } catch (e) {}
+  updatePlaybackDock();
+}
+function clearActivePlayback(kind) {
+  const cur = activePlayback();
+  if (kind && cur && cur.kind !== kind) return;
+  activePlaybackState = null;
+  try { localStorage.removeItem(ACTIVE_PLAYBACK_KEY); } catch (e) {}
+  updatePlaybackDock();
+}
+function playbackDockEl() { return document.getElementById("playbackDock"); }
+function updatePlaybackDock() {
+  const dock = playbackDockEl();
+  if (!dock) return;
+  const cur = activePlayback();
+  const surfaceVisible = cur && typeof playbackSurfaceVisible === "function" ? playbackSurfaceVisible(cur) : false;
+  const show = !!cur && !surfaceVisible;
+  dock.classList.toggle("show", show);
+  if (!show) return;
+  const playing = typeof activePlaybackPlaying === "function" ? !!activePlaybackPlaying(cur) : !cur.paused;
+  dock.dataset.kind = cur.kind;
+  dock.dataset.playing = playing ? "1" : "0";
+  const titleEl = dock.querySelector("[data-dock-title]");
+  if (titleEl) titleEl.textContent = cur.title || cur.path;
+  const subEl = dock.querySelector("[data-dock-sub]");
+  if (subEl) subEl.textContent = (playing ? t("dockPlaying") : t("dockPaused")) + " · " + (cur.kind === "audio" ? "音乐" : "影视");
+  const toggleEl = dock.querySelector("[data-dock-toggle]");
+  if (toggleEl) toggleEl.textContent = playing ? "⏸" : "▶";
+  const returnBtn = dock.querySelector(".pd-return");
+  if (returnBtn) returnBtn.textContent = t("dockReturn");
 }
 
 /* 侧边栏媒体库条目是 JS 注入的，用事件委托绑定，避免注入后丢事件。 */

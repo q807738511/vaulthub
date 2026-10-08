@@ -5,6 +5,8 @@
 function closeLocalViewer(group) {
   const prior = activeReader;
   const el = document.getElementById("local-media-viewer-" + group);
+  /* v0.9.92：关闭视频播放器 = 真的不播了，跨页「正在播放」入口随之收起。 */
+  if (group === "movie" && typeof clearActivePlayback === "function") clearActivePlayback("video");
   if (el) el.querySelectorAll(".media-video-body").forEach(root => { stopVideoPlaybackSession(root); terminateWasmVideo(root); });
   if (el) el.innerHTML = "";
   /* v0.9.67：关闭读者时同步释放漫画阅读器的 IntersectionObserver 与全局键盘监听，

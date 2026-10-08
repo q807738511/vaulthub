@@ -2110,7 +2110,7 @@ html[data-quality="minimal"] :is(.audio-expand, .audio-fullscreen, .audio-player
 .video-status-panel .status-compat {
   display:none; margin-top:6px; color:#ffd48a; font-size:12px; line-height:1.55;
   word-break:break-word; text-align:left;
-  /* v0.9.91：面板内是普通说明行，不是顶栏的胶囊标签 —— 重置 .movie-compat-status
+  /* v0.9.92：面板内是普通说明行，不是顶栏的胶囊标签 —— 重置 .movie-compat-status
      带过来的深色药丸底色与内边距，否则会显示成一颗多余的深色胶囊。 */
   background:none; padding:0; border-radius:0;
 }
@@ -2123,15 +2123,40 @@ html[data-quality="minimal"] :is(.audio-expand, .audio-fullscreen, .audio-player
 }
 .video-status-panel .status-decode.show { display:block; }
 .media-reader-overlay.movie-player.reader-theme-light .video-status-panel .status-decode { color:#1a5f8a; }
-/* v0.9.91：下滑自动翻页提示（书刊架「继续加载」旁 / 分页器里）。 */
-/* v0.9.91：禁用服务端转码后画质上限不生效，控件上明确标注（否则会与「原画直放」口径打架）。 */
+/* v0.9.92（需求）：播放影视媒体时自动占满整个窗口。
+   旧布局 top:var(--topbar-h) + left:var(--sidebar-w) 永远留出顶栏与侧栏，
+   画面只能占右侧那一列；这里把浮层拉到 inset:0（z-index 高于顶栏/侧栏的 600），
+   视频区跟着铺满、去掉内边距。缩成「停靠小窗」时由更高优先级的
+   .video-minimized.video-controller-docked 规则接管（那份规则 4 个类名，优先）。 */
+.media-reader-overlay.movie-player.player-fullbleed { top:0; left:0; right:0; bottom:0; z-index:620; }
+body.sidebar-hidden .media-reader-overlay.movie-player.player-fullbleed { left:0; }
+.media-reader-overlay.movie-player.player-fullbleed .media-reader-body { padding:0; }
+.media-reader-overlay.movie-player.player-fullbleed .media-video-body { min-height:0; height:100%; padding:0; }
+
+/* v0.9.92（需求）：跨页「正在播放」浮标 —— 只在播放面不可见时出现。 */
+.playback-dock { position:fixed; z-index:400; left:calc(var(--sidebar-w) + 18px); bottom:18px; display:none; align-items:center; gap:10px; max-width:min(460px, calc(100vw - var(--sidebar-w) - 36px)); padding:9px 12px; border:1px solid var(--border); border-radius:12px; background:color-mix(in srgb,var(--bg2) 96%,var(--text)); box-shadow:0 12px 32px color-mix(in srgb,var(--text) 22%,transparent); backdrop-filter:blur(12px); }
+.playback-dock.show { display:flex; }
+body.sidebar-hidden .playback-dock { left:78px; }
+.playback-dock .pd-icon { display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; flex:0 0 auto; border-radius:9px; background:color-mix(in srgb,var(--accent) 18%,transparent); color:var(--accent); }
+.playback-dock .pd-icon .vc-svg { width:16px; height:16px; }
+.playback-dock .pd-text { display:flex; flex-direction:column; min-width:0; flex:1 1 auto; line-height:1.25; }
+.playback-dock .pd-title { font-size:13px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.playback-dock .pd-sub { font-size:11px; font-style:normal; color:var(--muted, #8a8a8a); }
+.playback-dock .pd-btn, .playback-dock .pd-return, .playback-dock .pd-close { flex:0 0 auto; border:1px solid var(--border); background:transparent; color:var(--text); border-radius:9px; cursor:pointer; font-size:12px; padding:6px 10px; }
+.playback-dock .pd-btn { width:34px; padding:6px 0; text-align:center; }
+.playback-dock .pd-return { border-color:color-mix(in srgb,var(--accent) 55%,var(--border)); color:var(--accent); }
+.playback-dock .pd-btn:hover, .playback-dock .pd-return:hover { background:color-mix(in srgb,var(--accent) 14%,transparent); }
+.playback-dock[data-playing="0"] .pd-icon { color:var(--muted, #8a8a8a); background:color-mix(in srgb,var(--muted, #8a8a8a) 16%,transparent); }
+
+/* v0.9.92：下滑自动翻页提示（书刊架「继续加载」旁 / 分页器里）。 */
+/* v0.9.92：禁用服务端转码后画质上限不生效，控件上明确标注（否则会与「原画直放」口径打架）。 */
 .video-quality-options.cap-inactive button[data-quality]:not([data-quality="auto"]):not([data-quality="original"]) { opacity: .5; }
 .video-quality-options.cap-inactive button[data-quality].active { text-decoration: line-through; }
 .page-scroll-hint {
   color:var(--muted, #8a8a8a); font-size:12px; align-self:center; margin-left:8px;
   white-space:nowrap;
 }
-/* v0.9.91：解/转码风向标徽标（服务器算力偏弱时用告警色）。 */
+/* v0.9.92：解/转码风向标徽标（服务器算力偏弱时用告警色）。 */
 .badge.warn { color:#e8a33d; border-color:rgba(232,163,61,.45); }
 /* 信息按钮上的小圆点：面板收起时也能看出里面存着一条转码 / 限档提示。 */
 .video-info-button { position:relative; }

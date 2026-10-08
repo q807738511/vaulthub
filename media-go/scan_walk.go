@@ -139,6 +139,13 @@ func inBluRayStructure(rel string) bool {
 func skipIndexFile(rel string) bool {
 	slash := filepath.ToSlash(rel)
 	lower := strings.ToLower(slash)
+	/* v0.9.92：封面/海报 sidecar 不入索引 —— 它们只能作为封面资源出现，
+	   不能出现在目录/书架列表里（客户反馈电子书库里冒出 xxx.cover.jpg）。
+	   规则与库类型无关：视频库的 <片名>.cover.jpg、漫画库的 <书名>-poster.jpg
+	   同样跳过；裸 cover.jpg（库级封面）不受影响。 */
+	if isMediaSidecarImage(filepath.Base(slash)) {
+		return true
+	}
 	if !inBluRayStructure(lower) {
 		return false
 	}

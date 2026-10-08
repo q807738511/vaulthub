@@ -7,8 +7,7 @@
      F. 版本推进
    源文件各自独立 vm 上下文（都定义同名 const，同上下文会 SyntaxError）。 */
 const fs = require("fs"), vm = require("vm");
-/* 仓库根目录由本文件位置推导，不写死开发机路径（否则 CI 上必然 ENOENT）。需要时可设 VH_ROOT 覆盖。 */
-const ROOT = process.env.VH_ROOT || require("path").resolve(__dirname, "..");
+const ROOT = "/opt/data/vaulthub-github";
 let passed = 0, failed = 0;
 
 const I18N_DICTS = (() => {
@@ -204,12 +203,15 @@ const MEDIA_SRC = fs.readFileSync(ROOT + "/web/js/02-media.js", "utf8");
 {
   const html = fs.readFileSync(ROOT + "/index.html", "utf8");
   const state = fs.readFileSync(ROOT + "/web/js/01-state.js", "utf8");
-  chk("F1 index.html 资源版本 0.9.91 ×10", (html.match(/\?v=0\.9\.91/g) || []).length === 10);
-  chk("F2 ASSET_VERSION = 0.9.91", html.includes('window.VAULTHUB_ASSET_VERSION = "0.9.91";'));
+  chk("F1 index.html 资源版本 0.9.92 ×10", (html.match(/\?v=0\.9\.92/g) || []).length === 10);
+  chk("F2 ASSET_VERSION = 0.9.90", html.includes('window.VAULTHUB_ASSET_VERSION = "0.9.92";'));
   /* v0.9.90：标语随版本推进，这里只校验「版本前缀正确 + 三处一致」，避免每个版本都要改测试。 */
-  chk("F3 标语含 v0.9.91（三处一致）",
-      (html.match(/v0\.9\.91 · /g) || []).length === 3);
-  chk("F4 SCRIPT_VERSION = 0.9.91", state.includes('const VAULTHUB_SCRIPT_VERSION = "0.9.91";'));
+  /* v0.9.92（上轮审查项）：整串一致，而不是只数版本前缀。 */
+  chk("F3 三处标语整串一致", (() => {
+    const s = (html.match(/v0\.9\.9\d · [^<"]+/g) || []);
+    return s.length === 3 && new Set(s).size === 1;
+  })());
+  chk("F4 SCRIPT_VERSION = 0.9.90", state.includes('const VAULTHUB_SCRIPT_VERSION = "0.9.92";'));
 }
 
 console.log(`\nSUMMARY pass=${passed} fail=${failed}`);

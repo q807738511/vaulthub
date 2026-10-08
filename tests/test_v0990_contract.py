@@ -8,6 +8,7 @@
    批量元数据端点、后端 mtime 覆盖索引与单页上限。
 """
 from pathlib import Path
+import re
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,7 +38,7 @@ def check(name, cond, extra=""):
 # ============ 1) 转码提示移入「获取信息」面板 ============
 check("1a 面板内新增转码提示行（data-video-compat）",
       '<div class="video-status-panel">' in MEDIA
-      # v0.9.91：面板内紧跟一行「解码路径」（data-video-decode），故两行连排后收尾。
+      # v0.9.92：面板内紧跟一行「解码路径」（data-video-decode），故两行连排后收尾。
       and '<span class="status-compat movie-compat-status" data-video-compat></span><span class="status-decode" data-video-decode></span></div>' in MEDIA)
 check("1b 画面顶栏不再有提示条（vpPreparing 的旧节点已移除）",
       '<span class="movie-compat-status">${esc(t("vpPreparing"))}</span>' not in MEDIA)
@@ -108,11 +109,14 @@ check("3k i18n 三语言都补了索引加载提示",
       and STATE.count("{n} / {total}") == 3)
 
 # ============ 版本与文档 ============
-check("4a index.html 资源版本 0.9.90 ×10", HTML.count("?v=0.9.91") == 10)
-check("4b ASSET_VERSION 0.9.90", 'window.VAULTHUB_ASSET_VERSION = "0.9.91";' in HTML)
-check("4c SCRIPT_VERSION 0.9.90", 'const VAULTHUB_SCRIPT_VERSION = "0.9.91";' in STATE)
-check("4d 标语含 v0.9.90（侧栏/页脚/关于三处一致）", HTML.count("v0.9.91 · ") == 3)
-check("4e 更新日志顶部为 v0.9.90", LOG.lstrip().startswith("# VaultHub 蜀鼠之家 v0.9.91"))
+check("4a index.html 资源版本 0.9.90 ×10", HTML.count("?v=0.9.92") == 10)
+check("4b ASSET_VERSION 0.9.90", 'window.VAULTHUB_ASSET_VERSION = "0.9.92";' in HTML)
+check("4c SCRIPT_VERSION 0.9.90", 'const VAULTHUB_SCRIPT_VERSION = "0.9.92";' in STATE)
+# v0.9.92（上轮审查项）：标语整串一致，而不是只数版本前缀。
+_slogans_4d = re.findall(r"v0\.9\.9\d · [^<\"]+", HTML)
+check("4d 标语三处整串一致",
+      len(_slogans_4d) == 3 and len(set(_slogans_4d)) == 1, sorted(set(_slogans_4d)))
+check("4e 更新日志顶部为 v0.9.90", LOG.lstrip().startswith("# VaultHub 蜀鼠之家 v0.9.92"))
 check("4f 更新日志写明「整库可见不变 + 三条链路根因」",
       "整库可见" in LOG and "37 万次主线程 JSON 解析" in LOG and "370 次请求" in LOG)
 check("4g 发布说明文件存在且含本版内容",

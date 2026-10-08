@@ -41,6 +41,45 @@ var coverRoleSidecar = map[string]string{
 	"logo":     "logo",
 }
 
+/* v0.9.92：封面/海报 sidecar 的文件名判定。
+   客户反馈「电子书栏目里 .cover 文件出现在目录列表中」——
+   cover_persist 写入的 <名>.cover.jpg 与 v0.9.89 的 <名>-poster.jpg 等图片 sidecar
+   在扫描端没有被排除（旧注释假设「不在任何媒体库扫描格式内」，但漫画/电子书库
+   接受 jpg/png/webp/gif，于是它们以「一页」的身份进了书架）。
+   这些文件只应作为封面资源被 /api/media/cover 与 local_metadata 直接读取，
+   不该出现在任何列表里。 */
+var sidecarImageExts = map[string]bool{
+	".jpg": true, ".jpeg": true, ".png": true, ".webp": true, ".gif": true, ".bmp": true, ".avif": true,
+}
+
+// isMediaSidecarImage 判定 basename 是否为封面/海报 sidecar：
+//   <媒体名>.cover.<图片扩展名>      （v0.9.56 封面落盘）
+//   <媒体名>-poster|-fanart|-backdrop|-logo.<图片扩展名>（v0.9.89 角色图落盘）
+// 裸 cover.jpg / poster.jpg（媒体库级封面，local_metadata 认可）不算 sidecar。
+func isMediaSidecarImage(base string) bool {
+	b := strings.ToLower(strings.TrimSpace(base))
+	if b == "" {
+		return false
+	}
+	dot := strings.LastIndex(b, ".")
+	if dot <= 0 || dot == len(b)-1 {
+		return false
+	}
+	if !sidecarImageExts[b[dot:]] {
+		return false
+	}
+	stem := b[:dot]
+	if rest, ok := strings.CutSuffix(stem, ".cover"); ok {
+		return rest != ""
+	}
+	for _, role := range []string{"-poster", "-fanart", "-backdrop", "-logo"} {
+		if rest, ok := strings.CutSuffix(stem, role); ok {
+			return rest != ""
+		}
+	}
+	return false
+}
+
 // coverSidecarRelRole 由媒体相对路径 + 角色派生 sidecar 相对路径。
 // role 为空或 "cover" → 沿用 v0.9.56 的 <名>.cover.<ext>（前端 /api/media/cover 直读）；
 // poster/fanart/backdrop/logo → <名>-<role>.<ext>（服务端本地元数据读取端认得）。
