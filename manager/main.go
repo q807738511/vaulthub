@@ -600,6 +600,8 @@ func (m *manager) login(w http.ResponseWriter, r *http.Request) {
 			m.reply(w, 500, map[string]any{"ok": false, "error": "无法持久化一次性密码状态"})
 			return
 		}
+		/* v0.9.95（安全审查 M5）：一次性初始密码已被消费，删掉明文文件。 */
+		clearInitialPasswordFile()
 	}
 	days := sessionDaysFor(x.KeepDays)
 	ttl := sessionTTLFor(days)
@@ -1294,7 +1296,16 @@ func main() {
 			}
 			log.Printf("v0.9.58: ADMIN_PASSWORD is empty or insecure — one-time initial password generated.")
 			log.Printf("  login username: %s", u)
-			log.Printf("  login password: %s", randomPw)
+			/* v0.9.95（安全审查 M5）：一次性初始密码不再打进容器日志 —— docker logs 会被采集/
+			   转发，明文初始口令进日志等于进了转发链。改为写 /data/initial-admin-password（0600），
+			   日志只说「去哪看」；文件在首次登录消费掉这条密码时删除。只有文件写不进去时才退回
+			   打印（否则用户拿不到初始密码，等于把自己锁在门外）。 */
+			if pwErr := writeInitialPasswordFile(u, randomPw); pwErr != nil {
+				log.Printf("  ⚠️ 无法写 %s（%v），退回打印一次：", initialPasswordPath(), pwErr)
+				log.Printf("  login password: %s", randomPw)
+			} else {
+				log.Printf("  login password: 见容器内 %s（0600，首次登录后自动删除；请勿外传）", initialPasswordPath())
+			}
 			log.Printf("  (single-use: logging in forces you to set a new password)")
 			password = randomPw
 			mustChange = true

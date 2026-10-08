@@ -18,7 +18,7 @@ const TOPNAV_TYPE_ICON = {
   comic: "📚", comic_book: "📚", book: "📖", ebook: "📖", novel: "📖",
   movie: "🎞", series: "📺", tv: "📺", anime: "🎞", documentary: "🎞"
 };
-let topNavSearchQuery = "";
+/* v0.9.95（安全审查 N-3）：只服务旧顶栏搜索框的过滤态变量已随它一起删除。 */
 
 function topNavIconForType(type) {
   const key = String(type || "").toLowerCase();
@@ -76,62 +76,24 @@ function syncTopLibTabs(navKey) {
   });
 }
 
-/* 一级导航项高亮 + 过滤态重建（切库后搜索词仍然生效）。 */
+/* 一级导航项高亮（v0.9.95：过滤态重建已随旧搜索框删除）。 */
 function syncTopNavView(view) {
   const current = String(view || "").replace(/^view-/, "");
   document.querySelectorAll(".tn-item[data-topnav]").forEach(item => {
     item.classList.toggle("active", item.dataset.topnav === current);
   });
-  applyTopSearchFilter();
+  /* v0.9.95（安全审查 N-3）：原来这里会「重建过滤态」，但过滤词只由已被删除的顶栏
+     搜索框赋值 → 恒为空串、永远不隐藏任何条目，属死调用，一并删除。 */
 }
 
 /* ---------- 全局搜索 ---------- */
 /* v0.9.94（需求2）：顶栏搜索框已缩成放大镜图标，现在唯一的搜索输入框是
-   搜索弹窗里的 #mediaSearchInput —— 过滤与「回车搜索」都指向它。 */
+   搜索弹窗里的 #mediaSearchInput。
+   v0.9.95（安全审查 N-3）：随旧搜索框一起失效的「输入即过滤当前视图」整条链路
+   （输入处理、回车跳转、过滤函数与过滤词）已整体删除 —— 它们的唯一调用方是被删掉的
+   内联处理器，留着就是死代码（过滤词永远是空串、什么都不隐藏）。现在的搜索走弹窗的
+   服务端搜索，不再改当前视图的可见性。 */
 function topNavSearchBox() { return document.getElementById("mediaSearchInput"); }
-function onTopSearchInput() {
-  const box = topNavSearchBox();
-  topNavSearchQuery = box ? box.value.trim() : "";
-  applyTopSearchFilter();
-}
-function onTopSearchKey(event) {
-  if (event.key === "Enter") {
-    event.preventDefault();
-    runTopSearchGo();
-    return;
-  }
-  if (event.key === "Escape") {
-    event.preventDefault();
-    const box = topNavSearchBox();
-    if (box) { box.value = ""; box.blur(); }
-    topNavSearchQuery = "";
-    applyTopSearchFilter();
-  }
-}
-/* 过滤当前视图已渲染的条目：书刊卡片、列表行、影视海报都带 media-path 或行类名。 */
-function topNavSearchTargets(root) {
-  const scope = root || document.querySelector(".view.active") || document;
-  return [...scope.querySelectorAll("[data-media-path], .book-card, .media-file-row, .movie-poster, .movie-row, .audio-album-card")]
-    .filter((el, idx, arr) => arr.indexOf(el) === idx);
-}
-function applyTopSearchFilter() {
-  const q = topNavSearchQuery.toLowerCase();
-  const targets = topNavSearchTargets();
-  let hidden = 0;
-  targets.forEach(el => {
-    const hay = (el.textContent || "").toLowerCase() + " " + String(el.dataset.mediaPath || "").toLowerCase();
-    const hit = !q || hay.includes(q);
-    el.classList.toggle("tn-search-hidden", !hit);
-    if (!hit) hidden++;
-  });
-  return { total: targets.length, hidden };
-}
-function runTopSearchGo() {
-  const q = (topNavSearchBox() ? topNavSearchBox().value : "").trim();
-  if (!q) return;
-  if (typeof openMediaSearch === "function") openMediaSearch();
-  if (typeof runMediaSearch === "function") runMediaSearch();
-}
 
 /* ---------- v0.9.94（需求2）：媒体搜索弹窗 ----------
    顶栏的放大镜按钮弹出它（弹窗带弹出动画，见 .search-modal）。

@@ -1800,6 +1800,8 @@ html[data-uimode="pc"] .libtab, html[data-uimode="pc"] .btn { min-height:36px; }
 /* ==================== v0.9.80 剧集/季/集/推荐 ==================== */
 .series-season-head { display:flex; align-items:center; gap:8px; cursor:pointer; user-select:none; }
 .series-season-head .series-season-chev { transition:transform .15s; }
+/* v0.9.95（安全审查 N-6）：季卡里的季简介（季名跟在「第N季」后面，用同一行文字） */
+.series-season-overview { margin:6px 0 10px; font-size:12.5px; line-height:1.75; color:var(--text2); }
 .episode-grid-section { padding:0 clamp(24px,8vw,120px) 10px; }
 .episode-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px; }
 .episode-grid .ep-grid-card { cursor:pointer; border-radius:8px; overflow:hidden; border:1px solid var(--border); background:var(--card); }

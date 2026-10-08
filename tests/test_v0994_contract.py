@@ -37,9 +37,12 @@ check("1b 迷你播放器在搜索图标左侧", 0 <= actions.find('id="playback
 check("1c 搜索图标在通知喇叭左侧", 0 < actions.find('id="tnSearchButton"') < actions.find('class="tn-notify-wrap"'))
 check("1d 顶栏外不再有第二个浮标", HTML.count('id="playbackDock"') == 1)
 check("1e 浮标不再是固定定位的左下角浮层", "position:fixed" not in CSS.split(".playback-dock {")[1].split("}")[0])
-check("1f 浮标常驻条件：只要没被主动关闭就显示（仅在影视占满窗口时不显示）",
-      "const show = !!cur && !immersive;" in S
-      and "player-immersive" in S.split("function updatePlaybackDock()")[1][:600])
+check("1f 浮标显示条件：只在「播放面不可见」且未占满窗口时显示（v0.9.95 口径）",
+      "const show = !!cur && !immersive && !surfaceVisible;" in S
+      and 'typeof playbackSurfaceVisible === "function" ? !!playbackSurfaceVisible(cur) : false' in S
+      and "player-immersive" in S.split("function updatePlaybackDock()")[1][:900])
+check("1f2 v0.9.94 的「有播放就显示」旧条件已不存在",
+      "const show = !!cur && !immersive;" not in S)
 check("1g 回到播放/暂停/主动关闭三个入口仍在", all(k in HTML for k in ['returnToActivePlayback()', 'toggleActivePlayback()', 'stopActivePlayback()']))
 
 print("== 需求2 搜索框→放大镜图标 + 搜索弹窗 ==")
@@ -128,14 +131,14 @@ check("c6 Release JSON 转义优先用 node", 'if command -v node >/dev/null 2>&
 print("== 版本 / 文档 ==")
 # 与版本号无关：所有 ?v= 都必须是本版，且恰好 10 处（下一版不会因此改测试）。
 check("v1 资源缓存键全部为本版且无历史残留",
-      set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"0.9.94"} and len(re.findall(r"\?v=0\.9\.94", HTML)) == 10,
+      set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"0.9.95"} and len(re.findall(r"\?v=0\.9\.95", HTML)) == 10,
       sorted(set(re.findall(r"\?v=([0-9.]+)", HTML))))
-check("v2 资源版本常量", 'window.VAULTHUB_ASSET_VERSION = "0.9.94";' in HTML and 'const VAULTHUB_SCRIPT_VERSION = "0.9.94";' in S)
-SLOGAN = "v0.9.94 · 顶栏迷你播放器·搜索弹窗·分季刮削"
+check("v2 资源版本常量", 'window.VAULTHUB_ASSET_VERSION = "0.9.95";' in HTML and 'const VAULTHUB_SCRIPT_VERSION = "0.9.95";' in S)
+SLOGAN = "v0.9.95 · 迷你播放器按需出现·CI 校验收紧"
 check("v3 标语三处整串一致", HTML.count(SLOGAN) == 3)
-check("v4 发布说明文件存在且提到本轮改动", os.path.exists(os.path.join(ROOT, ".github/RELEASE_NOTES_0.9.94.md")))
+check("v4 发布说明文件存在且提到本轮改动", os.path.exists(os.path.join(ROOT, ".github/RELEASE_NOTES_0.9.95.md")))
 log = rd("Update Log.md")
-check("v5 Update Log 有 v0.9.94 段", "0.9.94" in log and "顶栏迷你播放器" in log)
+check("v5 Update Log 有 v0.9.95 段", "0.9.95" in log and "顶栏迷你播放器" in log)
 check("v6 i18n 新键三语言齐备", S.count("searchLead:") == 3 and S.count("editSeasonHint:") == 3)
 
 print()

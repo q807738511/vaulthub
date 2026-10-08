@@ -16,7 +16,10 @@
 #   job 跑在 act_runner 给的容器里，容器里不一定有 docker CLI，也不一定有 docker socket。
 #   所以「构建并推送」这一步会先探测：
 #     有 docker           → 真的 build + push + 读回 digest
-#     没有 docker         → 打印 ::warning:: 并给出 NAS 上的命令，然后跳过（不亮假绿灯）
+#   没有 docker         → 打印 ::warning:: 并给出 NAS 上的命令，然后跳过（不亮假绿灯）
+#   v0.9.95 澄清：这台 runner 的 job 容器**有 docker socket 但没有 docker CLI**。即便装上 CLI，
+#   也不在 CI 里构建 —— 发布流程要求「已推送的镜像 == 容器实测通过的那一份」（NAS 构建 → 容器验证
+#   → 推送 → diff_ids 读回）；CI 另建一份不可复现，等于用没验过的镜像覆盖验过的 digest。
 #   想让 CI 自己构建，需要在 act_runner 的 config.yaml 里给 job 容器挂 socket：
 #     container:
 #       options: "-v /var/run/docker.sock:/var/run/docker.sock"
@@ -26,10 +29,13 @@
 # 只会打印「跳过」（既不真跑又容易被读成绿灯），已删除。本流水线只负责
 # 「构建 + 推送 + 读回 digest + 创建 Release」；前端/行为测试套件在发布流程内
 # 于 Hermes 侧跑完（全绿）之后才推 tag。
+# v0.9.95：Go 校验（vet/build/test）改在 validate.yml 里就地装临时工具链真跑；
+# 本流水线的 Release 步骤改读真实存在的密钥名 VH_RELEASE_TOKEN（Gitea 保留 GITEA_ 前缀，
+# 旧写法 secrets.GITEA_RELEASE_TOKEN 永远为空 → Release 只能手工建）。
 #
 # 需要的仓库密钥（缺了就跳过对应步骤，并在日志里明说）：
-#   DOCKERHUB_USERNAME / DOCKERHUB_TOKEN     推 Docker Hub
-#   GITEA_RELEASE_TOKEN                      在 Gitea 上创建 Release（仓库级访问令牌）
+#   DOCKERHUB_USERNAME / DOCKERHUB_TOKEN     推 Docker Hub（NAS 侧脚本用同一组凭据）
+#   VH_RELEASE_TOKEN                         在 Gitea 上创建 Release（仓库级访问令牌）
 #
 # GitHub 原版已整体注释保留在本文件末尾，并另存为
 # .github/workflows/publish-image.yml.disabled（改名回 .yml 即可恢复）。
@@ -70,10 +76,14 @@ jobs:
           git init -q .
           git remote remove origin 2>/dev/null || true
           git remote add origin "$BASE/$SLUG.git"
+          # v0.9.95（安全审查 L1）：不再把克隆令牌写进 runner 的 ~/.gitconfig（默认 0644
+          # 落盘，同宿主上其它 job/进程可读）。改成 -c 只在这一次 fetch 上生效。
+          FETCH_CFG=""
           if [ -n "${GITEA_CLONE_TOKEN:-}" ]; then
-            git config --global url."https://${GITEA_CLONE_TOKEN}@${BASE#https://}/".insteadOf "${BASE}/"
+            FETCH_CFG="-c url.https://${GITEA_CLONE_TOKEN}@${BASE#https://}/.insteadOf=${BASE}/"
           fi
-          git fetch -q --depth=1 origin "$REF"
+          # shellcheck disable=SC2086  # 需要按空格拆成多个 git 参数
+          git $FETCH_CFG fetch -q --depth=1 origin "$REF"
           git checkout -q -f FETCH_HEAD
           echo "克隆完成：$(git rev-parse --short HEAD)"
           ls -a | head -20
@@ -189,7 +199,9 @@ jobs:
           for r in $REFS; do BUILD_ARGS="$BUILD_ARGS -t $r"; done
 
           if ! command -v docker >/dev/null 2>&1; then
-            echo "::warning title=本次未构建镜像::runner 的 job 容器里没有 docker CLI，已跳过构建与推送"
+            echo "::warning title=本次未构建镜像（设计如此）::runner 的 job 容器里没有 docker CLI，镜像构建与推送由 NAS 侧执行"
+            echo "原因：已发布的镜像必须与「容器实测通过的那一份」逐层一致 —— NAS 构建 → 容器验证 → 推送；"
+            echo "      若在 CI 里另外重新构建一份，产出的镜像不可复现，会把验证过的 digest 覆盖成没验过的。"
             echo "本次本应产生的标签：$REFS"
             echo "请在能构建的机器（NAS）上执行： sh scripts/release-nas.sh ${TAG:-<tag>}"
             echo "SKIPPED" > /tmp/vh-build-status
@@ -219,7 +231,11 @@ jobs:
 
       - name: 在 Gitea 上创建 / 更新 Release
         env:
-          GITEA_RELEASE_TOKEN: ${{ secrets.GITEA_RELEASE_TOKEN }}
+          # v0.9.95：Gitea 保留 GITEA_ / GITHUB_ 前缀，所以仓库里根本存不进
+          # secrets.GITEA_RELEASE_TOKEN（实际存的名字是 VH_RELEASE_TOKEN）。
+          # 旧写法读的是一个永远为空的密钥 → 这一步每次都跳过、Release 只能手工用 API 建。
+          # 现在读真实存在的密钥名：CI 自己建 Release，并读回校验正文长度。
+          GITEA_RELEASE_TOKEN: ${{ secrets.VH_RELEASE_TOKEN }}
         run: |
           set -eu
           # Gitea/act 用 bash -eo pipefail 执行 run 块；本脚本是按 set -eu 语义写的，
@@ -232,9 +248,9 @@ jobs:
             echo "::warning title=跳过 Release::没有配置 GITEA_RELEASE_TOKEN 仓库密钥，未在 Gitea 上创建 Release"
             exit 0
           fi
-          # v0.9.94：说明文件的 JSON 转义与读回校验都优先用 node（runner 镜像里必有 node）。
+          # v0.9.94：说明文件的 JSON 转义与读回校验用 node（runner 镜像里必有 node）。
           if ! command -v node >/dev/null 2>&1; then
-            echo "::warning title=跳过 Release::镜像里既没有 node 也没有 python3，Release 说明的 JSON 转义做不了"; exit 0
+            echo "::warning title=跳过 Release::镜像里没有 node，Release 说明的 JSON 转义做不了（默认 runner 镜像带 node，请检查 runner 标签）"; exit 0
           fi
           GITEA_TOKEN="$GITEA_RELEASE_TOKEN" \
           GITEA_API_BASE="${GITHUB_SERVER_URL:-}/api/v1" \

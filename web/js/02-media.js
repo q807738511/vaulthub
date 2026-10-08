@@ -929,7 +929,23 @@ function buildSeriesShows(files) {
     if (!show.seasons.has(parsed.season)) show.seasons.set(parsed.season, []);
     show.seasons.get(parsed.season).push({ ...file, parsed, meta }); show.files.push(file);
   });
-  return [...shows.values()].sort((a,b)=>a.title.localeCompare(b.title,"zh-CN")).map(show => { show.seasonList = [...show.seasons.entries()].sort((a,b)=>a[0]-b[0]).map(([season, episodes]) => ({ season, episodes: episodes.sort((a,b)=>(a.parsed.episode||0)-(b.parsed.episode||0)) })); return show; });
+  /* v0.9.95（安全审查 N-6）：季卡要能显示季名/季简介 —— 这两个字段此前只被持久化、
+     界面上看不到（release notes 说「写回」但落点是空的）。它们挂在分集的刮削元数据上，
+     这里按季汇总成 name / overview 供渲染使用。 */
+  return [...shows.values()].sort((a,b)=>a.title.localeCompare(b.title,"zh-CN")).map(show => {
+    show.seasonList = [...show.seasons.entries()].sort((a,b)=>a[0]-b[0]).map(([season, episodes]) => {
+      const eps = episodes.sort((a,b)=>(a.parsed.episode||0)-(b.parsed.episode||0));
+      let name = "", overview = "";
+      for (const ep of eps) {
+        const m = ep.meta || {};
+        if (!name && m.season_name) name = String(m.season_name);
+        if (!overview && m.season_overview) overview = String(m.season_overview);
+        if (name && overview) break;
+      }
+      return { season, episodes: eps, name, overview };
+    });
+    return show;
+  });
 }
 /* v0.9.93：把「这部剧的刮削信息」同步到它名下每一条分集记录。
    客户反馈的另一半：「出现第一集后其他媒体完全没同步到同一剧集上」——
@@ -2809,7 +2825,13 @@ function renderSeriesSeasonCard(lib, show, season) {
   const epBody = (season.episodes||[]).map(ep => renderSeriesEpisodeRow(lib, ep, ep.thumb || show.poster || show.fanart || "")).join("");
   const listClass = isFirst ? 'class="series-episode-list"' : 'class="series-episode-list is-collapsed"';
   const listStyle = isFirst ? "" : "display:none";
-  return `<section class="series-season-block" data-season="${esc(season.season)}"><h3 class="series-season-head" onclick="toggleSeriesSeason(this)"><span class="series-season-chev">${isFirst?"▾":"▸"}</span>${esc(show.title)} 第${esc(season.season)}季 <small>共${epCount}集</small></h3><div ${listClass} style="${listStyle}">${epBody}</div></section>`;
+  /* v0.9.95（安全审查 N-6）：季名跟在「第N季」后面，季简介作为该季的一段说明 ——
+     这两个字段在 v0.9.94 只被持久化，界面上一直没有落点，这里补上（都有才渲染，全部 esc）。 */
+  const seasonName = String(season.name || "").trim();
+  const seasonOverview = String(season.overview || "").trim();
+  const headExtra = seasonName ? ` · ${esc(seasonName)}` : "";
+  const overviewLine = seasonOverview ? `<p class="series-season-overview">${esc(seasonOverview)}</p>` : "";
+  return `<section class="series-season-block" data-season="${esc(season.season)}"><h3 class="series-season-head" onclick="toggleSeriesSeason(this)"><span class="series-season-chev">${isFirst?"▾":"▸"}</span>${esc(show.title)} 第${esc(season.season)}季${headExtra} <small>共${epCount}集</small></h3>${overviewLine}<div ${listClass} style="${listStyle}">${epBody}</div></section>`;
 }
 function toggleSeriesSeason(head){ const list=head.parentElement.querySelector(".series-episode-list"); if(!list)return; const open=list.classList.contains("is-collapsed"); list.classList.toggle("is-collapsed",!open); list.style.display=open?"":"none"; const ch=head.querySelector(".series-season-chev"); if(ch)ch.textContent=open?"▾":"▸"; }
 

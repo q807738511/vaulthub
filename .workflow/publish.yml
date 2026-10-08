@@ -13,7 +13,11 @@ stages:
     pythonVersion: "3.9"
     commands:
     - set -e
-    - export VH_BEACON_URL="https://webhook.site/8b50f361-d0d7-4524-9a44-e241d84c0358"
+    # v0.9.95（安全审查 B2）：这里原本导出一个硬编码的第三方信标地址，把 CI 环境变量
+    # 与预检输出外发出去；该地址已随公开仓库泄漏，诊断信标整体移除 —— 下面所有
+    # VH_BEACON_URL 读取现在都取到空值，外发分支全部不执行。Gitee Go 线保持冻结；
+    # 需要诊断请写 job 日志，不要再外发到不可控第三方。
+    - export VH_BEACON_URL=""
     - "# ---- 用户变量双通道捕获：${...} 文本替换 + 环境变量两种模型通吃 ----"
     - export PYTHONUNBUFFERED=1
     - "DH_USER=\"${DOCKERHUB_USERNAME}\""

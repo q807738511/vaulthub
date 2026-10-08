@@ -21,11 +21,15 @@ COPY media-go/*.go ./
 RUN go build -trimpath -ldflags="-s -w" -o /out-media-api .
 WORKDIR /src/subtitle
 COPY subtitle-api/go.mod ./
-COPY subtitle-api/main.go ./
+# v0.9.95：这里原先只 COPY main.go —— 新增 .go 文件（例如本版的一次性初始密码
+# 模块）会漏拷，镜像构建直接 undefined 失败。改成 *.go（与 media-go 一致），
+# 以后加文件不用再记得改 Dockerfile。*_test.go 只是被拷进构建阶段，不进二进制。
+COPY subtitle-api/*.go ./
 RUN go build -trimpath -ldflags="-s -w" -o /out-subtitle-api .
 WORKDIR /src/manager
 COPY manager/go.mod ./
-COPY manager/main.go ./
+# v0.9.95：同上，改 *.go（本版新增 manager/v0995_initial_password.go）。
+COPY manager/*.go ./
 RUN go build -trimpath -ldflags="-s -w" -o /out-vaulthub-manager .
 
 # Runtime: Debian trixie matches the Feiniu/Debian NAS host and ships ffmpeg 7.x

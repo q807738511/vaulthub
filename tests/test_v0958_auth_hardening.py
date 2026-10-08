@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parent.parent
 HTML = (ROOT / "index.html").read_text(encoding="utf-8")
 STATE = (ROOT / "web" / "js" / "01-state.js").read_text(encoding="utf-8")
 MANAGER = (ROOT / "manager" / "main.go").read_text(encoding="utf-8")
+INITPW = (ROOT / "manager" / "v0995_initial_password.go").read_text(encoding="utf-8")
 COMPOSE = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
 DOCKERFILE = (ROOT / "Dockerfile").read_text(encoding="utf-8")
 NOTES = (ROOT / ".github" / "RELEASE_NOTES_0.9.58.md").read_text(encoding="utf-8")
@@ -34,7 +35,17 @@ check("随机密码生成器", "func generateRandomPassword() (string, error)" i
 check("无歧义字符集", "ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789" in MANAGER)
 check("must_change 结构字段", "MustChange" in MANAGER and 'json:"must_change,omitempty"' in MANAGER)
 check("一次性消费持久化字段", "BootstrapConsumed bool" in MANAGER and "bootstrap_consumed" in MANAGER)
-check("首启公布密码到日志", 'log.Printf("  login password: %s", randomPw)' in MANAGER)
+check("首启初始密码写 0600 文件（v0.9.95 安全审查 M5：不再直接进容器日志）",
+      "writeInitialPasswordFile(u, randomPw)" in MANAGER
+      and "func writeInitialPasswordFile" in INITPW and "0o600" in INITPW
+      and "initialPasswordPath()" in INITPW)
+check("首启日志只给出密码文件位置", 'log.Printf("  login password: 见容器内 %s（0600，首次登录后自动删除；请勿外传）", initialPasswordPath())' in MANAGER)
+check("只有写文件失败才退回打印",
+      MANAGER.index('log.Printf("  login password: %s", randomPw)') > MANAGER.index("writeInitialPasswordFile(u, randomPw)")
+      and "退回打印一次" in MANAGER)
+check("首登消费后删除明文密码文件", "clearInitialPasswordFile()" in MANAGER and "func clearInitialPasswordFile" in INITPW)
+check("密码文件路径可用 INITIAL_PASSWORD_FILE 覆盖（测试不碰真实 /data）",
+      'os.Getenv("INITIAL_PASSWORD_FILE")' in INITPW)
 check("首启持久化随机密码", "m.mustChange = mustChange" in MANAGER and "m.saveAuthFile()" in MANAGER)
 check("初始状态持久化失败即退出", 'log.Fatalf("v0.9.58: could not persist initial auth state' in MANAGER)
 check("损坏 auth 状态拒绝重生", "exists but is invalid; refusing to generate a replacement password" in MANAGER)
@@ -70,10 +81,10 @@ check("登录后触发强制改密", "if (data.must_change) { vaultHubMustChange
 check("遮罩点击不可关闭", 'm.id !== "forcedPasswordModal"' in (ROOT / "web" / "js" / "03-features.js").read_text(encoding="utf-8"))
 
 # ---------------------------------------------------------------- 版本与发布
-check("版本资源", 'VAULTHUB_ASSET_VERSION = "0.9.94"' in HTML)
-check("脚本版本", 'VAULTHUB_SCRIPT_VERSION = "0.9.94"' in STATE)
-check("缓存串", HTML.count("?v=0.9.94") >= 6)
-check("UI 当前版本角标", "v0.9.94" in HTML)
+check("版本资源", 'VAULTHUB_ASSET_VERSION = "0.9.95"' in HTML)
+check("脚本版本", 'VAULTHUB_SCRIPT_VERSION = "0.9.95"' in STATE)
+check("缓存串", HTML.count("?v=0.9.95") >= 6)
+check("UI 当前版本角标", "v0.9.95" in HTML)
 check("v0.9.58 release notes 保留", NOTES != "" and "VaultHub v0.9.58" in NOTES and "强制改密" in NOTES)
 check("无旧版本缓存串残留", "?v=0.9.57" not in HTML)
 

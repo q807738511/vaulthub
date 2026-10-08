@@ -9,7 +9,11 @@ go = (root / "subtitle-api" / "main.go").read_text(encoding="utf-8")
 dockerfile = (root / "Dockerfile").read_text(encoding="utf-8")
 caddy = (root / "Caddyfile").read_text(encoding="utf-8")
 checks = {
-    "Go subtitle service": "subtitle-api/main.go" in dockerfile and "start_subtitle_api" in (root / "vaulthub-manager.c").read_text(),
+    # v0.9.95：Dockerfile 改为 COPY subtitle-api/*.go（原先只拷 main.go，新增 .go 文件会漏拷、
+    # 构建直接 undefined 失败）。这里跟着改成新口径，并反向确认旧的单文件拷贝已不在。
+    "Go subtitle service": "subtitle-api/*.go" in dockerfile
+    and "subtitle-api/main.go" not in dockerfile
+    and "start_subtitle_api" in (root / "vaulthub-manager.c").read_text(),
     "single container build": ("AS go-build" in dockerfile and "golang:1.23-alpine" in dockerfile and "COPY --from=go-build" in dockerfile),
     "local subtitle scan": "localProvider" in go and ".srt" in go and ".vtt" in go,
     "provider adapters": "shooter" in go and "zimuku" in go and "subhd" in go and "https://www.shooter.cn/api/subapi.php" in go,

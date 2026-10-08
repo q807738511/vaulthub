@@ -18,7 +18,7 @@ let vaultHubSessionPingedAt = 0;
    历史故障：v0.8.3→v0.8.5 的前端修改在服务端已生效，但浏览器仍执行缓存里的
    旧 02-media.js，用户看到「没有更新」。现在入口页 no-store、静态资源带 ?v=，
    并在启动时做一次一致性自查，不一致就绕过缓存强制重载一次。 */
-const VAULTHUB_SCRIPT_VERSION = "0.9.94";
+const VAULTHUB_SCRIPT_VERSION = "0.9.95";
 function ensureFreshAssets() {
   /* expected 为空 = 浏览器执行的 index.html 早于 v0.8.6（旧版本入口页没有声明
      版本号），同样属于"页面是旧的"，也需要换 URL 重新取一次。 */
@@ -1654,13 +1654,18 @@ function updatePlaybackDock() {
   const dock = playbackDockEl();
   if (!dock) return;
   const cur = activePlayback();
-  /* v0.9.94（需求1）：迷你播放器「常驻顶栏」—— 只要还有没被主动关闭的播放
-     （正在播/暂停中）就显示；只有一种情况不显示：影视播放器正占满窗口
-     （body.player-immersive，此时顶栏本身已回缩，chip 跟着一起收起来）。
-     点它「回到播放」，✕ 是主动关闭（会清掉这条）。 */
+  /* v0.9.95（需求）：迷你播放器只在「播放面不可见」时出现 —— 播放面（影视播放器，
+     含缩成控制器小窗的状态；音乐页的居中播放器）已经看得见时，再多一个浮标就是重复信息。
+     两种情况之外，只要还有没被主动关闭的播放（正在播/暂停中）就显示：
+       · 影视播放器占满窗口（body.player-immersive）时顶栏本身已回缩，chip 跟着收起；
+       · 切换到别的视图（播放面不可见）时立刻出现，一键回到播放。
+     点它「回到播放」，✕ 是主动关闭（会清掉这条）。
+     可见性判定交给 02-media.js 的 playbackSurfaceVisible（视图 active + 播放器/播放条可见），
+     这里只做兜底：拿不到该函数时退回 v0.9.94 的「有播放就显示」。 */
   /* 加可选链：document.body 在极早期调用/测试夹具里可能还不存在，不该因此抛错。 */
   const immersive = !!(document.body && document.body.classList && document.body.classList.contains("player-immersive"));
-  const show = !!cur && !immersive;
+  const surfaceVisible = typeof playbackSurfaceVisible === "function" ? !!playbackSurfaceVisible(cur) : false;
+  const show = !!cur && !immersive && !surfaceVisible;
   dock.classList.toggle("show", show);
   if (!show) return;
   const playing = typeof activePlaybackPlaying === "function" ? !!activePlaybackPlaying(cur) : !cur.paused;

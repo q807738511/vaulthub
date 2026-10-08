@@ -5,18 +5,24 @@
 #   1. 不依赖 github.com 上的任何 action。内网 runner 拉不到外网，
 #      原版里的 actions/checkout@v4、actions/setup-go@v5 只会让任务卡死；
 #      而 Gitea 本来就会先把仓库克隆到工作目录，checkout 是多余的。
-#   2. 工具能缺能少，但绝不静默通过：镜像里没有的 go / gcc / docker
+#   2. 工具能缺能少，但绝不静默通过：镜像里没有的 gcc / docker
 #      一律打印「跳过：镜像里没有 X」，哪一项没跑一眼能看见。
 #   2b.（v0.9.94）本流水线不做前端测试：validate 只做「静态校验 + 构建推送」，
 #      前端/行为测试套件（tests/test_*.py、tests/v09*_behavior.js）在发布流程内
 #      于 Hermes 侧跑完再发（100+ 个文件，需要 python3/ffmpeg/go 等 runner 里
 #      没有的工具）。旧实现留了一步「没有 python3 就跳过」的测试步骤，既不真跑
 #      又容易被读成绿灯，已删除。
+#   2c.（v0.9.95）Go 校验不再依赖镜像：job 容器（node:16-bullseye）里没有 go，
+#      实测它能连国内镜像但连不上 github.com / go.dev / proxy.golang.org —— 所以
+#      这一步会从 mirrors.aliyun.com（备选 goproxy.cn）把工具链解到 /tmp/goroot
+#      再用，module 走 goproxy.cn，然后真跑 vet + build + test。只有取不到工具链
+#      才打印 ::warning 跳过（并在发布流程里由 Hermes 侧兜底）。
 #   3. 不硬编码任何主机名或 IP，只用 Gitea 一定会注入的环境变量。
 #
 # 实际镜像由 act_runner 的 GITEA_RUNNER_LABELS 决定：
-#   ubuntu-latest:docker://node:16-bullseye        有 bash/git/node/gcc/make
+#   ubuntu-latest:docker://node:16-bullseye        有 bash/git/node/gcc/make/wget/curl/apt-get
 #   ubuntu-latest:docker://catthehacker/ubuntu:act-latest   还多 go + python3（体积大）
+#   实测（探针分支）：node:16-bullseye 下有 docker socket 但没有 docker CLI。
 #
 # GitHub 原版已整体注释保留在本文件末尾，并另存为
 # .github/workflows/validate.yml.disabled（改名回 .yml 即可恢复）。
@@ -53,10 +59,14 @@ jobs:
           git init -q .
           git remote remove origin 2>/dev/null || true
           git remote add origin "$BASE/$SLUG.git"
+          # v0.9.95（安全审查 L1）：不再把克隆令牌写进 runner 的 ~/.gitconfig（默认 0644
+          # 落盘，同宿主上其它 job/进程可读）。改成 -c 只在这一次 fetch 上生效。
+          FETCH_CFG=""
           if [ -n "${GITEA_CLONE_TOKEN:-}" ]; then
-            git config --global url."https://${GITEA_CLONE_TOKEN}@${BASE#https://}/".insteadOf "${BASE}/"
+            FETCH_CFG="-c url.https://${GITEA_CLONE_TOKEN}@${BASE#https://}/.insteadOf=${BASE}/"
           fi
-          git fetch -q --depth=1 origin "$REF"
+          # shellcheck disable=SC2086  # 需要按空格拆成多个 git 参数
+          git $FETCH_CFG fetch -q --depth=1 origin "$REF"
           git checkout -q -f FETCH_HEAD
           echo "克隆完成：$(git rev-parse --short HEAD)"
           ls -a | head -20
@@ -107,20 +117,73 @@ jobs:
           node /tmp/extract_inline.js
           if [ -s /tmp/vaulthub-inline.js ]; then node --check /tmp/vaulthub-inline.js; echo "  ok index.html 内联脚本"; fi
 
-      - name: 检查 Go 服务
+      - name: 检查 Go 服务（无 go 时自动装临时工具链）
         run: |
           set -eu
           # Gitea/act 用 bash -eo pipefail 执行 run 块；本脚本是按 set -eu 语义写的，
           # 这里显式关掉 pipefail：否则「... | head -1」这类管道会因 head 提前退出（SIGPIPE）
           # 或 grep 无匹配而被判成步骤失败——之前 CI 的 1~2 秒红灯就是这个。
           if [ -n "${BASH_VERSION:-}" ]; then set +o pipefail; fi
-          if ! command -v go >/dev/null 2>&1; then echo "跳过：镜像里没有 go，go test/vet/build 未执行"; exit 0; fi
+          # v0.9.95：这一步以前只能打印「跳过：镜像里没有 go」，于是每次发版都要在报告里
+          # 补一句「CI 里没跑 Go」。实测（探针分支 501）runner 的 job 容器虽然拉不到
+          # github.com / go.dev / proxy.golang.org，但**能连国内镜像**（mirrors.aliyun.com、
+          # goproxy.cn 都是 200），所以现在改成：镜像里的 go 优先；没有就地把工具链解到
+          # /tmp/goroot 再用（不动系统目录），module 走 goproxy.cn。装不上才算跳过。
+          # v0.9.95（安全审查 B1）：从第三方镜像下载的 tar 包**必须先校验官方 sha256**
+          # 再解包执行 —— 镜像站被投毒/MITM 时，未校验的 tar 会被 runner 以自身身份执行。
+          # 该 sha256 取自 Go 官方发布清单（go.dev/dl/?mode=json，go1.23.12 / linux-amd64），
+          # 已实测 mirrors.aliyun.com 与官方逐字节一致；换版本时同步更新这两个常量。
+          GO_VERSION="1.23.12"
+          GO_SHA256="d3847fef834e9db11bf64e3fb34db9c04db14e068eeb064f49af747010454f90"
+          GO_BIN=""
+          if command -v go >/dev/null 2>&1; then
+            GO_BIN="$(command -v go)"
+            echo "使用镜像自带的 go：$GO_BIN"
+          else
+            echo "镜像里没有 go —— 尝试从国内镜像取临时工具链（解到 /tmp，不写系统目录）"
+            for URL in \
+              "https://mirrors.aliyun.com/golang/go${GO_VERSION}.linux-amd64.tar.gz" \
+              "https://goproxy.cn/golang/go${GO_VERSION}.linux-amd64.tar.gz"; do
+              echo "  尝试 $URL"
+              if curl -fsSL --connect-timeout 10 --max-time 300 -o /tmp/go.tgz "$URL"; then
+                if ! printf '%s  %s\n' "$GO_SHA256" /tmp/go.tgz | sha256sum -c - >/dev/null 2>&1; then
+                  echo "::error title=Go 工具链校验和不匹配::${URL} 下载到的文件 sha256 与官方发布值不一致（期望 $GO_SHA256），已拒绝解包执行"
+                  exit 1
+                fi
+                echo "  sha256 校验通过（官方发布值 $GO_SHA256）"
+                rm -rf /tmp/goroot && mkdir -p /tmp/goroot
+                if tar -C /tmp/goroot --strip-components=1 -xzf /tmp/go.tgz && [ -x /tmp/goroot/bin/go ]; then
+                  GO_BIN=/tmp/goroot/bin/go
+                  echo "  工具链就绪：$("$GO_BIN" version)"
+                  break
+                fi
+                echo "  解包失败：$URL"
+              else
+                echo "  下载失败：$URL"
+              fi
+            done
+          fi
+          if [ -z "$GO_BIN" ]; then
+            echo "::warning title=Go 校验本次未执行::镜像里没有 go，且国内镜像也取不到 Go 工具链（网络受限）。"
+            echo "Go 的 vet/build/test 本次没跑 —— 它在发布流程内于 Hermes 侧真实执行，全绿才打 tag。"
+            echo "要恢复在本 runner 上执行：确认 job 容器能访问 mirrors.aliyun.com / goproxy.cn。"
+            exit 0
+          fi
+          export PATH="$(dirname "$GO_BIN"):$PATH"
+          export GOPROXY="https://goproxy.cn,direct"
+          # v0.9.95（安全审查 N-2）：用 -mod=readonly（Go 1.16+ 的默认）—— CI 不该就地改写
+          # go.mod/go.sum；依赖不齐就该红，而不是悄悄改仓库文件后再报绿。
+          export GOFLAGS="-mod=readonly"
+          "$GO_BIN" version
+          n=0
           for d in manager media-go subtitle-api; do
             if [ -f "$d/go.mod" ]; then
               echo "--- $d ---"
-              ( cd "$d" && go test ./... && go vet ./... && go build ./... )
+              ( cd "$d" && go vet ./... && go build ./... && go test ./... )
+              n=$((n+1))
             fi
           done
+          echo "Go 校验完成：$n 个模块的 vet / build / test 全部通过"
 
       - name: 检查遗留 C 源码
         run: |
@@ -145,20 +208,27 @@ jobs:
             cp .env.example .env 2>/dev/null || true
             docker compose config >/dev/null && echo "  ok docker-compose.yml"
           else
-            echo "跳过：镜像里没有 docker CLI，docker-compose.yml 未校验"
+            echo "跳过：镜像里没有 docker CLI，docker-compose.yml 未校验（发布流程内由 Hermes 侧测试套件校验 compose 与挂载）"
           fi
-          if [ -x ./caddy ]; then
-            ./caddy validate --config Caddyfile --adapter caddyfile && echo "  ok Caddyfile"
+          # v0.9.95：以前这里用 [ -x ./caddy ] 判断镜像里的检出是否带执行位 —— act 把工作区
+          # 拷进容器后执行位可能丢失，于是 Caddyfile 校验长期只打印「跳过」。改成先复制再 chmod，
+          # 校验就真的跑起来了（实测 caddy validate 退出码 0）。
+          if [ -f ./caddy ]; then
+            cp ./caddy /tmp/vh-caddy && chmod +x /tmp/vh-caddy
+            /tmp/vh-caddy validate --config Caddyfile --adapter caddyfile >/tmp/vh-caddy.log 2>&1 \
+              && echo "  ok Caddyfile" \
+              || { echo "::error title=Caddyfile 校验失败::"; tail -20 /tmp/vh-caddy.log; exit 1; }
           else
-            echo "跳过：./caddy 不可执行，Caddyfile 未校验"
+            echo "跳过：仓库里没有 ./caddy，Caddyfile 未校验"
           fi
 
       - name: 小结
         run: |
           echo "校验流程结束。上面每一条「跳过：…」都代表该项没在这个 runner 上真正执行。"
-          echo "本流水线只做静态校验（shell/JS/Go/C/compose/Caddy），不做前端测试。"
-          echo "前端与行为测试套件在发布流程内跑（Hermes 侧：python3 tests/*.py + node tests/*_behavior.js），"
-          echo "全绿后才打 tag 发版。要让 go test 也在这里真跑，把 runner 标签指向带 go 的镜像即可。"
+          echo "Go 校验（vet/build/test）本版起会就地取临时工具链真跑；只有取不到工具链时才会 ::warning 跳过。"
+          echo "本流水线只做静态与语法校验（shell/JS/Go/C/compose/Caddy），不做前端测试。"
+          echo "前端与行为测试套件（100+ 个文件，需要 python3/ffmpeg 与本机 Go）在发布流程内于 Hermes 侧真实执行，"
+          echo "全绿之后才打 tag 发版 —— 这是设计（诚实优先于假绿），不是缺口。"
 
 # GitHub 原版工作流（已停用，原样保留以便恢复）
 #

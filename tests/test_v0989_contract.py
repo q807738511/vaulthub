@@ -132,20 +132,28 @@ check("3j 不做物理改名（无 rename 媒体文件调用）",
       "renameMediaFile" not in MEDIA and "/api/media/rename" not in MEDIA)
 
 # ============================================================ 版本与文档
-check("4a index.html 资源版本 0.9.90", HTML.count("?v=0.9.94") == 10)
-check("4b ASSET_VERSION 0.9.90", 'window.VAULTHUB_ASSET_VERSION = "0.9.94";' in HTML)
-check("4c SCRIPT_VERSION 0.9.90", 'const VAULTHUB_SCRIPT_VERSION = "0.9.94";' in STATE)
+check("4a index.html 资源版本 0.9.90", HTML.count("?v=0.9.95") == 10)
+check("4b ASSET_VERSION 0.9.90", 'window.VAULTHUB_ASSET_VERSION = "0.9.95";' in HTML)
+check("4c SCRIPT_VERSION 0.9.90", 'const VAULTHUB_SCRIPT_VERSION = "0.9.95";' in STATE)
 # v0.9.90：标语随版本推进 —— 校验版本前缀 + 侧栏/页脚/关于三处一致。
 # v0.9.92（上轮审查项）：标语整串一致，而不是只数版本前缀。
 _slogans_4d = re.findall(r"v0\.9\.9\d · [^<\"]+", HTML)
 check("4d 标语三处整串一致",
       len(_slogans_4d) == 3 and len(set(_slogans_4d)) == 1, sorted(set(_slogans_4d)))
-check("4e 更新日志有 v0.9.90 章节", LOG.lstrip().startswith("# VaultHub 蜀鼠之家 v0.9.94"))
+check("4e 更新日志有 v0.9.90 章节", LOG.lstrip().startswith("# VaultHub 蜀鼠之家 v0.9.95"))
 check("4f 更新日志写明并发写根因", "fatal error: concurrent map read and map write" in LOG)
 check("4g 发布说明文件存在", (ROOT / ".github/RELEASE_NOTES_0.9.90.md").is_file())
-check("4h README 未被改动（固定项目介绍）",
-      subprocess.run(["git", "diff", "--stat", "HEAD", "--", "README.md"], cwd=ROOT,
-                     capture_output=True, text=True).stdout.strip() == "")
+# v0.9.95（安全审查 M4）：README 里原本写着真实对外域名，已改为示例域名 —— 这是唯一允许的
+# 改动（README 的项目介绍正文仍然固定不动）。工作树里体现为一条 -/+ 的域名行；已提交的发布树
+# 里 diff 为空，两种状态都要通过。
+_README_TXT = (ROOT / "README.md").read_text(encoding="utf-8")
+_diff_4h = subprocess.run(["git", "diff", "--unified=0", "HEAD", "--", "README.md"], cwd=ROOT,
+                          capture_output=True, text=True).stdout
+_changed_4h = [l for l in _diff_4h.splitlines()
+               if (l.startswith("+") or l.startswith("-")) and not l.startswith(("+++", "---"))]
+check("4h README 只做了域名脱敏（固定项目介绍不变，且不再含真实域名）",
+      ("enged" + ".top") not in _README_TXT
+      and (_changed_4h == [] or all((("enged" + ".top") in l) or ("example.com" in l) for l in _changed_4h)))
 check("4i 新版测试文件齐备",
       all((ROOT / p).is_file() for p in (
           "tests/v0989_behavior.js", "tests/test_v0989_behavior.py",

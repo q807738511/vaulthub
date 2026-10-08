@@ -75,29 +75,6 @@ json_string() {
     node -e 'process.stdout.write(JSON.stringify(require("fs").readFileSync(process.argv[1],"utf8")))' "$1"
     return $?
   fi
-  if command -v node >/dev/null 2>&1; then
-    # v0.9.94：Release 读回校验优先用 node（Gitea runner 镜像里必有 node，没有 python3），
-    # 校验内容与下面的 python 分支完全一致：tag_name / draft / prerelease / 说明长度。
-    printf '%s' "$JSON" | node -e '
-      let raw = "";
-      process.stdin.on("data", d => raw += d).on("end", () => {
-        const tag = process.argv[1], minimum = Number(process.argv[2]);
-        let rel;
-        try { rel = JSON.parse(raw); } catch (e) { console.error("读回的不是合法 JSON：" + e.message); process.exit(1); }
-        const body = rel.body || "";
-        console.log("读回：name=" + (rel.name || "") + " draft=" + rel.draft + " prerelease=" + rel.prerelease + " 说明字符数=" + body.length);
-        const bad = [];
-        if (rel.tag_name !== tag) bad.push("tag_name=" + rel.tag_name);
-        if (rel.draft !== false) bad.push("draft=" + rel.draft);
-        if (rel.prerelease !== false) bad.push("prerelease=" + rel.prerelease);
-        if (body.length < minimum) bad.push("说明过短(" + body.length + ")");
-        if (bad.length) { console.error("校验不通过：" + bad.join("，")); process.exit(1); }
-      });
-    ' "$TAG" "$MIN_BODY_LEN"
-  elif command -v python3 >/dev/null 2>&1; then
-    python3 -c 'import json,sys; sys.stdout.write(json.dumps(open(sys.argv[1],encoding="utf-8").read()))' "$1"
-    return 0
-  fi
   # 兜底：sed 做转义（\\ \" 制表），再用 awk 把换行拼成 \n。
   # sed 的替换语义比 awk 的 gsub 可移植，所以转义全交给 sed。
   sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\t/\\t/g' "$1" \
@@ -117,7 +94,26 @@ verify_once() {
   CODE=$(printf '%s' "$RESP" | tail -1)
   JSON=$(printf '%s' "$RESP" | sed '$d')
   [ "$CODE" = "200" ] || die "读回失败：HTTP $CODE"
-  if command -v python3 >/dev/null 2>&1; then
+  # v0.9.95（安全审查 M1）：优先用 node 核对读回内容（runner 镜像里必有 node、没有 python3），
+  # 两者都缺时**判失败**，不再「只确认 HTTP 200」降级成假绿灯。
+  if command -v node >/dev/null 2>&1; then
+    printf '%s' "$JSON" | node -e '
+      let raw = "";
+      process.stdin.on("data", d => raw += d).on("end", () => {
+        const tag = process.argv[1], minimum = Number(process.argv[2]);
+        let rel;
+        try { rel = JSON.parse(raw); } catch (e) { console.error("读回的不是合法 JSON：" + e.message); process.exit(1); }
+        const body = rel.body || "";
+        console.log("读回：name=" + (rel.name || "") + " draft=" + rel.draft + " prerelease=" + rel.prerelease + " 说明字符数=" + body.length);
+        const bad = [];
+        if (rel.tag_name !== tag) bad.push("tag_name=" + rel.tag_name);
+        if (rel.draft !== false) bad.push("draft=" + rel.draft);
+        if (rel.prerelease !== false) bad.push("prerelease=" + rel.prerelease);
+        if (body.length < minimum) bad.push("说明过短(" + body.length + ")");
+        if (bad.length) { console.error("校验不通过：" + bad.join("，")); process.exit(1); }
+      });
+    ' "$TAG" "$MIN_BODY_LEN"
+  elif command -v python3 >/dev/null 2>&1; then
     python3 - "$JSON" "$TAG" "$MIN_BODY_LEN" <<'PY'
 import json, sys
 tag, minimum = sys.argv[2], int(sys.argv[3])
@@ -139,7 +135,7 @@ if bad:
     sys.exit("校验不通过：" + "，".join(bad))
 PY
   else
-    note "警告：本机既没有 node 也没有 python3，只确认了读回 HTTP 200，未核对说明长度与 draft/prerelease"
+    die "本机既没有 node 也没有 python3：无法核对 tag_name/draft/prerelease/说明长度，拒绝把 HTTP 200 当发布成功"
   fi
 }
 

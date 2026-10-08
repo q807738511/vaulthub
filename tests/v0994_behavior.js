@@ -36,7 +36,7 @@ function makeSandbox(extra) {
       body: { classList: { add(c) { bodyClasses.add(c); }, remove(c) { bodyClasses.delete(c); }, contains(c) { return bodyClasses.has(c); }, toggle(c, on) { const w = on === undefined ? !bodyClasses.has(c) : !!on; w ? bodyClasses.add(c) : bodyClasses.delete(c); return w; } }, appendChild() {} },
       documentElement: { scrollHeight: 2000, style: { setProperty() {} } },
     },
-    window: { handlers: [], addEventListener(ev, fn) { this.handlers.push([ev, fn]); }, isSecureContext: false, scrollY: 0, innerHeight: 800, scrollBy() {}, scrollTo() {}, VAULTHUB_ASSET_VERSION: "0.9.94" },
+    window: { handlers: [], addEventListener(ev, fn) { this.handlers.push([ev, fn]); }, isSecureContext: false, scrollY: 0, innerHeight: 800, scrollBy() {}, scrollTo() {}, VAULTHUB_ASSET_VERSION: "0.9.95" },
     navigator: { userAgent: "Mozilla/5.0 (X11; Linux x86_64)" },
     location: { origin: "http://192.0.2.10:8088", pathname: "/", href: "http://192.0.2.10:8088/" },
     curLang: "zh-CN",
@@ -80,7 +80,7 @@ const call = (sb, expr) => vm.runInContext(expr, sb);
     });
     call(sb, 'setActivePlayback({ kind: "video", group: "movie", libId: "movie-1", path: "/m/幽游白书/S01E01.mkv", title: "幽游白书 第1集", paused: false })');
     call(sb, "updatePlaybackDock()");
-    chk("A1 有播放且未占满窗口 → 迷你播放器常驻顶栏", dock.classList.contains("show") === true);
+    chk("A1 有播放、未占满窗口、可见性判定不可用（兜底路径）→ 显示迷你播放器", dock.classList.contains("show") === true);
     chk("A2 常驻时写入 kind/playing 与标题", dock.dataset.kind === "video" && dock.dataset.playing === "1" && dockTitle.textContent === "幽游白书 第1集", { kind: dock.dataset.kind, playing: dock.dataset.playing, title: dockTitle.textContent });
     chk("A3 播放中显示暂停图标", dockToggle.textContent === "⏸");
 
@@ -99,6 +99,30 @@ const call = (sb, expr) => vm.runInContext(expr, sb);
 
     call(sb, "clearActivePlayback()");
     chk("A8 主动关闭（清播放状态）→ 不常驻", dock.classList.contains("show") === false);
+
+    /* v0.9.95：可见性判定真正参与门控 —— playbackSurfaceVisible 由 02-media.js 声明
+       （不是 01-state.js 的函数），所以沙箱桩不会被覆盖，这里跑的是真实调用链。 */
+    const mkDock2 = () => {
+      const t2 = { textContent: "" };
+      return {
+        dataset: {},
+        classList: { _s: new Set(), add(c) { this._s.add(c); }, remove(c) { this._s.delete(c); }, contains(c) { return this._s.has(c); }, toggle(c, on) { const w = on === undefined ? !this._s.has(c) : !!on; w ? this._s.add(c) : this._s.delete(c); return w; } },
+        querySelector: sel => ({ "[data-dock-title]": t2, "[data-dock-sub]": t2, "[data-dock-toggle]": t2, ".pd-return": t2 }[sel] || null),
+      };
+    };
+    const withSurface = flag => {
+      const d = mkDock2();
+      const s = load("web/js/01-state.js", {
+        document: { getElementById: id => (id === "playbackDock" ? d : null), querySelector: () => null, querySelectorAll: () => [], addEventListener() {}, createElement: () => ({ style: {}, classList: { add() {} }, addEventListener() {} }), body: { classList: { contains: () => false, add() {}, remove() {}, toggle() {} } }, documentElement: { style: { setProperty() {} } } },
+        playbackSurfaceVisible: () => flag,
+        t: k => k,
+      });
+      call(s, 'setActivePlayback({ kind: "audio", group: "audio", libId: "yy", path: "/yy/a.mp3", title: "某首歌", paused: false })');
+      call(s, "updatePlaybackDock()");
+      return d;
+    };
+    chk("A11 播放面可见（影视播放器/音乐页播放器已在屏幕上）→ 不显示迷你播放器", withSurface(true).classList.contains("show") === false);
+    chk("A12 播放面不可见（切到别的视图）→ 显示迷你播放器", withSurface(false).classList.contains("show") === true);
   }
   /* 迷你播放器在顶栏里、搜索图标左侧、且不固定定位（静态契约的运行期对照） */
   {

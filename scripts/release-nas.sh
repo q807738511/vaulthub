@@ -213,17 +213,56 @@ EOF
   fi
 
   echo
-  echo "================ 读回校验（Docker Hub）================"
-  # 不信任推送退出码，从仓库读回 digest 比对。同样需要网络出口。
-  for t in "$TAG_VERSION" "$TAG_LATEST"; do
-    if command -v skopeo >/dev/null 2>&1; then
-      if d=$(ALL_PROXY="${PUSH_PROXY:-}" skopeo inspect --format '{{.Digest}}' "docker://${t}" 2>/dev/null); then
-        note "读回 ${t} → ${d}"
+  echo "================ 读回校验（Docker Hub，严格判定：不一致即失败）================"
+  # v0.9.95（安全审查 B3）：原来只打印读回结果，且把「config 摘要相等」当判据 —— skopeo 与 docker
+  # 对 config JSON 的序列化并不逐字节相同，一旦失配只打警告、还会退回「看 version 标签」，而标签是
+  # 作者可任意填写的字段，证明不了层内容。现在改成硬门：
+  #   ① 两个 tag 的远端 manifest digest 必须都能读到、且**彼此相等**（读不到即失败）；
+  #   ② 本机有 python3 时，再把远端 vX.Y.Z 的 rootfs diff_ids 与本地镜像逐层比对，不一致即失败。
+  READBACK_FAIL=0
+  DIGEST_VERSION=""
+  DIGEST_LATEST=""
+  if ! command -v skopeo >/dev/null 2>&1; then
+    note "❌ 没有 skopeo：无法读回远端 digest（本脚本用 skopeo 推送，正常不会走到这里）"
+    READBACK_FAIL=1
+  else
+    for t in "$TAG_VERSION" "$TAG_LATEST"; do
+      d=$(ALL_PROXY="${PUSH_PROXY:-}" skopeo inspect --format '{{.Digest}}' "docker://${t}" 2>/dev/null || true)
+      if [ -z "$d" ]; then
+        note "❌ 读回 ${t} 失败 —— 无法证明远端内容与本次推送一致（网络出口问题？）"
+        READBACK_FAIL=1
       else
-        note "⚠️ 读回 ${t} 失败（网络出口问题），请手工执行：docker manifest inspect ${t}"
+        note "读回 ${t} → ${d}"
+        case "$t" in
+          "$TAG_VERSION") DIGEST_VERSION="$d" ;;
+          *) DIGEST_LATEST="$d" ;;
+        esac
       fi
+    done
+  fi
+  if [ -n "$DIGEST_VERSION" ] && [ -n "$DIGEST_LATEST" ] && [ "$DIGEST_VERSION" != "$DIGEST_LATEST" ]; then
+    note "❌ ${TAG_VERSION} 与 ${TAG_LATEST} 的 manifest digest 不同（${DIGEST_VERSION} ≠ ${DIGEST_LATEST}）"
+    READBACK_FAIL=1
+  fi
+  if [ -n "$DIGEST_VERSION" ] && command -v python3 >/dev/null 2>&1 && command -v skopeo >/dev/null 2>&1; then
+    REMOTE_IDS=$(ALL_PROXY="${PUSH_PROXY:-}" skopeo inspect --config "docker://${TAG_VERSION}" 2>/dev/null \
+      | python3 -c 'import json,sys; print("\n".join(json.load(sys.stdin)["rootfs"]["diff_ids"]))' 2>/dev/null || true)
+    LOCAL_IDS=$(docker inspect --format '{{json .RootFS}}' "$TAG_VERSION" 2>/dev/null \
+      | python3 -c 'import json,sys; print("\n".join(json.load(sys.stdin)["Layers"]))' 2>/dev/null || true)
+    if [ -n "$REMOTE_IDS" ] && [ "$REMOTE_IDS" = "$LOCAL_IDS" ]; then
+      note "✅ 远端与本地镜像逐层一致（$(printf '%s' "$LOCAL_IDS" | wc -l | tr -d ' ') 层 diff_ids 相同）"
+    else
+      note "❌ 远端与本地镜像的层不一致 —— 已推送的内容不是本次构建/实测的那一份"
+      READBACK_FAIL=1
     fi
-  done
+  elif [ -n "$DIGEST_VERSION" ]; then
+    note "提示：本机没有 python3，只做了 manifest digest 判定；逐层 diff_ids 比对请在能跑 python3 的机器上复核"
+  fi
+  if [ "$READBACK_FAIL" -ne 0 ]; then
+    note "❌ 读回校验未通过：镜像可能已推到远端但无法证明内容一致，不要对外宣布发布完成"
+    exit 1
+  fi
+  note "✅ 读回校验通过：远端 ${TAG_VERSION} 与 ${TAG_LATEST} 指向同一份内容，且与本地镜像逐层一致"
 else
   note "跳过推送（--no-push）"
 fi
