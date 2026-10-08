@@ -22,6 +22,11 @@
 #       options: "-v /var/run/docker.sock:/var/run/docker.sock"
 #   并且把标签指向自带 docker CLI 的镜像。否则请继续用 NAS 侧脚本。
 #
+# v0.9.94：本流水线不跑前端测试套件 —— 那条步骤依赖 runner 里没有的 python3，
+# 只会打印「跳过」（既不真跑又容易被读成绿灯），已删除。本流水线只负责
+# 「构建 + 推送 + 读回 digest + 创建 Release」；前端/行为测试套件在发布流程内
+# 于 Hermes 侧跑完（全绿）之后才推 tag。
+#
 # 需要的仓库密钥（缺了就跳过对应步骤，并在日志里明说）：
 #   DOCKERHUB_USERNAME / DOCKERHUB_TOKEN     推 Docker Hub
 #   GITEA_RELEASE_TOKEN                      在 Gitea 上创建 Release（仓库级访问令牌）
@@ -85,7 +90,7 @@ jobs:
           echo "GITHUB_SHA        = ${GITHUB_SHA:-<未设置>}"
           echo "GITHUB_REPOSITORY = ${GITHUB_REPOSITORY:-<未设置>}"
           echo "GITHUB_SERVER_URL = ${GITHUB_SERVER_URL:-<未设置>}"
-          for t in sh git node gcc make go python3 docker curl; do
+          for t in sh git node gcc make go docker curl; do
             if command -v "$t" >/dev/null 2>&1; then echo "  有  $t"; else echo "  缺  $t"; fi
           done
           if [ -S /var/run/docker.sock ]; then echo "  docker socket：可用"; else echo "  docker socket：不可用"; fi
@@ -162,38 +167,6 @@ jobs:
             echo "::warning title=暂无发布说明::分支推送，未找到 $NOTES（正式发版前必须补上）"
           fi
 
-      - name: 前端测试套件
-        run: |
-          set -eu
-          # Gitea/act 用 bash -eo pipefail 执行 run 块；本脚本是按 set -eu 语义写的，
-          # 这里显式关掉 pipefail：否则「... | head -1」这类管道会因 head 提前退出（SIGPIPE）
-          # 或 grep 无匹配而被判成步骤失败——之前 CI 的 1~2 秒红灯就是这个。
-          if [ -n "${BASH_VERSION:-}" ]; then set +o pipefail; fi
-          if ! command -v python3 >/dev/null 2>&1; then echo "跳过：镜像里没有 python3，测试套件未执行"; exit 0; fi
-          pass=0; fail=0; skip=0; failed=""; skipped=""
-          for f in tests/test_*.py; do
-            if python3 "$f" >/tmp/t.log 2>&1; then
-              pass=$((pass+1))
-              continue
-            fi
-            # 失败原因分两类：镜像缺外部程序（跳过并说明）／用例真失败（判红）
-            if grep -qE "No such file or directory: '[A-Za-z0-9_.+-]+'|: not found|does not exist" /tmp/t.log; then
-              skip=$((skip+1)); skipped="$skipped $(basename "$f")"
-              echo "── 跳过（缺外部程序）：$f"
-              grep -oE "No such file or directory: '[A-Za-z0-9_.+-]+'" /tmp/t.log | sort -u | head -3 | sed 's/^/     缺 /'
-              grep -oE "[A-Za-z0-9_.+-]+: not found" /tmp/t.log | sort -u | head -3 | sed 's/^/     缺 /'
-            else
-              fail=$((fail+1)); failed="$failed $(basename "$f")"
-              echo "── 失败：$f"
-              tail -20 /tmp/t.log | sed 's/^/     /'
-            fi
-          done
-          echo "测试套件：通过 $pass 个，跳过 $skip 个（镜像里缺外部程序），失败 $fail 个"
-          if [ "$skip" -ne 0 ]; then
-            echo "跳过清单：$skipped"
-            echo "::warning title=有跳过项::这些用例需要本镜像没有的外部程序（ffmpeg/go/zip/gh/jq 等），换带这些工具的 runner 镜像后才会真跑"
-          fi
-          if [ "$fail" -ne 0 ]; then echo "失败用例：$failed"; exit 1; fi
       - name: 构建并推送镜像到 Docker Hub
         env:
           IMAGE_NAME: docker.io/q807738511/vaulthub
@@ -259,8 +232,9 @@ jobs:
             echo "::warning title=跳过 Release::没有配置 GITEA_RELEASE_TOKEN 仓库密钥，未在 Gitea 上创建 Release"
             exit 0
           fi
-          if ! command -v python3 >/dev/null 2>&1; then
-            echo "::warning title=跳过 Release::镜像里没有 python3，Release 说明的 JSON 转义做不了"; exit 0
+          # v0.9.94：说明文件的 JSON 转义与读回校验都优先用 node（runner 镜像里必有 node）。
+          if ! command -v node >/dev/null 2>&1; then
+            echo "::warning title=跳过 Release::镜像里既没有 node 也没有 python3，Release 说明的 JSON 转义做不了"; exit 0
           fi
           GITEA_TOKEN="$GITEA_RELEASE_TOKEN" \
           GITEA_API_BASE="${GITHUB_SERVER_URL:-}/api/v1" \

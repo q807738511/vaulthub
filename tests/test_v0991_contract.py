@@ -124,14 +124,14 @@ check("4e 前端只保留当前库的重型缓存（切库即释放）",
       and re.search(r"async function loadLocalFiles\(group, lib, offset = 0\) \{[\s\S]{0,200}releaseMediaHeavyCaches\(lib\.id\)", MEDIA) is not None)
 
 # ============ 5) 版本与文档 ============
-check("5a 资源版本号已升至 0.9.91 ×10", HTML.count("?v=0.9.93") == 10)
+check("5a 资源版本号已升至 0.9.91 ×10", HTML.count("?v=0.9.94") == 10)
 check("5b ASSET_VERSION / SCRIPT_VERSION = 0.9.91",
-      'window.VAULTHUB_ASSET_VERSION = "0.9.93";' in HTML
-      and 'const VAULTHUB_SCRIPT_VERSION = "0.9.93";' in STATE)
+      'window.VAULTHUB_ASSET_VERSION = "0.9.94";' in HTML
+      and 'const VAULTHUB_SCRIPT_VERSION = "0.9.94";' in STATE)
 slogans = re.findall(r"v0\.9\.9\d · [^<\"]+", HTML)
 check("5c 三处标语完全一致（审查项：断言强度，不只是前缀）",
       len(slogans) == 3 and len(set(slogans)) == 1, sorted(set(slogans)))
-check("5d 更新日志顶部为 v0.9.93", LOG.lstrip().startswith("# VaultHub 蜀鼠之家 v0.9.93"))
+check("5d 更新日志顶部为 v0.9.94", LOG.lstrip().startswith("# VaultHub 蜀鼠之家 v0.9.94"))
 check("5e 发布说明存在且覆盖四项反馈",
       (ROOT / ".github/RELEASE_NOTES_0.9.91.md").is_file()
       and "解/转码风向标" in NOTES and "下滑自动翻页" in NOTES
@@ -140,9 +140,14 @@ check("5f Compose 仍跟随 Docker Hub latest（主仓库未变）",
       "image: docker.io/q807738511/vaulthub:latest" in COMPOSE)
 check("5g 审查项：面板提示行重置旧胶囊底色",
       re.search(r"\.video-status-panel \.status-compat \{[\s\S]{0,260}background:none; padding:0; border-radius:0;", CSS) is not None)
-check("5h CI 有 Python 测试套件步骤（runner 有 python3 时真跑，缺则大声跳过）",
-      "python3" in CI and "tests/test_*.py" in CI and 'if [ "$fail" -ne 0 ]' in CI
-      and "跳过：镜像里没有 python3" in CI)
+# v0.9.94（客户要求）：CI 只做「静态校验 + 构建推送」，不在 CI 跑前端测试套件
+# （前端/行为测试在发布流程内于 Hermes 侧跑完再推 tag）。旧断言要求 CI 里有
+# python3 测试步骤，与现行要求相反，改写到新口径并要求旧实现已删除。
+check("5h CI 只做校验与推送，不再跑前端测试套件",
+      "前端测试套件" not in CI.split("# GitHub 原版")[0]
+      and 'for f in tests/test_*.py' not in CI
+      and "command -v python3" not in CI
+      and "检查 JavaScript 语法" in CI and "检查 Go 服务" in CI)
 
 print(f"\n==================== v0.9.91 契约: {OK} checks, FAIL={len(FAILS)}")
 if FAILS:

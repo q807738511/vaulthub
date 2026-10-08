@@ -74,7 +74,11 @@ check("通知样式（徽标/条目/等级色）", ".tn-bell-badge" in CSS and "
 
 print("== 5. 搜索框乱码字符（⌘） ==")
 check("index.html 不再直接写 ⌘", "⌘" not in HTML)
-check("快捷键提示按平台渲染", 'id="topSearchKbd"' in HTML and "applySearchKbdLabel" in TOPNAV and '"Ctrl K"' in TOPNAV)
+# v0.9.94（需求2）：顶栏搜索框缩成放大镜图标，快捷键提示元素 kbd 与
+# applySearchKbdLabel 一并移除；快捷键改为在按钮 title 里说明（⌘K / Ctrl K 由按钮文案承接）。
+check("搜索入口改为放大镜图标按钮（旧 kbd 提示已移除）",
+      'id="tnSearchButton"' in HTML and "toggleMediaSearchModal" in HTML
+      and 'id="topSearchKbd"' not in HTML and "applySearchKbdLabel" not in TOPNAV)
 
 print("== 6. 媒体库海报信息（名称 + 换行年份，取消来源） ==")
 check("电影海报去掉 provider", "function moviePosterSubtitle(" in MEDIA and "meta.provider" not in MEDIA.split("function moviePosterSubtitle(")[1][:400])

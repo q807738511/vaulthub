@@ -28,7 +28,7 @@ GO_READING = (ROOT / "media-go/reading_progress.go").read_text(encoding="utf-8")
 UPDATELOG = (ROOT / "Update Log.md").read_text(encoding="utf-8")
 NOTES = (ROOT / ".github/RELEASE_NOTES_0.9.90.md")
 
-VERSION = "0.9.93"
+VERSION = "0.9.94"
 checks = []
 
 
@@ -48,8 +48,12 @@ check("T1 提示条 z-index 高于底部播放器",
       toast_z and player_z and int(toast_z.group(1)) > int(player_z.group(1)),
       f"toast={toast_z and toast_z.group(1)} player={player_z and player_z.group(1)}")
 check("T1 提示条避开最小化视频条", 'video-controller-docked' in FEATURES)
-check("T1 播放模式按钮仍走 cycleAudioLoop 且弹提示",
-      "function cycleAudioLoop()" in MEDIA and 'toast("🔁 "' in MEDIA)
+# v0.9.94（需求6）：切模式不再弹提示（那个提示会固定停在页面上），
+# 模式只在循环图标上体现 —— 四个模式四个图标。
+check("T1 播放模式按钮仍走 cycleAudioLoop，但不再弹提示（只在图标上体现）",
+      "function cycleAudioLoop()" in MEDIA
+      and "toast(" not in MEDIA.split("function cycleAudioLoop()")[1][:200]
+      and 'const AUDIO_LOOP_ICON = { sequence: "sequence", list: "repeat", single: "repeatOne", random: "shuffle" };' in MEDIA)
 
 
 # ---------------- 需求 2：歌词详情按钮 → 播放列表 ----------------
@@ -192,7 +196,7 @@ for key in ["themeModeLbl", "themePaletteLbl", "themeAccentLbl", "accentTheme", 
 # ---------------- 版本与发布资料 ----------------
 check("V 入口页资源版本 0.9.90", f'window.VAULTHUB_ASSET_VERSION = "{VERSION}";' in HTML)
 check("V 脚本自校验版本 0.9.90", f'const VAULTHUB_SCRIPT_VERSION = "{VERSION}";' in STATE)
-check("V 所有静态资源带 ?v=0.9.93", HTML.count(f"?v={VERSION}") >= 8, f"命中 {HTML.count(f'?v={VERSION}')}")
+check("V 所有静态资源带 ?v=0.9.94", HTML.count(f"?v={VERSION}") >= 8, f"命中 {HTML.count(f'?v={VERSION}')}")
 check("V 主题脚本被入口页引用", f'/web/js/06-theme.js?v={VERSION}' in HTML)
 # 同一版本内角标文案随本版主功能追加而调整（v0.9.83 收尾加入顶栏导航与书刊页）。
 check("V 侧栏与关于弹窗角标已升版", HTML.count(f"v{VERSION}") >= 1)

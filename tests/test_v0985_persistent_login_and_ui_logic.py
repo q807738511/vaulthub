@@ -54,7 +54,9 @@ def extract_slice(src, start_marker, end_marker):
     return src[i:j]
 
 
-NOTIFY_BLOCK = extract_slice(TOPNAV, "const VH_NOTIFY_KEY", "/* v0.9.85：搜索框快捷键提示按平台显示")
+# v0.9.94（需求2）：搜索框缩成放大镜图标后，「按平台渲染快捷键提示」的注释与函数都已删除，
+# 通知块切到下一个注释标记为止。
+NOTIFY_BLOCK = extract_slice(TOPNAV, "const VH_NOTIFY_KEY", "/* v0.9.94（需求2）：搜索框已缩成放大镜图标")
 
 PIECES = [
     extract_function(MEDIA, "displayBookTitle"),

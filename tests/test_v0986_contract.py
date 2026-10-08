@@ -41,7 +41,8 @@ print("v0.9.87 契约检查")
 
 # ---------------------------------------------------------------- 1. 喇叭位置
 check("1a 顶栏顺序为 搜索框 → 通知喇叭 → 账户/设置按钮",
-      HTML.index('class="tn-search"') < HTML.index('id="tnNotifyBell"') < HTML.index('id="topUserButton"'))
+      # v0.9.94（需求2）：顶栏搜索框缩成放大镜图标（通知左侧），输入框移进搜索弹窗。
+      HTML.index('id="tnSearchButton"') < HTML.index('id="tnNotifyBell"') < HTML.index('id="topUserButton"'))
 check("1b .tn-actions 是 flex（旧实现没有任何样式，喇叭与头像会各占一行）",
       re.search(r"\.tn-actions\s*\{[^}]*display:\s*flex", CSS) is not None)
 check("1c 喇叭两侧对称间距 = 落在搜索框与设置按钮中间",

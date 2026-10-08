@@ -34,9 +34,14 @@ def test_svg_icon_set_shipped_and_used():
     assert "function videoIcon(name)" in media
     assert "function videoPlayPauseIcon(paused)" in media
     # chrome 模板必须用 videoIcon 注入，而不是 Unicode 字形/emoji 按钮
+    # v0.9.94（需求3）：视频播放器的随机/重复已移除，改用仍在控制条上的播放列表按钮；
+    # 同时要求 shuffle/repeat 不再被控制条调用（音频播放器的循环图标另有专用断言）。
     for icon_call in ['videoIcon("collapse")', 'videoIcon("play")', 'videoIcon("restore")',
-                      'videoIcon("fullscreen")', 'videoIcon("settings")', 'videoIcon("shuffle")']:
+                      'videoIcon("fullscreen")', 'videoIcon("settings")', 'videoIcon("playlist")']:
         assert icon_call in media, f"player chrome no longer calls {icon_call}"
+    chrome = media.split('class="media-viewer-body media-video-body"')[1].split("</div>`")[0]
+    assert 'videoIcon("shuffle")' not in chrome and 'videoIcon("repeat")' not in chrome, \
+        "v0.9.94：视频控制条不应再调用随机/重复图标"
     # 旧的 emoji/字形按钮直接以字符态写死在模板里属于回归
     assert '">⌄</button>' not in media and '">⛶</button>' not in media
     assert '">🔁</button>' not in media and '">⚙</button>' not in media

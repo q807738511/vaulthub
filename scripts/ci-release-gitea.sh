@@ -24,7 +24,8 @@
 #   GITEA_REPO_SLUG=someone/vaulthub \
 #   sh scripts/ci-release-gitea.sh v0.9.90 .github/RELEASE_NOTES_0.9.90.md
 #
-# 依赖：curl；python3 用于 JSON 转义（没有 python3 时用内置的逐行转义兜底）
+# 依赖：curl；JSON 转义优先用 node（Gitea runner 镜像里必有 node，且没有 python3），
+#      其次 python3，最后用内置的逐行转义兜底。
 # 退出码：0 = Release 已发布且说明完整；非 0 = 失败（CI 据此亮红灯）
 # =============================================================================
 set -eu
@@ -70,7 +71,30 @@ fi
 # ---------------------------------------------------------------- JSON 转义
 # 把说明文件的正文转成 JSON 字符串字面量（含首尾引号）。
 json_string() {
-  if command -v python3 >/dev/null 2>&1; then
+  if command -v node >/dev/null 2>&1; then
+    node -e 'process.stdout.write(JSON.stringify(require("fs").readFileSync(process.argv[1],"utf8")))' "$1"
+    return $?
+  fi
+  if command -v node >/dev/null 2>&1; then
+    # v0.9.94：Release 读回校验优先用 node（Gitea runner 镜像里必有 node，没有 python3），
+    # 校验内容与下面的 python 分支完全一致：tag_name / draft / prerelease / 说明长度。
+    printf '%s' "$JSON" | node -e '
+      let raw = "";
+      process.stdin.on("data", d => raw += d).on("end", () => {
+        const tag = process.argv[1], minimum = Number(process.argv[2]);
+        let rel;
+        try { rel = JSON.parse(raw); } catch (e) { console.error("读回的不是合法 JSON：" + e.message); process.exit(1); }
+        const body = rel.body || "";
+        console.log("读回：name=" + (rel.name || "") + " draft=" + rel.draft + " prerelease=" + rel.prerelease + " 说明字符数=" + body.length);
+        const bad = [];
+        if (rel.tag_name !== tag) bad.push("tag_name=" + rel.tag_name);
+        if (rel.draft !== false) bad.push("draft=" + rel.draft);
+        if (rel.prerelease !== false) bad.push("prerelease=" + rel.prerelease);
+        if (body.length < minimum) bad.push("说明过短(" + body.length + ")");
+        if (bad.length) { console.error("校验不通过：" + bad.join("，")); process.exit(1); }
+      });
+    ' "$TAG" "$MIN_BODY_LEN"
+  elif command -v python3 >/dev/null 2>&1; then
     python3 -c 'import json,sys; sys.stdout.write(json.dumps(open(sys.argv[1],encoding="utf-8").read()))' "$1"
     return 0
   fi
@@ -115,7 +139,7 @@ if bad:
     sys.exit("校验不通过：" + "，".join(bad))
 PY
   else
-    note "警告：本机没有 python3，只确认了读回 HTTP 200，未核对说明长度与 draft/prerelease"
+    note "警告：本机既没有 node 也没有 python3，只确认了读回 HTTP 200，未核对说明长度与 draft/prerelease"
   fi
 }
 

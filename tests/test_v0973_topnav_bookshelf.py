@@ -34,8 +34,11 @@ HEADER = HTML[HTML.index('<header class="topbar">'):HTML.index("</header>")]
 
 # ---------------------------------------------------------------- A. 顶栏导航
 check("A1 顶栏有媒体库标签容器", 'id="topLibTabs"' in HEADER and 'role="tablist"' in HEADER)
-check("A2 顶栏有全局搜索（快捷键提示按平台渲染，v0.9.85 去掉 ⌘ 乱码）", 'id="topSearch"' in HEADER and 'id="topSearchKbd"' in HEADER
-      and "oninput=\"onTopSearchInput()\"" in HEADER and "onkeydown=\"onTopSearchKey(event)\"" in HEADER)
+# v0.9.94（需求2）：顶栏搜索框缩成放大镜图标，点击弹出搜索弹窗；
+# 旧的内联输入框与 kbd 快捷键提示元素都已移除（输入框只存在于弹窗里）。
+check("A2 顶栏搜索入口 = 放大镜图标按钮（点击弹窗，旧内联框已移除）",
+      'id="tnSearchButton"' in HEADER and "toggleMediaSearchModal()" in HEADER
+      and 'id="topSearch"' not in HEADER and 'id="topSearchKbd"' not in HEADER)
 # v0.9.93：侧栏移除后「媒体搜索」回到顶栏一级导航（否则该入口无处可去）。
 check("A3 顶栏一级导航（首页 / PT / 媒体搜索）",
       all(f'data-topnav="{k}"' in HEADER for k in ["home", "pt", "search"])
@@ -54,7 +57,7 @@ check("A6 品牌与信息区仍在（旧契约不破）",
       'id="accountWrap"' in HEADER and 'id="topScanStat"' in HEADER
       and HEADER.index('id="accountWrap"') < HEADER.index('class="tb-info"'))
 check("A7 独立脚本 07-topnav.js 已挂载且在主题引擎之后",
-      "/web/js/07-topnav.js?v=0.9.93" in HTML
+      "/web/js/07-topnav.js?v=0.9.94" in HTML
       and HTML.index("06-theme.js") < HTML.index("07-topnav.js") < HTML.index("03-audio-zoom.js"))
 check("A8 顶栏渲染器读真实媒体库并保序渲染",
       "function renderTopLibTabs()" in TOPNAV and "localMediaLibraries" in TOPNAV
@@ -97,8 +100,10 @@ check("A21 设置页不再有布局切换入口",
       and 'data-i18n="setLayout"' not in HTML and 'data-i18n="setSidebar"' not in HTML)
 check("A22 顶栏样式齐备",
       all(sel in CSS for sel in [".tn-wrap {", ".tn-nav {", ".libtab {", '.libtab[aria-current="true"] {',
-                                 ".tn-search {", ".tn-search:focus-within {", ".tn-avatar {", ".tn-pop {",
-                                 ".tn-popitem {", ".tn-search-hidden {"]))
+                                 # v0.9.94：搜索框样式换成图标按钮样式（过滤态类名保留）。
+                                 ".tn-icon-btn {", ".tn-icon-btn:hover {", ".tn-avatar {", ".tn-pop {",
+                                 ".tn-popitem {", ".tn-search-hidden {"])
+      and ".tn-search {" not in CSS)
 check("A23 侧栏占位恒为 0（含遮罩左边界）",
       "--sidebar-w: 0px;" in CSS and "body.layout-topnav" not in CSS
       and "body.sidebar-hidden" not in CSS and ".sidebar {" not in CSS)
@@ -182,10 +187,10 @@ check("D1 发布说明存在且包含本版修正（发布说明随版本推进�
       ("184,693" in NOTES or "18.4 万" in NOTES or "37 万" in NOTES)
       and "获取信息" in NOTES and "转码" in NOTES
       and "show_title" in NOTES and "语言" in NOTES)
-check("D2 Update Log 有对应条目", "持续登录" in LOG and "通知喇叭" in LOG and "硬盘和网络" in LOG and "v0.9.93" in LOG)
+check("D2 Update Log 有对应条目", "持续登录" in LOG and "通知喇叭" in LOG and "硬盘和网络" in LOG and "v0.9.94" in LOG)
 check("D3 版本号为 0.9.90",
-      'VAULTHUB_ASSET_VERSION = "0.9.93"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.93"' in STATE
-      and "?v=0.9.93" in HTML and "?v=0.9.78" not in HTML)
+      'VAULTHUB_ASSET_VERSION = "0.9.94"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.94"' in STATE
+      and "?v=0.9.94" in HTML and "?v=0.9.78" not in HTML)
 
 fails = [(n, d) for n, ok, d in checks if not ok]
 for n, ok, d in checks:

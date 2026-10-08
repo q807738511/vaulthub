@@ -25,9 +25,8 @@ services:
 
     # v0.9.79：vaulthub.env 已停用。所有可调参数默认值内置进镜像，运行时配置
     # （刮削来源 / 转码缓存 / 扫描深度 / 归档页缓存配额等）统一在 Web「系统设置」
-    # 里在线编辑并写入 /data/media-runtime.json，无需 .env 文件。
-    # v0.9.79：vaulthub.env 已停用，所有参数默认内置镜像，运行时配置统一走 Web 设置并写入
-    # /data/media-runtime.json；vaulthub.env / env_file 不再被读取。
+    # 里在线编辑并写入 /data/media-runtime.json，无需 .env 文件；
+    # vaulthub.env / env_file 不再被读取。
     environment:
       - ADMIN_USERNAME=admin
       # v0.9.58：不再内置 admin123 默认密码。留空 = 首次启动生成一次性随机
@@ -38,10 +37,18 @@ services:
       # 系统监控的卷名列表（逗号分隔），与下方 /host/<卷名> 只读挂载一一对应；
       # 只需监控一个卷时填单个卷名即可（示例：vh-data）。
       - SYSTEM_MONITOR_FILESYSTEMS=vh-data
+      # v0.9.94（需求8）：转码缓存目录（容器内路径）。默认已是 /data/transcode-cache，
+      # 这里显式写出来，避免以后有人把缓存目录改回主数据卷。
+      - MEDIA_CACHE_DIR=/data/transcode-cache
 
     volumes:
-      # 应用数据：运行时配置、阅读进度、转码缓存等持久化目录
+      # 应用数据：运行时配置、阅读进度、媒体索引等（体积很小：只读配置 + SQLite 索引）。
       - ./data:/data
+      # v0.9.94（需求8）：转码/分页/音频缓存必须放在**独立映射的卷**上 —— 它会长到
+      # 几十 GB（上限由 MEDIA_CACHE_MAX_BYTES 控制），写在 ./data 所在卷会把整卷顶满
+      # （实测主卷因此长期 84%）。左边换成自己的缓存盘路径，容器内路径保持
+      # /data/transcode-cache（默认值）；两者想不一致时用 MEDIA_CACHE_DIR 指定。
+      - /srv/vault-cache:/data/transcode-cache
       # 媒体库映射（示例）：冒号左侧是本机路径，右侧是容器内路径。
       # 请按自己的目录结构增删 —— 电影/剧集/音乐/漫画/书籍/文档都挂进容器即可，
       # 然后在 Web 界面「媒体库」里登记这些容器内路径（:ro 表示只读）。

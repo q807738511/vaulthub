@@ -72,11 +72,15 @@ check("2h 三个语种语言包都补了新键",
 
 print("3. 清除右上角搜索框内的装饰图标")
 check("3a 搜索框内不再有 ⌕ 图标", "⌕" not in HEADER)
-check("3b 搜索框与快捷键提示保留（v0.9.85：kbd 改为平台化 Ctrl K / ⌘K）",
-      'id="topSearch"' in HEADER and 'id="topSearchKbd"' in HEADER and 'class="tn-search"' in HEADER)
-check("3c 搜索框结构未被破坏（input 紧跟 label）",
-      '<label class="tn-search">\n      <input id="topSearch"' in HEADER)
-check("3d 搜索框样式仍完整", ".tn-search {" in CSS and ".tn-search:focus-within kbd { display: none; }" in CSS)
+# v0.9.94（需求2）：搜索框缩成放大镜图标 + 搜索弹窗（原来这 3 条断言顶栏里的内联搜索框）。
+check("3b 搜索入口保留为顶栏放大镜图标 + 搜索弹窗",
+      'id="tnSearchButton"' in HEADER and 'id="mediaSearchModal"' in HTML
+      and 'id="mediaSearchInput"' in HTML and 'id="topSearch"' not in HEADER)
+check("3c 顶栏旧的 label.tn-search 内联框已移除（输入框只在弹窗里）",
+      '<label class="tn-search">' not in HTML and HTML.count('id="mediaSearchInput"') == 1)
+check("3d 搜索弹窗样式完整（弹出动画 + 图标按钮 + 过滤类保留）",
+      ".search-modal-mask.show .search-modal" in CSS and "@keyframes searchModalPop" in CSS
+      and ".tn-icon-btn {" in CSS and ".tn-search-hidden {" in CSS and ".tn-search {" not in CSS)
 
 print("4. 季度提示去除 + 季度展示规范")
 check("4a 季度提示长文案已删除",
@@ -130,14 +134,14 @@ check("5k 简介排版与 16:9 画框保留（旧契约不破）",
 
 print("6. 版本")
 check("6a 页面与脚本版本一致",
-      'VAULTHUB_ASSET_VERSION = "0.9.93"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.93"' in STATE)
+      'VAULTHUB_ASSET_VERSION = "0.9.94"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.94"' in STATE)
 # v0.9.92（上轮发布前审查项）：标语断言升级为「整串完全一致」——
 # 旧写法只数 "v0.9.9x · " 出现 3 次，三处文案不一致也能过。
 _slogans_6b = re.findall(r"v0\.9\.9\d · [^<\"]+", HTML)
 check("6b 关于 / 侧栏 / 页脚标语整串一致",
       len(_slogans_6b) == 3 and len(set(_slogans_6b)) == 1)
 check("6c Update Log 有 v0.9.85 段",
-      (ROOT / "Update Log.md").read_text(encoding="utf-8").startswith("# VaultHub 蜀鼠之家 v0.9.93"))
+      (ROOT / "Update Log.md").read_text(encoding="utf-8").startswith("# VaultHub 蜀鼠之家 v0.9.94"))
 check("6d Release Notes 存在", (ROOT / ".github/RELEASE_NOTES_0.9.90.md").exists())
 
 if FAILS:

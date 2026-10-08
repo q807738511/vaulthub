@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -55,6 +56,59 @@ func containerDisk(dataPath string, diskTemps []map[string]any) containerDiskInf
 		out.Temp, out.Matched = temp, true
 	}
 	return out
+}
+
+/* v0.9.94（需求8）：转码/分页/音频缓存所在卷的自检结果。
+ * 客户把独立卷挂到 /data/transcode-cache（宿主自己的缓存盘），但设置页的硬件卡里
+ * /data 一直显示 84% —— 那是主数据卷（索引 + Docker 数据）的占用，缓存并不在里面。
+ * 这里把「缓存目录在哪个设备、是否独立于主数据卷、这块盘多大/多满」一次算清楚，
+ * 供启动日志与设置快照/硬件卡使用；Separate=false 时运维应把独立卷挂上去。 */
+type cacheDiskInfo struct {
+	Path       string `json:"path"`
+	Device     string `json:"device"`
+	DataDevice string `json:"data_device"`
+	Separate   bool   `json:"separate"`
+	Total      uint64 `json:"total"`
+	Used       uint64 `json:"used"`
+	Free       uint64 `json:"free"`
+	Percent    int    `json:"percent"`
+}
+
+// cacheDisk 计算缓存目录的落盘信息；任何一步失败都返回零值结构（不报错）。
+func cacheDisk(cacheDir, dataPath string, diskTemps []map[string]any) cacheDiskInfo {
+	out := cacheDiskInfo{Path: cacheDir}
+	if cacheDir == "" {
+		return out
+	}
+	out.Device = deviceForPath(mountsSource(), cacheDir)
+	out.DataDevice = deviceForPath(mountsSource(), dataPath)
+	/* 两个路径拿到不同的块设备 = 缓存确实在独立卷上；任一为空则无法判定，按 false 处理。 */
+	out.Separate = out.Device != "" && out.DataDevice != "" && out.Device != out.DataDevice
+	var st syscall.Statfs_t
+	if syscall.Statfs(cacheDir, &st) == nil {
+		bsize := uint64(st.Bsize)
+		out.Total = st.Blocks * bsize
+		out.Free = st.Bavail * bsize
+		out.Used = out.Total - st.Bfree*bsize
+		if out.Total > 0 {
+			out.Percent = int(float64(out.Used) / float64(out.Total) * 100.0)
+		}
+	}
+	return out
+}
+
+// humanBytes 把字节数格成人类可读（只在启动自检的日志里用）。
+func humanBytes(n uint64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := uint64(unit), 0
+	for v := n / unit; v >= unit && exp < 4; v /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTP"[exp])
 }
 
 func mountsSource() string {

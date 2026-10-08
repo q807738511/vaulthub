@@ -316,6 +316,21 @@ func cacheEntryLimit(budget int64) int64 {
 	return limit
 }
 
+// reportCacheVolume 启动时自检「转码缓存目录是不是独立卷」并打印一行结论。
+func (a *App) reportCacheVolume() {
+	info := cacheDisk(a.cacheDir, env("SYSTEM_MONITOR_CONTAINER_PATH", "/data"), nil)
+	switch {
+	case info.Separate:
+		fmt.Fprintf(os.Stderr, "[VaultHub] 转码缓存目录 %s 位于独立卷 %s（%s/%s，已用 %d%%）—— 未占用主数据卷 %s\n",
+			a.cacheDir, info.Device, humanBytes(info.Used), humanBytes(info.Total), info.Percent, info.DataDevice)
+	case info.Device == "":
+		fmt.Fprintf(os.Stderr, "[VaultHub] 转码缓存目录 %s 的设备无法识别（overlay/未映射）。建议把独立卷挂到该路径，别写在主 /data 上\n", a.cacheDir)
+	default:
+		fmt.Fprintf(os.Stderr, "[VaultHub] ⚠️ 转码缓存目录 %s 与主数据卷共用设备 %s（%d%% 已用）—— 缓存会吃掉主卷空间，请把独立卷挂到 %s\n",
+			a.cacheDir, info.Device, info.Percent, a.cacheDir)
+	}
+}
+
 func (a *App) cleanCache() {
 	a.mu.RLock()
 	cacheDir, cacheMaxBytes, cacheMaxAge := a.cacheDir, a.cacheMaxBytes, a.cacheMaxAge
@@ -594,6 +609,8 @@ func readAuth(r *http.Request) bool {
 func (a *App) runtimeConfigSnapshot(includeSecret bool) map[string]any {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
+	/* v0.9.94（需求8）：缓存卷自检结果（statfs 很便宜，随快照一起现算）。 */
+	cacheInfo := cacheDisk(a.cacheDir, env("SYSTEM_MONITOR_CONTAINER_PATH", "/data"), nil)
 	out := map[string]any{
 		"scraper_mode": a.scraperMode, "tmdb_enabled": a.tmdbAPIKey != "",
 		"scrape_region":       a.scrapeRegion,
@@ -608,6 +625,13 @@ func (a *App) runtimeConfigSnapshot(includeSecret bool) map[string]any {
 		"cache_max_bytes": a.cacheMaxBytes, "cache_max_age_hours": int64(a.cacheMaxAge / time.Hour),
 		/* v0.9.91：实际缓存占用 / 条目数 / 上次清理时间 —— 设置页据此显示真实用量。 */
 		"cache_bytes": a.cacheBytes, "cache_files": a.cacheFiles, "cache_cleaned_at": a.cacheCleanedAt,
+		/* v0.9.94（需求8）：转码缓存落在哪个设备、是否独立于主数据卷、该卷容量。
+		   客户看到的「/data 一直 84%」其实是主数据卷（含 Docker 与索引）的占用，
+		   缓存卷另有其人；这里把两者拆开报出来，避免再被误读。 */
+		"cache_dir_separate": cacheInfo.Separate, "cache_dir_device": cacheInfo.Device,
+		"cache_dir_data_device": cacheInfo.DataDevice,
+		"cache_dir_fs_total_bytes": cacheInfo.Total, "cache_dir_fs_used_bytes": cacheInfo.Used,
+		"cache_dir_fs_free_bytes": cacheInfo.Free, "cache_dir_fs_percent": cacheInfo.Percent,
 		"cache_cleanup_interval_hours": int64(a.cacheCleanup / time.Hour),
 		"page_cache_max_bytes":         a.pageCacheMaxBytes, "scan_max_depth": a.scanMaxDepth,
 	}
@@ -2210,6 +2234,9 @@ func systemMetrics(w http.ResponseWriter, r *http.Request) {
 		/* v0.9.86：容器所在硬盘（容量 + 能对上传感器时的温度）。
 		   前端在「没有映射空间」时用它替代温度/容量显示。 */
 		"container_disk": containerDisk(env("SYSTEM_MONITOR_CONTAINER_PATH", "/data"), diskTemps),
+		/* v0.9.94（需求8）：转码缓存卷（独立映射的那块盘）。容量/占用与主数据卷分开报，
+		   设置页据此显示「缓存不在主 /data 上」。 */
+		"cache_disk": cacheDisk(env("MEDIA_CACHE_DIR", "/data/transcode-cache"), env("SYSTEM_MONITOR_CONTAINER_PATH", "/data"), diskTemps),
 	})
 }
 func probe(w http.ResponseWriter, r *http.Request, a *App) {
@@ -2590,6 +2617,11 @@ func cancelTask(w http.ResponseWriter, r *http.Request, a *App) {
 func main() {
 	a := &App{}
 	a.load()
+	/* v0.9.94（需求8）：转码 / 分页 / 音频缓存必须落在独立映射的卷上
+	   （compose 里把独立磁盘挂到 /data/transcode-cache 这种），不能写进主 /data 卷 ——
+	   主 /data 卷同时放着媒体索引与 Docker 数据，缓存一涨就把整卷顶满（实测 84%）。
+	   启动时自检一次并打印结论：是独立卷就报设备与容量，否则明确告警。 */
+	a.reportCacheVolume()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "ok") })
 	mux.HandleFunc("/api/system/metrics", systemMetrics)
@@ -2859,6 +2891,17 @@ func (a *App) tmdb(w http.ResponseWriter, r *http.Request) {
 			kind = "tv"
 		}
 		endpoint = kind + "/" + id
+		/* v0.9.94（需求9 多季度分离刮削）：季标签（幽游白书S04）要取「第四季」的
+		   季名/季简介/季海报与分集名，只有 search/* 与 {movie,tv}/{id} 两个端点是
+		   不够的 —— 这里放开 tv/{id}/season/{n}，季号必须是 0~99 的整数。 */
+		if season := strings.TrimSpace(r.URL.Query().Get("season")); season != "" && kind == "tv" {
+			n, err := strconv.Atoi(season)
+			if err != nil || n < 0 || n > 99 {
+				errJSON(w, 400, "invalid TMDB season")
+				return
+			}
+			endpoint = "tv/" + id + "/season/" + strconv.Itoa(n)
+		}
 	}
 	/* v0.9.77：TMDB 有两种凭据形态 —— v3 API Key（32 位十六进制）用 ?api_key=，
 	   v4 Read Access Token（JWT，形如 eyJ…，带两个点）必须用 Authorization: Bearer。
@@ -2886,7 +2929,12 @@ func (a *App) tmdb(w http.ResponseWriter, r *http.Request) {
 	if lang == "" {
 		lang = "zh-CN"
 	}
-	u := base + "/" + endpoint + "?language=" + url.QueryEscape(lang) + "&append_to_response=credits,recommendations,images"
+	u := base + "/" + endpoint + "?language=" + url.QueryEscape(lang)
+	/* v0.9.94：季详情端点不接受 credits/recommendations/images 这些追加参数
+	   （TMDB 会直接报错），只有影视详情与搜索需要它们。 */
+	if !strings.Contains(endpoint, "/season/") {
+		u += "&append_to_response=credits,recommendations,images"
+	}
 	if !tmdbIsBearerToken(key) {
 		u += "&api_key=" + url.QueryEscape(key)
 	}

@@ -161,7 +161,8 @@ const GO_SCAN = fs.readFileSync(ROOT + "/media-go/scan_walk.go", "utf8");
         call(sb, `activePlayback()`) === null && !dock.classes.has("show")
         && call(sb, `localStorage.getItem("vaulthub_active_playback")`) === null);
 
-    /* 播放面可见时不出现浮标 */
+    /* v0.9.94（需求1）：只要还有没被主动关闭的播放，迷你播放器就常驻顶栏；
+       唯一不显示的情况是影视播放器正占满窗口（body.player-immersive，顶栏已回缩）。 */
     const dock2 = fakeEl({ "[data-dock-title]": fakeEl(), "[data-dock-sub]": fakeEl(), "[data-dock-toggle]": fakeEl(), ".pd-return": fakeEl() });
     const sb2 = load("web/js/01-state.js", {
       document: { getElementById: id => (id === "playbackDock" ? dock2 : null), querySelector: () => null, querySelectorAll: () => [], addEventListener() {}, createElement: () => fakeEl(), body: { appendChild() {} }, documentElement: { scrollHeight: 2000 } },
@@ -170,7 +171,22 @@ const GO_SCAN = fs.readFileSync(ROOT + "/media-go/scan_walk.go", "utf8");
       t: k => k,
     });
     call(sb2, `setActivePlayback({kind:"audio", group:"audio", libId:"a1", path:"YY/歌.flac", title:"一首歌"})`);
-    chk("B11 播放面可见时浮标不出现（避免噪音）", !dock2.classes.has("show"));
+    chk("B11 播放面可见时迷你播放器仍常驻（v0.9.94 需求1：不是关闭就一直在）",
+        dock2.classes.has("show") || call(sb2, "document.body && document.body.classList.contains('player-immersive')") === true);
+    /* 占满窗口时不显示（顶栏已回缩，chip 跟着收起） */
+    const dock3 = fakeEl({ "[data-dock-title]": fakeEl(), "[data-dock-sub]": fakeEl(), "[data-dock-toggle]": fakeEl(), ".pd-return": fakeEl() });
+    const bodyCls = new Set(["player-immersive"]);
+    const sb3 = load("web/js/01-state.js", {
+      document: {
+        getElementById: id => (id === "playbackDock" ? dock3 : null), querySelector: () => null, querySelectorAll: () => [],
+        addEventListener() {}, createElement: () => fakeEl(),
+        body: { classList: { contains: c => bodyCls.has(c), add: c => bodyCls.add(c), remove: c => bodyCls.delete(c), toggle(c, on) { const w = on === undefined ? !bodyCls.has(c) : !!on; w ? bodyCls.add(c) : bodyCls.delete(c); return w; } }, appendChild() {} },
+        documentElement: { scrollHeight: 2000 },
+      },
+      t: k => k,
+    });
+    call(sb3, `setActivePlayback({kind:"video", group:"movie", libId:"m1", path:"M/x.mkv", title:"x"})`);
+    chk("B11b 影视占满窗口时不显示迷你播放器", !dock3.classes.has("show"));
     chk("B12 状态在 mount 时从 localStorage 恢复（跨刷新）",
         call(sb2, `activePlayback().kind`) === "audio");
     /* 真实执行 02-media.js 的浮标/续播判定 */
@@ -257,10 +273,10 @@ const GO_SCAN = fs.readFileSync(ROOT + "/media-go/scan_walk.go", "utf8");
 
   /* ================= E. 版本与脱敏 ================= */
   {
-    chk("E1 资源版本 0.9.93 ×10", (HTML_SRC.match(/\?v=0\.9\.93/g) || []).length === 10);
-    chk("E2 ASSET_VERSION / SCRIPT_VERSION = 0.9.93",
-        HTML_SRC.includes('window.VAULTHUB_ASSET_VERSION = "0.9.93";')
-        && STATE_SRC.includes('const VAULTHUB_SCRIPT_VERSION = "0.9.93";'));
+    chk("E1 资源版本 0.9.94 ×10", (HTML_SRC.match(/\?v=0\.9\.94/g) || []).length === 10);
+    chk("E2 ASSET_VERSION / SCRIPT_VERSION = 0.9.94",
+        HTML_SRC.includes('window.VAULTHUB_ASSET_VERSION = "0.9.94";')
+        && STATE_SRC.includes('const VAULTHUB_SCRIPT_VERSION = "0.9.94";'));
     const slogans = (HTML_SRC.match(/v0\.9\.9\d · [^<"]+/g) || []);
     chk("E3 三处标语整串一致", slogans.length === 3 && new Set(slogans).size === 1, [...new Set(slogans)]);
     const notes = fs.readFileSync(ROOT + "/.github/RELEASE_NOTES_0.9.92.md", "utf8");

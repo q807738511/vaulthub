@@ -5,8 +5,13 @@
 #   1. 不依赖 github.com 上的任何 action。内网 runner 拉不到外网，
 #      原版里的 actions/checkout@v4、actions/setup-go@v5 只会让任务卡死；
 #      而 Gitea 本来就会先把仓库克隆到工作目录，checkout 是多余的。
-#   2. 工具能缺能少，但绝不静默通过：镜像里没有的 go / gcc / python3 / docker
+#   2. 工具能缺能少，但绝不静默通过：镜像里没有的 go / gcc / docker
 #      一律打印「跳过：镜像里没有 X」，哪一项没跑一眼能看见。
+#   2b.（v0.9.94）本流水线不做前端测试：validate 只做「静态校验 + 构建推送」，
+#      前端/行为测试套件（tests/test_*.py、tests/v09*_behavior.js）在发布流程内
+#      于 Hermes 侧跑完再发（100+ 个文件，需要 python3/ffmpeg/go 等 runner 里
+#      没有的工具）。旧实现留了一步「没有 python3 就跳过」的测试步骤，既不真跑
+#      又容易被读成绿灯，已删除。
 #   3. 不硬编码任何主机名或 IP，只用 Gitea 一定会注入的环境变量。
 #
 # 实际镜像由 act_runner 的 GITEA_RUNNER_LABELS 决定：
@@ -64,7 +69,7 @@ jobs:
           if [ -n "${BASH_VERSION:-}" ]; then set +o pipefail; fi
           echo "工作目录：$(pwd)"
           echo "提交：$(git rev-parse --short HEAD 2>/dev/null || echo '?')"
-          for t in sh bash git node gcc make go python3 docker curl; do
+          for t in sh bash git node gcc make go docker curl; do
             if command -v "$t" >/dev/null 2>&1; then echo "  有  $t"; else echo "  缺  $t"; fi
           done
 
@@ -129,38 +134,6 @@ jobs:
           gcc -Wall -Wextra -Werror -pthread -fsyntax-only tests/fixtures/media-api_legacy.c
           echo "  ok C 源码语法"
 
-      - name: 运行前端测试套件
-        run: |
-          set -eu
-          # Gitea/act 用 bash -eo pipefail 执行 run 块；本脚本是按 set -eu 语义写的，
-          # 这里显式关掉 pipefail：否则「... | head -1」这类管道会因 head 提前退出（SIGPIPE）
-          # 或 grep 无匹配而被判成步骤失败——之前 CI 的 1~2 秒红灯就是这个。
-          if [ -n "${BASH_VERSION:-}" ]; then set +o pipefail; fi
-          if ! command -v python3 >/dev/null 2>&1; then echo "跳过：镜像里没有 python3，测试套件未执行"; exit 0; fi
-          pass=0; fail=0; skip=0; failed=""; skipped=""
-          for f in tests/test_*.py; do
-            if python3 "$f" >/tmp/t.log 2>&1; then
-              pass=$((pass+1))
-              continue
-            fi
-            # 失败原因分两类：镜像缺外部程序（跳过并说明）／用例真失败（判红）
-            if grep -qE "No such file or directory: '[A-Za-z0-9_.+-]+'|: not found|does not exist" /tmp/t.log; then
-              skip=$((skip+1)); skipped="$skipped $(basename "$f")"
-              echo "── 跳过（缺外部程序）：$f"
-              grep -oE "No such file or directory: '[A-Za-z0-9_.+-]+'" /tmp/t.log | sort -u | head -3 | sed 's/^/     缺 /'
-              grep -oE "[A-Za-z0-9_.+-]+: not found" /tmp/t.log | sort -u | head -3 | sed 's/^/     缺 /'
-            else
-              fail=$((fail+1)); failed="$failed $(basename "$f")"
-              echo "── 失败：$f"
-              tail -20 /tmp/t.log | sed 's/^/     /'
-            fi
-          done
-          echo "测试套件：通过 $pass 个，跳过 $skip 个（镜像里缺外部程序），失败 $fail 个"
-          if [ "$skip" -ne 0 ]; then
-            echo "跳过清单：$skipped"
-            echo "::warning title=有跳过项::这些用例需要本镜像没有的外部程序（ffmpeg/go/zip/gh/jq 等），换带这些工具的 runner 镜像后才会真跑"
-          fi
-          if [ "$fail" -ne 0 ]; then echo "失败用例：$failed"; exit 1; fi
       - name: 校验 Compose 与 Caddyfile
         run: |
           set -eu
@@ -183,7 +156,9 @@ jobs:
       - name: 小结
         run: |
           echo "校验流程结束。上面每一条「跳过：…」都代表该项没在这个 runner 上真正执行。"
-          echo "要让 go test / 前端测试套件真跑起来，把 runner 的标签指向带 go + python3 的镜像。"
+          echo "本流水线只做静态校验（shell/JS/Go/C/compose/Caddy），不做前端测试。"
+          echo "前端与行为测试套件在发布流程内跑（Hermes 侧：python3 tests/*.py + node tests/*_behavior.js），"
+          echo "全绿后才打 tag 发版。要让 go test 也在这里真跑，把 runner 标签指向带 go 的镜像即可。"
 
 # GitHub 原版工作流（已停用，原样保留以便恢复）
 #

@@ -832,14 +832,38 @@
   .media-reader-overlay.movie-player.video-controller-docked .media-reader-body,
   .media-reader-overlay.movie-player.video-controller-docked .media-reader-wrap,
   .media-reader-overlay.movie-player.video-controller-docked .media-video-body { height:138px; min-height:0; padding:0; }
-  .media-reader-overlay.movie-player.video-controller-docked video { position:absolute; left:12px; bottom:12px; z-index:3; width:170px; height:96px; object-fit:cover; border-radius:10px; box-shadow:0 6px 22px rgba(0,0,0,.55); cursor:pointer; }
+  .media-reader-overlay.movie-player.video-controller-docked video { position:absolute; left:12px; bottom:12px; z-index:3; width:160px; height:90px; object-fit:cover; border-radius:10px; box-shadow:0 6px 22px rgba(0,0,0,.55); cursor:pointer; }
   .media-reader-overlay.movie-player.video-controller-docked .video-chrome { opacity:1; pointer-events:auto; }
-  .media-reader-overlay.movie-player.video-controller-docked .vc-top { padding-left:194px; }
-  .media-reader-overlay.movie-player.video-controller-docked .vc-bottom { margin-left:194px; }
-  .media-reader-overlay.movie-player.video-controller-docked .vc-restore { display:flex; left:136px; top:8px; bottom:auto; z-index:10; transform:none; }
+  .media-reader-overlay.movie-player.video-controller-docked .vc-top { padding-left:182px; }
+  .media-reader-overlay.movie-player.video-controller-docked .vc-bottom { margin-left:182px; }
   .media-reader-overlay.movie-player.video-controller-docked .vc-collapse { display:none; }
   .media-reader-overlay.movie-player.video-controller-docked .vc-restore:hover { border-color:var(--accent); color:var(--accent); background:rgba(0,0,0,.78); }
-  /* 停靠后保留一个向上的 V 形尖角用于还原完整播放器。 */
+  /* v0.9.94（需求4）：小窗（停靠）态同步缩小控制器按钮，并把「还原播放器」
+   按钮放回左侧那块视频画面里 —— 默认隐藏，鼠标移到视频画面上才出现
+   （用 video:hover ~ 选中它，所以只在真正停在画面上时显示，不停在控制栏上也显示）。 */
+.media-reader-overlay.movie-player.video-controller-docked .vc-icon { width:28px; height:28px; }
+.media-reader-overlay.movie-player.video-controller-docked .vc-icon .vc-svg { width:15px; height:15px; }
+.media-reader-overlay.movie-player.video-controller-docked .vc-icon.vc-play { width:34px; height:34px; }
+.media-reader-overlay.movie-player.video-controller-docked .vc-icon.vc-play .vc-svg { width:19px; height:19px; }
+.media-reader-overlay.movie-player.video-controller-docked .vc-collapse,
+.media-reader-overlay.movie-player.video-controller-docked .vc-fullscreen { width:28px; height:28px; }
+.media-reader-overlay.movie-player.video-controller-docked .vc-restore {
+  display:flex; left:16px; bottom:16px; top:auto; right:auto; transform:none; z-index:10;
+  width:34px; height:34px; opacity:0; visibility:hidden; pointer-events:none;
+  transition:opacity .15s ease, visibility .15s ease;
+}
+.media-reader-overlay.movie-player.video-controller-docked .vc-restore .vc-svg { width:18px; height:18px; }
+.media-reader-overlay.movie-player.video-controller-docked .media-video-body video { cursor:pointer; }
+.media-reader-overlay.movie-player.video-controller-docked .media-video-body video:hover ~ .vc-restore,
+.media-reader-overlay.movie-player.video-controller-docked .vc-restore:focus-visible {
+  opacity:1; visibility:visible; pointer-events:auto;
+}
+@media (hover: none) {
+  /* 触屏没有 hover：小窗态直接显示还原按钮，否则没法还原。 */
+  .media-reader-overlay.movie-player.video-controller-docked .vc-restore { opacity:1; visibility:visible; pointer-events:auto; }
+}
+
+/* 停靠前：保留一个向上的 V 形尖角用于还原完整播放器。 */
   .vc-restore { position:absolute; left:clamp(12px,2vw,24px); bottom:14px; z-index:7; display:none; width:36px; height:36px; align-items:center; justify-content:center; border:1px solid rgba(255,255,255,.42); border-radius:50%; color:#fff; background:rgba(0,0,0,.6); cursor:pointer; font:700 16px/1 sans-serif; }
   .vc-restore:hover { border-color:var(--accent); color:var(--accent); }
   .media-video-body[data-video-chrome-collapsed="true"] .vc-restore { display:flex; }
@@ -1648,14 +1672,15 @@
 .libtab .cnt { font-size: 11px; color: var(--text3); }
 .libtab[aria-current="true"] .cnt { color: var(--accent); }
 .topbar .tb-info { display: flex; gap: 10px; align-items: center; flex: 0 0 auto; font-size: 11.5px; color: var(--text3); }
-.tn-search { margin-left: auto; display: flex; align-items: center; gap: 8px; width: 240px; height: 34px;
-  padding: 0 10px 0 12px; background: var(--card2); border: 1px solid transparent; border-radius: 999px; color: var(--text3);
-  transition: width var(--dur) var(--ease), background var(--dur) var(--ease), border-color var(--dur) var(--ease); }
-.tn-search:focus-within { width: 330px; background: var(--card); border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
-.tn-search input { flex: 1; min-width: 0; border: 0; background: none; outline: 0; font: inherit; font-size: 13.5px; color: var(--text); }
-.tn-search input::placeholder { color: var(--text3); }
-.tn-search kbd { font-size: 10.5px; color: var(--text3); border: 1px solid var(--border2); border-radius: 4px; padding: 1px 4px; }
-.tn-search:focus-within kbd { display: none; }
+/* v0.9.94（需求2）：顶栏搜索框缩成放大镜图标（通知图标左侧）。
+   图标按钮与喇叭同尺寸，点击弹出 .search-modal 弹窗；旧的 .tn-search 输入框已移除。 */
+.tn-icon-btn { display: grid; place-items: center; width: 32px; height: 32px; flex: 0 0 auto; padding: 0;
+  border: 1px solid var(--border2); border-radius: 50%; background: var(--card2); color: var(--text2); cursor: pointer;
+  transition: border-color var(--dur) var(--ease), color var(--dur) var(--ease), transform var(--dur) var(--ease); }
+.tn-icon-btn:hover { border-color: var(--accent); color: var(--text); transform: translateY(-1px); }
+.tn-icon-btn[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+.tn-icon-btn .tn-svg { width: 16px; height: 16px; }
+.tn-popitem .ic-gear svg { width: 15px; height: 15px; vertical-align: -2px; }
 .tn-avatar { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; flex: 0 0 auto;
   background: var(--accent-dim); color: var(--accent); font: inherit; font-weight: 650; font-size: 13px;
   border: 1px solid var(--border2); cursor: pointer;
@@ -1747,14 +1772,11 @@
 .pager .total { margin-left: auto; font-size: 12.5px; color: var(--text3); }
 
 @media (max-width: 1100px) {
-  .tn-search { width: auto; flex: 1 1 140px; min-width: 0; max-width: 320px; }
-  .tn-search kbd { display: none; }
   .topbar .tb-info { display: none; }
 }
 @media (max-width: 768px) {
   .tn-brand .brand-copy { display: none; }
   .tn-item .nl { display: none; }
-  .tn-search { flex: 1 1 auto; padding: 0 10px; }
   .book-grid { gap: 12px; }
   .pn-head { margin-top: 8px; }
 }
@@ -1966,19 +1988,49 @@ html[data-quality="minimal"] :is(.audio-expand, .audio-fullscreen, .audio-player
 .media-reader-overlay.movie-player.player-fullbleed .media-reader-body { padding:0; }
 .media-reader-overlay.movie-player.player-fullbleed .media-video-body { min-height:0; height:100%; padding:0; }
 
+/* v0.9.94（需求2）：媒体搜索弹窗 —— 从右上角（放大镜位置）弹出来。
+   .search-modal-mask 只在带 .show 时显示，弹窗本身带 pop 动画（缩放 + 位移），
+   关闭动画交给 .show 移除后的 transition。 */
+.search-modal-mask { display: none; }
+.search-modal-mask.show { display: flex; }
+.search-modal-mask.show .search-modal { animation: searchModalPop .2s cubic-bezier(.2,.9,.3,1.2) both; }
+.search-modal { width: min(860px, 94vw); max-height: min(78vh, 720px); overflow: auto; transform-origin: 92% 0;
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border2)); box-shadow: 0 24px 60px rgba(0,0,0,.45); }
+.search-modal h3 { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; }
+.search-modal h3 .badge { font-weight: 500; }
+.search-modal h3 .close { margin-left: auto; }
+@keyframes searchModalPop {
+  from { opacity: 0; transform: translateY(-10px) scale(.94); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) { .search-modal-mask.show .search-modal { animation: none; } }
+
 /* v0.9.92（需求）：跨页「正在播放」浮标 —— 只在播放面不可见时出现。 */
-.playback-dock { position:fixed; z-index:400; left:calc(var(--sidebar-w) + 18px); bottom:18px; display:none; align-items:center; gap:10px; max-width:min(460px, calc(100vw - var(--sidebar-w) - 36px)); padding:9px 12px; border:1px solid var(--border); border-radius:12px; background:color-mix(in srgb,var(--bg2) 96%,var(--text)); box-shadow:0 12px 32px color-mix(in srgb,var(--text) 22%,transparent); backdrop-filter:blur(12px); }
+/* v0.9.94（需求1）：正在播放的迷你播放器常驻顶栏（放大镜左侧）。
+   取代 v0.9.92 的左下角悬浮浮标：非主动关闭播放时缩进顶栏这一条，
+   点标题「回到播放」，✕ 是主动关闭（会清掉这条）。 */
+.playback-dock { display:none; align-items:center; gap:6px; flex:0 0 auto; height:32px; padding:0 6px 0 4px;
+  border:1px solid var(--border2); border-radius:999px; background:var(--card2); color:var(--text);
+  max-width:min(360px, 40vw); overflow:hidden; }
 .playback-dock.show { display:flex; }
-.playback-dock .pd-icon { display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; flex:0 0 auto; border-radius:9px; background:color-mix(in srgb,var(--accent) 18%,transparent); color:var(--accent); }
-.playback-dock .pd-icon .vc-svg { width:16px; height:16px; }
-.playback-dock .pd-text { display:flex; flex-direction:column; min-width:0; flex:1 1 auto; line-height:1.25; }
-.playback-dock .pd-title { font-size:13px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.playback-dock .pd-sub { font-size:11px; font-style:normal; color:var(--muted, #8a8a8a); }
-.playback-dock .pd-btn, .playback-dock .pd-return, .playback-dock .pd-close { flex:0 0 auto; border:1px solid var(--border); background:transparent; color:var(--text); border-radius:9px; cursor:pointer; font-size:12px; padding:6px 10px; }
-.playback-dock .pd-btn { width:34px; padding:6px 0; text-align:center; }
-.playback-dock .pd-return { border-color:color-mix(in srgb,var(--accent) 55%,var(--border)); color:var(--accent); }
-.playback-dock .pd-btn:hover, .playback-dock .pd-return:hover { background:color-mix(in srgb,var(--accent) 14%,transparent); }
-.playback-dock[data-playing="0"] .pd-icon { color:var(--muted, #8a8a8a); background:color-mix(in srgb,var(--muted, #8a8a8a) 16%,transparent); }
+.playback-dock .pd-icon { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; flex: 0 0 auto;
+  border-radius: 50%; background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); }
+.playback-dock .pd-icon .vc-svg { width: 13px; height: 13px; }
+.playback-dock .pd-text { display: flex; align-items: center; min-width: 0; flex: 1 1 auto; cursor: pointer; }
+.playback-dock .pd-title { font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.playback-dock .pd-sub { display: none; }
+.playback-dock .pd-btn, .playback-dock .pd-return, .playback-dock .pd-close { flex: 0 0 auto; border: 1px solid var(--border);
+  background: transparent; color: var(--text); border-radius: 999px; cursor: pointer; font: inherit;
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease); }
+.playback-dock .pd-btn { width: 26px; height: 26px; padding: 0; text-align: center; font-size: 11px; line-height: 1; }
+.playback-dock .pd-return { padding: 3px 9px; font-size: 11.5px; border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); color: var(--accent); }
+.playback-dock .pd-close { width: 26px; height: 26px; padding: 0; font-size: 11px; line-height: 1; color: var(--text3); }
+.playback-dock .pd-btn:hover, .playback-dock .pd-return:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.playback-dock .pd-close:hover { border-color: var(--red); color: var(--red); }
+.playback-dock[data-playing="0"] .pd-icon { color: var(--muted, #8a8a8a); background: color-mix(in srgb, var(--muted, #8a8a8a) 16%, transparent); }
+/* 窄屏：只留图标 + 播放/暂停，标题与「回到播放」文字收掉，别把顶栏挤爆。 */
+@media (max-width: 1100px) { .playback-dock .pd-return { display: none; } .playback-dock { max-width: 46vw; } }
+@media (max-width: 768px) { .playback-dock .pd-title { display: none; } .playback-dock { max-width: none; } }
 
 /* v0.9.92：下滑自动翻页提示（书刊架「继续加载」旁 / 分页器里）。 */
 /* v0.9.92：禁用服务端转码后画质上限不生效，控件上明确标注（否则会与「原画直放」口径打架）。 */

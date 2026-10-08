@@ -845,12 +845,61 @@ function parseSeriesEpisode(path) {
   title = clean(title) || `第 ${episode || "?"} 集`;
   return { show, key: show.toLowerCase(), season: season || 1, episode: episode || 0, title, label: `S${String(season || 1).padStart(2,"0")}E${String(episode || 0).padStart(2,"0")}` };
 }
+/* v0.9.94（需求9）：多季度分离刮削的「标签」——
+   形如「幽游白书S04」（也接受 幽游白书 S4 / 幽游白书 第4季）表示
+   「幽游白书 第四季」：刮削时用「幽游白书」当搜索词，并按第 4 季取该季
+   海报/简介/分集名。自动刮削分不清季，就靠这个标签手工指定。
+   返回 null 表示这不是季标签（普通标签如「国配」不受影响）。 */
+const SERIES_SEASON_TAG_RE = /^(.*?)[\s._\-·、，,]*[Ss]\s*(\d{1,2})(?:\s*[Ee]\s*\d{1,3})?$/;
+const SERIES_SEASON_TAG_CN_RE = /^(.*?)[\s._\-·、，,]*第\s*(\d{1,2})\s*季$/;
+function parseSeriesSeasonTag(text) {
+  const raw = String(text || "").trim();
+  if (!raw || raw.length > 40) return null;
+  for (const re of [SERIES_SEASON_TAG_RE, SERIES_SEASON_TAG_CN_RE]) {
+    const m = raw.match(re);
+    if (!m) continue;
+    const show = String(m[1] || "").replace(/[\s._\-·]+$/, "").trim();
+    const season = Number(m[2]);
+    if (!show || !(season >= 0 && season <= 99)) continue;
+    return { show, season, tag: "S" + String(season).padStart(2, "0"), raw };
+  }
+  return null;
+}
+/* 取一条媒体路径的季标签：先看手工标签（媒体信息编辑 → 标签），
+   再回落到所在目录名（目录本身就叫「幽游白书S04」时同样认得）。
+   直接读本地记录而不是 movieMetadataFor()，因为它会在批量归组里被调很多次。 */
+function seriesSeasonTagOf(path) {
+  const p = String(path || "");
+  if (!p) return null;
+  const all = readMovieMetadata();
+  const rec = all[p];
+  if (rec) {
+    const tags = Array.isArray(rec.tags) ? rec.tags : [];
+    for (const tag of tags) { const parsed = parseSeriesSeasonTag(tag); if (parsed) return parsed; }
+    const direct = parseSeriesSeasonTag(rec.season_tag);
+    if (direct) return direct;
+  }
+  const parts = p.split(/[\\/]+/).filter(Boolean);
+  parts.pop();                                   /* 文件名不看，只看目录 */
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const parsed = parseSeriesSeasonTag(parts[i]);
+    if (parsed) return parsed;
+    /* 季目录（Season 01 / 第 1 季）本身不是标签，跳过它继续往上找剧根目录。 */
+    if (/^(Season\s*\d+|第\s*\d+\s*季)$/i.test(parts[i])) continue;
+  }
+  return null;
+}
+
 /* v0.9.93：归组键只看路径，不看刮削状态。
    旧实现键 = meta.show_title || parsed.show：第一集刮到中文剧名后键就变了，
    其余还没刮到的分集仍用文件名解析出的名字 → 同一部剧被拆成两张卡片，
    客户看到的就是「刮削出正确的媒体名称，但出现第一集后其他集完全没同步到同一剧集」。
    路径口径下同一部剧的所有分集键恒定，刮削只影响显示名，不再影响归组。 */
 function seriesGroupKeyOf(path, parsed) {
+  /* v0.9.94（需求9）：带季标签（幽游白书S01 / 幽游白书S04）的分集按「标签剧名」归组 ——
+     同一部剧的不同季归到同一张剧集卡，卡内再按季分开显示（多季度分离刮削）。 */
+  const seasonTag = typeof seriesSeasonTagOf === "function" ? seriesSeasonTagOf(path) : null;
+  if (seasonTag && seasonTag.show) return ("tag:" + seasonTag.show).toLowerCase();
   const parts = String(path || "").split(/[\\/]+/).filter(Boolean);
   parts.pop();                                   /* 去掉文件名，只看目录 */
   const root = [];
@@ -867,12 +916,14 @@ function buildSeriesShows(files) {
   files.forEach(file => {
     const path = String(file.path), parsed = parseSeriesEpisode(path), meta = movieMetadataFor(path);
     const key = seriesGroupKeyOf(path, parsed);
+    /* v0.9.94（需求9）：手工季标签里的剧名优先当卡片名（还没刮到也能显示对的名字）。 */
+    const tagShow = String((seriesSeasonTagOf(path) || {}).show || "").trim();
     if (!shows.has(key)) shows.set(key, { key, title: "", scrapedTitle: "", poster: "", logo: "", fanart: "", backdrop: "", watched: false, overview: "", year: "", provider: "文件名展示", seasons: new Map(), files: [] });
     const show = shows.get(key);
     /* 剧名：任一分集刮到 show_title 就用它（整组统一显示），否则回落文件名解析结果。 */
     const scrapedTitle = String(meta.show_title || "").trim();
     if (scrapedTitle && !show.scrapedTitle) show.scrapedTitle = scrapedTitle;
-    if (!show.scrapedTitle) show.title = String(parsed.show || "").trim();
+    if (!show.scrapedTitle) show.title = String(tagShow || parsed.show || "").trim();
     else show.title = show.scrapedTitle;
     show.poster ||= meta.poster || ""; show.logo ||= meta.logo || ""; show.fanart ||= meta.fanart || ""; show.backdrop ||= meta.backdrop || ""; show.watched ||= !!meta.watched; show.overview ||= meta.overview || ""; show.year ||= meta.year || ""; show.provider = show.scrapedTitle ? (meta.provider || show.provider) : show.provider;
     if (!show.seasons.has(parsed.season)) show.seasons.set(parsed.season, []);
@@ -1088,7 +1139,9 @@ function repairSeriesShowTitle(libId, meta, path) {
    同一套思路，不重复造。
    ============================================================================ */
 const MOVIE_SCRAPE_STORE_FIELDS = ["title", "show_title", "year", "poster", "backdrop", "logo", "fanart", "overview",
-  "rating", "provider", "tmdb_id", "tvdb_id", "media_type", "user_title", "scrape_state", "reason"];
+  "rating", "provider", "tmdb_id", "tvdb_id", "media_type", "user_title", "scrape_state", "reason",
+  /* v0.9.94（需求9）：分季刮削结果也要跨设备持久化（季号/标签/季名/季简介）。 */
+  "season_num", "season_tag", "season_name", "season_overview"];
 /* 上传前统一成服务端字段（并剔除空值，避免把空字段写进结果库）。 */
 function movieScrapeStoreShape(meta) {
   const out = {};
@@ -1770,6 +1823,27 @@ function seriesEpisodeTitleOf(path) {
   } catch (e) { return ""; }
 }
 /* 单条刮削：返回是否成功。所有请求用 no-store —— 空结果不再被浏览器缓存成永久失败。 */
+/* v0.9.94（需求9）：取某一季的 TMDB 详情（季名/季简介/季海报/该季分集名）。
+   走服务端的 TMDB 代理（/api/media/tmdb?...&season=N），代理只允许
+   tv/{id}/season/{n} 这一种季端点形式，季号做了整数校验。 */
+async function fetchSeriesSeason(tmdbId, season) {
+  const id = Number(tmdbId) || 0;
+  const n = Number(season);
+  if (!id || !(n >= 0 && n <= 99)) return null;
+  try {
+    const res = await fetch(`/api/media/tmdb?id=${encodeURIComponent(id)}&type=series&season=${encodeURIComponent(n)}&lang=${tmdbLangTag()}`, { cache: "no-store", credentials: "same-origin" });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data || data.success === false) return null;
+    const imgBase = scraperStatus.tmdb_image_base || "https://image.tmdb.org/t/p";
+    return {
+      name: String(data.name || "").trim(),
+      overview: String(data.overview || "").trim(),
+      poster: data.poster_path ? `${imgBase}/w342${data.poster_path}` : "",
+      episodes: Array.isArray(data.episodes) ? data.episodes : [],
+    };
+  } catch (e) { return null; }
+}
 async function scrapeOneMovie(lib, files, file) {
   const all = readMovieMetadata();
   const path = String(file.path);
@@ -1778,6 +1852,10 @@ async function scrapeOneMovie(lib, files, file) {
      没有手工名称时才回落到解析/刮削出来的标题。 */
   const title = base.user_title || base.title || movieTitleFromPath(path);
   const mediaType = lib && lib.type === "series" ? "series" : "movie";
+  /* v0.9.94（需求9）：季标签优先 —— 「幽游白书S04」的搜索词是「幽游白书」，
+     季号 4 用于取第四季的详情；不这么写会把「幽游白书S04」整串当剧名去搜。 */
+  const seasonTag = mediaType === "series" ? seriesSeasonTagOf(path) : null;
+  const searchTitle = seasonTag && seasonTag.show ? seasonTag.show : title;
   const attempts = Number(base.scrape_attempts || 0) + 1;
   const mode = scraperStatus.scraper_mode || scraperStatus.default || "auto";
   const mark = (patch) => {
@@ -1794,16 +1872,18 @@ async function scrapeOneMovie(lib, files, file) {
   };
   /* 文件名没有任何可识别标题（原盘片段、音轨编号等）→ 不发请求，标记 skip，
      但要把它列为「无可识别标题」而不是假装刮过。 */
-  if (!scrapableMovieTitle(title)) {
+  if (!scrapableMovieTitle(searchTitle)) {
     return mark({ provider: base.provider || "文件名展示", scrape_state: "skip", reason: "文件名无可用标题" });
   }
   const note = (reason) => { const c = readMovieMetadata(); c[path] = { ...(c[path] || base), reason, scrape_attempts: attempts, last_attempt: Date.now() }; writeMovieMetadata(c); };
-  if (mediaType === "series" && mode === "auto" && scraperStatus.tvdb_enabled) {
+  /* v0.9.94（需求9）：带季标签时跳过 TVDB（TVDB 分支不取分季详情），
+     交给下面的 TMDB 分支按季取该季海报/简介/分集名。 */
+  if (mediaType === "series" && mode === "auto" && scraperStatus.tvdb_enabled && !seasonTag) {
     try {
-      const tvdb = await fetch(`/api/media/tvdb?query=${encodeURIComponent(title)}`, { cache: "no-store", credentials: "same-origin" });
+      const tvdb = await fetch(`/api/media/tvdb?query=${encodeURIComponent(searchTitle)}`, { cache: "no-store", credentials: "same-origin" });
       if (tvdb.status === 401 || tvdb.status === 403) note("TVDB 凭据无效");
       const tvdbList = tvdb.ok ? (((await tvdb.json()) || {}).results || []) : [];
-      const tvdbBest = pickTitleMatch(tvdbList, title, { year: base.year });
+      const tvdbBest = pickTitleMatch(tvdbList, searchTitle, { year: base.year });
       const item = tvdbBest && tvdbBest.matched ? tvdbBest.item : null;
       if (!item && tvdbList.length) note(titleMatchReason(tvdbBest, scrapeMinMatchThreshold()));
       if (item) {
@@ -1825,18 +1905,18 @@ async function scrapeOneMovie(lib, files, file) {
   }
   if ((mode === "auto" || mode === "tmdb") && scraperStatus.tmdb_enabled) {
     try {
-      const tmdb = await fetch(`/api/media/tmdb?query=${encodeURIComponent(title)}&type=${encodeURIComponent(mediaType)}&lang=${tmdbLangTag()}`, { cache: "no-store", credentials: "same-origin" });
+      const tmdb = await fetch(`/api/media/tmdb?query=${encodeURIComponent(searchTitle)}&type=${encodeURIComponent(mediaType)}&lang=${tmdbLangTag()}`, { cache: "no-store", credentials: "same-origin" });
       if (tmdb.status === 401 || tmdb.status === 403) note("TMDB 凭据无效（系统设置 → 刮削里换成 v3 Key 或 v4 Token）");
       const data = tmdb.ok ? await tmdb.json() : null;
       const candidates = data && Array.isArray(data.results)
         ? data.results.filter(x => x && (x.poster_path || x.overview || x.title || x.name)) : [];
-      const best = pickTitleMatch(candidates, title, { year: base.year });
+      const best = pickTitleMatch(candidates, searchTitle, { year: base.year });
       const item = best && best.matched ? best.item : null;
       if (item) {
         const imgBase = scraperStatus.tmdb_image_base || "https://image.tmdb.org/t/p";
         /* v0.9.90：剧名取当前语言（tmdbLangTag()）的 TMDB 命名，写入 show_title。 */
         const tmdbName = String(item.name || item.title || "").trim();
-        return mark({
+        const patch = {
           tmdb_id: item.id, media_type: mediaType,
           show_title: mediaType === "series" ? (tmdbName || base.show_title || "") : (base.show_title || ""),
           original_title: String(item.original_name || item.original_title || base.original_title || "").trim(),
@@ -1849,7 +1929,23 @@ async function scrapeOneMovie(lib, files, file) {
           tmdb_title: best ? String(best.name || "").slice(0, 200) : "",
           match_score: best ? Math.round(best.score * 100) / 100 : 0,
           checkedAt: Date.now(), scrape_state: "ok", reason: "",
-        });
+        };
+        /* v0.9.94（需求9）：分季刮削 —— 有季标签就再取一次「第 N 季」详情：
+           季海报/季简介写回，并用该季的分集名覆盖分集标题（按集号匹配）。 */
+        if (mediaType === "series" && seasonTag) {
+          patch.season_num = seasonTag.season;
+          patch.season_tag = seasonTag.show + seasonTag.tag;
+          const seasonInfo = await fetchSeriesSeason(item.id, seasonTag.season);
+          if (seasonInfo) {
+            if (seasonInfo.name) patch.season_name = seasonInfo.name;
+            if (seasonInfo.overview && !patch.season_overview) patch.season_overview = seasonInfo.overview;
+            if (seasonInfo.poster) patch.poster = seasonInfo.poster;
+            const epNo = Number(parseSeriesEpisode(path).episode) || 0;
+            const ep = (seasonInfo.episodes || []).find(e => Number(e.episode_number) === epNo);
+            if (ep && ep.name) patch.title = ep.name;
+          }
+        }
+        return mark(patch);
       }
       /* v0.9.88：有候选但都低于阈值 → 记「匹配度不足 n%」，而不是笼统的「未命中」；
          完全没有候选才是真的未命中。这条 later 会被下面的 mark() 原样保留。 */
@@ -3206,6 +3302,14 @@ function selectLocalLibrary(group, id) {
 let mediaSearchTimer = null;
 let mediaSearchToken = 0;
 function openMediaSearch() {
+  /* v0.9.94（需求2）：媒体搜索改为顶栏放大镜弹窗 —— 不再切视图，
+     直接弹窗并聚焦输入框；已有搜索词时立刻重跑一次（回来能看到上次结果）。 */
+  if (typeof openMediaSearchModal === "function") {
+    openMediaSearchModal();
+    const box = document.getElementById("mediaSearchInput");
+    if (box && box.value.trim()) runMediaSearch();
+    return;
+  }
   switchView("search");
   const box = document.getElementById("mediaSearchInput");
   if (box) { box.focus(); if (box.value.trim()) runMediaSearch(); }
@@ -4377,17 +4481,26 @@ function updateAudioExpandArt(meta) {
 }
 const AUDIO_LOOP_ORDER = ["sequence", "list", "single", "random"];
 const AUDIO_LOOP_LABEL = { sequence: "顺序", list: "列表循环", single: "单曲循环", random: "随机播放" };
+/* v0.9.94（需求6）：播放模式只在循环图标上体现 —— 四个模式四个不同图标。
+   旧实现 list 与 sequence 用同一个 repeat 图标（根本分不出来），并且每次切换都
+   toast 一个「播放模式」弹窗，那个弹窗会固定停在页面上（客户报告的 BUG）。
+   现在：顺序→sequence、列表循环→repeat、单曲循环→repeatOne、随机→shuffle，
+   并把模式写进 data-loop-mode（供样式与自动化断言用），不再弹任何模式弹窗。 */
+const AUDIO_LOOP_ICON = { sequence: "sequence", list: "repeat", single: "repeatOne", random: "shuffle" };
 function setAudioLoop(mode) {
   audioLoopMode = AUDIO_LOOP_ORDER.includes(mode) ? mode : "sequence";
   const button = document.getElementById("audioLoopButton");
   if (button) {
     button.title = "播放模式：" + AUDIO_LOOP_LABEL[audioLoopMode];
-    button.innerHTML = audioIcon(audioLoopMode === "single" ? "repeatOne" : audioLoopMode === "random" ? "repeat" : "repeat");
+    button.dataset.loopMode = audioLoopMode;
+    button.classList.toggle("loop-active", audioLoopMode !== "sequence");
+    button.innerHTML = audioIcon(AUDIO_LOOP_ICON[audioLoopMode] || "repeat");
   }
   const lib = findMediaLibrary(localMediaSelection.audio);
   if (lib && audioView === "tracks") loadLocalFiles("audio", lib, audioCursor);
 }
-function cycleAudioLoop() { setAudioLoop(AUDIO_LOOP_ORDER[(AUDIO_LOOP_ORDER.indexOf(audioLoopMode) + 1) % AUDIO_LOOP_ORDER.length]); toast("🔁 " + AUDIO_LOOP_LABEL[audioLoopMode]); }
+/* v0.9.94（需求6）：切模式只换图标，不再弹模式弹窗（弹窗会停在页面上）。 */
+function cycleAudioLoop() { setAudioLoop(AUDIO_LOOP_ORDER[(AUDIO_LOOP_ORDER.indexOf(audioLoopMode) + 1) % AUDIO_LOOP_ORDER.length]); }
 
 /* ==================== v0.9.73 播放列表（播放队列） ====================
    用户诉求：播放器上的「歌词详情」按钮改成播放列表，并加入播放列表功能。
@@ -6170,38 +6283,9 @@ function toggleVideoPanel(el, name) {
 }
 /* 旧入口保留：字幕/音轨菜单现在就是设置浮层。 */
 function toggleVideoTrackMenu(button) { toggleVideoPanel(button, "settings"); }
-/* ---------- 重复 / 随机 ---------- */
-const VIDEO_REPEAT_ORDER = ["off", "one", "all"];
-function videoRepeatLabel(mode) { return t(mode === "one" ? "vpRepeatOne" : mode === "all" ? "vpRepeatAll" : "vpRepeatOff"); }
-const VIDEO_REPEAT_ICON = { off: "🔁", one: "🔂", all: "🔁" };
-function videoRepeatMode(root) { return VIDEO_REPEAT_ORDER.includes(root?.dataset.videoRepeat) ? root.dataset.videoRepeat : "off"; }
-function cycleVideoRepeat(el) {
-  const root = videoRootOf(el);
-  if (!root) return;
-  const next = VIDEO_REPEAT_ORDER[(VIDEO_REPEAT_ORDER.indexOf(videoRepeatMode(root)) + 1) % VIDEO_REPEAT_ORDER.length];
-  root.dataset.videoRepeat = next;
-  const video = root.querySelector("video");
-  if (video) video.loop = next === "one";
-  const button = root.querySelector("[data-video-repeat-button]");
-  if (button) {
-    button.innerHTML = videoIcon(next === "one" ? "repeatOne" : "repeat");
-    button.title = `${t("vpRepeat")}：${videoRepeatLabel(next)}`;
-    button.classList.toggle("on", next !== "off");
-  }
-  toast(`🔁 ${videoRepeatLabel(next)}`);
-  scheduleVideoChromeHide(root);
-}
-function videoShuffleOn(root) { return root?.dataset.videoShuffle === "on"; }
-function toggleVideoShuffle(el) {
-  const root = videoRootOf(el);
-  if (!root) return;
-  const next = videoShuffleOn(root) ? "off" : "on";
-  root.dataset.videoShuffle = next;
-  const button = root.querySelector("[data-video-shuffle-button]");
-  if (button) { button.title = `${t("vpShuffle")}：${t(next === "on" ? "vpShuffleOn" : "vpShuffleOff")}`; button.classList.toggle("on", next === "on"); }
-  toast(`🔀 ${t(next === "on" ? "vpShuffleOn" : "vpShuffleOff")}`);
-  scheduleVideoChromeHide(root);
-}
+/* v0.9.94（需求3）：视频播放器的「重复播放 / 随机播放」已整体移除
+   （按钮、状态、连播规则、i18n 键一并删掉）。播完的规则只剩「电视剧集自动
+   连播下一集，走到最后一集停下」，电影播完停在结尾。 */
 /* ---------- 声音 ---------- */
 function setVideoVolume(el, value) {
   const root = videoRootOf(el);
@@ -6285,25 +6369,15 @@ function videoPlayNeighbour(el, step) {
   if (!root) return;
   if (!videoPlaylist.length) { toast("⚠️ " + t("vpPlaylistNone")); return; }
   const current = videoPlaylistIndex(root.dataset.library, root.dataset.path);
-  let next;
-  if (videoShuffleOn(root) && videoPlaylist.length > 1) {
-    do { next = Math.floor(Math.random() * videoPlaylist.length); } while (next === current);
-  } else {
-    next = current < 0 ? 0 : current + Number(step || 1);
-    if (next < 0 || next >= videoPlaylist.length) {
-      if (videoRepeatMode(root) !== "all") { toast("⚠️ " + t(next < 0 ? "vpFirstItem" : "vpLastItem")); return; }
-      next = (next + videoPlaylist.length) % videoPlaylist.length;
-    }
-  }
+  const next = current < 0 ? 0 : current + Number(step || 1);
+  /* v0.9.94（需求3）：列表循环已移除，走到头就提示「已是第一/最后一集」。 */
+  if (next < 0 || next >= videoPlaylist.length) { toast("⚠️ " + t(next < 0 ? "vpFirstItem" : "vpLastItem")); return; }
   playVideoFromPlaylist(next);
 }
 function videoPlaybackEnded(root, video) {
   if (!root) return;
-  const mode = videoRepeatMode(root);
-  if (mode === "one") { video.currentTime = 0; video.play().catch(() => {}); return; }
-  if (mode === "all" || videoShuffleOn(root)) { videoPlayNeighbour(root, 1); return; }
-  /* v0.9.51：只有电视剧集类型播放才自动连播下一集 —— 单部电影播完停在结尾，
-     不再自动跳到库里下一部（电影模式也不展示播放列表按钮）。 */
+  /* v0.9.94（需求3）：重复/随机已移除。只有电视剧集类型播放才自动连播下一集，
+     单部电影播完停在结尾，不再自动跳到库里下一部（电影模式也不展示播放列表按钮）。 */
   if (root.dataset.videoPlaylistEligible !== "true") return;
   const current = videoPlaylistIndex(root.dataset.library, root.dataset.path);
   if (current >= 0 && current + 1 < videoPlaylist.length) videoPlayNeighbour(root, 1);
@@ -6753,6 +6827,9 @@ const AUDIO_ICON_SVG = {
   expand: '<path d="M4 9.6V4h5.6"/><path d="M20 9.6V4h-5.6"/><path d="M4 14.4V20h5.6"/><path d="M20 14.4V20h-5.6"/>',
   restore: '<path d="M9.6 4v5.6H4"/><path d="M14.4 4v5.6H20"/><path d="M9.6 20v-5.6H4"/><path d="M14.4 20v-5.6H20"/>',
   info: '<circle cx="12" cy="12" r="8.4"/><path d="M12 11.2v4.6"/><circle cx="12" cy="7.7" r="1.05" fill="currentColor"/>',
+  /* v0.9.94（需求6）：顺序播放图标（三条横线 + 向右实心箭头），
+     与列表循环 / 单曲循环 / 随机的图标区分开。 */
+  sequence: '<path d="M4.4 6.6h11.2M4.4 12h11.2M4.4 17.4h7.6"/><path d="m16.6 14.2 4 3.2-4 3.2Z" fill="currentColor" stroke="none"/>',
 };
 function audioIcon(name) {
   const body = AUDIO_ICON_SVG[name];
@@ -6772,12 +6849,18 @@ const VIDEO_ICON_SVG = {
   pause: '<rect x="6.6" y="5" width="4.1" height="14" rx="1.5" fill="currentColor" stroke="none"/><rect x="13.3" y="5" width="4.1" height="14" rx="1.5" fill="currentColor" stroke="none"/>',
   prev: '<path d="M5.8 5.4v13.2" stroke="currentColor"/><path d="M18.6 6.3 10.4 12l8.2 5.7Z" fill="currentColor" stroke="none"/>',
   next: '<path d="M18.2 5.4v13.2" stroke="currentColor"/><path d="M5.4 6.3l8.2 5.7-8.2 5.7Z" fill="currentColor" stroke="none"/>',
-  back10: '<path d="M12.9 4.2 9.4 5.2l1-3.5"/><path d="M13.4 4.5a8 8 0 1 1-7.9 8.6"/><path d="M4.2 9V4.6h4.4" stroke="currentColor"/>',
-  fwd10: '<path d="m11.1 4.2 3.5 1-1-3.5"/><path d="M10.6 4.5a8 8 0 1 0 7.9 8.6"/><path d="M19.8 9V4.6h-4.4" stroke="currentColor"/>',
+  /* v0.9.94（需求5）：快退/快进换成 VCD 通用的「双实心三角」——
+     两个相邻的实心箭头，方向一眼可辨，不再用带圆弧的旋转箭头。 */
+  back10: '<path d="M11.4 5.6 4.6 12l6.8 6.4Z" fill="currentColor" stroke="none"/><path d="M20 5.6 13.2 12 20 18.4Z" fill="currentColor" stroke="none"/>',
+  fwd10: '<path d="M12.6 5.6 19.4 12l-6.8 6.4Z" fill="currentColor" stroke="none"/><path d="M4 5.6 10.8 12 4 18.4Z" fill="currentColor" stroke="none"/>',
   repeat: '<path d="m17 2.4 4 4-4 4"/><path d="M21 6.4H8.5a4.5 4.5 0 0 0-4.5 4.5v.6"/><path d="m7 21.6-4-4 4-4"/><path d="M3 17.6h12.5a4.5 4.5 0 0 0 4.5-4.5v-.6"/>',
   repeatOne: '<path d="m17 2.4 4 4-4 4"/><path d="M21 6.4H8.5a4.5 4.5 0 0 0-4.5 4.5v.6"/><path d="m7 21.6-4-4 4-4"/><path d="M3 17.6h12.5a4.5 4.5 0 0 0 4.5-4.5v-.6"/><text x="12.05" y="16.6" font-size="5.6" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">1</text>',
   shuffle: '<path d="m16 3.2 4.8.1-.1 4.8"/><path d="M4.2 19.8 20.6 3.4"/><path d="m20.6 16.2.1 4.8-4.8-.1"/><path d="m14.8 14.8 5.8 5.8"/><path d="M4.2 4.2l5.6 5.6"/>',
-  settings: '<circle cx="12" cy="12" r="2.9" fill="currentColor" stroke="none"/><path d="M12 2.8v2.3M12 18.9v2.3M2.8 12h2.3M18.9 12h2.3M5.8 5.8l1.6 1.6M16.6 16.6l1.6 1.6M18.2 5.8l-1.6 1.6M7.4 16.6l-1.6 1.6"/>',
+  /* v0.9.94（需求7）：设置 = 斜向摆放大一小两个齿轮（大齿轮左下、小齿轮右上）。 */
+  settings: '<circle cx="9.5" cy="14" r="3.3"/>'
+    + '<path d="M9.5 8.6v1.6M9.5 17.8v1.6M4.1 14h1.6M13.3 14h1.6M5.7 10.2l1.1 1.1M12.2 16.7l1.1 1.1M13.3 10.2l-1.1 1.1M6.8 16.7l-1.1 1.1"/>'
+    + '<circle cx="17.6" cy="8.4" r="2.05" fill="currentColor" stroke="none"/>'
+    + '<path d="M17.6 4.9v1.05M17.6 10.85v1.05M14.1 8.4h1.05M20.05 8.4h1.05M15.4 6.15l.75.75M19.05 9.8l.75.75M19.8 6.15l-.75.75M16.15 9.8l-.75.75"/>',
   playlist: '<path d="M3.4 6h13.2M3.4 12h13.2M3.4 18h13.2"/><path d="M20 10.2 17.4 12v-6"/>',
   more: '<circle cx="5.2" cy="12" r="1.9" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.9" fill="currentColor" stroke="none"/><circle cx="18.8" cy="12" r="1.9" fill="currentColor" stroke="none"/>',
   info: '<circle cx="12" cy="12" r="8.4"/><path d="M12 11.2v4.6"/><circle cx="12" cy="7.7" r="1.05" fill="currentColor" stroke="none"/>',
@@ -6912,13 +6995,12 @@ async function openLocalMedia(group, libId, path) {
     }
   }
   if (["mp3","flac","m4a","ogg","wav"].includes(ext)) body = `<div class="media-viewer-body"><audio controls autoplay preload="metadata" src="${esc(url)}"></audio></div>`;
-  else if (MEDIA_FORMATS.movie.includes(ext)) body = `<div class="media-viewer-body media-video-body" data-video-controls-visible="true" data-video-engine="native" data-video-chrome-collapsed="false" data-video-repeat="off" data-video-shuffle="off" data-video-quality="${typeof qualityVideoPreset === "function" ? qualityVideoPreset() : "auto"}">
+  else if (MEDIA_FORMATS.movie.includes(ext)) body = `<div class="media-viewer-body media-video-body" data-video-controls-visible="true" data-video-engine="native" data-video-chrome-collapsed="false" data-video-quality="${typeof qualityVideoPreset === "function" ? qualityVideoPreset() : "auto"}">
 <video data-movie-player playsinline preload="metadata" onloadedmetadata="this.muted=false;this.volume=1" onvolumechange="this.dataset.volume=String(this.volume)"></video>
 <div class="video-chrome" data-video-chrome>
 <div class="vc-top">
 <button class="vc-icon vc-collapse" type="button" title="${esc(t("vpMinimize"))}" aria-label="${esc(t("vpMinimize"))}" onclick="minimizeVideoPlayer(this)">${videoIcon("collapse")}</button>
 <div class="vc-heading"><strong class="vc-title" data-video-title>${esc(t("vpTitleLoading"))}</strong><span class="vc-sub" data-video-meta-line></span></div>
-<button class="vc-icon vc-fullscreen" type="button" title="${esc(t("vpFullscreen"))}" aria-label="${esc(t("vpFullscreen"))}" aria-pressed="false" onclick="toggleVideoFullscreen(this)">${videoIcon("fullscreen")}</button>
 </div>
 <div class="vc-bottom">
 <div class="video-timeline">
@@ -6937,11 +7019,11 @@ async function openLocalMedia(group, libId, path) {
 <button class="vc-icon vc-stop" type="button" title="${esc(t("vpClose"))}" aria-label="${esc(t("vpClose"))}" onclick="closeVideoPlayer(this)">${videoIcon("close")}</button>
 </div>
 <div class="vc-right">
-<button class="vc-icon" type="button" title="${esc(t("vpMore"))}" aria-label="${esc(t("vpMore"))}" aria-expanded="false" data-video-panel-button="more" onclick="toggleVideoPanel(this,'more')">${videoIcon("more")}</button>
-<button class="vc-icon" type="button" title="${esc(t("vpRepeat") + "：" + t("vpRepeatOff"))}" aria-label="${esc(t("vpRepeat"))}" data-video-repeat-button onclick="cycleVideoRepeat(this)">${videoIcon("repeat")}</button>
-<button class="vc-icon" type="button" title="${esc(t("vpShuffle") + "：" + t("vpShuffleOff"))}" aria-label="${esc(t("vpShuffle"))}" data-video-shuffle-button onclick="toggleVideoShuffle(this)">${videoIcon("shuffle")}</button>
-<button class="vc-icon" type="button" title="${esc(t("vpSettings"))}" aria-label="${esc(t("vpSettings"))}" aria-expanded="false" data-video-panel-button="settings" onclick="toggleVideoPanel(this,'settings')">${videoIcon("settings")}</button>
 <button class="vc-icon vc-playlist-toggle" type="button" title="${esc(t("vpPlaylist"))}" aria-label="${esc(t("vpPlaylist"))}" aria-expanded="false" data-video-panel-button="playlist" onclick="toggleVideoPanel(this,'playlist')">${videoIcon("playlist")}</button>
+<button class="vc-icon" type="button" title="${esc(t("vpSettings"))}" aria-label="${esc(t("vpSettings"))}" aria-expanded="false" data-video-panel-button="settings" onclick="toggleVideoPanel(this,'settings')">${videoIcon("settings")}</button>
+<!-- v0.9.94（需求4）：最大化按钮从顶栏移到右下角，正好夹在「设置」和「更多操作」中间。 -->
+<button class="vc-icon vc-fullscreen" type="button" title="${esc(t("vpFullscreen"))}" aria-label="${esc(t("vpFullscreen"))}" aria-pressed="false" onclick="toggleVideoFullscreen(this)">${videoIcon("fullscreen")}</button>
+<button class="vc-icon" type="button" title="${esc(t("vpMore"))}" aria-label="${esc(t("vpMore"))}" aria-expanded="false" data-video-panel-button="more" onclick="toggleVideoPanel(this,'more')">${videoIcon("more")}</button>
 </div>
 </div>
 </div>

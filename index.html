@@ -4,10 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VaultHub 蜀鼠之家</title>
-<link rel="stylesheet" href="/web/css/main.css?v=0.9.93">
+<link rel="stylesheet" href="/web/css/main.css?v=0.9.94">
 <script>
 /* 资源版本号：index.html 用它给所有静态资源打查询串。 */
-window.VAULTHUB_ASSET_VERSION = "0.9.93";
+window.VAULTHUB_ASSET_VERSION = "0.9.94";
 </script>
 <script>
 /* v0.9.73 主题防闪：调色板/明暗/强调色必须在首帧渲染前落到 <html> 上，
@@ -59,7 +59,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.93";
     <button class="btn btn-primary" style="width:100%;margin-top:12px;" onclick="vaultHubLogin()">🔐 登录</button>
     <div class="auth-error" id="authError"></div>
     <!-- v0.9.93：登录页也显示版本标语（原第三处在侧栏页脚，侧栏已移除）。 -->
-    <div class="login-ver"><span id="loginVerLabel" class="ver">v0.9.93 · 播放回缩顶栏·停止即断流·剧集自动归组</span></div>
+    <div class="login-ver"><span id="loginVerLabel" class="ver">v0.9.94 · 顶栏迷你播放器·搜索弹窗·分季刮削</span></div>
   </div>
 </div>
 
@@ -120,12 +120,30 @@ window.VAULTHUB_ASSET_VERSION = "0.9.93";
       <span class="tb-stat" id="topPlayStat"></span>
     </div>
 
-    <label class="tn-search">
-      <input id="topSearch" type="search" placeholder="搜索当前媒体库…" aria-label="全局搜索" oninput="onTopSearchInput()" onkeydown="onTopSearchKey(event)">
-      <kbd id="topSearchKbd">Ctrl K</kbd>
-    </label>
+    <!-- v0.9.94（需求2）：顶栏搜索框缩成放大镜图标，移入 .tn-actions（通知图标左侧），
+         点击弹出搜索弹窗（#mediaSearchModal）。原 #topSearch 内联过滤框已移除。 -->
 
     <div class="tn-actions">
+      <!-- v0.9.94（需求1）：正在播放的迷你播放器常驻在顶栏右侧、放大镜左侧。
+           非主动关闭（离开播放页 / 最小化 / 切库）时缩到这一条；点它「回到播放」。
+           元素与 data-dock-* 契约沿用 v0.9.92 的浮标，只是位置从屏幕左下角搬到顶栏。 -->
+      <div class="playback-dock" id="playbackDock" role="status" aria-live="polite" data-dock-kind="" data-playing="0" title="回到播放">
+        <span class="pd-icon"><svg class="vc-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5Z" fill="currentColor"/></svg></span>
+        <span class="pd-text" onclick="returnToActivePlayback()">
+          <b class="pd-title" data-dock-title>正在播放</b>
+          <i class="pd-sub" data-dock-sub>正在播放</i>
+        </span>
+        <button type="button" class="pd-btn" title="播放 / 暂停" aria-label="播放 / 暂停" onclick="toggleActivePlayback()"><span data-dock-toggle>⏸</span></button>
+        <button type="button" class="pd-return" data-dock-return title="回到播放" onclick="returnToActivePlayback()">回到播放</button>
+        <button type="button" class="pd-close" title="停止并收起" aria-label="停止并收起" onclick="stopActivePlayback()">✕</button>
+      </div>
+      <!-- v0.9.94（需求2）：搜索框缩成放大镜图标，放在通知图标左侧；
+           点击弹出搜索弹窗（弹窗带弹出动画，见 .search-modal）。 -->
+      <button class="tn-icon-btn tn-search-open" id="tnSearchButton" type="button"
+              title="搜索媒体库（Ctrl K）" aria-label="搜索媒体库" aria-haspopup="dialog" aria-expanded="false"
+              onclick="toggleMediaSearchModal()">
+        <svg class="vc-svg tn-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="10.6" cy="10.6" r="6.4"/><path d="M15.4 15.4 20.6 20.6"/></svg>
+      </button>
       <!-- v0.9.85：搜索框右侧的通知喇叭 —— 功能通知与刮削信息明细（刮削进度/成功失败/跳过原因）。 -->
       <div class="tn-notify-wrap">
         <button class="tn-bell" id="tnNotifyBell" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="tnNotifyPanel" onclick="toggleNotifyPanel(event)" title="通知 / 刮削信息">
@@ -152,7 +170,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.93";
       <span class="avatar" id="topUserAvatar" aria-hidden="true">E</span>
       <span class="who"><strong id="topUserName">管理员</strong><span id="topUserMeta">VaultHub</span></span>
     </div>
-    <button class="tn-popitem" type="button" role="menuitem" onclick="topUserMenuGo('library')"><span class="ic">⚙</span>系统设置<span class="k">媒体库 · 外观 · 刮削 · 账户</span></button>
+    <button class="tn-popitem" type="button" role="menuitem" onclick="topUserMenuGo('library')"><span class="ic ic-gear"><svg class="vc-svg tn-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="9.5" cy="14" r="3.3"/><path d="M9.5 8.6v1.6M9.5 17.8v1.6M4.1 14h1.6M13.3 14h1.6M5.7 10.2l1.1 1.1M12.2 16.7l1.1 1.1M13.3 10.2l-1.1 1.1M6.8 16.7l-1.1 1.1"/><circle cx="17.6" cy="8.4" r="2.05" fill="currentColor" stroke="none" stroke-width="0"/><path d="M17.6 4.9v1.05M17.6 10.85v1.05M14.1 8.4h1.05M20.05 8.4H21.1M15.4 6.15l.75.75M19.05 9.8l.75.75M19.8 6.15l-.75.75M16.15 9.8l-.75.75"/></svg></span>系统设置<span class="k">媒体库 · 外观 · 刮削 · 账户</span></button>
     <button class="tn-popitem" type="button" role="menuitem" onclick="topUserMenuGo('look')"><span class="ic">🎨</span>外观主题<span class="k" id="topMenuTheme">当前：青瓷</span></button>
     <button class="tn-popitem" type="button" role="menuitem" onclick="topUserMenuModules()"><span class="ic">★</span>自定义模块<span class="k">添加 / 管理</span></button>
     <button class="tn-popitem" type="button" role="menuitem" onclick="topUserMenuGo('account')"><span class="ic">👤</span>账户与登录<span class="k">会话与退出</span></button>
@@ -401,16 +419,13 @@ window.VAULTHUB_ASSET_VERSION = "0.9.93";
       <div class="section-title">
         <span class="idx">🔍</span>
         <span data-i18n="searchTitle">媒体搜索</span>
-        <span class="badge" id="mediaSearchBadge" data-i18n="searchIdle">输入关键词搜索媒体库</span>
       </div>
+      <!-- v0.9.94（需求2）：媒体搜索改为顶栏放大镜弹窗（#mediaSearchModal）。
+           这一页保留为「旧链接/书签」的落点：切到本视图即自动弹出搜索弹窗。 -->
+      <div class="lead" data-i18n="searchLead">媒体搜索已改为顶栏的放大镜按钮：点一下弹出搜索弹窗，不离开当前页面即可搜索整个媒体库。</div>
       <div class="media-actions" style="margin-bottom:14px;flex-wrap:wrap;">
-        <input id="mediaSearchInput" type="search" placeholder="搜索媒体库中的影视、书籍、音乐文件名" data-i18n-ph="searchPlaceholder"
-               style="flex:1;min-width:240px;padding:9px 12px;border:1px solid var(--border);border-radius:8px;background:var(--card2);color:var(--text);"
-               oninput="scheduleMediaSearch()" onkeydown="if(event.key==='Enter')runMediaSearch()">
-        <button class="btn btn-primary" type="button" onclick="runMediaSearch()">🔍 <span data-i18n="searchRun">搜索</span></button>
-        <button class="btn" type="button" onclick="clearMediaSearch()" data-i18n="searchClear">清空</button>
+        <button class="btn btn-primary" type="button" onclick="openMediaSearch()">🔍 <span data-i18n="searchRun">搜索</span></button>
       </div>
-      <div id="mediaSearchResults"></div>
     </section>
 
     <!-- ============ 系统设置：v0.9.30 起使用独立配置页，不再是弹窗 ============
@@ -727,7 +742,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.93";
          页脚在启动时由 syncAppFooterVersion() 读取并同步，发版不会漏改。 -->
     <footer class="app-footer" id="appFooter">
       <span class="af-name">VaultHub 蜀鼠之家</span>
-      <span id="appFooterVer" class="ver">v0.9.93 · 播放回缩顶栏·停止即断流·剧集自动归组</span>
+      <span id="appFooterVer" class="ver">v0.9.94 · 顶栏迷你播放器·搜索弹窗·分季刮削</span>
       <span class="af-note" data-i18n="footerAboutHint">版本与「系统设置 → 账户与登录 → 关于」中的版本参数保持一致</span>
     </footer>
 
@@ -848,7 +863,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.93";
   <div class="modal">
     <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
     <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
-    <div class="about-row" data-about-ver="1"><span data-i18n="aboutVer">版本</span><b>v0.9.93 · 播放回缩顶栏·停止即断流·剧集自动归组</b></div>
+    <div class="about-row" data-about-ver="1"><span data-i18n="aboutVer">版本</span><b>v0.9.94 · 顶栏迷你播放器·搜索弹窗·分季刮削</b></div>
     <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>Go (media/manager/subtitle) · Caddy · FFmpeg · SQLite · HTML/CSS/JS</b></div>
     <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>VaultHub 内置系统监控</b></div>
     <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>
@@ -859,18 +874,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.93";
   </div>
 </div>
 
-<!-- v0.9.92（需求）：跨页「正在播放」入口。离开播放页后不用重新进库再点一次，
-     点「回到播放」即续播：播放元素还活着就直接回去，已被销毁才按保存进度重开。 -->
-<div class="playback-dock" id="playbackDock" role="status" aria-live="polite">
-  <span class="pd-icon"><svg class="vc-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5Z" fill="currentColor"/></svg></span>
-  <span class="pd-text">
-    <b class="pd-title" data-dock-title>正在播放</b>
-    <i class="pd-sub" data-dock-sub>正在播放</i>
-  </span>
-  <button type="button" class="pd-btn" title="播放 / 暂停" aria-label="播放 / 暂停" onclick="toggleActivePlayback()"><span data-dock-toggle>⏸</span></button>
-  <button type="button" class="pd-return" data-dock-return title="回到播放" onclick="returnToActivePlayback()">回到播放</button>
-  <button type="button" class="pd-close" title="停止并收起" aria-label="停止并收起" onclick="stopActivePlayback()">✕</button>
-</div>
+
 
 <div class="audio-player" id="audio-bottom-player">
   <div class="audio-player-cover-wrap">
@@ -999,11 +1003,15 @@ window.VAULTHUB_ASSET_VERSION = "0.9.93";
       <div class="cfg-field"><label data-i18n="editYearLabel">年份</label><input id="mediaEditYear" type="text" maxlength="4" placeholder="2024"></div>
       <!-- v0.9.89：一级标题（媒体名称）是刮削结果，原文件名退到这里只读展示（二级信息）。 -->
       <div class="cfg-field"><label data-i18n="editOriginalNameLabel">原文件名称</label><input id="mediaEditOriginalName" type="text" readonly data-i18n-title="editOriginalNameHint" title="媒体库里未被改动的原始文件名（只读，用于核对刮削结果）"></div>
-      <div class="cfg-field"><label>标签（逗号分隔）</label><input id="mediaEditTags" type="text" maxlength="660"></div>
+      <!-- v0.9.94（需求9）：标签除了备注，还承担「多季度关联刮削」——
+           剧集填「剧名S04」即表示这一季按「剧名 第四季」刮削。 -->
+      <div class="cfg-field"><label>标签（逗号分隔；剧集可用「剧名S04」关联到第四季）</label>
+        <input id="mediaEditTags" type="text" maxlength="660" placeholder="例：幽游白书S04（= 幽游白书 第四季）"></div>
       <div class="cfg-field"><label>图片用途</label><select id="mediaEditArtworkRole"><option value="Poster">海报</option><option value="Logo">Logo</option><option value="Fanart">Fanart 背景</option><option value="Backdrop">Backdrop 背景</option></select></div>
     </div>
     <div class="modal-sec">媒体目录图片</div><div class="artwork-choice-grid" id="mediaEditArtworkChoices"></div>
     <p class="hint" data-i18n="editScrapeHint">名称与年份会作为刮削搜索词：保存后立即按新名称重刮一次，放在 /data 里跨设备一致。</p>
+    <p class="hint" data-i18n="editSeasonHint">剧集分季：标签里写「剧名S01 / 剧名S04」表示这一季按该剧的第 1 / 第 4 季刮削。自动刮削分不清哪一季时，用它手工指定即可（同一部剧的不同季会归到同一张剧集卡，卡内按季分开）。</p>
     <div class="media-actions"><button class="btn btn-primary" type="button" onclick="saveMediaMetadataEditor()">💾 保存媒体信息</button></div>
   </div>
 </div>
@@ -1022,16 +1030,37 @@ window.VAULTHUB_ASSET_VERSION = "0.9.93";
   </div>
 </div>
 
+<!-- v0.9.94（需求2）：媒体搜索弹窗 —— 顶栏放大镜图标弹出，带弹出动画；
+     搜索词、结果、徽标沿用原 #mediaSearchInput / #mediaSearchResults / #mediaSearchBadge，
+     因此旧的搜索逻辑（runMediaSearch 等）不需要重写。 -->
+<div class="modal-mask search-modal-mask" id="mediaSearchModal">
+  <div class="modal search-modal" role="dialog" aria-modal="true" aria-label="媒体搜索">
+    <h3>
+      <span>🔍 <span data-i18n="searchTitle">媒体搜索</span></span>
+      <span class="badge" id="mediaSearchBadge" data-i18n="searchIdle">输入关键词搜索媒体库</span>
+      <button class="close" type="button" onclick="closeMediaSearchModal()" aria-label="关闭">✕</button>
+    </h3>
+    <div class="media-actions" style="margin-bottom:12px;flex-wrap:wrap;">
+      <input id="mediaSearchInput" type="search" placeholder="搜索媒体库中的影视、书籍、音乐文件名" data-i18n-ph="searchPlaceholder"
+             style="flex:1;min-width:220px;padding:9px 12px;border:1px solid var(--border);border-radius:8px;background:var(--card2);color:var(--text);"
+             oninput="scheduleMediaSearch()" onkeydown="if(event.key==='Enter'){runMediaSearch()}else if(event.key==='Escape'){closeMediaSearchModal()}">
+      <button class="btn btn-primary" type="button" onclick="runMediaSearch()">🔍 <span data-i18n="searchRun">搜索</span></button>
+      <button class="btn" type="button" onclick="clearMediaSearch()" data-i18n="searchClear">清空</button>
+    </div>
+    <div id="mediaSearchResults"></div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
-<script src="/web/js/01-state.js?v=0.9.93"></script>
-<script src="/web/js/03-quality.js?v=0.9.93"></script>
-<script src="/web/js/02-media.js?v=0.9.93"></script>
-<script src="/web/js/03-features.js?v=0.9.93"></script>
-<script src="/web/js/05-home.js?v=0.9.93"></script>
-<script src="/web/js/06-theme.js?v=0.9.93"></script>
-<script src="/web/js/07-topnav.js?v=0.9.93"></script>
-<script src="/web/js/03-audio-zoom.js?v=0.9.93"></script>
-<script src="/web/js/04-boot.js?v=0.9.93"></script>
+<script src="/web/js/01-state.js?v=0.9.94"></script>
+<script src="/web/js/03-quality.js?v=0.9.94"></script>
+<script src="/web/js/02-media.js?v=0.9.94"></script>
+<script src="/web/js/03-features.js?v=0.9.94"></script>
+<script src="/web/js/05-home.js?v=0.9.94"></script>
+<script src="/web/js/06-theme.js?v=0.9.94"></script>
+<script src="/web/js/07-topnav.js?v=0.9.94"></script>
+<script src="/web/js/03-audio-zoom.js?v=0.9.94"></script>
+<script src="/web/js/04-boot.js?v=0.9.94"></script>
 </body>
 </html>

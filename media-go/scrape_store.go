@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 	"time"
 )
 
@@ -73,7 +74,15 @@ type scrapeCacheItem struct {
 	TVDBID    int64   `json:"tvdb_id,omitempty"`
 	MediaType string  `json:"media_type,omitempty"`
 	UserTitle string  `json:"user_title,omitempty"`
-	Kind      string  `json:"kind,omitempty"`         // movie / series / book / comic
+	/* v0.9.94（需求9 多季度分离刮削）：季标签刮削结果也要持久化 ——
+	   季号（4）、季标签原文（幽游白书S04）、季名与季简介。
+	   旧实现这几个字段只活在前端 localStorage 里，换设备/水合后季信息丢失，
+	   同一部剧的不同季又退回按文件名猜，表现为「第一季刮到后其余季对不上」。 */
+	SeasonNum      int    `json:"season_num,omitempty"`
+	SeasonTag      string `json:"season_tag,omitempty"`
+	SeasonName     string `json:"season_name,omitempty"`
+	SeasonOverview string `json:"season_overview,omitempty"`
+	Kind           string `json:"kind,omitempty"`         // movie / series / book / comic
 	State     string  `json:"scrape_state,omitempty"` // ok / failed / skip / pending
 	Reason    string  `json:"reason,omitempty"`
 	CheckedAt int64   `json:"checked_at,omitempty"`
@@ -334,7 +343,14 @@ func clipScrapeText(v string, max int) string {
 		return r
 	}, v))
 	if len(v) > max {
-		v = strings.TrimSpace(v[:max])
+		/* v0.9.94：按字节切会把多字节字符（中文/emoji）切成半个 —— 落盘 JSON 时
+		   半个字符会被替换成 U+FFFD，季名/季标签这类新字段会显示成乱码方块。
+		   这里退到合法 UTF-8 边界再裁。 */
+		trimmed := v[:max]
+		for len(trimmed) > 0 && !utf8.ValidString(trimmed) {
+			trimmed = trimmed[:len(trimmed)-1]
+		}
+		v = strings.TrimSpace(trimmed)
 	}
 	return v
 }
@@ -368,11 +384,18 @@ func sanitizeScrapeCacheItem(in scrapeCacheItem) (scrapeCacheItem, bool) {
 		Provider:  clipScrapeText(in.Provider, scrapeCacheMaxSmall),
 		MediaType: clipScrapeText(in.MediaType, 32),
 		UserTitle: clipScrapeText(in.UserTitle, scrapeCacheMaxTitle),
-		Kind:      clipScrapeText(in.Kind, 32),
-		Reason:    clipScrapeText(in.Reason, scrapeCacheMaxTitle),
-		TMDBID:    in.TMDBID,
-		TVDBID:    in.TVDBID,
-		CheckedAt: in.CheckedAt,
+		/* v0.9.94（需求9）：季字段同样限长；季号非法（负数/过大）直接归零不拒收整条。 */
+		SeasonTag:      clipScrapeText(in.SeasonTag, scrapeCacheMaxSmall),
+		SeasonName:     clipScrapeText(in.SeasonName, scrapeCacheMaxTitle),
+		SeasonOverview: clipScrapeText(in.SeasonOverview, scrapeCacheMaxDesc),
+		Kind:           clipScrapeText(in.Kind, 32),
+		Reason:         clipScrapeText(in.Reason, scrapeCacheMaxTitle),
+		TMDBID:         in.TMDBID,
+		TVDBID:         in.TVDBID,
+		CheckedAt:      in.CheckedAt,
+	}
+	if in.SeasonNum > 0 && in.SeasonNum <= 99 {
+		out.SeasonNum = in.SeasonNum
 	}
 	for _, raw := range []string{in.Poster, in.Backdrop, in.Logo, in.Fanart} {
 		if !validScrapeCacheURL(strings.TrimSpace(raw)) {

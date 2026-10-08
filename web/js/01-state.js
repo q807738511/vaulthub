@@ -18,7 +18,7 @@ let vaultHubSessionPingedAt = 0;
    历史故障：v0.8.3→v0.8.5 的前端修改在服务端已生效，但浏览器仍执行缓存里的
    旧 02-media.js，用户看到「没有更新」。现在入口页 no-store、静态资源带 ?v=，
    并在启动时做一次一致性自查，不一致就绕过缓存强制重载一次。 */
-const VAULTHUB_SCRIPT_VERSION = "0.9.93";
+const VAULTHUB_SCRIPT_VERSION = "0.9.94";
 function ensureFreshAssets() {
   /* expected 为空 = 浏览器执行的 index.html 早于 v0.8.6（旧版本入口页没有声明
      版本号），同样属于"页面是旧的"，也需要换 URL 重新取一次。 */
@@ -366,6 +366,8 @@ const I18N = {
     libScanRetryFailed: "仅重试失败项",
     editTitleLabel: "媒体名称（用于刮削搜索）",
     editYearLabel: "年份",
+    /* v0.9.94（需求9）：剧集分季刮削的标签写法说明。 */
+    editSeasonHint: "剧集分季：标签里写「剧名S01 / 剧名S04」表示这一季按该剧的第 1 / 第 4 季刮削。自动刮削分不清哪一季时，用它手工指定即可（同一部剧的不同季会归到同一张剧集卡，卡内按季分开）。",
     editScrapeHint: "名称与年份会作为刮削搜索词：保存后立即按新名称重刮一次，跨设备一致。",
     setLibExistingHint: "顶栏只展示这里创建时填写的库名称。每个库都可以单独重新扫描、打开或删除。",
     setLibAdd: "媒体库增加",
@@ -397,6 +399,8 @@ const I18N = {
     navGroupCustom: "自定义",
     settings: "系统设置", about: "关于", settingsLead: "系统设置现在是独立配置页（不再是弹窗）：媒体库、外观主题、刮削配置与硬件配置分开；账户与登录页内含登录状态、关于和 Caddy 反向代理入口。",
     navMediaSearch: "媒体搜索", searchTitle: "媒体搜索", searchIdle: "输入关键词搜索媒体库",
+    /* v0.9.94（需求2）：搜索已改为顶栏放大镜弹窗，这一页是旧链接的落点页。 */
+    searchLead: "媒体搜索已改为顶栏的放大镜按钮：点一下弹出搜索弹窗，不离开当前页面即可搜索整个媒体库。",
     searchPlaceholder: "搜索媒体库中的影视、书籍、音乐文件名", searchRun: "搜索", searchClear: "清空",
     searchRunning: "正在搜索媒体库…", searchNoLibrary: "还没有已添加的媒体库，请先在系统设置中添加。",
     searchEmpty: "没有找到与「{q}」匹配的媒体文件。", searchHits: "命中 {n} 个文件",
@@ -426,13 +430,6 @@ const I18N = {
     vpDiag: "复制播放诊断",
     vpDiagOk: "播放诊断已复制",
     vpDiagFail: "剪贴板不可用，信息已在「获取信息」面板中",
-    vpRepeat: "重复播放",
-    vpRepeatOff: "不重复",
-    vpRepeatOne: "单集循环",
-    vpRepeatAll: "列表循环",
-    vpShuffle: "随机播放",
-    vpShuffleOn: "随机播放已开启",
-    vpShuffleOff: "随机播放已关闭",
     vpSettings: "设置：转码质量、音频流与字幕",
     vpQuality: "转码质量",
     vpQualityAuto: "自动（推荐）",
@@ -650,6 +647,7 @@ const I18N = {
     libScanRetryFailed: "僅重試失敗項",
     editTitleLabel: "媒體名稱（用於刮削搜尋）",
     editYearLabel: "年份",
+    editSeasonHint: "劇集分季：標籤裡寫「劇名S01 / 劇名S04」表示這一季依該劇的第 1 / 第 4 季刮削。自動刮削分不清哪一季時，用它手工指定即可（同一部劇的不同季會歸到同一張劇集卡，卡內依季分開）。",
     editScrapeHint: "名稱與年份會作為刮削搜尋詞：儲存後立即依新名稱重刮一次，跨裝置一致。",
     setLibExistingHint: "側邊欄只顯示這裡建立時填寫的庫名稱。每個庫都可以單獨重新掃描、開啟或刪除。",
     setLibAdd: "媒體庫新增",
@@ -783,6 +781,7 @@ const I18N = {
     navGroupBook: "電子書刊", navGroupVideo: "影視作品", navGroupAudio: "音視作品",
     settingsLead: "系統設定現在是獨立設定頁（不再是彈窗）：媒體庫、外觀主題、刮削設定與硬體設定分開；帳戶與登入頁內含登入狀態、關於與 Caddy 反向代理入口。",
     navMediaSearch: "媒體搜尋", searchTitle: "媒體搜尋", searchIdle: "輸入關鍵字搜尋媒體庫",
+    searchLead: "媒體搜尋已改為頂欄的放大鏡按鈕：點一下彈出搜尋彈窗，不必離開當前頁面即可搜尋整個媒體庫。",
     searchPlaceholder: "搜尋媒體庫中的影視、書籍、音樂檔名", searchRun: "搜尋", searchClear: "清空",
     searchRunning: "正在搜尋媒體庫…", searchNoLibrary: "還沒有已新增的媒體庫，請先在系統設定中新增。",
     searchEmpty: "找不到與「{q}」相符的媒體檔案。", searchHits: "命中 {n} 個檔案",
@@ -812,13 +811,6 @@ const I18N = {
     vpDiag: "複製播放診斷",
     vpDiagOk: "播放診斷已複製",
     vpDiagFail: "剪貼簿不可用，資訊已在「取得資訊」面板中",
-    vpRepeat: "重複播放",
-    vpRepeatOff: "不重複",
-    vpRepeatOne: "單集循環",
-    vpRepeatAll: "列表循環",
-    vpShuffle: "隨機播放",
-    vpShuffleOn: "隨機播放已開啟",
-    vpShuffleOff: "隨機播放已關閉",
     vpSettings: "設定：轉碼品質、音訊流與字幕",
     vpQuality: "轉碼品質",
     vpQualityAuto: "自動（建議）",
@@ -939,6 +931,7 @@ const I18N = {
     editTitleLabel: "Title (used as the scrape query)",
     editYearLabel: "Year",
     editScrapeHint: "Title and year are used as the scrape query: saving re-scrapes this item by the new title.",
+    editSeasonHint: "Seasonal split: a tag like \"ShowS04\" scrapes this season as season 4 of that show. Use it when auto matching cannot tell seasons apart (seasons of one show stay in one card, split by season).",
     setLibExistingHint: "The top bar shows only the library names you enter here. Each library can be rescanned, opened or removed.",
     setLibAdd: "Add a library",
     setLibAddHint: "Pick a source: local libraries use absolute paths mounted inside the container; external services connect to Emby / Navidrome / Komga and friends.",
@@ -1071,6 +1064,7 @@ const I18N = {
     navGroupBook: "Books & Comics", navGroupVideo: "Movies & TV", navGroupAudio: "Music & MV",
     settingsLead: "Settings is now a dedicated page (no longer a modal): libraries, appearance and separate scraping/hardware tabs live here; Account & Sign-in holds the session state, About and the Caddy reverse-proxy entry.",
     navMediaSearch: "Media search", searchTitle: "Media search", searchIdle: "Type a keyword to search your libraries",
+    searchLead: "Media search now lives in the magnifier button in the top bar: click it to open the search dialog without leaving the page.",
     searchPlaceholder: "Search movie, book and music file names in your libraries", searchRun: "Search", searchClear: "Clear",
     searchRunning: "Searching libraries…", searchNoLibrary: "No library added yet — add one in system settings first.",
     searchEmpty: "No media file matches \"{q}\".", searchHits: "{n} files matched",
@@ -1100,13 +1094,6 @@ const I18N = {
     vpDiag: "Copy playback diagnostics",
     vpDiagOk: "Playback diagnostics copied",
     vpDiagFail: "Clipboard unavailable; see the Playback info panel",
-    vpRepeat: "Repeat",
-    vpRepeatOff: "No repeat",
-    vpRepeatOne: "Repeat one",
-    vpRepeatAll: "Repeat all",
-    vpShuffle: "Shuffle",
-    vpShuffleOn: "Shuffle on",
-    vpShuffleOff: "Shuffle off",
     vpSettings: "Settings: quality, audio and subtitles",
     vpQuality: "Transcode quality",
     vpQualityAuto: "Auto (recommended)",
@@ -1592,6 +1579,8 @@ function switchView(v, libId) {
   document.querySelectorAll(".view").forEach(s => s.classList.remove("active"));
   const view = document.getElementById("view-" + v);
   if (view) view.classList.add("active");
+  /* v0.9.94（需求2）：搜索已是弹窗，旧的 #view-search 落点（书签/旧链接）自动弹窗。 */
+  if (v === "search" && typeof openMediaSearchModal === "function") openMediaSearchModal();
   /* v0.9.93：侧栏底部设置按钮已随侧栏移除；设置页的选中态由顶栏头像菜单承接。 */
   /* 音乐播放器只在音视作品视图显示，出现方式为屏幕居中浮层。 */
   const player = document.getElementById("audio-bottom-player");
@@ -1665,8 +1654,13 @@ function updatePlaybackDock() {
   const dock = playbackDockEl();
   if (!dock) return;
   const cur = activePlayback();
-  const surfaceVisible = cur && typeof playbackSurfaceVisible === "function" ? playbackSurfaceVisible(cur) : false;
-  const show = !!cur && !surfaceVisible;
+  /* v0.9.94（需求1）：迷你播放器「常驻顶栏」—— 只要还有没被主动关闭的播放
+     （正在播/暂停中）就显示；只有一种情况不显示：影视播放器正占满窗口
+     （body.player-immersive，此时顶栏本身已回缩，chip 跟着一起收起来）。
+     点它「回到播放」，✕ 是主动关闭（会清掉这条）。 */
+  /* 加可选链：document.body 在极早期调用/测试夹具里可能还不存在，不该因此抛错。 */
+  const immersive = !!(document.body && document.body.classList && document.body.classList.contains("player-immersive"));
+  const show = !!cur && !immersive;
   dock.classList.toggle("show", show);
   if (!show) return;
   const playing = typeof activePlaybackPlaying === "function" ? !!activePlaybackPlaying(cur) : !cur.paused;

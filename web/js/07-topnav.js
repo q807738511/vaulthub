@@ -86,7 +86,9 @@ function syncTopNavView(view) {
 }
 
 /* ---------- 全局搜索 ---------- */
-function topNavSearchBox() { return document.getElementById("topSearch"); }
+/* v0.9.94（需求2）：顶栏搜索框已缩成放大镜图标，现在唯一的搜索输入框是
+   搜索弹窗里的 #mediaSearchInput —— 过滤与「回车搜索」都指向它。 */
+function topNavSearchBox() { return document.getElementById("mediaSearchInput"); }
 function onTopSearchInput() {
   const box = topNavSearchBox();
   topNavSearchQuery = box ? box.value.trim() : "";
@@ -127,10 +129,35 @@ function applyTopSearchFilter() {
 function runTopSearchGo() {
   const q = (topNavSearchBox() ? topNavSearchBox().value : "").trim();
   if (!q) return;
-  const box = document.getElementById("mediaSearchInput");
-  if (box) box.value = q;
   if (typeof openMediaSearch === "function") openMediaSearch();
+  if (typeof runMediaSearch === "function") runMediaSearch();
 }
+
+/* ---------- v0.9.94（需求2）：媒体搜索弹窗 ----------
+   顶栏的放大镜按钮弹出它（弹窗带弹出动画，见 .search-modal）。
+   保留「点遮罩/按 Esc 关闭」「Ctrl K 打开」两个习惯入口；
+   图标按钮的 aria-expanded 与弹窗状态同步。 */
+function mediaSearchModalEl() { return document.getElementById("mediaSearchModal"); }
+function mediaSearchModalOpen() { const m = mediaSearchModalEl(); return !!(m && m.classList.contains("show")); }
+function syncSearchButtonState() {
+  const button = document.getElementById("tnSearchButton");
+  if (button) button.setAttribute("aria-expanded", mediaSearchModalOpen() ? "true" : "false");
+}
+function openMediaSearchModal(focus = true) {
+  const modal = mediaSearchModalEl();
+  if (!modal) return false;
+  modal.classList.add("show");
+  syncSearchButtonState();
+  if (focus) { const box = topNavSearchBox(); if (box) { box.focus(); if (box.select) box.select(); } }
+  return true;
+}
+function closeMediaSearchModal() {
+  const modal = mediaSearchModalEl();
+  if (!modal) return;
+  modal.classList.remove("show");
+  syncSearchButtonState();
+}
+function toggleMediaSearchModal() { return mediaSearchModalOpen() ? closeMediaSearchModal() : openMediaSearchModal(); }
 
 /* ---------- 右上角头像菜单 ---------- */
 function topNavMenuEl() { return document.getElementById("topUserMenu"); }
@@ -324,14 +351,8 @@ function clearNotifications() {
   vhNotifyPersist();
   renderNotifications();
 }
-/* v0.9.85：搜索框快捷键提示按平台显示 —— Windows/Android 上 ⌘ 会渲染成方块乱码。 */
-function applySearchKbdLabel() {
-  const kbd = document.getElementById("topSearchKbd");
-  if (!kbd) return;
-  const ua = navigator.userAgent || "";
-  const isApple = /Mac|iPhone|iPad|iPod/.test(ua) || /Mac/.test(navigator.platform || "");
-  kbd.textContent = isApple ? "⌘K" : "Ctrl K";
-}
+/* v0.9.94（需求2）：搜索框已缩成放大镜图标，顶栏不再有 kbd 快捷键提示元素，
+   原来那个「按平台渲染快捷键提示」的函数一并移除（功能由弹窗自己承担）。 */
 
 /* ---------- 初始化 ---------- */
 function initTopNav() {
@@ -341,7 +362,6 @@ function initTopNav() {
   syncTopNavView(active ? active.id : "view-home");
   fillTopUserMenu();
   renderNotifications();
-  applySearchKbdLabel();
   if (!initTopNav.bound) {
     initTopNav.bound = true;
     document.addEventListener("click", event => {
@@ -352,14 +372,18 @@ function initTopNav() {
       /* 书刊页的「视图设置」浮层：点面板与触发按钮以外的地方收起。 */
       const inside = event.target && event.target.closest && event.target.closest("#bookViewSet, #bookViewSetButton");
       if (!inside && typeof closeBookViewSettings === "function") closeBookViewSettings();
+      /* v0.9.94（需求2）：点弹窗遮罩关闭搜索弹窗（弹窗面板内不关）。 */
+      if (event.target && event.target.classList && event.target.classList.contains("search-modal-mask")) closeMediaSearchModal();
     });
     document.addEventListener("keydown", event => {
       if ((event.metaKey || event.ctrlKey) && String(event.key).toLowerCase() === "k") {
-        const box = topNavSearchBox();
-        if (box) { event.preventDefault(); box.focus(); box.select(); }
+        /* v0.9.94（需求2）：Ctrl/⌘+K 直接弹出搜索弹窗并聚焦输入框。 */
+        event.preventDefault();
+        openMediaSearchModal();
       } else if (event.key === "Escape") {
         closeTopUserMenu();
         closeNotifyPanel();
+        closeMediaSearchModal();
       }
     });
   }
