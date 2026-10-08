@@ -38,6 +38,8 @@ if [ -f "$TARGET_DIR/caddy" ]; then chmod +x "$TARGET_DIR/caddy"; fi
 if [ -f "$TARGET_DIR/vaulthub-manager" ]; then chmod +x "$TARGET_DIR/vaulthub-manager"; fi
 
 echo "Starting restored Compose service ..."
-(cd "$TARGET_DIR" && docker compose up -d --build)
+# v0.9.93：回滚必须用「本地已固定的那个镜像」，绝不能在回滚时按 tag 去拉新镜像，
+# 否则回滚会被远端 tag 直接覆盖（compose 里没有 build: 段，--build 也早已无意义）。
+(cd "$TARGET_DIR" && docker compose up -d --force-recreate --pull never)
 
 echo "Rollback complete from: $BACKUP_DIR"

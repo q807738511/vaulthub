@@ -78,10 +78,13 @@ if [ ! -f "$TARGET_DIR/data/Caddyfile" ]; then
   echo "      初始化 data/Caddyfile"
 fi
 
-# 4. 构建并启动
+# 4. 拉取镜像并启动
+# v0.9.93：compose 现在是「引用镜像」（image: ...），不再有 build: 段落 —— 旧的
+# `--build` 在这里等于什么也不做，镜像缺失时会把「拉不到镜像」伪装成启动失败。
+# 需要镜像就去拉，本地已有就不重复拉。
 echo ""
-echo "[4/5] 构建并启动 ..."
-(cd "$TARGET_DIR" && docker compose up -d --build)
+echo "[4/5] 拉取镜像并启动 ..."
+(cd "$TARGET_DIR" && docker compose up -d --pull missing)
 
 # 5. 验证
 echo ""

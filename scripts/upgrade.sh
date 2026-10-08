@@ -80,8 +80,10 @@ fi
   sha256sum Dockerfile docker-compose.yml .env vaulthub.env .dockerignore caddy vaulthub-manager Caddyfile index.html README.md > SHA256SUMS
 )
 
-echo "Building and starting VaultHub ..."
-(cd "$TARGET_DIR" && docker compose up -d --build)
+echo "Pulling and starting VaultHub ..."
+# v0.9.93：升级就是要拿到目标 tag 的新镜像（compose 引用 image:，没有 build: 段，
+# 旧写法 `--build` 是空操作，会导致「升级成功但其实还是旧镜像」）。
+(cd "$TARGET_DIR" && docker compose up -d --force-recreate --pull always)
 
 echo "Upgrade complete: $VERSION"
 echo "Backup directory: $BACKUP_DIR"
