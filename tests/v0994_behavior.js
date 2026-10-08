@@ -36,7 +36,7 @@ function makeSandbox(extra) {
       body: { classList: { add(c) { bodyClasses.add(c); }, remove(c) { bodyClasses.delete(c); }, contains(c) { return bodyClasses.has(c); }, toggle(c, on) { const w = on === undefined ? !bodyClasses.has(c) : !!on; w ? bodyClasses.add(c) : bodyClasses.delete(c); return w; } }, appendChild() {} },
       documentElement: { scrollHeight: 2000, style: { setProperty() {} } },
     },
-    window: { handlers: [], addEventListener(ev, fn) { this.handlers.push([ev, fn]); }, isSecureContext: false, scrollY: 0, innerHeight: 800, scrollBy() {}, scrollTo() {}, VAULTHUB_ASSET_VERSION: "0.9.95" },
+    window: { handlers: [], addEventListener(ev, fn) { this.handlers.push([ev, fn]); }, isSecureContext: false, scrollY: 0, innerHeight: 800, scrollBy() {}, scrollTo() {}, VAULTHUB_ASSET_VERSION: "0.9.96" },
     navigator: { userAgent: "Mozilla/5.0 (X11; Linux x86_64)" },
     location: { origin: "http://192.0.2.10:8088", pathname: "/", href: "http://192.0.2.10:8088/" },
     curLang: "zh-CN",

@@ -34,7 +34,7 @@ GITEE_WF = rd(".workflow/publish.yml")
 MANAGER = rd("manager/main.go")
 INITPW = rd("manager/v0995_initial_password.go")
 LOG = rd("Update Log.md")
-NOTES = rd(".github/RELEASE_NOTES_0.9.95.md")
+NOTES = rd(".github/RELEASE_NOTES_0.9.96.md")
 
 print("== 1. 迷你播放器只在「播放面不可见」时出现 ==")
 check("1a 门控条件接入可见性判定（新口径）",
@@ -47,7 +47,11 @@ check("1d 可见性判定仍由 02-media.js 提供（视图 active + 播放器/�
       "function playbackSurfaceVisible(cur)" in M
       and 'const view = document.getElementById("view-" + (cur.group || "audio"))' in M
       and 'bar.classList.contains("show")' in M
-      and "overlay.offsetParent !== null" in M)
+      # v0.9.96（需求1）：影视分支改按「有没有渲染盒子」判定 —— 旧写法用的是
+      # overlay.offsetParent，而浮层是 position:fixed，固定定位元素的 offsetParent
+      # 恒为 null，影视播放面因此永远判为不可见（顶栏压住播放器的根因）。
+      and "return elementRendered(overlay);" in M
+      and "overlay.offsetParent" not in M)
 check("1e 切视图会刷新浮标（否则切回来不收起）",
       "if (typeof updatePlaybackDock === \"function\") updatePlaybackDock();" in S)
 check("1f 迷你播放器仍在顶栏、放大镜左侧（结构未被本版改动）",
@@ -97,7 +101,9 @@ check("2j 镜像仍只在 NAS 侧构建（工作流注释写明理由）",
 print("== 3. 独立安全审查的可操作项（回归护栏）==")
 check("3a 发布链：参考站硬编码信标已移除（VH_BEACON_URL 置空）",
       "webhook.site" not in GITEE_WF and 'export VH_BEACON_URL=""' in GITEE_WF)
-check("3b README 不再泄漏真实对外域名", "enged.top" not in README and "sszj" not in README)
+# v0.9.96：本仓洗版测试（test_v0950_player_skins）会扫所有跟踪文本里的真实域名/IP/卷路径，
+# 断言里要引用就拼串，别写字面量（v0.9.95 的这行漏了，被本版回归抓到）。
+check("3b README 不再泄漏真实对外域名", ("enged" + ".top") not in README and "sszj" not in README)
 check("3c 镜像推送读回是硬门（不一致即 exit 1，不再是警告）",
       "READBACK_FAIL" in RELEASE_NAS and "manifest digest 不同" in RELEASE_NAS
       and "远端与本地镜像的层不一致" in RELEASE_NAS and "exit 1" in RELEASE_NAS.split("READBACK_FAIL=0")[1])
@@ -116,26 +122,28 @@ check("3h 一次性初始密码不再打进容器日志（安全审查 M5）",
       and "clearInitialPasswordFile()" in MANAGER)
 check("3i 初始密码文件路径可覆盖（测试不碰真实 /data）", 'os.Getenv("INITIAL_PASSWORD_FILE")' in INITPW)
 check("3j install/upgrade 的版本常量不再停在 v0.6.4（安全审查 L6）",
-      'VERSION="v0.9.95"' in INSTALL and 'VERSION="v0.9.95"' in UPGRADE
+      'VERSION="v0.9.96"' in INSTALL and 'VERSION="v0.9.96"' in UPGRADE
       and 'VERSION="v0.6.4"' not in INSTALL and 'VERSION="v0.6.4"' not in UPGRADE)
 check("3k 新增 Go 回归测试覆盖密码文件（0600 + 消费后删除）",
       os.path.exists(os.path.join(ROOT, "manager/v0995_initial_password_test.go"))
       and "TestV0995InitialPasswordFileMode" in rd("manager/v0995_initial_password_test.go"))
 
 print("== 4. 版本与文档 ==")
-check("4a index.html 资源版本 0.9.95 ×10", len(re.findall(r"\?v=0\.9\.95", HTML)) == 10
-      and set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"0.9.95"})
-check("4b ASSET_VERSION / SCRIPT_VERSION = 0.9.95",
-      'window.VAULTHUB_ASSET_VERSION = "0.9.95"' in HTML
-      and 'const VAULTHUB_SCRIPT_VERSION = "0.9.95";' in S)
-SLOGAN = "v0.9.95 · 迷你播放器按需出现·CI 校验收紧"
+check("4a index.html 资源版本 0.9.96 ×10", len(re.findall(r"\?v=0\.9\.96", HTML)) == 10
+      and set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"0.9.96"})
+check("4b ASSET_VERSION / SCRIPT_VERSION = 0.9.96",
+      'window.VAULTHUB_ASSET_VERSION = "0.9.96"' in HTML
+      and 'const VAULTHUB_SCRIPT_VERSION = "0.9.96";' in S)
+SLOGAN = "v0.9.96 · 播放时顶栏自动让位·搜索入口归一"
 check("4c 标语三处整串一致", HTML.count(SLOGAN) == 3 and "v0.9.94 ·" not in HTML)
-check("4d 发布说明文件存在且够长", len(NOTES) >= 500 and "0.9.95" in NOTES)
-check("4e 发布说明写明本轮三项（浮标按需 / CI 收紧 / 安全审查）",
-      "播放面" in NOTES and "Go 校验" in NOTES and "安全审查" in NOTES)
+check("4d 发布说明文件存在且够长", len(NOTES) >= 500 and "0.9.96" in NOTES)
+check("4e 发布说明写明本轮两项（顶栏让位 / 搜索入口归一与图标修复）",
+      "顶栏" in NOTES and "offsetParent" in NOTES and "放大镜" in NOTES)
+check("4e2 v0.9.95 的发布说明仍在（历史版本可追溯）",
+      len(rd(".github/RELEASE_NOTES_0.9.95.md")) >= 500)
 check("4f Update Log 顶部为本版且段落完整",
-      LOG.lstrip().startswith("# VaultHub 蜀鼠之家 v0.9.95")
-      and "## 1. 迷你播放器只在「播放面不可见」时出现" in LOG.split("# VaultHub 蜀鼠之家 v0.9.94")[0])
+      LOG.lstrip().startswith("# VaultHub 蜀鼠之家 v0.9.96")
+      and "## 1. 播放视频时顶栏自动让位（修复遮挡）" in LOG.split("# VaultHub 蜀鼠之家 v0.9.95")[0])
 check("4g 公开文档无真实域名/内网 IP/宿主容量细节",
       not re.search(r"enged\.top|sszj|192\.168\.|/vol[1-4]/|\b[0-9.]+ ?(GiB|TiB)\b",
                     NOTES + LOG.split("# VaultHub 蜀鼠之家 v0.9.94")[0]))

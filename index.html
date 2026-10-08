@@ -4,10 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VaultHub 蜀鼠之家</title>
-<link rel="stylesheet" href="/web/css/main.css?v=0.9.95">
+<link rel="stylesheet" href="/web/css/main.css?v=0.9.96">
 <script>
 /* 资源版本号：index.html 用它给所有静态资源打查询串。 */
-window.VAULTHUB_ASSET_VERSION = "0.9.95";
+window.VAULTHUB_ASSET_VERSION = "0.9.96";
 </script>
 <script>
 /* v0.9.73 主题防闪：调色板/明暗/强调色必须在首帧渲染前落到 <html> 上，
@@ -59,7 +59,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.95";
     <button class="btn btn-primary" style="width:100%;margin-top:12px;" onclick="vaultHubLogin()">🔐 登录</button>
     <div class="auth-error" id="authError"></div>
     <!-- v0.9.93：登录页也显示版本标语（原第三处在侧栏页脚，侧栏已移除）。 -->
-    <div class="login-ver"><span id="loginVerLabel" class="ver">v0.9.95 · 迷你播放器按需出现·CI 校验收紧</span></div>
+    <div class="login-ver"><span id="loginVerLabel" class="ver">v0.9.96 · 播放时顶栏自动让位·搜索入口归一</span></div>
   </div>
 </div>
 
@@ -103,8 +103,9 @@ window.VAULTHUB_ASSET_VERSION = "0.9.95";
     <nav class="tn-nav" aria-label="主导航">
       <button class="tn-item active" type="button" data-topnav="home" onclick="switchView('home')" title="首页"><span class="ic">🏠</span><span class="nl" data-i18n="navHome">首页</span></button>
       <button class="tn-item" type="button" data-topnav="pt" data-module="pt" onclick="switchView('pt')" title="PT 管理"><span class="ic">🌊</span><span class="nl" data-i18n="navPt">PT 管理</span></button>
-      <!-- v0.9.93：原侧栏的「媒体搜索」入口迁到顶栏（侧栏已移除）。 -->
-      <button class="tn-item" type="button" data-topnav="search" onclick="openMediaSearch()" title="媒体搜索"><span class="ic">🔍</span><span class="nl" data-i18n="navMediaSearch">媒体搜索</span></button>
+      <!-- v0.9.96（需求2）：左侧导航里的「🔍 媒体搜索」按钮已移除 —— 顶栏右侧本就有
+           放大镜图标按钮（#tnSearchButton，点开搜索弹窗），左右各一个入口属于重复。
+           旧书签/旧链接仍会落到 #view-search，那里会自动弹出搜索弹窗（openMediaSearch）。 -->
     </nav>
     <!-- v0.9.93：自定义模块标签（原侧栏 #customNav 迁到顶栏，渲染由 renderCustomNav 负责）。 -->
     <div class="tn-nav tn-nav-custom" id="topCustomNav" role="tablist" aria-label="自定义模块"></div>
@@ -142,7 +143,11 @@ window.VAULTHUB_ASSET_VERSION = "0.9.95";
       <button class="tn-icon-btn tn-search-open" id="tnSearchButton" type="button"
               title="搜索媒体库（Ctrl K）" aria-label="搜索媒体库" aria-haspopup="dialog" aria-expanded="false"
               onclick="toggleMediaSearchModal()">
-        <svg class="vc-svg tn-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="10.6" cy="10.6" r="6.4"/><path d="M15.4 15.4 20.6 20.6"/></svg>
+        <!-- v0.9.96（需求2）：图标修复 —— 这个 SVG 原先既没有 fill/stroke 属性，样式里也没有
+             兜底，浏览器按 SVG 默认 fill:black 渲染，于是只剩一个实心黑圆点（手柄是零面积线段，
+             画不出来）。现在显式声明「无填充 + currentColor 描边 + 圆头」，与站内其它线性图标一致。 -->
+        <svg class="vc-svg tn-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false"
+             fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.8" cy="10.8" r="6.5"/><path d="M15.6 15.6 20.5 20.5"/></svg>
       </button>
       <!-- v0.9.85：搜索框右侧的通知喇叭 —— 功能通知与刮削信息明细（刮削进度/成功失败/跳过原因）。 -->
       <div class="tn-notify-wrap">
@@ -170,7 +175,9 @@ window.VAULTHUB_ASSET_VERSION = "0.9.95";
       <span class="avatar" id="topUserAvatar" aria-hidden="true">E</span>
       <span class="who"><strong id="topUserName">管理员</strong><span id="topUserMeta">VaultHub</span></span>
     </div>
-    <button class="tn-popitem" type="button" role="menuitem" onclick="topUserMenuGo('library')"><span class="ic ic-gear"><svg class="vc-svg tn-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="9.5" cy="14" r="3.3"/><path d="M9.5 8.6v1.6M9.5 17.8v1.6M4.1 14h1.6M13.3 14h1.6M5.7 10.2l1.1 1.1M12.2 16.7l1.1 1.1M13.3 10.2l-1.1 1.1M6.8 16.7l-1.1 1.1"/><circle cx="17.6" cy="8.4" r="2.05" fill="currentColor" stroke="none" stroke-width="0"/><path d="M17.6 4.9v1.05M17.6 10.85v1.05M14.1 8.4h1.05M20.05 8.4H21.1M15.4 6.15l.75.75M19.05 9.8l.75.75M19.8 6.15l-.75.75M16.15 9.8l-.75.75"/></svg></span>系统设置<span class="k">媒体库 · 外观 · 刮削 · 账户</span></button>
+    <button class="tn-popitem" type="button" role="menuitem" onclick="topUserMenuGo('library')"><span class="ic ic-gear"><!-- v0.9.96（需求2）：与放大镜同一类缺陷 —— 子元素没有任何 fill/stroke 声明，
+                 SVG 默认 fill:black，齿轮会渲染成黑块。这里按站内惯例补上描边（内圈实心点自带
+                 fill="currentColor" stroke="none"，元素自身的呈现属性优先级更高，不受影响）。 --><svg class="vc-svg tn-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="9.5" cy="14" r="3.3"/><path d="M9.5 8.6v1.6M9.5 17.8v1.6M4.1 14h1.6M13.3 14h1.6M5.7 10.2l1.1 1.1M12.2 16.7l1.1 1.1M13.3 10.2l-1.1 1.1M6.8 16.7l-1.1 1.1"/><circle cx="17.6" cy="8.4" r="2.05" fill="currentColor" stroke="none" stroke-width="0"/><path d="M17.6 4.9v1.05M17.6 10.85v1.05M14.1 8.4h1.05M20.05 8.4H21.1M15.4 6.15l.75.75M19.05 9.8l.75.75M19.8 6.15l-.75.75M16.15 9.8l-.75.75"/></svg></span>系统设置<span class="k">媒体库 · 外观 · 刮削 · 账户</span></button>
     <button class="tn-popitem" type="button" role="menuitem" onclick="topUserMenuGo('look')"><span class="ic">🎨</span>外观主题<span class="k" id="topMenuTheme">当前：青瓷</span></button>
     <button class="tn-popitem" type="button" role="menuitem" onclick="topUserMenuModules()"><span class="ic">★</span>自定义模块<span class="k">添加 / 管理</span></button>
     <button class="tn-popitem" type="button" role="menuitem" onclick="topUserMenuGo('account')"><span class="ic">👤</span>账户与登录<span class="k">会话与退出</span></button>
@@ -742,7 +749,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.95";
          页脚在启动时由 syncAppFooterVersion() 读取并同步，发版不会漏改。 -->
     <footer class="app-footer" id="appFooter">
       <span class="af-name">VaultHub 蜀鼠之家</span>
-      <span id="appFooterVer" class="ver">v0.9.95 · 迷你播放器按需出现·CI 校验收紧</span>
+      <span id="appFooterVer" class="ver">v0.9.96 · 播放时顶栏自动让位·搜索入口归一</span>
       <span class="af-note" data-i18n="footerAboutHint">版本与「系统设置 → 账户与登录 → 关于」中的版本参数保持一致</span>
     </footer>
 
@@ -863,7 +870,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.95";
   <div class="modal">
     <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
     <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
-    <div class="about-row" data-about-ver="1"><span data-i18n="aboutVer">版本</span><b>v0.9.95 · 迷你播放器按需出现·CI 校验收紧</b></div>
+    <div class="about-row" data-about-ver="1"><span data-i18n="aboutVer">版本</span><b>v0.9.96 · 播放时顶栏自动让位·搜索入口归一</b></div>
     <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>Go (media/manager/subtitle) · Caddy · FFmpeg · SQLite · HTML/CSS/JS</b></div>
     <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>VaultHub 内置系统监控</b></div>
     <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>
@@ -1053,14 +1060,14 @@ window.VAULTHUB_ASSET_VERSION = "0.9.95";
 
 <div class="toast" id="toast"></div>
 
-<script src="/web/js/01-state.js?v=0.9.95"></script>
-<script src="/web/js/03-quality.js?v=0.9.95"></script>
-<script src="/web/js/02-media.js?v=0.9.95"></script>
-<script src="/web/js/03-features.js?v=0.9.95"></script>
-<script src="/web/js/05-home.js?v=0.9.95"></script>
-<script src="/web/js/06-theme.js?v=0.9.95"></script>
-<script src="/web/js/07-topnav.js?v=0.9.95"></script>
-<script src="/web/js/03-audio-zoom.js?v=0.9.95"></script>
-<script src="/web/js/04-boot.js?v=0.9.95"></script>
+<script src="/web/js/01-state.js?v=0.9.96"></script>
+<script src="/web/js/03-quality.js?v=0.9.96"></script>
+<script src="/web/js/02-media.js?v=0.9.96"></script>
+<script src="/web/js/03-features.js?v=0.9.96"></script>
+<script src="/web/js/05-home.js?v=0.9.96"></script>
+<script src="/web/js/06-theme.js?v=0.9.96"></script>
+<script src="/web/js/07-topnav.js?v=0.9.96"></script>
+<script src="/web/js/03-audio-zoom.js?v=0.9.96"></script>
+<script src="/web/js/04-boot.js?v=0.9.96"></script>
 </body>
 </html>

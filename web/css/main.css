@@ -203,7 +203,13 @@
   /* v0.9.93：影视播放时顶栏回缩 —— 把 --topbar-h 归零等于真正释放整窗占位
      （.main 的 padding-top、播放器浮层的 top 都跟着变成 0），顶栏同时滑出视口。 */
   body.player-immersive { --topbar-h: 0px; }
-  body.player-immersive .topbar { transform: translateY(-100%); opacity: 0; pointer-events: none; }
+  /* v0.9.96：回缩要"真的看不见"，不能只靠 0 高度 + 淡出：
+     · 0 高度下子元素仍会溢出到视口里（flex 居中，居中算在 0 高度盒子上），
+       淡出动画未走完时是能看见的 —— 加 visibility:hidden 让盒子与子元素一起消失；
+     · 底边那 1px 分隔线不随高度归零，会横在视频最上沿（实测顶栏底线=1、播放器顶线=0），
+       一并改成透明，做到顶栏与播放器零重叠。 */
+  body.player-immersive .topbar { transform: translateY(-100%); opacity: 0; pointer-events: none;
+    visibility: hidden; border-bottom-color: transparent; }
   .topbar { transition: transform .18s ease, opacity .18s ease; }
   .topbar {
     position: fixed; top: 0; left: 0; right: 0; height: var(--topbar-h); z-index: 600;
@@ -1679,7 +1685,9 @@
   transition: border-color var(--dur) var(--ease), color var(--dur) var(--ease), transform var(--dur) var(--ease); }
 .tn-icon-btn:hover { border-color: var(--accent); color: var(--text); transform: translateY(-1px); }
 .tn-icon-btn[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
-.tn-icon-btn .tn-svg { width: 16px; height: 16px; }
+/* v0.9.96（需求2）：图标兜底 —— SVG 默认 fill:black，缺 fill/stroke 声明时会渲染成实心块。
+   顶栏放大镜与站内其它线性图标统一按「无填充 + 描边」画，即使行内属性被覆盖也不会变成黑点。 */
+.tn-icon-btn .tn-svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
 .tn-popitem .ic-gear svg { width: 15px; height: 15px; vertical-align: -2px; }
 .tn-avatar { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; flex: 0 0 auto;
   background: var(--accent-dim); color: var(--accent); font: inherit; font-weight: 650; font-size: 13px;

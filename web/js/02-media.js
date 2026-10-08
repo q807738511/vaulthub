@@ -72,18 +72,16 @@ function setPlayerImmersive(on) {
   document.body.classList.toggle("player-immersive", next);
   return next;
 }
-/* 只有「完整播放器可见」才回缩顶栏：缩成控制器小窗、离开播放页（浮标接管）、
-   关闭播放器三种情况都要把顶栏还回来。 */
+/* 顶栏回缩（沉浸播放）的判定：只要「影视播放器完整打开展示着」就让位；
+   缩成控制器小窗、离开播放页（浮标接管）、关闭播放器三种情况都要把顶栏还回来。
+   v0.9.96（需求1）：判定改由 expandedVideoPlayerVisible() 单一来源给出 ——
+   旧实现要求「activePlayback 存在 且 playbackSurfaceVisible 为真」，而后者用
+   offsetParent 判可见性（浮层是 position:fixed，该值恒为 null）永不成立，
+   于是顶栏一直压着播放器；且旧的「两者取或」写法会让缩成小窗的状态仍判为沉浸。
+   音频播放不参与（音乐页的播放条不是 .media-reader-overlay，顶栏照常）。 */
 function syncPlayerImmersive() {
   let on = false;
-  try {
-    const cur = typeof activePlayback === "function" ? activePlayback() : null;
-    if (cur && cur.kind === "video" && playbackSurfaceVisible(cur)) {
-      const video = liveActiveVideoElement(cur);
-      const overlay = video && video.closest(".media-reader-overlay");
-      on = !(overlay && overlay.classList.contains("video-minimized"));
-    }
-  } catch (e) { on = false; }
+  try { on = expandedVideoPlayerVisible(); } catch (e) { on = false; }
   return setPlayerImmersive(on);
 }
 /* 断开一个 <video>/<audio>：暂停 → 去 src → load()。load() 会立刻中止进行中的
@@ -3417,6 +3415,36 @@ function openMediaSearchHit(group, libId, path) {
 function audioHasActivePlayback() { return !!activeAudio; }
 
 /* ---------- v0.9.92：跨页「正在播放」入口的媒体侧实现（状态在 01-state.js） ---------- */
+/* v0.9.96（需求1）：元素「是不是真的渲染出来了」—— 不能用 offsetParent。
+   .media-reader-overlay 是 position:fixed，而规范规定固定定位元素的 offsetParent 恒为 null
+   （真实浏览器实测：浮层 1270×525 明明可见，offsetParent === null）。旧实现拿它判可见性，
+   影视播放面就永远被判成「不可见」→ body.player-immersive 永不生效 → 顶栏压在播放器上。
+   改用「有没有生成渲染盒子」：祖先 display:none 时 getClientRects() 为空（0），
+   固定定位且可见时为 1 个及以上；visibility 会继承，再按计算样式兜一道。 */
+function elementRendered(el) {
+  if (!el || el.hidden) return false;
+  try {
+    if (typeof el.getClientRects === "function" && el.getClientRects().length === 0) return false;
+    if (typeof getComputedStyle === "function") {
+      const cs = getComputedStyle(el);
+      if (cs && (cs.display === "none" || cs.visibility === "hidden")) return false;
+    }
+  } catch (e) { return false; }
+  return true;
+}
+/* 影视播放器「完整可见」：浮层已打开、真的渲染出来了、且没有缩成控制器小窗。
+   刻意不看「此刻是否正在播」—— 打开播放器就是要看片，顶栏应当让位。
+   第一个「渲染出来」的浮层决定结果：它缩成小窗就说明顶栏要还回来（v0.9.93 口径），
+   不能因为「还有别的浮层没缩窗」而继续占着顶栏。
+   切走视图 / 关闭播放器时浮层没有渲染盒子，函数自然为假，顶栏自动恢复。 */
+function expandedVideoPlayerVisible() {
+  const overlays = document.querySelectorAll(".media-reader-overlay.movie-player");
+  for (const overlay of overlays) {
+    if (!elementRendered(overlay)) continue;
+    return !overlay.classList.contains("video-minimized");
+  }
+  return false;
+}
 /* 播放面是否已经可见 —— 可见时不需要浮标入口。 */
 function playbackSurfaceVisible(cur) {
   if (!cur) return false;
@@ -3427,7 +3455,8 @@ function playbackSurfaceVisible(cur) {
     return !!bar && bar.classList.contains("show");
   }
   const overlay = view.querySelector(".media-reader-overlay.movie-player");
-  return !!overlay && overlay.offsetParent !== null;
+  /* v0.9.96（需求1）：固定定位浮层的 offsetParent 恒为 null，改用渲染盒子判定。 */
+  return elementRendered(overlay);
 }
 function activePlaybackPlaying(cur) {
   if (!cur) return false;
@@ -6279,6 +6308,9 @@ function closeVideoPlayer(el) {
   const root = videoRootOf(el);
   const group = root?.dataset.mediaGroup || "movie";
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  /* v0.9.96（需求1）：关闭播放器必须把顶栏还回来 —— closeLocalViewer 里已有一道，
+     这里再显式兜一道（播放器自己的 ✕ 是最常走的关闭路径）。 */
+  if (typeof setPlayerImmersive === "function") setPlayerImmersive(false);
   closeLocalViewer(group);
 }
 /* ---------- 浮层（更多 / 设置 / 播放列表 / 声音）---------- */

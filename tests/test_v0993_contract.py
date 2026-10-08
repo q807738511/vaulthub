@@ -42,7 +42,12 @@ print("v0.9.93 契约检查")
 check("1a body.player-immersive 把 --topbar-h 归零（真正释放占位，而不是盖住顶栏）",
       "body.player-immersive { --topbar-h: 0px; }" in CSS)
 check("1b 顶栏同时滑出视口并禁用点击",
-      "body.player-immersive .topbar { transform: translateY(-100%); opacity: 0; pointer-events: none; }" in CSS)
+      # v0.9.96：回缩规则补齐「真的看不见」（0 高度盒子挡不住溢出的子元素与 1px 底边线），
+      # 断言改为按归一化后的关键声明检查，兼容规则的续行与新增属性。
+      all(k in re.sub(r"\s+", " ", CSS) for k in (
+          "body.player-immersive .topbar { transform: translateY(-100%); opacity: 0; pointer-events: none;",
+          "visibility: hidden;", "border-bottom-color: transparent;",
+      )))
 check("1c 顶栏有过渡动画（回缩/恢复不跳动）",
       ".topbar { transition: transform .18s ease, opacity .18s ease; }" in CSS)
 check("1d 前端有占用开关与推导函数",
@@ -126,8 +131,9 @@ check("3e 布局收敛为顶栏单一布局（旧参数按顶栏处理）",
       'document.body.classList.add("layout-topnav");' in TOPCSS
       and "function currentLayoutMode() { return \"topnav\"; }" in TOPCSS
       and "renderLayoutChips" not in TOPCSS and "setLayoutMode" not in TOPCSS)
-check("3f 原侧栏入口不丢：媒体搜索在顶栏、自定义模块在顶栏标签 + 头像菜单",
-      'data-topnav="search" onclick="openMediaSearch()"' in HTML
+check("3f 原侧栏入口不丢：媒体搜索在顶栏（v0.9.96 起只保留右侧放大镜，左侧重复项已移除）、自定义模块在顶栏标签 + 头像菜单",
+      'id="tnSearchButton"' in HTML and "toggleMediaSearchModal()" in HTML
+      and 'data-topnav="search"' not in HTML
       and 'id="topCustomNav"' in HTML
       and "function topUserMenuModules()" in TOPCSS
       and 'onclick="topUserMenuModules()"' in HTML)

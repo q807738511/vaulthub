@@ -1,6 +1,6 @@
 /* v0.9.95 行为测试（Node VM 桩，真实执行源文件）：
    A. playbackSurfaceVisible 的真实判定（跑 02-media.js）—— 音乐页播放条可见 / 视图不活跃 /
-      播放条未显示 / 影视播放器浮层可见 / 浮层被隐藏（offsetParent=null）
+      播放条未显示 / 影视播放器浮层有渲染盒子（可见）/ 浮层没有渲染盒子（祖先 display:none）
    B. 端到端门控：把 02-media.js 的真实 playbackSurfaceVisible 接进 01-state.js 的
       updatePlaybackDock（同一个媒体上下文，模拟「切到别的视图」「播放器占满窗口」），
       断言顶栏迷你播放器的显示/隐藏 —— 这是客户要求的那条规则的完整调用链。
@@ -21,6 +21,9 @@ function fakeEl(extra) {
     dataset: {},
     style: {},
     offsetParent: extra && "offsetParent" in extra ? extra.offsetParent : { tagName: "DIV" },
+    /* v0.9.96（需求1）：可见性改为按渲染盒子判定（固定定位元素 offsetParent 恒为 null）。 */
+    __cs: (extra && extra.cs) || { display: "block", visibility: "visible" },
+    getClientRects: () => ({ length: extra && extra.rects !== undefined ? extra.rects : 1 }),
     textContent: "",
     innerHTML: "",
     classList: {
@@ -46,6 +49,7 @@ function makeSandbox(extra) {
   const bodyClasses = new Set();
   const sandbox = {
     console, Date, Number, Math, String, Array, JSON, Object, parseFloat, parseInt, isNaN, RegExp, Set, Map, Promise, URL,
+    getComputedStyle: el => (el && el.__cs) || { display: "block", visibility: "visible" },
     encodeURIComponent, decodeURIComponent, setTimeout, clearTimeout, Blob: function Blob() {},
     storage, localStorage: store,
     document: {
@@ -54,7 +58,7 @@ function makeSandbox(extra) {
       body: { classList: { add(c) { bodyClasses.add(c); }, remove(c) { bodyClasses.delete(c); }, contains(c) { return bodyClasses.has(c); }, toggle(c, on) { const w = on === undefined ? !bodyClasses.has(c) : !!on; w ? bodyClasses.add(c) : bodyClasses.delete(c); return w; } }, appendChild() {} },
       documentElement: { scrollHeight: 2000, style: { setProperty() {} } },
     },
-    window: { handlers: [], addEventListener(ev, fn) { this.handlers.push([ev, fn]); }, isSecureContext: false, scrollY: 0, innerHeight: 800, scrollBy() {}, scrollTo() {}, VAULTHUB_ASSET_VERSION: "0.9.95" },
+    window: { handlers: [], addEventListener(ev, fn) { this.handlers.push([ev, fn]); }, isSecureContext: false, scrollY: 0, innerHeight: 800, scrollBy() {}, scrollTo() {}, VAULTHUB_ASSET_VERSION: "0.9.96" },
     navigator: { userAgent: "Mozilla/5.0 (X11; Linux x86_64)" },
     location: { origin: "http://192.0.2.10:8088", pathname: "/", href: "http://192.0.2.10:8088/" },
     curLang: "zh-CN",
@@ -85,8 +89,8 @@ const call = (sb, expr) => vm.runInContext(expr, sb);
     const audioViewInactive = fakeEl({ classes: ["view"], id: "view-audio" });
     const barShown = fakeEl({ classes: ["audio-player", "show"], id: "audio-bottom-player" });
     const barHidden = fakeEl({ classes: ["audio-player"], id: "audio-bottom-player" });
-    const overlayVisible = fakeEl({ classes: ["media-reader-overlay", "movie-player"], offsetParent: { tagName: "BODY" } });
-    const overlayHidden = fakeEl({ classes: ["media-reader-overlay", "movie-player"], offsetParent: null });
+    const overlayVisible = fakeEl({ classes: ["media-reader-overlay", "movie-player"], rects: 1 });
+    const overlayHidden = fakeEl({ classes: ["media-reader-overlay", "movie-player"], rects: 0, cs: { display: "none", visibility: "visible" } });
     const movieView = fakeEl({ classes: ["view", "active"], id: "view-movie", querySelector: sel => (sel === ".media-reader-overlay.movie-player" ? overlayVisible : null) });
     const movieViewNoOverlay = fakeEl({ classes: ["view", "active"], id: "view-movie", querySelector: () => null });
     const movieViewHiddenOverlay = fakeEl({ classes: ["view", "active"], id: "view-movie", querySelector: sel => (sel === ".media-reader-overlay.movie-player" ? overlayHidden : null) });
@@ -138,8 +142,18 @@ const call = (sb, expr) => vm.runInContext(expr, sb);
         call(mkMedia(movieView, barHidden), 'playbackSurfaceVisible({kind:"video", group:"movie", path:"m.mkv"})') === true);
     chk("A5 影视页活跃但没有播放器浮层 → 播放面不可见",
         call(mkMedia(movieViewNoOverlay, barHidden), 'playbackSurfaceVisible({kind:"video", group:"movie", path:"m.mkv"})') === false);
-    chk("A6 播放器浮层存在但被隐藏（offsetParent=null）→ 播放面不可见",
+    chk("A6 播放器浮层没有渲染盒子（祖先 display:none）→ 播放面不可见",
         call(mkMedia(movieViewHiddenOverlay, barHidden), 'playbackSurfaceVisible({kind:"video", group:"movie", path:"m.mkv"})') === false);
+    /* v0.9.96（需求1）新增：固定定位元素 offsetParent 恒为 null，但有渲染盒子就必须算可见 ——
+       旧口径（offsetParent 判定）在这里会判 false，正是顶栏压住播放器的根因。 */
+    const fixedOverlay = fakeEl({ classes: ["media-reader-overlay", "movie-player"], rects: 1, offsetParent: null });
+    const movieViewFixed = fakeEl({ classes: ["view", "active"], id: "view-movie", querySelector: sel => (sel === ".media-reader-overlay.movie-player" ? fixedOverlay : null) });
+    chk("A7 固定定位浮层（offsetParent=null 但有盒子）→ 播放面可见",
+        call(mkMedia(movieViewFixed, barHidden), 'playbackSurfaceVisible({kind:"video", group:"movie", path:"m.mkv"})') === true);
+    const mFix = mkMedia(movieViewFixed, barHidden);
+    mFix.__ov = fixedOverlay;
+    chk("A8 同一浮层：旧口径 offsetParent!==null 判 false（已废弃），新口径 elementRendered 判 true",
+        call(mFix, "!!(__ov.offsetParent !== null)") === false && call(mFix, "elementRendered(__ov)") === true);
   }
 
   /* ================= B. 端到端门控（02-media.js 判定 → 01-state.js 浮标） ================= */

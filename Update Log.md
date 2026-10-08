@@ -1,3 +1,42 @@
+# VaultHub 蜀鼠之家 v0.9.96
+
+> 本轮是**播放遮挡修复 + 搜索入口归一**：影视播放器打开后顶栏压住播放器的根因找到并修掉
+> （固定定位元素的 `offsetParent` 恒为 `null`，旧判定永不成立）；顶栏左侧重复的搜索按钮移除，
+> 右侧放大镜图标从「实心黑点」改回正常描边放大镜。
+
+## 1. 播放视频时顶栏自动让位（修复遮挡）
+
+- **现象**：影视播放器打开后，顶栏压在播放器上沿。
+- **根因**：`playbackSurfaceVisible()` 用 `overlay.offsetParent !== null` 判「播放面可见」，
+  而 `.media-reader-overlay` 是 `position: fixed` —— 规范规定固定定位元素的 `offsetParent`
+  恒为 `null`。真实浏览器实测：浮层渲染尺寸 1270×525、明明可见，`offsetParent === null`。
+  于是影视播放面永远判为不可见 → `body.player-immersive` 永不生效 → 顶栏不回缩，压住播放器；
+  副作用是播放器打开时顶栏迷你播放器浮标反而会显示。
+- **修复**：新增 `elementRendered()`，改按「是否生成渲染盒子」判定（`getClientRects()` 长度 +
+  计算样式兜 `display`/`visibility`，祖先 `display:none` 时为 0）；新增
+  `expandedVideoPlayerVisible()`：影视播放器浮层打开且未缩成控制器小窗即为真（不看是否正在播）；
+  `syncPlayerImmersive()` 改为两者取或；`closeVideoPlayer()` 显式恢复顶栏。
+- **行为**：播放器打开（含暂停）→ 顶栏滑出、窗口空间真正释放；关闭播放器 → 顶栏自动回来；
+  缩成控制器小窗 → 顶栏回来（沿用 v0.9.93 口径）；音乐播放不受影响。
+
+## 2. 顶栏搜索入口归一 + 放大镜图标修复
+
+- 移除顶栏左侧导航里的「🔍 媒体搜索」按钮（与右侧放大镜按钮重复）；
+- 修复右侧 `#tnSearchButton` 的放大镜图标：原 SVG 既无 `fill/stroke` 属性、样式里也无兜底，
+  浏览器按 SVG 默认 `fill:black` 渲染，只剩一个实心黑圆点（手柄是零面积线段，画不出来）；
+  现改为「无填充 + `currentColor` 描边 + 圆头线帽」，CSS 里加同款兜底；
+- 旧书签/旧链接仍会落到 `#view-search`，那里会自动弹出搜索弹窗，入口不丢。
+
+## 验证（本轮实测）
+
+- 新增 `tests/test_v0996_contract.py`、`tests/v0996_behavior.js`、`tests/test_v0996_behavior.py`；
+- 历史断言按新口径重定向：v0.9.93 的「顶栏有 search 导航项」、v0.9.95 的
+  「浮层 offsetParent=null 即视为隐藏」；
+- 真实容器 + 真实浏览器验证（播放器打开/关闭/缩窗/音乐播放四种状态）；
+- 全量回归与发布记录见提交与 Release。
+
+---
+
 # VaultHub 蜀鼠之家 v0.9.95
 
 > 本轮是**浮标行为校正 + CI 校验收紧 + 安全审查修复**：顶栏迷你播放器（"回到播放"）

@@ -91,7 +91,7 @@ check("4b 季度区块标题保留", '<section><h3>季度</h3></section>' in MED
 check("4c 季度标题为「剧名 第N季 (· 季名) 共M集」",
       '${esc(show.title)} 第${esc(season.season)}季${headExtra} <small>共${epCount}集</small>' in MEDIA
       and 'const headExtra = seasonName ? ` · ${esc(seasonName)}` : "";' in MEDIA)
-check("4c2 季名/季简介从该季分集的刮削元数据汇总并渲染（v0.9.95 N-6 落点）",
+check("4c2 季名/季简介从该季分集的刮削元数据汇总并渲染（v0.9.96 N-6 落点）",
       'if (!name && m.season_name) name = String(m.season_name);' in MEDIA
       and 'if (!overview && m.season_overview) overview = String(m.season_overview);' in MEDIA
       and 'return { season, episodes: eps, name, overview };' in MEDIA
@@ -143,14 +143,14 @@ check("5k 简介排版与 16:9 画框保留（旧契约不破）",
 
 print("6. 版本")
 check("6a 页面与脚本版本一致",
-      'VAULTHUB_ASSET_VERSION = "0.9.95"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.95"' in STATE)
+      'VAULTHUB_ASSET_VERSION = "0.9.96"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.96"' in STATE)
 # v0.9.92（上轮发布前审查项）：标语断言升级为「整串完全一致」——
 # 旧写法只数 "v0.9.9x · " 出现 3 次，三处文案不一致也能过。
 _slogans_6b = re.findall(r"v0\.9\.9\d · [^<\"]+", HTML)
 check("6b 关于 / 侧栏 / 页脚标语整串一致",
       len(_slogans_6b) == 3 and len(set(_slogans_6b)) == 1)
 check("6c Update Log 有 v0.9.85 段",
-      (ROOT / "Update Log.md").read_text(encoding="utf-8").startswith("# VaultHub 蜀鼠之家 v0.9.95"))
+      (ROOT / "Update Log.md").read_text(encoding="utf-8").startswith("# VaultHub 蜀鼠之家 v0.9.96"))
 check("6d Release Notes 存在", (ROOT / ".github/RELEASE_NOTES_0.9.90.md").exists())
 
 if FAILS:
