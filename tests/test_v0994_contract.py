@@ -131,12 +131,16 @@ check("c6 Release JSON 转义优先用 node", 'if command -v node >/dev/null 2>&
 print("== 版本 / 文档 ==")
 # 与版本号无关：所有 ?v= 都必须是本版，且恰好 10 处（下一版不会因此改测试）。
 check("v1 资源缓存键全部为本版且无历史残留",
-      set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"0.9.97"} and len(re.findall(r"\?v=0\.9\.97", HTML)) >= 10,
+      set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"0.9.98"} and len(re.findall(r"\?v=0\.9\.98", HTML)) >= 10,
       sorted(set(re.findall(r"\?v=([0-9.]+)", HTML))))
-check("v2 资源版本常量", 'window.VAULTHUB_ASSET_VERSION = "0.9.97";' in HTML and 'const VAULTHUB_SCRIPT_VERSION = "0.9.97";' in S)
-SLOGAN = "v0.9.97 · 多季剧集按 Plex 口径刮削·缺失集可比对"
+check("v2 资源版本常量", 'window.VAULTHUB_ASSET_VERSION = "0.9.98";' in HTML and 'const VAULTHUB_SCRIPT_VERSION = "0.9.98";' in S)
+SLOGAN = "v0.9.98 · 原盘播放菜单与演职人员补全"
 check("v3 标语三处整串一致", HTML.count(SLOGAN) == 3)
-check("v4 发布说明文件存在且提到本轮改动", os.path.exists(os.path.join(ROOT, ".github/RELEASE_NOTES_0.9.97.md")))
+import re as _re
+_CUR = _re.search(r'VAULTHUB_ASSET_VERSION = "([0-9.]+)"', HTML).group(1)
+_NOTES_PATH = os.path.join(ROOT, f".github/RELEASE_NOTES_{_CUR}.md")
+check("v4 发布说明文件存在且够长（版本无关：按 index.html 里的当前版本找）",
+      os.path.exists(_NOTES_PATH) and len(open(_NOTES_PATH, encoding="utf-8").read()) >= 500)
 log = rd("Update Log.md")
 check("v5 Update Log 有 v0.9.97 段", "0.9.97" in log and "顶栏迷你播放器" in log)
 check("v6 i18n 新键三语言齐备", S.count("searchLead:") == 3 and S.count("editSeasonHint:") == 3)

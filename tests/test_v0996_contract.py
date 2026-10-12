@@ -22,7 +22,13 @@ HTML = rd("index.html")
 CSS = rd("web/css/main.css")
 M = rd("web/js/02-media.js")
 S = rd("web/js/01-state.js")
+# v0.9.98：同上 —— 内容断言指向 v0.9.97 的历史说明；当前版存在性版本无关地断言。
 NOTES = rd(".github/RELEASE_NOTES_0.9.97.md")
+import re as _re
+_CUR = _re.search(r'VAULTHUB_ASSET_VERSION = "([0-9.]+)"', HTML).group(1)
+check("4f 当前版本的发布说明存在且够长",
+      os.path.exists(os.path.join(ROOT, f".github/RELEASE_NOTES_{_CUR}.md"))
+      and len(open(os.path.join(ROOT, f".github/RELEASE_NOTES_{_CUR}.md"), encoding="utf-8").read()) >= 500)
 LOG = rd("Update Log.md")
 ACTIONS = HTML[HTML.index('<div class="tn-actions">'):HTML.index("</header>")]
 NAV = HTML[HTML.index('<nav class="tn-nav" aria-label="主导航">'):HTML.index("</nav>")]
@@ -92,17 +98,18 @@ check("3k 其它 offsetParent 用法未被误伤（分页宿主仍用 display �
       "host.offsetParent !== null" in M)
 
 print("\n== 4. 版本与文档 ==")
-check("4a 版本串 ?v=0.9.97（≥10 处）且无其它版本串",
-      len(re.findall(r"\?v=0\.9\.97", HTML)) >= 10
-      and set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"0.9.97"})
+check("4a 版本串 ?v=0.9.98（≥10 处）且无其它版本串",
+      len(re.findall(r"\?v=0\.9\.98", HTML)) >= 10
+      and set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"0.9.98"})
 check("4b ASSET_VERSION / SCRIPT_VERSION = 0.9.97",
-      'VAULTHUB_ASSET_VERSION = "0.9.97"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.97"' in S)
+      'VAULTHUB_ASSET_VERSION = "0.9.98"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.98"' in S)
 check("4c 当前标语 ×3 且历史标语已清除",
-      HTML.count("v0.9.97 · 多季剧集按 Plex 口径刮削·缺失集可比对") == 3
-      and "v0.9.97 · 播放时顶栏自动让位" not in HTML and "v0.9.97 · 迷你播放器按需出现" not in HTML)
+      HTML.count("v0.9.98 · 原盘播放菜单与演职人员补全") == 3
+      and "v0.9.97 · 播放时顶栏自动让位" not in HTML and "v0.9.97 · 迷你播放器按需出现" not in HTML
+      and "v0.9.98 · 多季剧集按 Plex 口径刮削·缺失集可比对" not in HTML)
 check("4d 发布说明存在且覆盖本轮需求",
       "Plex" in NOTES and "缺失集" in NOTES and "方括号" in NOTES)
-check("4e Update Log 含 v0.9.97 段落", "v0.9.97" in LOG and "## 1. 播放视频时顶栏自动让位" in LOG)
+check("4e Update Log 含 v0.9.97 段落", "v0.9.98" in LOG and "## 1. 播放视频时顶栏自动让位" in LOG)
 
 print("\n== 5. 洗版自查（本仓禁止真实域名 / 内网 IP / 卷路径字面量）==")
 for name, text in (("测试文件自身", rd("tests/test_v0996_contract.py")),):

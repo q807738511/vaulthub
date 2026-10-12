@@ -227,7 +227,10 @@ func (a *App) playbackPlan(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	/* v0.9.88：原盘镜像先解析成可读输入（蓝光 UDF 经 libbluray 直读、
 	   DVD 镜像走 dvdvideo），否则 ffprobe 读到的只是镜像裸字节。 */
-	disc := a.resolveDiscInput(ctx, p)
+	disc := a.resolveDiscInputWithPlaylist(ctx, p, discPlaylistArg(r))
+	/* probePlaybackMedia 是测试接缝（var，签名只吃 spec）：这里用默认主影片探测。
+	   选中的具体播放列表不影响「能不能直连 / 要不要转码」的判定（同一张盘的
+	   容器与编码特性一致），实际转码请求会带上 disc_playlist。 */
 	media, err := probePlaybackMedia(ctx, disc.Spec)
 	if err != nil {
 		errJSON(w, 422, "media probe failed")

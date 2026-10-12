@@ -2103,3 +2103,35 @@ html[data-quality="minimal"] :is(.audio-expand, .audio-fullscreen, .audio-player
   .series-plex-table th:nth-child(3), .series-plex-table td:nth-child(3) { display: none; }
   .series-plex-head { flex-direction: column; }
 }
+
+  /* ==================== v0.9.98 ==================== */
+  /* 自动测速：勾选按钮挪到选项行末尾（文字在左、开关在最右）。 */
+  /* v0.9.98 修正（真实浏览器量到的问题）：这一行本身是 <label> 且位于 .cfg-field 内，
+     而 `.cfg-field label { display: block }` 的特异性（0,1,1）高于 `.toggle-row`（0,1,0）——
+     行会退化成块布局，勾选框掉到文字下面（实测勾选框在左侧、文字占满整行）。
+     这里显式设回 flex，并把勾选框固定成原生尺寸贴到行尾。 */
+  .cfg-field label.toggle-row { display: flex; align-items: center; }
+  .toggle-row.toggle-row-tail { justify-content: flex-start; }
+  .toggle-row.toggle-row-tail .l { flex: 1 1 auto; min-width: 180px; }
+  /* v0.9.98 修正：.cfg-field input 默认 width:100%，会把勾选框拉成整行宽（实测 1126px）——
+     勾选框必须是原生尺寸，并靠 margin-left:auto 贴到行尾。 */
+  .toggle-row input[type="checkbox"] { width: auto; flex: 0 0 auto; }
+  .toggle-row.toggle-row-tail .toggle-tail-input { width: auto; flex: 0 0 auto; margin-left: auto; accent-color: var(--accent); }
+  .toggle-row.toggle-row-tail .toggle-tail-hint { display: none; }
+  /* 详情页提示：多季工具条已搬到系统设置。 */
+  .series-plex-moved { font-size: 12px; color: var(--text3); margin: 6px 0 0; }
+  /* 设置页里的多季面板容器。 */
+  .series-plex-panel { margin-top: 12px; display: block; }
+  .series-plex-panel:empty { display: none; }
+  /* 播放器「媒体菜单」：非原盘隐藏按钮；原盘列出播放列表。 */
+  .media-video-body[data-disc-kind="none"] .vc-icon.vc-disc { display: none; }
+  .video-disc-items { display: flex; flex-direction: column; gap: 6px; max-height: 46vh; overflow-y: auto; }
+  .video-disc-item {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 8px 10px; border-radius: var(--radius-sm); border: 1px solid var(--border);
+    background: var(--card2); color: var(--text); font-size: 12.5px; cursor: pointer; text-align: left;
+  }
+  .video-disc-item:hover { border-color: var(--accent); }
+  .video-disc-item.active { border-color: var(--accent); background: var(--accent-soft, rgba(255,255,255,.06)); }
+  .video-disc-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .video-disc-hint { display: block; margin-top: 8px; font-size: 10.5px; color: var(--text3); line-height: 1.6; }

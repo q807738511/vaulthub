@@ -2254,9 +2254,9 @@ func probe(w http.ResponseWriter, r *http.Request, a *App) {
 	defer cancel()
 	/* v0.9.88：原盘镜像（ISO）与 BDMV 片段先解析成可读输入 —— 蓝光镜像经
 	   libbluray(udfread) 直读 UDF，DVD 镜像走 dvdvideo，拿不到才退回裸文件。 */
-	disc := a.resolveDiscInput(ctx, p)
+	disc := a.resolveDiscInputWithPlaylist(ctx, p, discPlaylistArg(r))
 	probeArgs := []string{"-v", "quiet", "-print_format", "json", "-show_streams", "-show_format"}
-	probeArgs = append(probeArgs, ffprobeInputArgs(disc.Kind)...)
+	probeArgs = append(probeArgs, disc.InputArgs()...)
 	probeArgs = append(probeArgs, disc.Spec)
 	b, e := exec.CommandContext(ctx, "ffprobe", probeArgs...).Output()
 	if e != nil {
@@ -2313,9 +2313,9 @@ func streams(w http.ResponseWriter, r *http.Request, a *App) {
 		return
 	}
 	/* v0.9.88：原盘的音轨/字幕轨要按解析后的输入读取（ISO 直接读镜像）。 */
-	disc := a.resolveDiscInput(r.Context(), p)
+	disc := a.resolveDiscInputWithPlaylist(r.Context(), p, discPlaylistArg(r))
 	streamArgs := []string{"-v", "error", "-show_entries", "stream=index,codec_type,codec_name:stream_tags=language,title", "-of", "json"}
-	streamArgs = append(streamArgs, ffprobeInputArgs(disc.Kind)...)
+	streamArgs = append(streamArgs, disc.InputArgs()...)
 	streamArgs = append(streamArgs, disc.Spec)
 	b, e := exec.CommandContext(r.Context(), "ffprobe", streamArgs...).Output()
 	if e != nil {
@@ -2663,6 +2663,8 @@ func main() {
 	/* v0.9.97：Plex 口径的多季剧集方案（命名体检 / 季集结构）与缺失集比对。 */
 	mux.HandleFunc("/api/media/series/plan", a.seriesPlan)
 	mux.HandleFunc("/api/media/series/missing", a.seriesMissing)
+	/* v0.9.98：原盘（BDMV / ISO）播放菜单 —— 播放器「媒体菜单」的数据源。 */
+	mux.HandleFunc("/api/media/disc/playlists", a.discPlaylistHandler)
 	mux.HandleFunc("/api/media/scrapers", func(w http.ResponseWriter, r *http.Request) {
 		out := a.runtimeConfigSnapshot(false)
 		out["default"], out["types"] = out["scraper_mode"], []string{"movie", "series"}
@@ -2754,12 +2756,78 @@ func scrubSecret(text, secret string) string {
 	return text
 }
 
+/* castAvatarLocal：本地演职人员头像（库内文件）。白名单图片扩展名 + 4MiB 上限。 */
+func (a *App) castAvatarLocal(w http.ResponseWriter, r *http.Request) {
+	libID := strings.TrimSpace(r.URL.Query().Get("id"))
+	rel := strings.TrimSpace(r.URL.Query().Get("path"))
+	if libID == "" || rel == "" {
+		errJSON(w, 400, "invalid person")
+		return
+	}
+	lib, ok := a.find(libID)
+	if !ok {
+		errJSON(w, 404, "library not found")
+		return
+	}
+	p, _, err := safeFile(lib, rel)
+	if err != nil {
+		errJSON(w, 404, "invalid media path")
+		return
+	}
+	ct := localAvatarContentType(p)
+	if ct == "" {
+		errJSON(w, 415, "not an image")
+		return
+	}
+	f, err := os.Open(p)
+	if err != nil {
+		errJSON(w, 404, "avatar not found")
+		return
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil || st.IsDir() || st.Size() > 4<<20 {
+		errJSON(w, 413, "avatar too large")
+		return
+	}
+	w.Header().Set("Content-Type", ct)
+	w.Header().Set("Cache-Control", "private, max-age=86400")
+	w.Header().Set("X-VaultHub-Avatar", "local")
+	_, _ = io.Copy(w, io.LimitReader(f, 4<<20))
+}
+
+/* localAvatarContentType：头像图片扩展名白名单（不认识的一律拒绝，避免把任意文件当图片吐出去）。 */
+func localAvatarContentType(p string) string {
+	switch strings.ToLower(filepath.Ext(p)) {
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".png":
+		return "image/png"
+	case ".webp":
+		return "image/webp"
+	case ".gif":
+		return "image/gif"
+	case ".bmp":
+		return "image/bmp"
+	case ".avif":
+		return "image/avif"
+	}
+	return ""
+}
+
 func (a *App) castAvatar(w http.ResponseWriter, r *http.Request) {
 	if !readAuth(r) {
 		errJSON(w, 401, "login required")
 		return
 	}
 	person := r.URL.Query().Get("person")
+	/* v0.9.98：本地头像 —— 媒体目录里的 .actors/姓名.jpg（Emby / Jellyfin 下载的头像），
+	   或本地 NFO 里写的相对路径。用库内路径读取，与封面/海报同一条安全通道
+	   （safeFile 负责防目录穿越）。 */
+	if strings.TrimSpace(person) == "" {
+		a.castAvatarLocal(w, r)
+		return
+	}
 	if person == "" || strings.HasPrefix(person, "//") || strings.Contains(person, "..") || len(person) > 256 {
 		errJSON(w, 400, "invalid person")
 		return
@@ -3209,7 +3277,7 @@ func (a *App) buildCompatCache(parent context.Context, disc discInput, cache, au
 		tmp := cache + fmt.Sprintf(".bg-%d", os.Getpid())
 		pre, mid := compatArgsScaled(ctx, disc.Spec, audioTrack, hw, mode, maxHeight)
 		args := append([]string{"-hide_banner", "-loglevel", "error"}, pre...)
-		args = append(args, ffprobeInputArgs(disc.Kind)...)
+		args = append(args, disc.InputArgs()...)
 		args = append(args, "-i", disc.Spec)
 		args = append(args, mid...)
 		args = append(args, "-movflags", "+faststart", "-f", "mp4", "-y", tmp)
@@ -3270,8 +3338,8 @@ func (a *App) compat(w http.ResponseWriter, r *http.Request) {
 	}
 	/* v0.9.88：原盘镜像的转码输入与探测保持一致（bluray: / dvdvideo），
 	   并把它并入缓存键 —— 否则同一镜像换了解析方式会命中旧缓存。 */
-	disc := a.resolveDiscInput(r.Context(), p)
-	cache := a.cacheKey(fmt.Sprintf("%s:%d:%d:%s:%s:a%s:h%d:d%s", p, st.Size(), st.ModTime().UnixNano(), hw, mode, audioTrack, maxHeight, disc.Kind))
+	disc := a.resolveDiscInputWithPlaylist(r.Context(), p, discPlaylistArg(r))
+	cache := a.cacheKey(fmt.Sprintf("%s:%d:%d:%s:%s:a%s:h%d:d%s:r%d", p, st.Size(), st.ModTime().UnixNano(), hw, mode, audioTrack, maxHeight, disc.Kind, disc.SelectedRef()))
 	// Fully built cache: serve it with byte ranges so seeking works.
 	if f, e := os.Open(cache); e == nil {
 		defer f.Close()
@@ -3310,7 +3378,7 @@ func (a *App) compat(w http.ResponseWriter, r *http.Request) {
 	// is produced in the background for the next open.
 	pre, mid := compatArgsScaled(ctx, disc.Spec, audioTrack, hw, mode, maxHeight)
 	args := append([]string{"-hide_banner", "-loglevel", "error"}, pre...)
-	args = append(args, ffprobeInputArgs(disc.Kind)...)
+	args = append(args, disc.InputArgs()...)
 	args = append(args, "-i", disc.Spec)
 	args = append(args, mid...)
 	args = append(args, "-movflags", "+frag_keyframe+empty_moov+default_base_moof", "-f", "mp4", "pipe:1")

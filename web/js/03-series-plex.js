@@ -106,6 +106,24 @@ function seriesPlexShowDirsOf(show) {
 
 const seriesPlexPlanCache = {};
 let activeSeriesPlex = null;   // { libId, showKey, missing:服务端比对结果 }
+/* v0.9.98：缺失集比对结果按「库|剧」缓存 —— 面板现在可以一次渲染整库多部剧，
+   不能再共用单个 activeSeriesPlex.missing。 */
+const seriesPlexMissingCache = {};
+function seriesPlexMissingOf(libId, showKey) { return seriesPlexMissingCache[`${libId}|${showKey}`] || null; }
+function seriesPlexSetMissing(libId, showKey, data) { seriesPlexMissingCache[`${libId}|${showKey}`] = data || null; }
+/* 解析调用上下文：显式传参优先（整库面板每部剧的按钮都带自己的库/剧），
+   没传才回落到当前打开的面板上下文。 */
+function seriesPlexCtx(libId, showKey) {
+  if (libId && showKey) return { libId: String(libId), showKey: String(showKey) };
+  return activeSeriesPlex;
+}
+function seriesPlexOverwriteLocal(scope) {
+  if (scope === "settings") {
+    const sel = document.getElementById("plexOverwriteLocal");
+    if (sel) return String(sel.value) === "1";
+  }
+  return !!document.getElementById("seriesPlexOverwriteLocal")?.checked;
+}
 
 async function loadSeriesPlexPlan(libId, force) {
   const key = String(libId || "");
@@ -227,8 +245,8 @@ function applySeriesSeasonScrape(libId, show, season, data, opts) {
 }
 
 /* 单季刮削（面板里的「刮削本季」）。 */
-async function seriesPlexScrapeSeason(seasonNum) {
-  const ctx = activeSeriesPlex;
+async function seriesPlexScrapeSeason(seasonNum, libId, showKey) {
+  const ctx = seriesPlexCtx(libId, showKey);
   if (!ctx) return null;
   const lib = findMediaLibrary(ctx.libId), show = readSeriesShow(ctx.libId, ctx.showKey);
   if (!lib || !show) return null;
@@ -238,12 +256,12 @@ async function seriesPlexScrapeSeason(seasonNum) {
   if (!tid) { toast("未匹配到 TMDB 条目：先完成一次刮削，或在「编辑媒体信息」里填写 TMDB ID"); return null; }
   const data = await fetchSeriesSeason(tid, season.season);
   if (!data) { toast(`${seriesPlexSeasonLabel(season.season)}：TMDB 取数失败（网络或该季不存在）`); return null; }
-  const overwriteLocal = !!document.getElementById("seriesPlexOverwriteLocal")?.checked;
+  const overwriteLocal = seriesPlexOverwriteLocal(activeSeriesPlex && activeSeriesPlex.scope);
   const r = applySeriesSeasonScrape(lib.id, show, season, data, { overwriteLocal });
   const official = Math.max(0, ...((data.episodes || []).map(e => Number(e.episode_number) || 0)));
   const missing = seriesPlexMissing(seriesPlexLocalNumbers(season), official);
   toast(`${seriesPlexSeasonLabel(season.season)} 刮削完成：写入 ${r.written} 集${r.skippedLocal ? `，跳过本地 NFO ${r.skippedLocal} 集` : ""}${missing.length ? `；缺 ${seriesPlexEpisodeRanges(missing)}` : "；集数完整"}`);
-  await seriesPlexRenderPanel();
+  await seriesPlexRenderPanel(true, null, libId, showKey);
   return r;
 }
 
@@ -276,8 +294,8 @@ async function scrapeSeriesAllSeasons(libId, showKey, opts) {
 
 /* ==================== 四、缺失集比对（官方集数） ==================== */
 
-async function seriesPlexCompareMissing() {
-  const ctx = activeSeriesPlex;
+async function seriesPlexCompareMissing(libId, showKey) {
+  const ctx = seriesPlexCtx(libId, showKey);
   if (!ctx) return null;
   const lib = findMediaLibrary(ctx.libId), show = readSeriesShow(ctx.libId, ctx.showKey);
   if (!lib || !show) return null;
@@ -293,10 +311,10 @@ async function seriesPlexCompareMissing() {
     if (!res.ok) { toast(`比对失败：HTTP ${res.status}`); return null; }
     const data = await res.json();
     if (!data || !data.ok) { toast("比对失败：服务端未返回结果"); return null; }
-    ctx.missing = data;
+    seriesPlexSetMissing(ctx.libId, ctx.showKey, data);
     const parts = (data.seasons || []).filter(s => (s.missing || []).length).map(s => `${s.tag} 缺 ${seriesPlexEpisodeRanges(s.missing)}`);
     toast(parts.length ? `缺失集：${parts.join("；")}` : (data.notes && data.notes.length ? data.notes[0] : "各季集数与官方一致"));
-    await seriesPlexRenderPanel();
+    await seriesPlexRenderPanel(true, null, libId, showKey);
     return data;
   } catch (e) { toast("比对失败：网络异常"); return null; }
 }
@@ -305,8 +323,8 @@ async function seriesPlexCompareMissing() {
 
 /* Plex 社区的标准修复流程：移除 → 清元数据 → 重新匹配。这里对应：
    清掉这部剧全部分集的本地刮削记录与剧卡记忆 → 逐季重新刮削 → 结果回写服务端缓存。 */
-async function seriesPlexRematch() {
-  const ctx = activeSeriesPlex;
+async function seriesPlexRematch(libId, showKey) {
+  const ctx = seriesPlexCtx(libId, showKey);
   if (!ctx) return null;
   const lib = findMediaLibrary(ctx.libId), show = readSeriesShow(ctx.libId, ctx.showKey);
   if (!lib || !show) return null;
@@ -326,8 +344,9 @@ async function seriesPlexRematch() {
   seriesPlexPlanCache[lib.id] = null;
   delete seriesPlexPlanCache[lib.id];
   toast(`已清除该剧 ${cleared} 条刮削记录，正在重新逐季匹配…`);
-  const r = await scrapeSeriesAllSeasons(lib.id, show.key, { overwriteLocal: false });
-  await seriesPlexRenderPanel(true);
+  const r = await scrapeSeriesAllSeasons(lib.id, show.key, { overwriteLocal: seriesPlexOverwriteLocal(activeSeriesPlex && activeSeriesPlex.scope) });
+  seriesPlexSetMissing(lib.id, show.key, null);
+  await seriesPlexRenderPanel(true, null, libId, showKey);
   return r;
 }
 
@@ -357,7 +376,7 @@ function seriesPlexSeasonRow(lib, show, planSeason, missing) {
     <td>${epCount} 集<small>${esc(localTag)}</small></td>
     <td>${esc(official)}</td>
     <td>${missLabel}</td>
-    <td><button class="btn btn-sm" type="button" onclick="seriesPlexScrapeSeason(${Number(planSeason.season) || 0})">刮削本季</button></td>
+    <td><button class="btn btn-sm" type="button" onclick="seriesPlexScrapeSeason(${Number(planSeason.season) || 0},${jsAttrArg(lib.id)},${jsAttrArg(show.key)})">刮削本季</button></td>
   </tr>`;
 }
 
@@ -379,10 +398,10 @@ function seriesPlexPanelHtml(lib, show, planData, missing) {
     <div><b>${esc(show.title || "")}</b><small>${esc([show.year, `${(show.seasonList || []).length} 季`, `共 ${seriesShowEpisodeCount(show)} 集`].filter(Boolean).join(" · "))}</small></div>
     <div class="series-plex-actions">
       <label class="series-plex-check"><input type="checkbox" id="seriesPlexOverwriteLocal"> 覆盖本地 NFO</label>
-      <button class="btn btn-sm" type="button" onclick="seriesPlexAction('refresh')">刷新方案</button>
-      <button class="btn btn-sm" type="button" onclick="seriesPlexAction('compare')">比对官方集数</button>
-      <button class="btn btn-sm btn-primary" type="button" onclick="seriesPlexAction('scrape')">多季全量刮削</button>
-      <button class="btn btn-sm" type="button" onclick="seriesPlexAction('dance')">重匹配（Plex Dance）</button>
+      <button class="btn btn-sm" type="button" onclick="seriesPlexAction('refresh',${jsAttrArg(lib.id)},${jsAttrArg(show.key)})">刷新方案</button>
+      <button class="btn btn-sm" type="button" onclick="seriesPlexAction('compare',${jsAttrArg(lib.id)},${jsAttrArg(show.key)})">比对官方集数</button>
+      <button class="btn btn-sm btn-primary" type="button" onclick="seriesPlexAction('scrape',${jsAttrArg(lib.id)},${jsAttrArg(show.key)})">多季全量刮削</button>
+      <button class="btn btn-sm" type="button" onclick="seriesPlexAction('dance',${jsAttrArg(lib.id)},${jsAttrArg(show.key)})">重匹配（Plex Dance）</button>
     </div>
   </div>`;
   if (!showPlan) {
@@ -410,14 +429,14 @@ function seriesPlexPanelHtml(lib, show, planData, missing) {
     (notes ? `<section class="series-plex-section"><h4>说明</h4><ul class="series-plex-notes">${notes}</ul></section>` : "");
 }
 
-async function seriesPlexRenderPanel(force) {
-  const ctx = activeSeriesPlex;
-  const host = document.getElementById("seriesPlexContent");
+async function seriesPlexRenderPanel(force, hostId, libId, showKey) {
+  const ctx = seriesPlexCtx(libId, showKey);
+  const host = document.getElementById(hostId || (ctx && ctx.hostId) || "seriesPlexContent");
   if (!ctx || !host) return;
   const lib = findMediaLibrary(ctx.libId), show = readSeriesShow(ctx.libId, ctx.showKey);
   if (!lib || !show) { host.innerHTML = `<div class="empty-tip">这部剧的本地信息已丢失，请回到媒体库重新进入。</div>`; return; }
   const planData = await loadSeriesPlexPlan(ctx.libId, !!force);
-  host.innerHTML = seriesPlexPanelHtml(lib, show, planData, ctx.missing);
+  host.innerHTML = seriesPlexPanelHtml(lib, show, planData, seriesPlexMissingOf(ctx.libId, ctx.showKey));
 }
 
 async function openSeriesPlexPanel(libId, showKey) {
@@ -436,27 +455,144 @@ function closeSeriesPlexPanel() {
 }
 
 /* 面板按钮分发。 */
-async function seriesPlexAction(action) {
-  const ctx = activeSeriesPlex;
+async function seriesPlexAction(action, libId, showKey) {
+  const ctx = seriesPlexCtx(libId, showKey);
   if (!ctx) return;
-  if (action === "refresh") { delete seriesPlexPlanCache[ctx.libId]; await seriesPlexRenderPanel(true); return; }
-  if (action === "compare") { await seriesPlexCompareMissing(); return; }
+  if (action === "refresh") { delete seriesPlexPlanCache[ctx.libId]; await seriesPlexRenderPanel(true, null, ctx.libId, ctx.showKey); return; }
+  if (action === "compare") { await seriesPlexCompareMissing(ctx.libId, ctx.showKey); return; }
   if (action === "scrape") {
-    const overwriteLocal = !!document.getElementById("seriesPlexOverwriteLocal")?.checked;
+    const overwriteLocal = seriesPlexOverwriteLocal(activeSeriesPlex && activeSeriesPlex.scope);
     await scrapeSeriesAllSeasons(ctx.libId, ctx.showKey, { overwriteLocal });
     delete seriesPlexPlanCache[ctx.libId];
-    await seriesPlexRenderPanel(true);
+    await seriesPlexRenderPanel(true, null, ctx.libId, ctx.showKey);
     return;
   }
-  if (action === "dance") { await seriesPlexRematch(); return; }
+  if (action === "dance") { await seriesPlexRematch(ctx.libId, ctx.showKey); return; }
 }
 
-/* ==================== 七、剧集详情页入口 ==================== */
+/* ==================== 七、系统设置 → 刮削配置：多季剧集刮削 ====================
+   v0.9.98（客户要求）：「媒体主页季度选项中的『多季诊断』与『多季全量刮削』两个按钮
+   和功能迁移到系统设置的刮削配置里」。所以剧集详情页不再挂工具条，统一在设置页操作：
+   选库（必选）→ 选剧集或「全部剧集（整库）」→ 诊断 / 全量刮削 / 比对 / 重匹配。
+   面板复用同一套渲染（seriesPlexPanelHtml），因此两边显示的口径完全一致。 */
 
-/* 「季度」标题右侧的多季工具条：诊断面板入口 + 一键多季刮削。 */
-function seriesPlexToolbarHtml(libId, showKey) {
-  return `<div class="series-plex-toolbar">
-    <button class="btn btn-sm" type="button" onclick="openSeriesPlexPanel(${jsAttrArg(libId)},${jsAttrArg(showKey)})">🧩 多季诊断</button>
-    <button class="btn btn-sm" type="button" onclick="scrapeSeriesAllSeasons(${jsAttrArg(libId)},${jsAttrArg(showKey)},{})">⬇ 多季全量刮削</button>
-  </div>`;
+let plexSettingsState = { libId: "", showKey: "", entries: [], busy: false };
+
+function plexSettingsStatus(text, kind) {
+  const el = document.getElementById("plexSettingsStatus");
+  if (!el) return;
+  el.textContent = text;
+  el.className = "badge" + (kind ? " " + kind : "");
+}
+function plexSettingsSeriesLibraries() {
+  try { return (localMediaLibraries || []).filter(l => l && l.type === "series"); } catch (e) { return []; }
+}
+/* 进入刮削配置页时调用：填库下拉，并按当前选择刷新剧集下拉。 */
+async function plexSettingsInit(force) {
+  const libSel = document.getElementById("plexLibSelect");
+  if (!libSel) return;
+  const libs = plexSettingsSeriesLibraries();
+  const keep = String(plexSettingsState.libId || libSel.value || "");
+  libSel.innerHTML = libs.length
+    ? libs.map(l => `<option value="${esc(l.id)}">${esc(l.name || l.id)}</option>`).join("")
+    : `<option value="">（没有剧集媒体库）</option>`;
+  const pick = libs.some(l => l.id === keep) ? keep : (libs[0] ? libs[0].id : "");
+  libSel.value = pick;
+  plexSettingsState.libId = pick;
+  await plexSettingsLoadShows(!!force);
+}
+/* 读取该库的剧集清单（走整库文件列表 + 与媒体页同一套聚合，含原盘合并）。 */
+async function plexSettingsLoadShows(force) {
+  const libSel = document.getElementById("plexLibSelect");
+  const showSel = document.getElementById("plexShowSelect");
+  if (!libSel || !showSel) return;
+  const libId = String(libSel.value || "");
+  plexSettingsState.libId = libId;
+  if (!libId) {
+    showSel.innerHTML = `<option value="">全部剧集（整库）</option>`;
+    plexSettingsState.entries = [];
+    plexSettingsStatus("没有剧集媒体库", "warn");
+    return;
+  }
+  plexSettingsStatus("正在读取剧集…");
+  const keep = String(plexSettingsState.showKey || showSel.value || "");
+  try {
+    const files = await libraryScanLoadFiles(libId);
+    const shows = buildSeriesShows(files || []);
+    /* v0.9.98：把剧卡写进缓存 —— 详情页、逐季刮削与诊断面板都通过 readSeriesShow 取剧卡，
+       只在这里 buildSeriesShows 而不缓存，会让设置页打开面板时显示「本地信息已丢失」
+       （真实浏览器验证时抓到的空白面板）。 */
+    try { shows.forEach(show => { syncSeriesShowMetadata(libId, show); rememberSeriesShow(libId, show); }); } catch (e) { /* 缓存失败不阻塞列表 */ }
+    plexSettingsState.entries = shows.map(show => ({ key: show.key, title: show.title || show.key, seasons: (show.seasonList || []).length }));
+    showSel.innerHTML = `<option value="">全部剧集（整库 · ${shows.length} 部）</option>` +
+      shows.map(s => `<option value="${esc(s.key)}">${esc(s.title || s.key)}（${(s.seasonList || []).length} 季）</option>`).join("");
+    showSel.value = shows.some(s => s.key === keep) ? keep : "";
+    plexSettingsState.showKey = showSel.value;
+    plexSettingsStatus(shows.length ? `已就绪：${shows.length} 部剧集` : "该库暂无剧集", shows.length ? "ok" : "warn");
+  } catch (e) {
+    plexSettingsState.entries = [];
+    showSel.innerHTML = `<option value="">全部剧集（整库）</option>`;
+    plexSettingsStatus(`读取失败：${e && e.message ? e.message : e}`, "warn");
+  }
+}
+/* 当前操作对象：选中单剧只操作它，选「全部剧集」则遍历整库。 */
+function plexSettingsTargets() {
+  const showSel = document.getElementById("plexShowSelect");
+  const libId = plexSettingsState.libId;
+  if (!libId) return [];
+  const picked = String((showSel && showSel.value) || "");
+  if (picked) {
+    const show = readSeriesShow(libId, picked);
+    return show ? [{ libId, showKey: picked, title: show.title || picked }] : [];
+  }
+  return plexSettingsState.entries.map(e => ({ libId, showKey: e.key, title: e.title }));
+}
+async function plexSettingsRun(action) {
+  if (plexSettingsState.busy) { toast("已有任务在执行，请稍候"); return; }
+  const targets = plexSettingsTargets();
+  const panel = document.getElementById("plexSettingsPanel");
+  if (!targets.length) { toast("请先选择剧集媒体库（该库暂无剧集时先重扫媒体库）"); plexSettingsStatus("没有可操作对象", "warn"); return; }
+  const scope = String((document.getElementById("plexShowSelect") || {}).value || "") ? "show" : "all";
+  if (action === "compare" && targets.length > 1) { toast("「比对官方集数」只对单部剧生效：请在「刮削对象」里选一部剧"); plexSettingsStatus("请选择单部剧后再比对", "warn"); return; }
+  plexSettingsState.busy = true;
+  let done = 0;
+  try {
+    for (const t of targets) {
+      plexSettingsStatus(`${action === "diagnose" ? "诊断" : action === "scrape" ? "全量刮削" : action === "compare" ? "比对" : "重匹配"} ${done + 1}/${targets.length}：${t.title}`);
+      /* 面板上下文：设置页作用域（覆盖本地 NFO 由设置页下拉决定）。 */
+      activeSeriesPlex = { libId: t.libId, showKey: t.showKey, scope: "settings", hostId: "plexSettingsPanel" };
+      if (action === "diagnose") {
+        delete seriesPlexPlanCache[t.libId];
+        await plexSettingsRender(t);
+      } else if (action === "scrape") {
+        await scrapeSeriesAllSeasons(t.libId, t.showKey, { overwriteLocal: seriesPlexOverwriteLocal("settings") });
+        delete seriesPlexPlanCache[t.libId];
+        await plexSettingsRender(t);
+      } else if (action === "compare") {
+        await seriesPlexCompareMissing(t.libId, t.showKey);
+      } else if (action === "dance") {
+        await seriesPlexRematch(t.libId, t.showKey);
+        await plexSettingsRender(t);
+      }
+      done++;
+    }
+    plexSettingsStatus(`完成 ${done}/${targets.length} 部${scope === "all" && targets.length > 1 ? "（整库）" : ""}`, "ok");
+  } catch (e) {
+    plexSettingsStatus(`出错：${e && e.message ? e.message : e}`, "warn");
+    toast("⚠️ 多季操作出错：" + (e && e.message ? e.message : e));
+  } finally {
+    plexSettingsState.busy = false;
+  }
+}
+/* 把一部剧的诊断面板渲染进设置页（整库时多部依次追加）。 */
+async function plexSettingsRender(target) {
+  const host = document.getElementById("plexSettingsPanel");
+  if (!host) return;
+  const lib = findMediaLibrary(target.libId), show = readSeriesShow(target.libId, target.showKey);
+  if (!lib || !show) { host.innerHTML = `<div class="empty-tip">这部剧本地信息已丢失，请回媒体库重进一次。</div>`; return; }
+  const planData = await loadSeriesPlexPlan(target.libId, true);
+  const block = seriesPlexPanelHtml(lib, show, planData, seriesPlexMissingOf(target.libId, target.showKey));
+  const append = plexSettingsState.planAppend && plexSettingsState.renderIndex > 0;
+  host.innerHTML = append ? host.innerHTML + block : block;
+  plexSettingsState.renderIndex = (plexSettingsState.renderIndex || 0) + 1;
 }

@@ -85,10 +85,14 @@ check("3d 搜索弹窗样式完整（弹出动画 + 图标按钮 + 过滤类保�
 print("4. 季度提示去除 + 季度展示规范")
 check("4a 季度提示长文案已删除",
       "点击季度标题展开/收起该季集列表" not in MEDIA and "多季剧集会为每一季生成独立季度卡片" not in MEDIA)
-# v0.9.97：季度区块标题保留，并在标题右侧挂多季工具条（多季诊断 / 多季全量刮削）。
-check("4b 季度区块标题保留且挂载多季工具条",
-      '<section><h3>季度</h3>${seriesPlexToolbarHtml(lib.id, show.key)}</section>' in MEDIA
-      and "function seriesPlexToolbarHtml" in (ROOT / "web" / "js" / "03-series-plex.js").read_text(encoding="utf-8"))
+# v0.9.98（口径变更）：多季诊断 / 多季全量刮削已从剧集详情迁到系统设置 → 刮削配置
+# （客户明确要求），因此这里断言「新落点存在」+「旧接线已彻底消失」。
+check("4b 季度区块保留，多季工具条已迁到系统设置刮削配置（旧入口不残留）",
+      '<section><h3>季度</h3><p class="series-plex-moved">' in MEDIA
+      and "seriesPlexToolbarHtml" not in MEDIA
+      and "seriesPlexToolbarHtml" not in (ROOT / "web" / "js" / "03-series-plex.js").read_text(encoding="utf-8")
+      and 'id="multiSeasonScrapeBlock"' in (ROOT / "index.html").read_text(encoding="utf-8")
+      and "function plexSettingsRun" in (ROOT / "web" / "js" / "03-series-plex.js").read_text(encoding="utf-8"))
 # v0.9.95（安全审查 N-6）：季卡标题在「第N季」与「共M集」之间插入可选季名，
 # 并在标题下渲染季简介 —— 这两个字段此前只被持久化、界面上没有落点。
 # v0.9.97：季称号走 seriesPlexSeasonLabel —— 第 0 季在 Plex 口径里是「特别篇」。
@@ -147,14 +151,14 @@ check("5k 简介排版与 16:9 画框保留（旧契约不破）",
 
 print("6. 版本")
 check("6a 页面与脚本版本一致",
-      'VAULTHUB_ASSET_VERSION = "0.9.97"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.97"' in STATE)
+      'VAULTHUB_ASSET_VERSION = "0.9.98"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.98"' in STATE)
 # v0.9.92（上轮发布前审查项）：标语断言升级为「整串完全一致」——
 # 旧写法只数 "v0.9.9x · " 出现 3 次，三处文案不一致也能过。
 _slogans_6b = re.findall(r"v0\.9\.9\d · [^<\"]+", HTML)
 check("6b 关于 / 侧栏 / 页脚标语整串一致",
       len(_slogans_6b) == 3 and len(set(_slogans_6b)) == 1)
 check("6c Update Log 有 v0.9.85 段",
-      (ROOT / "Update Log.md").read_text(encoding="utf-8").startswith("# VaultHub 蜀鼠之家 v0.9.97"))
+      (ROOT / "Update Log.md").read_text(encoding="utf-8").startswith("# VaultHub 蜀鼠之家 v0.9.98"))
 check("6d Release Notes 存在", (ROOT / ".github/RELEASE_NOTES_0.9.90.md").exists())
 
 if FAILS:

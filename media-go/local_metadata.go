@@ -16,6 +16,14 @@ import (
 type localMetadataCast struct {
 	Name      string `json:"name"`
 	Character string `json:"character"`
+	/* v0.9.98：演职人员头像。本地 NFO（tinyMediaManager / Emby / Jellyfin 写的
+	   `<actor><thumb>`）里通常是 TMDB 图片地址或 .actors/ 目录下的本地文件，
+	   这里统一转成**可直接放进 <img src> 的地址**（TMDB 走 /api/media/cast/avatar?person=，
+	   本地文件走 /api/media/cast/avatar?id=&path=），前端不必再判断来源。
+	   AvatarThumb 保留原始值，写 NFO 时原样回填。 */
+	Avatar      string `json:"avatar,omitempty"`
+	AvatarKind  string `json:"avatar_kind,omitempty"` // tmdb / local / remote
+	AvatarThumb string `json:"avatar_thumb,omitempty"`
 }
 type localMetadataSubtitle struct {
 	Label    string `json:"label"`
@@ -45,8 +53,9 @@ type localMediaMetadata struct {
 	NFO        string                  `json:"nfo,omitempty"`
 }
 type nfoActor struct {
-	Name string `xml:"name"`
-	Role string `xml:"role"`
+	Name  string `xml:"name"`
+	Role  string `xml:"role"`
+	Thumb string `xml:"thumb,omitempty"`
 }
 type nfoThumb struct {
 	Aspect string `xml:"aspect,attr"`
@@ -196,9 +205,15 @@ func readLocalMediaMetadata(lib Library, mediaPath string) (localMediaMetadata, 
 				}
 			}
 			for _, a := range doc.Actors {
-				if strings.TrimSpace(a.Name) != "" {
-					m.Cast = append(m.Cast, localMetadataCast{Name: strings.TrimSpace(a.Name), Character: strings.TrimSpace(a.Role)})
+				name := strings.TrimSpace(a.Name)
+				if name == "" {
+					continue
 				}
+				avatar, kind, raw := localCastAvatar(lib, dir, strings.TrimSpace(a.Thumb))
+				m.Cast = append(m.Cast, localMetadataCast{
+					Name: name, Character: strings.TrimSpace(a.Role),
+					Avatar: avatar, AvatarKind: kind, AvatarThumb: raw,
+				})
 			}
 			for _, id := range doc.UniqueIDs {
 				switch strings.ToLower(strings.TrimSpace(id.Type)) {
@@ -291,7 +306,49 @@ func readLocalMediaMetadata(lib Library, mediaPath string) (localMediaMetadata, 
 	return m, nil
 }
 
-// seriesShowDirs walks from the episode's own directory up to (but excluding)
+/* localCastAvatar：把本地 NFO 里 <actor><thumb> 的值换成可直接显示的头像地址。
+   三种形态（都实测于常见刮削器的输出）：
+     1. TMDB 图片地址（https://image.tmdb.org/t/p/w500/xxx.jpg）→ 走图片代理
+        /api/media/cast/avatar?person=…，与在线刮削的头像同一条路
+        （浏览器直连 TMDB 会被 CORS/防盗链拦住，代理后稳）；
+     2. `.actors/姓名.jpg` 这类本地文件（Emby / Jellyfin 下载的头像）→ 走本地头像代理
+        /api/media/cast/avatar?id=&path=；
+     3. 其它 http(s) 地址 → 原样返回，交给浏览器。
+   返回值第三项是原始 thumb，写回 NFO 时原样保留（不让本地刮削成果被我们改坏）。 */
+func localCastAvatar(lib Library, dir, thumb string) (avatar, kind, raw string) {
+	thumb = strings.TrimSpace(thumb)
+	if thumb == "" {
+		return "", "", ""
+	}
+	lower := strings.ToLower(thumb)
+	if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
+		if u, err := url.Parse(thumb); err == nil {
+			if p := u.Path; strings.HasPrefix(p, "/t/p/") {
+				if rest := strings.TrimPrefix(p, "/t/p/"); rest != "" {
+					segs := strings.SplitN(rest, "/", 2)
+					if len(segs) == 2 && strings.TrimSpace(segs[1]) != "" {
+						return "/api/media/cast/avatar?person=" + url.QueryEscape("/"+segs[1]), "tmdb", thumb
+					}
+				}
+			}
+		}
+		return thumb, "remote", thumb
+	}
+	abs := thumb
+	if !filepath.IsAbs(abs) {
+		abs = filepath.Join(dir, filepath.FromSlash(thumb))
+	}
+	if st, err := os.Stat(abs); err != nil || st.IsDir() {
+		return "", "", thumb
+	}
+	rel := indexRelFor(lib, abs)
+	if rel == "" {
+		return "", "", thumb
+	}
+	return "/api/media/cast/avatar?id=" + url.QueryEscape(lib.ID) + "&path=" + url.QueryEscape(filepath.ToSlash(rel)), "local", thumb
+}
+
+// seriesShowDirs walks from the episode's own directory up to (but excluding) the media library root,
 // the media library root, yielding directories that may hold show/season level
 // artwork for a series library. Multi-path libraries are handled through
 // AllPaths so extra volumes resolve their own ancestors. v0.9.52：剧集海报/

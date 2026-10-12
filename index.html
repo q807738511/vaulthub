@@ -4,10 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VaultHub 蜀鼠之家</title>
-<link rel="stylesheet" href="/web/css/main.css?v=0.9.97">
+<link rel="stylesheet" href="/web/css/main.css?v=0.9.98">
 <script>
 /* 资源版本号：index.html 用它给所有静态资源打查询串。 */
-window.VAULTHUB_ASSET_VERSION = "0.9.97";
+window.VAULTHUB_ASSET_VERSION = "0.9.98";
 </script>
 <script>
 /* v0.9.73 主题防闪：调色板/明暗/强调色必须在首帧渲染前落到 <html> 上，
@@ -59,7 +59,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.97";
     <button class="btn btn-primary" style="width:100%;margin-top:12px;" onclick="vaultHubLogin()">🔐 登录</button>
     <div class="auth-error" id="authError"></div>
     <!-- v0.9.93：登录页也显示版本标语（原第三处在侧栏页脚，侧栏已移除）。 -->
-    <div class="login-ver"><span id="loginVerLabel" class="ver">v0.9.97 · 多季剧集按 Plex 口径刮削·缺失集可比对</span></div>
+    <div class="login-ver"><span id="loginVerLabel" class="ver">v0.9.98 · 原盘播放菜单与演职人员补全</span></div>
   </div>
 </div>
 
@@ -648,12 +648,30 @@ window.VAULTHUB_ASSET_VERSION = "0.9.97";
           <div class="media-actions"><button class="btn btn-primary" id="networkSpeedButton" type="button" onclick="testScraperNetworks()">测速全部链接</button><span class="badge" id="networkSpeedSummary">尚未测速</span></div>
           <div class="network-speed-grid" id="networkSpeedResults"></div>
         </div>
+<div class="setblock" id="multiSeasonScrapeBlock">
+          <h4>🧩 多季剧集刮削（Plex 口径）</h4>
+          <p>多季剧集按 Plex 命名口径逐季刮削：剧根「剧集名 (年份)」、每季一个 <code>Season XX</code> 子目录（特别篇 <code>Season 00</code>）、文件名 <code>剧集名 - sXXeYY - 标题.ext</code>（多集合并用 <code>sXXeYY-eZZ</code>，<b>方括号内容会被 Plex 完全忽略</b>）。这里可以整库或按单剧做命名诊断、缺失集比对、全量刮削与重匹配（Plex Dance）。</p>
+          <div class="form-2col">
+            <div class="cfg-field"><label for="plexLibSelect">剧集媒体库</label><select id="plexLibSelect" onchange="plexSettingsLoadShows(true)"><option value="">读取中…</option></select></div>
+            <div class="cfg-field"><label for="plexShowSelect">刮削对象</label><select id="plexShowSelect"><option value="">全部剧集（整库）</option></select></div>
+            <div class="cfg-field"><label for="plexOverwriteLocal">本地 NFO</label><select id="plexOverwriteLocal"><option value="0">不覆盖（Local Media Assets 优先）</option><option value="1">覆盖本地 NFO</option></select></div>
+            <div class="cfg-field"><label>当前状态</label><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="badge" id="plexSettingsStatus">未运行</span><button class="btn btn-sm" type="button" onclick="plexSettingsLoadShows(true)">↻ 重新读取剧集</button></div></div>
+          </div>
+          <div class="media-actions">
+            <button class="btn btn-primary" type="button" onclick="plexSettingsRun('diagnose')">🧩 多季诊断</button>
+            <button class="btn" type="button" onclick="plexSettingsRun('scrape')">⬇ 多季全量刮削</button>
+            <button class="btn" type="button" onclick="plexSettingsRun('compare')">🔍 比对官方集数</button>
+            <button class="btn" type="button" onclick="plexSettingsRun('dance')">🔁 重匹配（Plex Dance）</button>
+          </div>
+          <div class="series-plex-panel" id="plexSettingsPanel"></div>
+        </div>
 <div class="setblock">
           <h4>🖼 画面清晰度与省流（弱网 / 自动测速）</h4>
           <div class="cfg-field"><label for="qualityLevel">画面清晰度与色彩</label><select id="qualityLevel" onchange="saveQualityLevelFromSettings()"><option value="auto">自动（弱网/省流时按高清档）</option><option value="original">原画 · 原图直出 · 完整色彩</option><option value="high">高清 · 转码 1600px · 完整色彩</option><option value="smooth">流畅 · 转码 1200px · 色彩 70%</option><option value="minimal">极省 · 转码 900px · 无色彩（灰度）</option></select><small class="cfg-hint">清晰度与色彩一起调：档位越高越清晰、色彩越完整；最低档为无色彩（灰度）。随时可切回。</small></div>
           <div class="cfg-field"><label>当前生效</label><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span id="qualityLevelStatus" style="font-size:11px;color:var(--text2);line-height:1.7">—</span><button class="btn" type="button" onclick="resetQualityLevel()">🎨 恢复原画（完整色彩）</button></div></div>
           <div class="cfg-field"><label for="weakNetworkMode">弱网模式</label><select id="weakNetworkMode" onchange="saveWeakNetworkMode()"><option value="auto">自动（按测速结果决定）</option><option value="on">始终开启（音频 96k 转码 / 省流）</option><option value="off">关闭（原文件直出）</option></select></div>
-          <div class="cfg-field"><label>自动测速</label><label class="toggle-row"><input type="checkbox" id="autoSpeedTestToggle" onchange="setAutoSpeedTest(this.checked)"><span>当天首次打开 WEBUI 时自动测速</span><small>测本地网络到容器的延迟与下行带宽，结果用于音频限码率、漫画省流与视频自动画质</small></label></div>
+          <!-- v0.9.98（客户要求）：勾选按钮挪到选项行末尾 —— 文字在左、开关在最右。 -->
+          <div class="cfg-field"><label>自动测速</label><label class="toggle-row toggle-row-tail"><span class="l">当天首次打开 WEBUI 时自动测速<small>测本地网络到容器的延迟与下行带宽，结果用于音频限码率、漫画省流与视频自动画质</small></span><input type="checkbox" id="autoSpeedTestToggle" class="toggle-tail-input" onchange="setAutoSpeedTest(this.checked)"><span class="toggle-tail-hint">自动测速</span></label></div>
           <div class="cfg-field"><label>网络测速</label><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn" type="button" onclick="probeWeakNetworkFromSettings()">📶 立即测速（延迟 + 带宽）</button><span id="weakNetworkStatus" style="font-size:11px;color:var(--text2);line-height:1.7">最近测速：未测速</span><span id="audioQualityStatus" style="font-size:11px;color:var(--text2);line-height:1.7"></span></div></div>
         </div>
 <div class="setblock">
@@ -749,7 +767,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.97";
          页脚在启动时由 syncAppFooterVersion() 读取并同步，发版不会漏改。 -->
     <footer class="app-footer" id="appFooter">
       <span class="af-name">VaultHub 蜀鼠之家</span>
-      <span id="appFooterVer" class="ver">v0.9.97 · 多季剧集按 Plex 口径刮削·缺失集可比对</span>
+      <span id="appFooterVer" class="ver">v0.9.98 · 原盘播放菜单与演职人员补全</span>
       <span class="af-note" data-i18n="footerAboutHint">版本与「系统设置 → 账户与登录 → 关于」中的版本参数保持一致</span>
     </footer>
 
@@ -870,7 +888,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.97";
   <div class="modal">
     <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
     <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
-    <div class="about-row" data-about-ver="1"><span data-i18n="aboutVer">版本</span><b>v0.9.97 · 多季剧集按 Plex 口径刮削·缺失集可比对</b></div>
+    <div class="about-row" data-about-ver="1"><span data-i18n="aboutVer">版本</span><b>v0.9.98 · 原盘播放菜单与演职人员补全</b></div>
     <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>Go (media/manager/subtitle) · Caddy · FFmpeg · SQLite · HTML/CSS/JS</b></div>
     <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>VaultHub 内置系统监控</b></div>
     <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>
@@ -1058,7 +1076,7 @@ window.VAULTHUB_ASSET_VERSION = "0.9.97";
   </div>
 </div>
 
-<!-- v0.9.97：多季诊断 / 命名体检 / 缺失集比对面板（剧集详情「季度」区的「🧩 多季诊断」打开）。
+<!-- v0.9.98：多季诊断 / 命名体检 / 缺失集比对面板（入口：系统设置 → 刮削配置 → 多季剧集刮削）。
      内容全部运行时渲染，规则以服务端 /api/media/series/plan 为准。 -->
 <div class="modal-mask" id="seriesPlexModal">
   <div class="modal wide" role="dialog" aria-modal="true" aria-label="多季剧集诊断">
@@ -1069,17 +1087,17 @@ window.VAULTHUB_ASSET_VERSION = "0.9.97";
 
 <div class="toast" id="toast"></div>
 
-<script src="/web/js/01-state.js?v=0.9.97"></script>
-<script src="/web/js/03-quality.js?v=0.9.97"></script>
-<script src="/web/js/02-media.js?v=0.9.97"></script>
+<script src="/web/js/01-state.js?v=0.9.98"></script>
+<script src="/web/js/03-quality.js?v=0.9.98"></script>
+<script src="/web/js/02-media.js?v=0.9.98"></script>
 <!-- v0.9.97：Plex 口径的多季剧集刮削（多季诊断 / 缺失集比对 / 重匹配）。
      依赖 02-media.js 的 parseSeriesEpisode 与剧集数据，必须排在它之后。 -->
-<script src="/web/js/03-series-plex.js?v=0.9.97"></script>
-<script src="/web/js/03-features.js?v=0.9.97"></script>
-<script src="/web/js/05-home.js?v=0.9.97"></script>
-<script src="/web/js/06-theme.js?v=0.9.97"></script>
-<script src="/web/js/07-topnav.js?v=0.9.97"></script>
-<script src="/web/js/03-audio-zoom.js?v=0.9.97"></script>
-<script src="/web/js/04-boot.js?v=0.9.97"></script>
+<script src="/web/js/03-series-plex.js?v=0.9.98"></script>
+<script src="/web/js/03-features.js?v=0.9.98"></script>
+<script src="/web/js/05-home.js?v=0.9.98"></script>
+<script src="/web/js/06-theme.js?v=0.9.98"></script>
+<script src="/web/js/07-topnav.js?v=0.9.98"></script>
+<script src="/web/js/03-audio-zoom.js?v=0.9.98"></script>
+<script src="/web/js/04-boot.js?v=0.9.98"></script>
 </body>
 </html>

@@ -18,7 +18,7 @@ let vaultHubSessionPingedAt = 0;
    历史故障：v0.8.3→v0.8.5 的前端修改在服务端已生效，但浏览器仍执行缓存里的
    旧 02-media.js，用户看到「没有更新」。现在入口页 no-store、静态资源带 ?v=，
    并在启动时做一次一致性自查，不一致就绕过缓存强制重载一次。 */
-const VAULTHUB_SCRIPT_VERSION = "0.9.97";
+const VAULTHUB_SCRIPT_VERSION = "0.9.98";
 function ensureFreshAssets() {
   /* expected 为空 = 浏览器执行的 index.html 早于 v0.8.6（旧版本入口页没有声明
      版本号），同样属于"页面是旧的"，也需要换 URL 重新取一次。 */
@@ -1946,7 +1946,12 @@ function switchSetTab(key) {
   currentSetTab = key;
   document.querySelectorAll(".settab[data-settab]").forEach(el => el.classList.toggle("on", el.dataset.settab === key));
   document.querySelectorAll(".setpanel").forEach(el => el.classList.toggle("on", el.id === "setpanel-" + key));
-  if (key === "scrape") { refreshHardwareStatus(); if (typeof loadMediaRuntimeSettings === "function") loadMediaRuntimeSettings(false); }
+  if (key === "scrape") {
+    refreshHardwareStatus();
+    if (typeof loadMediaRuntimeSettings === "function") loadMediaRuntimeSettings(false);
+    /* v0.9.98：多季剧集刮削的操作入口在刮削配置里 —— 进页面即刷新库/剧列表。 */
+    if (typeof plexSettingsInit === "function") plexSettingsInit(false);
+  }
   if (key === "hardware") { refreshHardwareStatus(); if (typeof loadMediaRuntimeSettings === "function") loadMediaRuntimeSettings(false); }
   /* v0.9.17：账户与登录页同时承载登录状态、Caddy 反向代理入口和关于，
      所以进入该页时既要刷新会话状态，也要把 Caddyfile 读回来更新路由计数。 */

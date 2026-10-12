@@ -798,7 +798,8 @@ function collapseDiscFragments(files) {
     const isIso = group.kind === "iso";
     const current = groups.get(group.key);
     if (!current) {
-      const entry = { ...file, disc: true, disc_folder: group.key, disc_kind: group.kind, disc_fragments: 1 };
+      /* v0.9.98：带上原盘标题 —— 卡片/刮削都用原盘目录名（BDMV 片段名是 00005 这类编号）。 */
+      const entry = { ...file, disc: true, disc_folder: group.key, disc_kind: group.kind, disc_fragments: 1, disc_root: group.key, disc_title: movieTitleFromPath(path) };
       if (isIso) entry.iso_path = path;
       groups.set(group.key, entry);
       out.push(entry);
@@ -991,7 +992,11 @@ function seriesGroupKeyOf(path, parsed) {
   parts.pop();                                   /* 去掉文件名，只看目录 */
   const root = [];
   for (const seg of parts) {
-    if (/^Season\s*\d+$/i.test(seg) || /^第\s*\d+\s*季$/.test(seg)) break;  /* 季目录之上才是剧根 */
+    /* v0.9.98：季目录识别改用 Plex 口径的同一个识别器（Season XX / SXX / 第 N 季 /
+       Specials / Season 00 / 特别篇 / 花絮 …）—— 旧写法只认「Season NN / 第N季」，
+       于是 Specials 目录被当成剧根，同一部剧的特别篇会拆成第二张剧集卡
+       （真实样本 The Flash (2014)/Specials 实测：1 部剧被拆成 2 张卡）。 */
+    if (typeof plexSeasonDirNumberLocal === "function" && plexSeasonDirNumberLocal(seg) >= 0) break;
     root.push(seg);
   }
   const dirKey = String(root[root.length - 1] || "").trim();
@@ -1477,7 +1482,9 @@ async function libraryScanLoadFiles(libId) {
   const first = await res.json();
   let files = await fetchAllLibraryFiles(libId, first, 0);
   files = files.filter(file => supportedLocalMediaFile("movie", lib, String(file.path)));
-  if (lib && lib.type !== "series") files = collapseDiscFragments(files);
+  /* v0.9.98：剧集库里的原盘（BDMV/ISO）同样合并成一条 —— 一部原盘不再按
+     BDMV 片段炸成几百「集」，具体标题在播放器的「媒体菜单」里选。 */
+  files = collapseDiscFragments(files);
   return files;
 }
 async function autoScanLibrary(libId) {
@@ -1947,6 +1954,60 @@ async function fetchSeriesSeason(tmdbId, season) {
     };
   } catch (e) { return null; }
 }
+/* v0.9.98：本地优先合并 —— patch 里只允许「在线补全类」字段落地，
+   本地 NFO/手工整理过的核心字段（标题/剧名/年份/简介/海报/剧照/评分/ID）不动。 */
+function keepLocalMetadataFirst(base, patch) {
+  const out = { ...patch };
+  const protect = ["title", "show_title", "original_title", "year", "overview", "poster", "logo", "fanart", "backdrop", "rating", "runtime", "genres", "tmdb_id", "tvdb_id", "media_type", "season_num", "season_tag", "season_name", "season_overview", "provider"];
+  protect.forEach((k) => {
+    const v = base[k];
+    if (v !== undefined && v !== null && String(v) !== "") out[k] = v;
+  });
+  /* 本地已有演职人员（不带头像）时，与在线结果按姓名合并 —— 本地角色名优先。 */
+  const prev = Array.isArray(base.cast) ? base.cast : [];
+  const next = Array.isArray(patch.cast) ? patch.cast : [];
+  if (prev.length && next.length) {
+    const byName = new Map();
+    next.forEach(c => c && c.name && byName.set(String(c.name).trim(), c));
+    const merged = prev.map((c) => {
+      const hit = c && c.name ? byName.get(String(c.name).trim()) : null;
+      if (!hit) return c;
+      byName.delete(String(c.name).trim());
+      return { ...hit, name: c.name, character: c.character || hit.character || "", avatar: hit.avatar || c.avatar || "", profile_path: hit.profile_path || c.profile_path || "" };
+    });
+    byName.forEach(c => merged.push(c));
+    out.cast = merged;
+  }
+  return out;
+}
+
+/* v0.9.98：这条记录是否需要「在线补演职人员」。
+   判定口径：本地已有元数据（provider=本地 NFO/本地）且（没有 cast，或 cast 里没有一个带
+   头像的）→ 需要补。用户可以关掉（设置 → 刮削配置 → 本地 NFO 演职人员补全）。 */
+function nfoCastFillWanted(meta, path) {
+  if (!meta) return false;
+  if (!nfoCastFillEnabled()) return false;
+  const provider = String(meta.provider || "");
+  const localish = /本地/.test(provider);
+  if (!localish) return false;
+  const cast = Array.isArray(meta.cast) ? meta.cast : [];
+  if (cast.length && cast.some(c => c && (c.avatar || c.profile_path))) return false;
+  if (String(meta.cast_fill_state || "") === "skip") return false;
+  /* 已补过且确实没有演职人员（例如纪录片/演唱会）→ 不再反复联网。 */
+  if (String(meta.cast_fill_state || "") === "empty") return false;
+  const attempts = Number(meta.cast_fill_attempts || 0);
+  const last = Number(meta.cast_fill_last || 0);
+  if (attempts >= 3 && Date.now() - last < MOVIE_SCRAPE_RETRY_MS * 6) return false;
+  return true;
+}
+const NFO_CAST_FILL_KEY = "vaulthub_nfo_cast_fill_v1";
+function nfoCastFillEnabled() {
+  try { return localStorage.getItem(NFO_CAST_FILL_KEY) !== "0"; } catch (e) { return true; }
+}
+function setNfoCastFill(on) {
+  try { localStorage.setItem(NFO_CAST_FILL_KEY, on ? "1" : "0"); } catch (e) { /* 受限忽略 */ }
+  toast(on ? "🎭 已开启：本地 NFO 条目仍会在线补全演职人员" : "🎭 已关闭：本地 NFO 条目不再联网补演职人员");
+}
 async function scrapeOneMovie(lib, files, file) {
   const all = readMovieMetadata();
   const path = String(file.path);
@@ -1961,12 +2022,22 @@ async function scrapeOneMovie(lib, files, file) {
   const searchTitle = seasonTag && seasonTag.show ? seasonTag.show : title;
   const attempts = Number(base.scrape_attempts || 0) + 1;
   const mode = scraperStatus.scraper_mode || scraperStatus.default || "auto";
+  /* v0.9.98：本地已有元数据的条目走「只补演职人员」模式 ——
+     TMDB 命中的 cast 写进 cast，但标题/简介/海报/年份一律保留本地刮削结果，
+     provider 也继续标「本地 NFO」，不再把用户精心整理过的元数据覆盖成在线版本。 */
+  const localFirst = /本地/.test(String(base.provider || "")) &&
+    !!(base.nfo || base.poster || base.logo || base.fanart || base.backdrop || base.overview || base.title);
   const mark = (patch) => {
-    all[path] = { ...base, ...patch, scrape_attempts: attempts, last_attempt: Date.now() };
+    const merged = localFirst ? keepLocalMetadataFirst(base, patch) : patch;
+    all[path] = { ...base, ...merged, scrape_attempts: attempts, last_attempt: Date.now() };
     writeMovieMetadata(all);
     /* v0.9.89：命中即本地化 —— 图片落盘 + 写 NFO，让下一次进库（含换设备/换浏览器）
        直接读媒体目录里的本地元数据，不再整库联网刮削。串行队列，避免并发写盘风暴。 */
     if (patch.scrape_state === "ok") {
+      all[path].cast_fill_attempts = 0;
+      all[path].cast_fill_last = 0;
+      if (patch.cast && patch.cast.length) all[path].cast_fill_state = "filled";
+      writeMovieMetadata(all);
       queueMovieLocalization(lib, path);
       /* v0.9.93：剧集刮到剧名后立刻同步给同一部剧的其它分集。 */
       if (mediaType === "series" && patch.show_title) syncSeriesShowTitleToSiblings(lib, files, path, patch.show_title);
@@ -1978,7 +2049,17 @@ async function scrapeOneMovie(lib, files, file) {
   if (!scrapableMovieTitle(searchTitle)) {
     return mark({ provider: base.provider || "文件名展示", scrape_state: "skip", reason: "文件名无可用标题" });
   }
-  const note = (reason) => { const c = readMovieMetadata(); c[path] = { ...(c[path] || base), reason, scrape_attempts: attempts, last_attempt: Date.now() }; writeMovieMetadata(c); };
+  const note = (reason) => {
+    const c = readMovieMetadata();
+    const prev = c[path] || base;
+    c[path] = { ...prev, reason, scrape_attempts: attempts, last_attempt: Date.now() };
+    if (nfoCastFillWanted(prev, path)) {
+      c[path].cast_fill_attempts = Number(prev.cast_fill_attempts || 0) + 1;
+      c[path].cast_fill_last = Date.now();
+      c[path].cast_fill_state = "retry";
+    }
+    writeMovieMetadata(c);
+  };
   /* v0.9.94（需求9）：带季标签时跳过 TVDB（TVDB 分支不取分季详情），
      交给下面的 TMDB 分支按季取该季海报/简介/分集名。 */
   if (mediaType === "series" && mode === "auto" && scraperStatus.tvdb_enabled && !seasonTag) {
@@ -2033,6 +2114,25 @@ async function scrapeOneMovie(lib, files, file) {
           match_score: best ? Math.round(best.score * 100) / 100 : 0,
           checkedAt: Date.now(), scrape_state: "ok", reason: "",
         };
+        /* v0.9.98：本地优先的条目要的是 TMDB 演职人员（credits.cast，含头像
+           profile_path）—— 详情接口必须再取一次（搜索结果里没有 credits）。 */
+        if (localFirst) {
+          try {
+            const det = await fetch(`/api/media/tmdb?id=${encodeURIComponent(item.id)}&type=${encodeURIComponent(mediaType)}&lang=${tmdbLangTag()}`, { cache: "no-store" });
+            if (det.ok) {
+              const detail = await det.json();
+              const credits = (detail && detail.credits && Array.isArray(detail.credits.cast)) ? detail.credits.cast : [];
+              if (credits.length) {
+                patch.cast = credits.slice(0, 40).map(x => ({ name: x.name || "", character: x.character || "", profile_path: x.profile_path || "" })).filter(x => x.name);
+                patch.cast_source = "TMDB";
+              }
+              patch.cast_lang = tmdbLangTag();
+              patch.cast_fill_state = patch.cast && patch.cast.length ? "filled" : "empty";
+            } else {
+              patch.cast_fill_state = "retry";
+            }
+          } catch (e) { patch.cast_fill_state = "retry"; }
+        }
         /* v0.9.94（需求9）：分季刮削 —— 有季标签就再取一次「第 N 季」详情：
            季海报/季简介写回，并用该季的分集名覆盖分集标题（按集号匹配）。 */
         if (mediaType === "series" && seasonTag) {
@@ -2090,10 +2190,18 @@ async function scrapeMovieMetadata(host, lib, files) {
   const localPaths = new Set();
   const applyLocal = (path, local) => {
     if (!local || !(local.nfo || local.poster || local.logo || local.fanart || local.backdrop || local.tags?.length || local.watched || local.subtitles?.length)) return;
+    /* v0.9.98：本地 NFO 里的演职人员（含 <thumb> 头像）直接落到元数据上 ——
+       以前只有「在线刮削」才写 cast，于是「用别的刮削器的 NFO」在离线时
+       演职人员一栏是空的。 */
+    const localCast = Array.isArray(local.cast) ? local.cast.filter(c => c && c.name) : [];
+    const prevCast = (all[path] && Array.isArray(all[path].cast)) ? all[path].cast : [];
     all[path] = {
       ...movieBaseMetadata(path), ...(all[path] || {}), ...local,
       title: local.title || (all[path] && all[path].title) || movieBaseMetadata(path).title,
       provider: local.provider || "本地元数据",
+      cast: localCast.length ? localCast.map(c => ({ name: c.name, character: c.character || "", avatar: c.avatar || "", avatar_kind: c.avatar_kind || "", profile_path: c.profile_path || "" })) : prevCast,
+      cast_source: localCast.length ? "本地 NFO" : ((all[path] && all[path].cast_source) || ""),
+      cast_local: localCast.length || 0,
       media_type: lib?.type === "series" ? "series" : "movie",
       checkedAt: Date.now(), scrape_state: "ok", reason: "",
     };
@@ -2133,8 +2241,12 @@ async function scrapeMovieMetadata(host, lib, files) {
   const now = Date.now();
   const pending = files.filter((file) => {
     const path = String(file.path);
-    if (localPaths.has(path)) return false;
-    const meta = all[path];
+    const meta0 = all[path];
+    /* v0.9.98（客户反馈「使用别的刮削器做好的本地 NFO 后，无法在线再刮出演职人员」）：
+       本地元数据齐全的条目以前被整条踢出待刮队列 —— 连演职人员都不去在线补。
+       现在改成：本地条目仍然「本地优先」（标题/简介/海报一律以本地为准），
+       但只要缺在线演职人员（没有 cast 或 cast 里没有任何人头像），就进队列补这一项。 */
+    if (localPaths.has(path)) return nfoCastFillWanted(meta0, path);
     if (!meta) return true;
     const state = movieMetaState(meta);
     /* v0.9.89：review（待确认）不自动重试 —— 客户要的是「异常时手动改名辅助」，
@@ -2247,7 +2359,7 @@ async function openSeriesDetails(libId, showKey) { const lib=findMediaLibrary(li
   const renderPage = (extras) => {
     const meta = { ...hero, ...(extras||{}) };
     const seasons = (show.seasonList||[]).map(season => renderSeriesSeasonCard(lib, show, season)).join("");
-    viewer.innerHTML = `<div class="media-reader-overlay movie-detail-page series-detail-page media-detail-backdrop" style="${esc(detailBackdropStyle(meta))}"><div class="movie-detail-scroll">${movieDetailCloseButton()}${renderMovieHero(lib,firstPath,meta)}${renderCastPanel(meta)}${renderRecPanel(meta)}<section><h3>季度</h3>${seriesPlexToolbarHtml(lib.id, show.key)}</section>${seasons}${renderSeriesInfoPanel(show, meta.rating)}</div></div>`;
+    viewer.innerHTML = `<div class="media-reader-overlay movie-detail-page series-detail-page media-detail-backdrop" style="${esc(detailBackdropStyle(meta))}"><div class="movie-detail-scroll">${movieDetailCloseButton()}${renderMovieHero(lib,firstPath,meta)}${renderCastPanel(meta)}${renderRecPanel(meta)}<section><h3>季度</h3><p class="series-plex-moved">多季诊断与多季全量刮削已移到「系统设置 → 刮削配置 → 多季剧集刮削」。</p></section>${seasons}${renderSeriesInfoPanel(show, meta.rating)}</div></div>`;
     scrollViewerIntoView(viewer);
   };
   renderPage();
@@ -2953,7 +3065,10 @@ function castRoleLabel(meta) {
 function renderCastPanel(meta) {
   const roleLabel = castRoleLabel(meta);
   const cast = (meta.cast||[]).map(x => {
-    const face = x.profile_path ? `<img class="movie-cast-avatar" src="/api/media/cast/avatar?person=${encodeURIComponent(x.profile_path)}" alt="${esc(x.name||"")}" loading="lazy">` : `<span class="movie-cast-avatar movie-cast-avatar-fallback">${esc((x.name||"?").slice(0,1))}</span>`;
+    /* v0.9.98：头像地址优先用服务端算好的 `avatar`（本地 NFO 的 TMDB 地址与
+       .actors/ 本地文件都已经转成可直接显示的代理地址），没有才回落 profile_path。 */
+    const avatarSrc = x.avatar ? String(x.avatar) : (x.profile_path ? `/api/media/cast/avatar?person=${encodeURIComponent(x.profile_path)}` : "");
+    const face = avatarSrc ? `<img class="movie-cast-avatar" src="${esc(avatarSrc)}" alt="${esc(x.name||"")}" loading="lazy">` : `<span class="movie-cast-avatar movie-cast-avatar-fallback">${esc((x.name||"?").slice(0,1))}</span>`;
     /* 第一行姓名，第二行饰演/配音角色（同一段本地化标签 + TMDB 本地化角色名）。 */
     const role = String(x.character || "").trim();
     const roleText = role ? `${roleLabel} ${role}` : "";
@@ -3952,7 +4067,7 @@ async function loadLocalFiles(group, lib, offset = 0) {
     }
     /* v0.9.84：整库索引补齐后，先把蓝光原盘的片段合并成一条再往下走 ——
        否则「一部原盘 = 600+ 个无元数据影片」，列表不可用、刮削也无从命中。 */
-    if (group === "movie") {
+    if (group === "movie" || group === "series") {
       const beforeCollapse = files.length;
       files = collapseDiscFragments(files);
       if (files.length !== beforeCollapse) { data.total = files.length; mediaTruncated = false; }
@@ -6697,6 +6812,116 @@ function handleVideoKeyboard(event, video) {
 function selectVideoAudioTrack(video, index) { const root=video.closest('.media-video-body'); const lib={id:root.dataset.library}; const path=root.dataset.path; const url=mediaCompatUrl(lib,path)+`&audio_track=${encodeURIComponent(index)}`; const time=video.currentTime; const paused=video.paused; video.src=url; video.dataset.currentSrc=url; video.load(); video.addEventListener('loadedmetadata',()=>{video.currentTime=Math.min(time,video.duration||time); if(!paused)video.play().catch(()=>{});},{once:true}); }
 function attachVideoSubtitle(video, url, label) { let track=[...video.textTracks].find(t=>t.label===label); if(track)track.mode='showing'; else { const el=document.createElement('track'); el.kind='subtitles'; el.label=label||'外挂字幕'; el.srclang='und'; el.src=url; el.default=true; video.appendChild(el); } [...video.textTracks].forEach(t=>{t.mode=t.label===label?'showing':'disabled';}); }
 async function searchVideoSubtitles(button) { const root=button.closest('.media-video-body'); const box=root.querySelector('[data-video-subtitle-options]'); box.textContent='搜索中...'; try { const res=await fetch(`/api/media/subtitles/search?id=${encodeURIComponent(root.dataset.library)}&path=${encodeURIComponent(root.dataset.path)}`,{cache:'no-store'}); const data=await res.json(); box.innerHTML=(data.items||[]).map((x,i)=>`<button type="button" onclick="attachVideoSubtitle(this.closest('.media-video-body').querySelector('video'), '${esc(x.url)}', '${esc(x.label||`字幕 ${i+1}`)}')">${esc(x.label||`字幕 ${i+1}`)}</button>`).join('')||'没有找到字幕'; } catch(e) { box.textContent='字幕搜索失败'; } }
+/* ==================== v0.9.98：原盘（BDMV / ISO）媒体菜单 ====================
+   客户诉求：「优化 bdmv/ISO 等原盘刮削播放，增加针对 BDMV 文件的播放菜单选择
+   （刮削后将文件从多个项目变成单个项目，然后通过加入播放菜单选择进行选择播放），
+   针对原盘播放，在播放器中增加媒体菜单选项进行选择」。
+
+   做法：
+     · 原盘条目在库里只出现一条（collapseDiscFragments，v0.9.84 起；v0.9.98 起
+       剧集库同样合并）；
+     · 播放器右下角新增「媒体菜单」（📀）按钮，数据来自服务端
+       GET /api/media/disc/playlists（libbluray 打印的真实播放列表 + 时长，
+       主影片=时长最长者）；
+     · 选中的标题记在本机（每个媒体一条），下次打开同一部片继续用该标题，
+       播放地址带 &disc_playlist=N（服务端转码/探测一并按该标题走）。 */
+const DISC_PICK_KEY = "vaulthub_disc_pick_v1";
+function discPickMap() { try { return JSON.parse(localStorage.getItem(DISC_PICK_KEY) || "{}") || {}; } catch (e) { return {}; } }
+function discPickKey(lib, path) { return `${(lib && lib.id) || ""}|${path}`; }
+function discPickOf(lib, path) { const v = discPickMap()[discPickKey(lib, path)]; return Number(v) > 0 ? Number(v) : 0; }
+function setDiscPick(lib, path, ref) {
+  const map = discPickMap(); const k = discPickKey(lib, path); const n = Number(ref) || 0;
+  if (n > 0) map[k] = n; else delete map[k];
+  try { localStorage.setItem(DISC_PICK_KEY, JSON.stringify(map)); } catch (e) { /* 受限忽略 */ }
+}
+/* 给任意播放地址补上「播放哪个原盘标题」参数（0 = 默认主影片，不加参数）。 */
+function withDiscPick(url, ref) {
+  const n = Number(ref) || 0;
+  if (!url || n <= 0) return url;
+  return url + (url.indexOf("?") >= 0 ? "&" : "?") + "disc_playlist=" + encodeURIComponent(n);
+}
+function discIsImagePath(path) { return /\.iso$/i.test(String(path || "")); }
+/* 读取原盘清单并把结果挂到播放器根节点上（非原盘 → 隐藏「媒体菜单」按钮）。 */
+async function loadDiscPlaylists(root, lib, path) {
+  if (!root || !lib || !path) return null;
+  if (root.__discLoading) return root.__discInfo || null;
+  root.__discLoading = true;
+  let info = null;
+  try {
+    const res = await fetch(`/api/media/disc/playlists?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}`, { cache: "no-store", credentials: "same-origin" });
+    if (res.ok) info = await res.json();
+  } catch (e) { /* 原盘清单读取失败不阻塞播放 */ }
+  root.__discLoading = false;
+  root.__discInfo = info || null;
+  root.dataset.discKind = info && info.kind && info.kind !== "none" ? String(info.kind) : "none";
+  root.dataset.discTitles = String((info && info.items && info.items.length) || 0);
+  renderDiscPlaylistPanel(root, lib, path, info);
+  return info;
+}
+function discEntryLabel(item) {
+  const name = String((item && item.label) || "").trim() || `标题 ${(item && item.ref) || ""}`;
+  const dur = String((item && item.duration_text) || "").trim();
+  return dur ? `${name} · ${dur}` : name;
+}
+function renderDiscPlaylistPanel(root, lib, path, info) {
+  const box = root.querySelector("[data-video-disc-items]");
+  const hint = root.querySelector("[data-video-disc-hint]");
+  if (!box) return;
+  const items = (info && Array.isArray(info.items)) ? info.items : [];
+  if (!items.length) {
+    box.innerHTML = `<small>未识别到原盘播放列表，播放时按默认主影片处理。</small>`;
+    if (hint) hint.textContent = (info && info.notes && info.notes.join("；")) || "";
+    return;
+  }
+  const picked = discPickOf(lib, path);
+  const rows = items.map((it) => {
+    /* 高亮规则：显式选过 → 只亮那一行；没选过 → 只亮「默认（原盘自动选择）」
+       （默认就是让原盘自己挑主影片，两行同时亮会让人以为选了两个）。 */
+    const active = picked > 0 && picked === Number(it.ref) ? " active" : "";
+    /* 标签已由服务端算好（主影片 / 标题 N（默认））—— 这里不再重复追加，
+       否则会出现「主影片 · 2:29:17 · 主影片」这种叠字。 */
+    return `<button type="button" class="video-disc-item${active}" onclick="selectDiscPlaylist(this,${Number(it.ref) || 0})"><span class="video-disc-name">${esc(discEntryLabel(it))}</span></button>`;
+  }).join("");
+  box.innerHTML = `<button type="button" class="video-disc-item${picked ? "" : " active"}" onclick="selectDiscPlaylist(this,0)"><span class="video-disc-name">默认（原盘自动选择）</span></button>` + rows;
+  if (hint) {
+    const base = (info.notes || []).join("；");
+    hint.textContent = `共 ${items.length} 个标题${info.kind === "dvd" ? "（DVD 标题）" : ""}${base ? " · " + base : ""}`;
+  }
+}
+/* 选中某个原盘标题：切到该标题的转码流，并记住选择（下次打开同一部片继续用）。 */
+function selectDiscPlaylist(button, ref) {
+  const root = button && button.closest ? button.closest(".media-video-body") : null;
+  const video = root ? root.querySelector("video[data-movie-player]") : null;
+  if (!root || !video) return;
+  const lib = { id: root.dataset.library };
+  const path = root.dataset.path;
+  setDiscPick(lib, path, ref);
+  const info = root.__discInfo || null;
+  const item = ((info && info.items) || []).find(x => Number(x.ref) === Number(ref));
+  const label = item ? discEntryLabel(item) : "默认（原盘自动选择）";
+  const url = withDiscPick(mediaCompatUrl(lib, path), ref);
+  switchMovieSource(video, url);
+  updateVideoStatus(root, video, `原盘标题：${label}`);
+  setMovieCompatStatus(root, `媒体菜单 · ${label}`);
+  setDiscPanelActive(root, ref);
+  /* 音轨/字幕清单随标题变化（不同播放列表的轨道可能不同）。 */
+  refreshDiscTracks(root, lib, path, ref);
+  return label;
+}
+function setDiscPanelActive(root, ref) {
+  root.querySelectorAll("[data-video-disc-items] .video-disc-item").forEach((el) => {
+    const m = String(el.getAttribute("onclick") || "").match(/selectDiscPlaylist\(this,(\d+)\)/);
+    const value = m ? Number(m[1]) : 0;
+    el.classList.toggle("active", Number(ref || 0) === value);
+  });
+}
+function refreshDiscTracks(root, lib, path, ref) {
+  const video = root.querySelector("video[data-movie-player]");
+  if (!video) return;
+  const q = `id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}${Number(ref) > 0 ? `&disc_playlist=${encodeURIComponent(ref)}` : ""}`;
+  fetch(`/api/media/streams?${q}`, { cache: "no-store" }).then(r => r.ok ? r.json() : null)
+    .then(info => { if (info) populateVideoTracks(root, video, info); }).catch(() => {});
+}
 function populateVideoTracks(root, video, info) {
   const audio = root.querySelector('[data-video-audio-options]');
   const tracks = info?.audio_tracks || [];
@@ -6747,12 +6972,16 @@ async function initMovieCompatPlayer(root, lib, path) {
   applyVideoChromeTitle(videoRoot, lib, path);
   renderVideoPlaylist(videoRoot);
   bindVideoTimelineDrag(videoRoot);
+  /* v0.9.98：原盘（BDMV/ISO）拉取播放列表，供右下角「媒体菜单」选择标题；
+     非原盘会自己把按钮隐藏（data-disc-kind=none）。 */
+  loadDiscPlaylists(videoRoot, lib, path).catch(() => {});
   /* v0.9.62：播放视频时立即用当前已知的最佳海报作为背景虚化 */
   { const _initMeta = movieMetadataFor(path); const _heroArt = movieHeroArt(_initMeta); if (_heroArt.url) setPlaybackBg(_heroArt.url); }
   fetch(`/api/media/metadata?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}`,{cache:'no-store'}).then(r=>r.ok?r.json():null).then(meta=>{if(meta&&(meta.title||meta.year||meta.show_title)){const all=readMovieMetadata();all[path]={...movieMetadataFor(path),...meta};writeMovieMetadata(all);applyVideoChromeTitle(videoRoot,lib,path);}if(meta?.subtitles?.length){const box=videoRoot.querySelector('[data-video-subtitle-options]');if(box)box.innerHTML=meta.subtitles.map((s,i)=>`<button type="button" onclick="attachVideoSubtitle(this.closest('.media-video-body').querySelector('video'),${jsAttrArg(s.url)},${jsAttrArg(s.label||`本地字幕 ${i+1}`)})">${esc(s.label||`本地字幕 ${i+1}`)}</button>`).join('');}/* v0.9.62：API 元数据返回后，用更丰富的海报（fanart/backdrop）更新背景 */
 if(meta){const _merged=movieMetadataFor(path);const _hero=movieHeroArt(_merged);if(_hero.url)setPlaybackBg(_hero.url);}}).catch(()=>{});
   const direct = mediaFileUrl(lib, path);
-  const compat = mediaCompatUrl(lib, path);
+  /* v0.9.98：上次选过的原盘标题继续生效（0 = 默认主影片）。 */
+  const compat = withDiscPick(mediaCompatUrl(lib, path), discPickOf(lib, path));
   /* v0.9.51 修复：以前这里传的是外层 viewer，于是 .video-controls-visible
      被加到 viewer 上，而 CSS 选择器是 .media-video-body.video-controls-visible，
      永远不匹配 —— 这就是悬浮控制栏/进度条一直不出现的根因。 */
@@ -6774,7 +7003,7 @@ if(meta){const _merged=movieMetadataFor(path);const _hero=movieHeroArt(_merged);
     terminateWasmVideo(videoRoot); setVideoEngine(videoRoot, VIDEO_ENGINE_COMPAT, reason || `Smart Stream · ${settings.hardwareAcceleration}`); switchMovieSource(video, url);
   };
   /* v0.9.51：设置浮层不再暴露「三层播放」手动引擎选择 —— 引擎自动判定与自动降级保留。 */
-  video.addEventListener("loadedmetadata", () => { video.muted = false; video.volume = 1; restoreVideoPlaybackState(video); bindVideoDriftMonitor(videoRoot, video); fetch(`/api/media/streams?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}`,{cache:'no-store'}).then(r=>r.ok?r.json():null).then(info=>{populateVideoTracks(videoRoot,video,info);updateVideoStatus(videoRoot,video,video.paused?"已暂停":"正在播放");}).catch(()=>{}); });
+  video.addEventListener("loadedmetadata", () => { video.muted = false; video.volume = 1; restoreVideoPlaybackState(video); bindVideoDriftMonitor(videoRoot, video); fetch(`/api/media/streams?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(path)}${discPickOf(lib, path) > 0 ? `&disc_playlist=${encodeURIComponent(discPickOf(lib, path))}` : ""}`,{cache:'no-store'}).then(r=>r.ok?r.json():null).then(info=>{populateVideoTracks(videoRoot,video,info);updateVideoStatus(videoRoot,video,video.paused?"已暂停":"正在播放");}).catch(()=>{}); });
   let engineFailurePending = false;
   const retryPlan = () => retryPlaybackPlanOnce(videoRoot, lib, path, direct, useCompat, useDirect);
   video.addEventListener("error", async () => {
@@ -6807,7 +7036,7 @@ if(meta){const _merged=movieMetadataFor(path);const _hero=movieHeroArt(_merged);
     markQualityCapInactive(videoRoot, videoRoot.dataset.videoQuality || "auto");
     if (plan.warn) toast("⚠️ " + plan.warn);
     const sessionID = await createVideoPlaybackSession(videoRoot, lib, path, plan.mode);
-    const plannedURL = plan.url && sessionID && plan.mode !== "direct" ? `${plan.url}&task=${encodeURIComponent(sessionID)}` : (plan.url || compat);
+    const plannedURL = withDiscPick(plan.url && sessionID && plan.mode !== "direct" ? `${plan.url}&task=${encodeURIComponent(sessionID)}` : (plan.url || compat), discPickOf(lib, path));
     if (plan.mode === "direct") useDirect(`${playbackModeLabel(plan)} · ${plan.reason}`);
     else useCompat(`${playbackModeLabel(plan)} · ${plan.reason}`, plannedURL);
   } catch (error) {
@@ -6984,6 +7213,8 @@ function audioIcon(name) {
    v0.9.52：添加 stroke-width=2 stroke-linecap=round stroke-linejoin=round
    修复各主题下图标显示为空/异常的问题。 */
 const VIDEO_ICON_SVG = {
+  /* v0.9.98：原盘「媒体菜单」按钮图标（光盘 + 中心孔），描边风格与其它图标一致。 */
+  disc: '<circle cx="12" cy="12" r="8.6"/><circle cx="12" cy="12" r="2.6"/>',
   collapse: '<path d="M12 3.2v10.6"/><path d="m7.6 9.6 4.4 4.2 4.4-4.2"/><path d="M4 20.6h16"/>',
   restore: '<path d="M12 20.8V10.2"/><path d="m7.6 14.4 4.4-4.2 4.4 4.2"/><path d="M4 3.4h16"/>',
   fullscreen: '<path d="M4 9.6V4h5.6"/><path d="M20 9.6V4h-5.6"/><path d="M4 14.4V20h5.6"/><path d="M20 14.4V20h-5.6"/>',
@@ -7162,6 +7393,7 @@ async function openLocalMedia(group, libId, path) {
 <button class="vc-icon vc-stop" type="button" title="${esc(t("vpClose"))}" aria-label="${esc(t("vpClose"))}" onclick="closeVideoPlayer(this)">${videoIcon("close")}</button>
 </div>
 <div class="vc-right">
+<button class="vc-icon vc-disc" type="button" title="媒体菜单（原盘标题）" aria-label="媒体菜单（原盘标题）" aria-expanded="false" data-video-panel-button="disc" onclick="toggleVideoPanel(this,'disc')">${videoIcon("disc")}</button>
 <button class="vc-icon vc-playlist-toggle" type="button" title="${esc(t("vpPlaylist"))}" aria-label="${esc(t("vpPlaylist"))}" aria-expanded="false" data-video-panel-button="playlist" onclick="toggleVideoPanel(this,'playlist')">${videoIcon("playlist")}</button>
 <button class="vc-icon" type="button" title="${esc(t("vpSettings"))}" aria-label="${esc(t("vpSettings"))}" aria-expanded="false" data-video-panel-button="settings" onclick="toggleVideoPanel(this,'settings')">${videoIcon("settings")}</button>
 <!-- v0.9.94（需求4）：最大化按钮从顶栏移到右下角，正好夹在「设置」和「更多操作」中间。 -->
@@ -7188,6 +7420,11 @@ async function openLocalMedia(group, libId, path) {
 <button type="button" onclick="searchVideoSubtitles(this)">${esc(t("vpSubtitleSearch"))}</button>
 <h4>${esc(t("vpVolume"))}</h4>
 <div class="vc-volume-row"><input class="vc-volume-range" type="range" min="0" max="100" step="1" value="100" aria-label="${esc(t("vpVolume"))}" data-video-volume oninput="setVideoVolume(this,this.value)"><span class="vc-volume-label" data-video-volume-label>100%</span></div>
+</div>
+<div class="vc-panel vc-panel-disc" data-video-panel="disc">
+<h4>媒体菜单 · 原盘标题</h4>
+<div class="video-disc-items" data-video-disc-items>正在读取原盘清单…</div>
+<small class="video-disc-hint" data-video-disc-hint></small>
 </div>
 <div class="vc-panel vc-panel-playlist" data-video-panel="playlist">
 <h4>${esc(t("vpPlaylist"))}</h4>

@@ -132,11 +132,14 @@ check("4c 探测结果按「文件 + 大小 + mtime」缓存，避免每个请�
 check("4d BDMV 片段保持既有可用路径优先（不回归）",
       'out = append(out, discInput{Spec: abs, Kind: discInputPlain, File: abs})' in DISC_GO
       and "func bluRayDiscRootOf(" in DISC_GO)
-check("4e probe / playbackPlan / compat / streams 都使用解析后的输入",
-      "disc := a.resolveDiscInput(ctx, p)" in MAIN_GO
-      and "disc := a.resolveDiscInput(r.Context(), p)" in MAIN_GO
-      and "disc := a.resolveDiscInput(ctx, p)" in PLAYBACK_GO
-      and "ffprobeInputArgs(disc.Kind)" in MAIN_GO)
+# v0.9.98（口径变更）：四处调用点统一改成「带原盘播放列表」的解析函数，
+# 输入参数由 ffprobeInputArgs(kind) 换成 disc.InputArgs()（含 -playlist N / -title N）。
+check("4e probe / playbackPlan / compat / streams 都使用解析后的输入（含原盘播放列表）",
+      "disc := a.resolveDiscInputWithPlaylist(ctx, p, discPlaylistArg(r))" in MAIN_GO
+      and "disc := a.resolveDiscInputWithPlaylist(r.Context(), p, discPlaylistArg(r))" in MAIN_GO
+      and "disc := a.resolveDiscInputWithPlaylist(ctx, p, discPlaylistArg(r))" in PLAYBACK_GO
+      and "disc.InputArgs()" in MAIN_GO
+      and "ffprobeInputArgs(disc.Kind)" not in MAIN_GO)
 check("4f 原盘失败给出可执行提示（而不是只有 media probe failed）",
       "func discProbeHint(" in DISC_GO and 'out["probe_hint"] = hint' in MAIN_GO)
 check("4g 转码缓存键纳入原盘输入类型（换解析方式不复用旧缓存）",
@@ -160,15 +163,15 @@ check("4m Go 侧原盘单测存在（候选链 / 缓存 / 提示）",
 
 # ============================================================ 5. 版本与文档
 check("5a 版本号已升至 0.9.90",
-      'VAULTHUB_ASSET_VERSION = "0.9.97"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.97"' in STATE)
+      'VAULTHUB_ASSET_VERSION = "0.9.98"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.98"' in STATE)
 # v0.9.92（上轮审查项）：整串一致。
 _slogans_5b = re.findall(r"v0\.9\.9\d · [^<\"]+", HTML)
 check("5b 关于 / 侧栏 / 页脚标语整串一致",
       len(_slogans_5b) >= 2 and len(set(_slogans_5b)) == 1, sorted(set(_slogans_5b)))
 check("5c 脚本引用带新版本号",
-      "?v=0.9.97" in HTML and HTML.count("?v=0.9.97") >= 5)
+      "?v=0.9.98" in HTML and HTML.count("?v=0.9.98") >= 5)
 check("5d Update Log 顶部为 v0.9.90",
-      (ROOT / "Update Log.md").read_text(encoding="utf-8").startswith("# VaultHub 蜀鼠之家 v0.9.97"))
+      (ROOT / "Update Log.md").read_text(encoding="utf-8").startswith("# VaultHub 蜀鼠之家 v0.9.98"))
 check("5e Release Notes 存在",
       (ROOT / ".github/RELEASE_NOTES_0.9.90.md").exists())
 check("5f README 未被改动（发布说明只进 Update Log）",

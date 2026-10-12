@@ -48,6 +48,37 @@ type discInput struct {
 	// File 始终是库内真实文件 —— 大小/时间戳/缓存键与流式读取都用它。
 	File     string `json:"file"`
 	DiscRoot string `json:"disc_root,omitempty"`
+	/* v0.9.98：原盘播放菜单选中项。Playlist 是蓝光播放列表号（-playlist N），
+	   Title 是 DVD 标题号（-title N）；0 表示按默认主影片播放。 */
+	Playlist int `json:"playlist,omitempty"`
+	Title    int `json:"title,omitempty"`
+}
+
+/* InputArgs 返回必须排在输入之前的解复用/协议参数。
+   - DVD 镜像：-f dvdvideo（+ -title N）
+   - 蓝光（BDMV / ISO）：-playlist N（协议级 AVOption）
+   顺序要求：ffmpeg/ffprobe 把这些当**输入选项**，必须出现在输入 URL 之前。 */
+func (in discInput) InputArgs() []string {
+	args := []string{}
+	if in.Kind == discInputDVD {
+		args = append(args, "-f", "dvdvideo")
+		if in.Title > 0 {
+			args = append(args, "-title", strconv.Itoa(in.Title))
+		}
+		return args
+	}
+	if in.Kind == discInputBluRay && in.Playlist > 0 {
+		args = append(args, "-playlist", strconv.Itoa(in.Playlist))
+	}
+	return args
+}
+
+/* DiscLabelFor 菜单里显示当前选中的标题（播放器状态行用）。 */
+func (in discInput) SelectedRef() int {
+	if in.Kind == discInputDVD {
+		return in.Title
+	}
+	return in.Playlist
 }
 
 const (
@@ -161,6 +192,33 @@ func (a *App) resolveDiscInput(ctx context.Context, abs string) discInput {
 	}
 	discInputCache.Store(key, discInputCacheEntry{Input: chosen, At: time.Now()})
 	return chosen
+}
+
+/* resolveDiscInputWithPlaylist：在自动解析结果上叠加「用户在原盘菜单里选的标题」。
+   playlist<=0 时与 resolveDiscInput 行为完全一致（老调用点零风险）。 */
+func (a *App) resolveDiscInputWithPlaylist(ctx context.Context, abs string, playlist int) discInput {
+	auto := a.resolveDiscInput(ctx, abs)
+	if playlist <= 0 {
+		return auto
+	}
+	switch auto.Kind {
+	case discInputDVD:
+		auto.Title = playlist
+		return auto
+	case discInputBluRay:
+		auto.Playlist = playlist
+		return auto
+	}
+	/* 自动解析落到「裸文件」（例如 BDMV 片段自身可读）时，选了标题就意味着
+	   要按原盘口径播放 —— 用库内真实文件当 File（大小/缓存键不变），
+	   输入换成 bluray:<原盘根> + -playlist N。 */
+	if root := bluRayDiscRootOf(abs); root != "" {
+		return discInput{Spec: "bluray:" + root, Kind: discInputBluRay, File: abs, DiscRoot: root, Playlist: playlist}
+	}
+	if isDiscImagePath(abs) {
+		return discInput{Spec: "bluray:" + abs, Kind: discInputBluRay, File: abs, Playlist: playlist}
+	}
+	return auto
 }
 
 // discProbeHint 给用户的排查提示（比 "media probe failed" 有用得多）。

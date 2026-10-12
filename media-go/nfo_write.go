@@ -42,6 +42,9 @@ const nfoMarker = "VaultHub"
 var nfoNameRe = regexp.MustCompile(`^[A-Za-z0-9._\-\x{4e00}-\x{9fa5} ]+\.nfo$`)
 
 type nfoWriteMeta struct {
+	/* v0.9.98：写 NFO 时的 TMDB 图片基址（把头像代理 URL 还原成可被其它刮削器
+	   直接使用的原图地址）。前端不传则用官方基址。 */
+	ImageBase     string              `json:"image_base"`
 	Title         string              `json:"title"`
 	OriginalTitle string              `json:"original_title"`
 	ShowTitle     string              `json:"show_title"`
@@ -188,6 +191,30 @@ func nfoDirMediaCount(dir string) int {
 	return n
 }
 
+/* nfoActorThumb：写 NFO 时的演员头像地址（v0.9.98）。
+   优先用本地 NFO 里读到的原样 thumb；其次把 VaultHub 的 TMDB 头像代理 URL 还原成
+   原图地址（w500，其它刮削器/播放器可直接用）；再次是任何 http(s) 地址；都没有则留空。 */
+func nfoActorThumb(a localMetadataCast, imageBase string) string {
+	if t := nfoClip(a.AvatarThumb, 512); t != "" {
+		return t
+	}
+	av := strings.TrimSpace(a.Avatar)
+	if strings.HasPrefix(av, "/api/media/cast/avatar?person=") {
+		raw := strings.TrimPrefix(av, "/api/media/cast/avatar?person=")
+		if p, err := url.QueryUnescape(raw); err == nil && strings.HasPrefix(p, "/") {
+			base := strings.TrimRight(strings.TrimSpace(imageBase), "/")
+			if base == "" {
+				base = "https://image.tmdb.org/t/p"
+			}
+			return base + "/w500" + p
+		}
+	}
+	if strings.HasPrefix(av, "http://") || strings.HasPrefix(av, "https://") {
+		return nfoClip(av, 512)
+	}
+	return ""
+}
+
 func nfoBuildDoc(m nfoWriteMeta) nfoWriteDoc {
 	doc := nfoWriteDoc{
 		Title:         nfoClip(m.Title, 300),
@@ -221,7 +248,7 @@ func nfoBuildDoc(m nfoWriteMeta) nfoWriteDoc {
 		if name == "" {
 			continue
 		}
-		doc.Actors = append(doc.Actors, nfoActor{Name: name, Role: nfoClip(a.Character, 120)})
+		doc.Actors = append(doc.Actors, nfoActor{Name: name, Role: nfoClip(a.Character, 120), Thumb: nfoActorThumb(a, m.ImageBase)})
 		if len(doc.Actors) >= 60 {
 			break
 		}

@@ -34,7 +34,14 @@ GITEE_WF = rd(".workflow/publish.yml")
 MANAGER = rd("manager/main.go")
 INITPW = rd("manager/v0995_initial_password.go")
 LOG = rd("Update Log.md")
+# v0.9.98：本测试校验的是 v0.9.97 那轮发布说明的内容，仍指向 0.9.97 的历史文件；
+# 「当前版本的发布说明存在」由下面版本无关的断言负责。
 NOTES = rd(".github/RELEASE_NOTES_0.9.97.md")
+import re as _re
+_CUR = _re.search(r'VAULTHUB_ASSET_VERSION = "([0-9.]+)"', HTML).group(1)
+check("4c 当前版本的发布说明存在且够长",
+      os.path.exists(os.path.join(ROOT, f".github/RELEASE_NOTES_{_CUR}.md"))
+      and len(open(os.path.join(ROOT, f".github/RELEASE_NOTES_{_CUR}.md"), encoding="utf-8").read()) >= 500)
 
 print("== 1. 迷你播放器只在「播放面不可见」时出现 ==")
 check("1a 门控条件接入可见性判定（新口径）",
@@ -122,27 +129,27 @@ check("3h 一次性初始密码不再打进容器日志（安全审查 M5）",
       and "clearInitialPasswordFile()" in MANAGER)
 check("3i 初始密码文件路径可覆盖（测试不碰真实 /data）", 'os.Getenv("INITIAL_PASSWORD_FILE")' in INITPW)
 check("3j install/upgrade 的版本常量不再停在 v0.6.4（安全审查 L6）",
-      'VERSION="v0.9.97"' in INSTALL and 'VERSION="v0.9.97"' in UPGRADE
+      'VERSION="v0.9.98"' in INSTALL and 'VERSION="v0.9.98"' in UPGRADE
       and 'VERSION="v0.6.4"' not in INSTALL and 'VERSION="v0.6.4"' not in UPGRADE)
 check("3k 新增 Go 回归测试覆盖密码文件（0600 + 消费后删除）",
       os.path.exists(os.path.join(ROOT, "manager/v0995_initial_password_test.go"))
       and "TestV0995InitialPasswordFileMode" in rd("manager/v0995_initial_password_test.go"))
 
 print("== 4. 版本与文档 ==")
-check("4a index.html 资源版本本版（≥10 处）", len(re.findall(r"\?v=0\.9\.97", HTML)) >= 10
-      and set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"0.9.97"})
+check("4a index.html 资源版本本版（≥10 处）", len(re.findall(r"\?v=0\.9\.98", HTML)) >= 10
+      and set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"0.9.98"})
 check("4b ASSET_VERSION / SCRIPT_VERSION = 0.9.97",
-      'window.VAULTHUB_ASSET_VERSION = "0.9.97"' in HTML
-      and 'const VAULTHUB_SCRIPT_VERSION = "0.9.97";' in S)
-SLOGAN = "v0.9.97 · 多季剧集按 Plex 口径刮削·缺失集可比对"
+      'window.VAULTHUB_ASSET_VERSION = "0.9.98"' in HTML
+      and 'const VAULTHUB_SCRIPT_VERSION = "0.9.98";' in S)
+SLOGAN = "v0.9.98 · 原盘播放菜单与演职人员补全"
 check("4c 标语三处整串一致", HTML.count(SLOGAN) == 3 and "v0.9.94 ·" not in HTML)
-check("4d 发布说明文件存在且够长", len(NOTES) >= 500 and "0.9.97" in NOTES)
+check("4d 发布说明文件存在且够长（0.9.97 那份）", len(NOTES) >= 500 and "0.9.97" in NOTES)
 check("4e 发布说明写明本轮两项（Plex 口径解析 / 缺失集比对）",
       "多季剧集" in NOTES and "方括号" in NOTES and "缺失集" in NOTES)
 check("4e2 v0.9.95 的发布说明仍在（历史版本可追溯）",
       len(rd(".github/RELEASE_NOTES_0.9.95.md")) >= 500)
 check("4f Update Log 顶部为本版且段落完整",
-      LOG.lstrip().startswith("# VaultHub 蜀鼠之家 v0.9.97")
+      LOG.lstrip().startswith("# VaultHub 蜀鼠之家 v0.9.98")
       and "## 1. 播放视频时顶栏自动让位（修复遮挡）" in LOG.split("# VaultHub 蜀鼠之家 v0.9.95")[0])
 check("4g 公开文档无真实域名/内网 IP/宿主容量细节",
       not re.search(r"enged\.top|sszj|192\.168\.|/vol[1-4]/|\b[0-9.]+ ?(GiB|TiB)\b",

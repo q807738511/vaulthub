@@ -1,3 +1,100 @@
+# VaultHub 蜀鼠之家 v0.9.98
+
+> 本轮是**原盘播放体验 + 演职人员补全 + 设置页归置**四件事：
+> ① 用别的刮削器做好的本地 NFO，现在也能在线补全演职人员（以前整条被踢出刮削队列）；
+> ② BDMV / ISO 原盘在库里只出现一条，并在播放器里新增「媒体菜单」选择标题（播放列表）；
+> ③ 「多季诊断 / 多季全量刮削」从剧集详情迁到系统设置 → 刮削配置；
+> ④ 「自动测速」的勾选按钮挪到选项行末尾。
+
+## 1. 修复：使用本地 NFO 后，在线刮削补不出演职人员
+
+**根因**：本地元数据齐全的条目被整条踢出「待刮队列」——
+`scrapeMovieMetadata()` 里 `if (localPaths.has(path)) return false;`，
+于是「用 tinyMediaManager / Emby 等做好的本地 NFO」的库，永远不会去在线取演职人员。
+
+**修复口径**：本地条目仍然**本地优先**，只补「在线演职人员」这一项。
+
+- 标题 / 剧名 / 年份 / 简介 / 海报 / 剧照 / 评分 / TMDB ID 一律保留本地刮削结果，
+  `provider` 继续标「本地 NFO」，不会被在线结果覆盖（`keepLocalMetadataFirst()`）；
+- 只把 TMDB `credits.cast`（含头像 `profile_path`）合并进来；本地已有的演员按姓名合并，
+  本地角色名优先；
+- 本地 NFO 的 `<actor><thumb>` 现在会被读取并转成**可直接显示**的头像地址：
+  TMDB 图片地址 → 走既有图片代理 `/api/media/cast/avatar?person=`；
+  `.actors/姓名.jpg` 这类本地头像 → 走新增的**本地头像代理**
+  `/api/media/cast/avatar?id=&path=`（扩展名白名单 + 4 MiB 上限 + `safeFile` 防穿越）；
+- 写回 NFO 时演员带 `<thumb>`（原样 thumb 优先，否则把代理地址还原成 TMDB w500 原图），
+  其它刮削器/播放器可直接复用；
+- 补全失败会记 `cast_fill_attempts / cast_fill_last`，最多重试 3 次且带时间窗，
+  不会每次进库都反复联网；确认「这部片确实没有演职人员」后写 `cast_fill_state=empty` 不再重试；
+- 设置 → 刮削配置新增开关「本地 NFO 演职人员补全」，可整体关掉这个在线补全。
+
+## 2. BDMV / ISO 原盘：一条条目 + 播放器「媒体菜单」
+
+- **一条条目**：原盘目录（BDMV/STREAM 里的 .m2ts）与 ISO 在库里合并成一条，
+  **剧集库里的原盘同样合并**（以前剧集库会按片段炸成几百「集」）；
+  条目标题取原盘目录名，刮削因此能命中（片段名 `00005` 不可能命中）；
+- **播放列表枚举**：新增 `GET /api/media/disc/playlists?id=&path=`。实现上不自己解析
+  `.mpls` 二进制，而是读 libbluray 在 `ffprobe -v info bluray:<原盘|ISO>` 时打印的真实清单
+  （`8 usable playlists: playlist 00012.mpls (2:29:17) … selected 00012.mpls`）——
+  对 BDMV 目录与蓝光 ISO 是同一段代码路径；**主影片 = 时长最长者**，各项标注时长，
+  libbluray 的默认项另标「（默认）」；
+- DVD 镜像（VIDEO_TS）：按 `-f dvdvideo -title N` 逐个探测标题（连续 3 次找不到即停），
+  同样标注时长；
+- **播放器「媒体菜单」**（右下角 📀）：列出全部标题（主影片 / 标题 N · 时长），点选即切换；
+  选择记在本机（每部片一条），下次打开同一部片继续用该标题；非原盘自动隐藏该按钮；
+- 播放链路贯通：`/api/media/file`、`/api/media/compat`、`/api/media/streams`、
+  `/api/media/probe`、`/api/media/playback/plan` 统一接受 `disc_playlist` 参数
+  （蓝光映射 `-playlist N`，DVD 映射 `-title N`），转码缓存键也带上该参数，
+  换标题不会命中旧转码产物；切换标题后音轨/字幕清单随之刷新；
+- 协议兼容性（容器内实测 ffmpeg 7.1.5 + libbluray）：`bluray:` 协议支持 `playlist` / `angle` /
+  `chapter`；`dvdvideo` 解复用器支持 `title` / `angle` / `chapter_*` / `pgc` / `menu`。
+
+## 3. 多季剧集刮削入口迁到系统设置 → 刮削配置
+
+- 剧集详情「季度」区不再挂工具条（改为一行提示），媒体主页也不再出现这两个按钮；
+- 系统设置 → 刮削配置新增「🧩 多季剧集刮削（Plex 口径）」：选剧集媒体库 →
+  选单部剧或「全部剧集（整库）」→ **🧩 多季诊断** / **⬇ 多季全量刮削** /
+  **🔍 比对官方集数** / **🔁 重匹配（Plex Dance）**，并可选择是否覆盖本地 NFO；
+- 面板与逐季表格沿用同一套渲染（`seriesPlexPanelHtml`），两处口径完全一致；
+  「刮削本季」等按钮带上自己的库/剧上下文，整库操作不会串台；
+- 进入「刮削配置」标签页会自动刷新库/剧列表（`switchSetTab('scrape')` 钩子）。
+
+## 4. 自动测速的勾选按钮挪到选项行末尾
+
+「画面清晰度与省流」区块里的「自动测速」一行改为：说明文字在左、**勾选开关在最右**，
+不再夹在文案中间（功能与存储键不变）。
+
+## 5. 验证（本轮实测）
+
+- **真实原盘**（生产库里的《黑鹰坠落》BDMV：13 个播放列表 / 14 个 CLIPINF / 17 个 m2ts）：
+  `ffprobe -v info bluray:<原盘根>` 实测列出 8 个可用播放列表与时长
+  （00012 = 2:29:17 最长），`-playlist 4` 实测得到 8656s（= 00004 的 2:24:16，与清单一致）；
+  真实 DVD 镜像实测 `-title 1` 成功、`-title 2` 返回 “Title 2 not found”；
+- **容器验证**：真实容器里建原盘样本库，`/api/media/disc/playlists` 读回播放列表与主影片标记，
+  播放器菜单渲染条目与时长，选中标题后 `/api/media/streams` 与转码请求都带上 `disc_playlist`；
+- **演职人员**：装真实 `<actor><thumb>` 的本地 NFO 样本，读回带头像地址的 cast；
+  在线补全后 cast 落地且标题/海报保持本地值；
+- 全量回归：Python 契约/行为测试与 Node VM 行为测试全绿（112 个测试文件）；`go vet` + `go test` 全绿。
+
+### 验证过程中抓到并修掉的三个真实缺陷（都已补回归护栏）
+
+1. **原盘清单请求的总超时算式溢出**：原先写成 `discPlaylistTimeout + discDVDTitleTimeout*float64ToDuration(N)`，
+   Go 的 `time.Duration` 是 int64 命名类型，`Duration*Duration` 合法但会溢出（12s×12s≈1.44e20 纳秒）
+   → 预算变成负数 → 上下文立即过期 → ffprobe 刚启动就被杀，接口永远返回 `kind=none`。
+   真实原盘容器验证当场抓到（人工 ffprobe 1 秒就能列出 8 个播放列表）。已抽成 `discPlaylistBudget()` 并加单测。
+2. **特别篇被拆成第二张剧卡**：前端分组键只把 `Season NN / 第N季` 当季目录，`Specials` / `Season 00` /
+   `特别篇` 被当成剧根 → 同一部剧出现两张卡（设置页也会显示「2 部剧集」）。
+   已改为复用 Plex 口径的季目录识别器，与服务端 `plex_naming.go` 完全一致。
+3. **设置页首次打开面板空白**：设置页只 `buildSeriesShows()` 而不写剧卡缓存，而诊断面板/详情页/逐季刮削
+   都通过 `readSeriesShow()` 取剧卡 → 面板显示「本地信息已丢失」。已改为加载列表时同步写缓存。
+
+4. **自动测速一行的两处样式缺陷**（真实浏览器量出来的）：`.cfg-field input` 的 `width:100%`
+   把勾选框拉成**整行宽 1126px**；而这一行本身是 `<label>` 且位于 `.cfg-field` 内，
+   `.cfg-field label { display: block }` 的特异性（0,1,1）高于 `.toggle-row`（0,1,0）→ 行退化成块布局，
+   勾选框掉到文字下面。已显式把行设回 flex 并让勾选框保持原生尺寸（实测 13×13，贴行尾 12px）。
+
+另外修掉原盘菜单里「主影片 · 2:29:17 · 主影片」的标签叠字（标签由服务端算好，前端不再重复追加）。
+
 # VaultHub 蜀鼠之家 v0.9.97
 
 > 本轮是**多季剧集刮削的 Plex 口径改造**：目录结构、文件命名、季/集解析按 Plex 规则重写

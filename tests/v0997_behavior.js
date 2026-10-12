@@ -240,7 +240,8 @@ const J = v => JSON.stringify(v);
     const html = call(sb, "seriesPlexPanelHtml(__lib, __show, __plan, null)");
     chk("F4 面板渲染出季表（含特别篇）", html.includes("特别篇") && html.includes("Season 00") && html.includes("Season 01"));
     chk("F5 面板渲染出命名体检与建议路径", html.includes("命名体检") && html.includes("方括号") && html.includes("The Flash - s01e05.mkv"));
-    chk("F6 面板按钮齐全（比对/多季刮削/重匹配）", html.includes("seriesPlexAction('compare')") && html.includes("seriesPlexAction('scrape')") && html.includes("seriesPlexAction('dance')"));
+    /* v0.9.98：面板按钮带上自己的库/剧上下文（整库面板不串台）。 */
+    chk("F6 面板按钮齐全（比对/多季刮削/重匹配）且各自携带库与剧", html.includes("seriesPlexAction('compare',") && html.includes("seriesPlexAction('scrape',") && html.includes("seriesPlexAction('dance',") && html.includes("seriesPlexScrapeSeason(1,"));
     chk("F7 未比对时标注「待比对」", html.includes("待比对"));
     const html2 = call(sb, "seriesPlexPanelHtml(__lib, __show, __plan, {seasons:[{season:1, official_count:5, missing:[3,4], missing_label:'S01E03、S01E04'}]})");
     chk("F8 比对结果渲染缺失集", html2.includes("缺 E03、E04"), html2.includes("缺 E03、E04"));
