@@ -86,7 +86,7 @@ func TestV0993BuildConcurrencyCapSkips(t *testing.T) {
 	}
 	a := &App{}
 	// 达到上限：必须直接返回，不注册新任务（也就不会起 ffmpeg）。
-	a.buildCompatCache(context.Background(), discInput{Spec: "/media/y.mkv", Kind: "file"}, "/data/cache/new.mp4", "", "auto", "full_transcode", 0)
+	a.buildCompatCache(context.Background(), discInput{Spec: "/media/y.mkv", Kind: "file"}, "/data/cache/new.mp4", "", "auto", "full_transcode", 0, -1, "")
 	compatMu.Lock()
 	n := len(compatBuilds)
 	_, added := compatBuilds["/data/cache/new.mp4"]

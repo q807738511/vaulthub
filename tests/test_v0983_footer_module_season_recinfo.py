@@ -96,14 +96,16 @@ check("4b 季度区块保留，多季工具条已迁到系统设置刮削配置�
 # v0.9.95（安全审查 N-6）：季卡标题在「第N季」与「共M集」之间插入可选季名，
 # 并在标题下渲染季简介 —— 这两个字段此前只被持久化、界面上没有落点。
 # v0.9.97：季称号走 seriesPlexSeasonLabel —— 第 0 季在 Plex 口径里是「特别篇」。
-check("4c 季度标题为「剧名 第N季/特别篇 (· 季名) 共M集」",
-      '${esc(show.title)} ${esc(seriesPlexSeasonLabel(season.season))}${headExtra} <small>共${epCount}集</small>' in MEDIA
-      and 'const headExtra = seasonName ? ` · ${esc(seasonName)}` : "";' in MEDIA)
+# v0.9.99（需求4）：季度标题从独立一行改为「该季首条目的前缀」，文案口径不变（剧名 + 第N季/特别篇 + · 季名 + 共M集）。
+check("4c 季度标题为「剧名 第N季/特别篇 (· 季名) 共M集」（v0.9.99 起作为首条目前缀）",
+      '<b>${esc(show.title)}</b> ${esc(seriesPlexSeasonLabel(season.season))}${seasonName ? ` · ${esc(seasonName)}` : ""} <small>共${epCount}集</small>' in MEDIA
+      and 'class="series-season-prefix"' in MEDIA
+      and 'series-season-head' not in MEDIA)
 check("4c2 季名/季简介从该季分集的刮削元数据汇总并渲染（v0.9.97 N-6 落点）",
       'if (!name && m.season_name) name = String(m.season_name);' in MEDIA
       and 'if (!overview && m.season_overview) overview = String(m.season_overview);' in MEDIA
       and 'return { season, episodes: eps, name, overview };' in MEDIA
-      and 'const overviewLine = seasonOverview ? `<p class="series-season-overview">${esc(seasonOverview)}</p>` : "";' in MEDIA
+      and 'seasonOverview ? `<p class="series-season-overview">${esc(seasonOverview)}</p>` : ""' in MEDIA
       and ".series-season-overview {" in (ROOT / "web" / "css" / "main.css").read_text(encoding="utf-8"))
 check("4d 单集网格标题同口径", '<h3>${esc(ctx.showTitle||"")} 第${esc(ctx.seasonNum)}季 · 单集</h3>' in MEDIA)
 check("4e 剧集视频信息集数同口径",
@@ -116,8 +118,10 @@ check("4i 集数按 seasonList 汇总（缓存态只留首个文件也不误报�
 check("4f 剧集海报卡集数同口径", "`共${episodes}集`" in MEDIA)
 check("4g 旧的「第 N 季 / N 集」写法已不存在",
       "第 ${esc(season.season)} 季" not in MEDIA and "第 ${esc(ctx.seasonNum)} 季" not in MEDIA)
+# v0.9.99（需求4）：折叠按钮变成前缀里的切换按钮，折叠对象是「首条之外」的集列表。
 check("4h 展开/收起行为与复选箭头保留",
-      "function toggleSeriesSeason(head)" in MEDIA and "series-season-chev" in MEDIA)
+      "function toggleSeriesSeason(btn)" in MEDIA and "series-season-chev" in MEDIA
+      and "series-episode-list-rest" in MEDIA)
 
 print("5. 推荐「视频信息」弹窗")
 INFO = MEDIA[MEDIA.index("function recInfoShotUrls"):MEDIA.index("function buildRecInfoModal")]
@@ -151,14 +155,14 @@ check("5k 简介排版与 16:9 画框保留（旧契约不破）",
 
 print("6. 版本")
 check("6a 页面与脚本版本一致",
-      'VAULTHUB_ASSET_VERSION = "0.9.98"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.98"' in STATE)
+      'VAULTHUB_ASSET_VERSION = "0.9.99"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.99"' in STATE)
 # v0.9.92（上轮发布前审查项）：标语断言升级为「整串完全一致」——
 # 旧写法只数 "v0.9.9x · " 出现 3 次，三处文案不一致也能过。
 _slogans_6b = re.findall(r"v0\.9\.9\d · [^<\"]+", HTML)
 check("6b 关于 / 侧栏 / 页脚标语整串一致",
       len(_slogans_6b) == 3 and len(set(_slogans_6b)) == 1)
 check("6c Update Log 有 v0.9.85 段",
-      (ROOT / "Update Log.md").read_text(encoding="utf-8").startswith("# VaultHub 蜀鼠之家 v0.9.98"))
+      (ROOT / "Update Log.md").read_text(encoding="utf-8").startswith("# VaultHub 蜀鼠之家 v0.9.99"))
 check("6d Release Notes 存在", (ROOT / ".github/RELEASE_NOTES_0.9.90.md").exists())
 
 if FAILS:

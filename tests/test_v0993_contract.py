@@ -95,7 +95,10 @@ check("2h 服务端：按观看者计数取消后台预转码",
 check("2i 服务端：compat 处理器把「有人在看」与父 ctx 传下去",
       "noteCompatWatcher(cache)" in GO_MAIN
       and "defer releaseCompatWatcher(cache)" in GO_MAIN
-      and "a.buildCompatCache(r.Context(), disc, cache, audioTrack, hw, mode, maxHeight)" in GO_MAIN)
+      # v0.9.99：buildCompatCache 增加 subTrack 参数（图形字幕烧录）。
+      and "a.buildCompatCache(r.Context(), disc, cache, audioTrack, hw, mode, maxHeight, subTrack, burnInput)" in GO_MAIN
+      # v0.9.99 续：原盘图形字幕抽取出的 .sup 作为第二路输入，也要传进后台预转码
+      and "prepareBurnSubtitle" in GO_MAIN)
 check("2j 服务端：buildCompatCache 不再用 context.Background 独走",
       "func (a *App) buildCompatCache(parent context.Context," in GO_MAIN
       and "case <-parent.Done():\n\t\t\t\tcancel()" in GO_MAIN)

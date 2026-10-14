@@ -59,13 +59,13 @@ func TestCompatArgsScaledDownscales(t *testing.T) {
 	probeVideoCodec = func(context.Context, string) (string, error) { return "h264", nil }
 
 	// Without a cap an H.264 source is copied (the fast path must not regress).
-	_, plain := compatArgsScaled(context.Background(), "movie.mkv", "", "cpu", "remux", 0)
+	_, plain := compatArgsScaled(context.Background(), "movie.mkv", "", "cpu", "remux", 0, -1, "")
 	if !strings.Contains(strings.Join(plain, " "), "-c:v copy") {
 		t.Fatalf("uncapped H.264 must still stream-copy: %v", plain)
 	}
 
 	// With a cap the same source must be re-encoded and scaled.
-	_, capped := compatArgsScaled(context.Background(), "movie.mkv", "", "cpu", "remux", 720)
+	_, capped := compatArgsScaled(context.Background(), "movie.mkv", "", "cpu", "remux", 720, -1, "")
 	joined := strings.Join(capped, " ")
 	if strings.Contains(joined, "-c:v copy") {
 		t.Fatalf("a resolution cap cannot be satisfied by stream copy: %v", capped)

@@ -71,9 +71,13 @@ vcright = M.split('class="vc-right"')[1][:1400]
 order = [vcright.find('data-video-panel-button="playlist"'), vcright.find('data-video-panel-button="settings"'),
          vcright.find("vc-fullscreen"), vcright.find('data-video-panel-button="more"')]
 check("4b 右下角顺序：播放列表 → 设置 → 最大化 → 更多", all(x >= 0 for x in order) and order == sorted(order))
-check("4c 小窗态控制器按钮同步缩小", ".video-controller-docked .vc-icon { width:28px; height:28px; }" in CSS)
-check("4d 小窗视频尺寸收紧到 160x90", "width:160px; height:90px" in CSS)
-check("4e 还原按钮位于左侧视频画面内且默认隐藏", "video:hover ~ .vc-restore" in CSS and "opacity:0; visibility:hidden;" in CSS)
+# v0.9.99（需求3）：小窗高度 138 → 112，控制器进一步收紧（24px）。
+check("4c 小窗态控制器按钮同步缩小", ".video-controller-docked .vc-icon { width:24px; height:24px; }" in CSS)
+check("4d 小窗视频尺寸收紧到 132x74", "width:132px; height:74px" in CSS)
+# v0.9.99（需求3）：还原按钮改为常显可点（客户反馈：缩小后按钮消失、无法还原）。
+check("4e 还原按钮位于左侧视频画面上方且常显可点",
+      ".video-minimized.video-controller-docked .vc-restore {" in CSS
+      and "opacity:1; visibility:visible; pointer-events:auto;" in CSS)
 check("4f 触屏无 hover 时直接显示还原按钮", "@media (hover: none)" in CSS)
 
 print("== 需求5 VCD 双实心三角快进/快退 ==")
@@ -131,10 +135,10 @@ check("c6 Release JSON 转义优先用 node", 'if command -v node >/dev/null 2>&
 print("== 版本 / 文档 ==")
 # 与版本号无关：所有 ?v= 都必须是本版，且恰好 10 处（下一版不会因此改测试）。
 check("v1 资源缓存键全部为本版且无历史残留",
-      set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"0.9.98"} and len(re.findall(r"\?v=0\.9\.98", HTML)) >= 10,
+      set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"0.9.99"} and len(re.findall(r"\?v=0\.9\.99", HTML)) >= 10,
       sorted(set(re.findall(r"\?v=([0-9.]+)", HTML))))
-check("v2 资源版本常量", 'window.VAULTHUB_ASSET_VERSION = "0.9.98";' in HTML and 'const VAULTHUB_SCRIPT_VERSION = "0.9.98";' in S)
-SLOGAN = "v0.9.98 · 原盘播放菜单与演职人员补全"
+check("v2 资源版本常量", 'window.VAULTHUB_ASSET_VERSION = "0.9.99";' in HTML and 'const VAULTHUB_SCRIPT_VERSION = "0.9.99";' in S)
+SLOGAN = "v0.9.99 · 演职人员补全与图形字幕可选"
 check("v3 标语三处整串一致", HTML.count(SLOGAN) == 3)
 import re as _re
 _CUR = _re.search(r'VAULTHUB_ASSET_VERSION = "([0-9.]+)"', HTML).group(1)

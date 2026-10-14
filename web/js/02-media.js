@@ -2368,6 +2368,10 @@ async function openSeriesDetails(libId, showKey) { const lib=findMediaLibrary(li
     const srv = await fetch(`/api/media/metadata?id=${encodeURIComponent(lib.id)}&path=${encodeURIComponent(firstPath)}`,{cache:"no-store"});
     const sdata = srv.ok ? await srv.json() : null;
     const extras = {};
+    /* v0.9.99（需求1）：剧集级 NFO（tvshow.nfo）里的演职人员 —— 服务端已按剧名
+       根目录上溯读取，这里拿到的就是本地 NFO 的演员表（含 TMDB 头像地址）。 */
+    const localShowCast = Array.isArray(sdata && sdata.cast) ? sdata.cast : [];
+    if (localShowCast.length) extras.cast = mergeCastKeepLocal(localShowCast, []);
     const sRating = Number(sdata && (sdata.rating||sdata.vote_average)) || 0;
     if (sRating) extras.rating = sRating;
     let tid = show.tmdb_id || (sdata && sdata.tmdb_id) || "";
@@ -2384,10 +2388,17 @@ async function openSeriesDetails(libId, showKey) { const lib=findMediaLibrary(li
         if (Number(d.vote_average)) extras.rating = Number(d.vote_average);
         if (!hero.poster && d.poster_path) extras.poster = `${imgBase}/w342${d.poster_path}`;
         extras.genres = (d.genres||[]).map(x=>x.name);
-        extras.cast = (d.credits?.cast||[]).slice(0,12);
+        extras.cast = mergeCastKeepLocal(localShowCast, d.credits?.cast);
         extras.recommendations = movieRecommendationsFor(d, { ...hero, rating: extras.rating || Number(hero.rating) || 0 });
       }
     }
+    /* v0.9.99（需求1）：无论 TMDB 是否命中，推荐都要有内容 ——
+       先用 TMDB 推荐，再用「本地库同类」补位（同类型 + 同演职人员）。 */
+    extras.recommendations = fillRecommendations(
+      extras.recommendations || [],
+      localRecommendationItems({ ...hero, cast: extras.cast || localShowCast, genres: extras.genres || hero.genres }, lib, { excludeShow: show.title })
+    );
+    if (!extras.cast && localShowCast.length) extras.cast = mergeCastKeepLocal(localShowCast, []);
     if (Object.keys(extras).length) {
       show.rating = Number(extras.rating) || show.rating;
       try { const all=readMovieMetadata(); seriesShowEpisodePaths(show).forEach(p=>{ all[p]={...(all[p]||{}), rating:show.rating, overview:extras.overview||(all[p]&&all[p].overview)||""}; }); writeMovieMetadata(all); } catch(e) {}
@@ -2948,12 +2959,12 @@ if (tid || (scraperStatus.tmdb_enabled && (meta.title||meta.name))) {
     }
     if (tidRes) {
       const res = await fetch(`/api/media/tmdb?id=${encodeURIComponent(tidRes)}&type=${tmdbType}&lang=${tmdbLangTag()}`,{cache:"force-cache"});
-      if (res.ok){const detail=await res.json();meta={...meta,overview:detail.overview||meta.overview,rating:Number(detail.vote_average||meta.rating||0),runtime:detail.runtime||detail.episode_run_time?.[0],genres:(detail.genres||[]).map(x=>x.name),cast:(detail.credits?.cast||[]).slice(0,12),cast_lang:tmdbLangTag(),recommendations:movieRecommendationsFor(detail,meta),tmdb_error:""};viewer.innerHTML=renderMovieDetails(lib,path,meta);}
-      else{const err=await res.json().catch(()=>({}));meta={...meta,tmdb_error:movieTMDBErrorText(err,res.status)};viewer.innerHTML=renderMovieDetails(lib,path,meta);}
+      if (res.ok){const detail=await res.json();meta={...meta,overview:detail.overview||meta.overview,rating:Number(detail.vote_average||meta.rating||0),runtime:detail.runtime||detail.episode_run_time?.[0],genres:(detail.genres||[]).map(x=>x.name),cast:mergeCastKeepLocal(meta.cast,detail.credits?.cast),cast_lang:tmdbLangTag(),recommendations:fillRecommendations(movieRecommendationsFor(detail,meta),localRecommendationItems(meta,lib)),tmdb_error:""};viewer.innerHTML=renderMovieDetails(lib,path,meta);}
+      else{const err=await res.json().catch(()=>({}));meta={...meta,recommendations:fillRecommendations(meta.recommendations||[],localRecommendationItems(meta,lib)),tmdb_error:movieTMDBErrorText(err,res.status)};viewer.innerHTML=renderMovieDetails(lib,path,meta);}
     } else {
-      meta={...meta,tmdb_error:"TMDB 未命中《'+(meta.title||meta.name||'')+'》，无法取推荐与 TMDB 评分"};viewer.innerHTML=renderMovieDetails(lib,path,meta);
+      meta={...meta,recommendations:fillRecommendations(meta.recommendations||[],localRecommendationItems(meta,lib)),tmdb_error:"TMDB 未命中《'+(meta.title||meta.name||'')+'》，无法取推荐与 TMDB 评分"};viewer.innerHTML=renderMovieDetails(lib,path,meta);
     }
-  } catch(e){meta={...meta,tmdb_error:"TMDB 请求失败："+e.message};viewer.innerHTML=renderMovieDetails(lib,path,meta);}
+  } catch(e){meta={...meta,recommendations:fillRecommendations(meta.recommendations||[],localRecommendationItems(meta,lib)),tmdb_error:"TMDB 请求失败："+e.message};viewer.innerHTML=renderMovieDetails(lib,path,meta);}
 }
 scrollViewerIntoView(viewer);}
 /* v0.9.85：语言切换后刷新已打开的影视详情 —— 让演职人员姓名/角色名跟随系统语言
@@ -3008,31 +3019,46 @@ function episodeGridHTML(lib, meta) {
   const cards = eps.map(e => `<figure class="ep-grid-card" onclick="openLocalMedia('movie',${jsAttrArg(lib.id)},${jsAttrArg(e.path)})" title="${esc(e.title||e.label)}">${e.thumb?`<img src="${esc(e.thumb)}" alt="${esc(e.label)}" loading="lazy">`:`<span class="ep-grid-fallback">${esc(e.label)}</span>`}<figcaption>${esc(e.label)}</figcaption></figure>`).join("");
   return `<section class="episode-grid-section"><h3>${esc(ctx.showTitle||"")} 第${esc(ctx.seasonNum)}季 · 单集</h3><div class="episode-grid">${cards}</div></section>`;
 }
-function renderSeriesEpisodeRow(lib, ep, artUrl) {
+function renderSeriesEpisodeRow(lib, ep, artUrl, seasonPrefix) {
   /* v0.9.81：季度集数改为「网格展示」——删除「详情」按钮，格子内同时显示集号与集标题。 */
   const path = String(ep.path), meta = ep.meta || movieMetadataFor(path), parsed = ep.parsed || parseSeriesEpisode(path);
   const safeArt = cssUrlValue(coverThumbUrl(ep.thumb || artUrl || meta.poster || "", 320));
   const style = safeArt ? `style="background-image:url('${esc(safeArt)}')"` : "";
   const label = parsed.label || `S${String(parsed.season||1).padStart(2,"0")}E${String(parsed.episode||0).padStart(2,"0")}`;
   const epTitle = String(meta.title || parsed.title || "").trim();
-  return `<article class="series-episode-row series-episode-card" data-series-episode="${esc(path)}" onclick="openLocalMedia('movie',${jsAttrArg(lib.id)},${jsAttrArg(path)})" title="${esc(path)}"><div class="series-episode-thumb" ${style}><span class="series-episode-label">${esc(label)}</span></div><div class="series-episode-title"><b>${esc(label)}</b>${epTitle ? `<small title="${esc(epTitle)}">${esc(epTitle)}</small>` : ""}</div></article>`;
+  return `<article class="series-episode-row series-episode-card${seasonPrefix ? " is-season-top" : ""}" data-series-episode="${esc(path)}" onclick="openLocalMedia('movie',${jsAttrArg(lib.id)},${jsAttrArg(path)})" title="${esc(path)}"><div class="series-episode-thumb" ${style}><span class="series-episode-label">${esc(label)}</span></div><div class="series-episode-title">${seasonPrefix || ""}<b>${esc(label)}</b>${epTitle ? `<small title="${esc(epTitle)}">${esc(epTitle)}</small>` : ""}</div></article>`;
 }
 function renderSeriesSeasonCard(lib, show, season) {
   const idx = show.seasonList.findIndex(s => s.season === season.season);
   const isFirst = idx === 0;
-  const epCount = (season.episodes||[]).length;
-  const epBody = (season.episodes||[]).map(ep => renderSeriesEpisodeRow(lib, ep, ep.thumb || show.poster || show.fanart || "")).join("");
-  const listClass = isFirst ? 'class="series-episode-list"' : 'class="series-episode-list is-collapsed"';
-  const listStyle = isFirst ? "" : "display:none";
-  /* v0.9.95（安全审查 N-6）：季名跟在「第N季」后面，季简介作为该季的一段说明 ——
-     这两个字段在 v0.9.94 只被持久化，界面上一直没有落点，这里补上（都有才渲染，全部 esc）。 */
+  const eps = season.episodes || [];
+  const epCount = eps.length;
+  /* v0.9.99（需求4）：季度标题不再单独占一行，改为该季「第一条目」的前缀 ——
+     只在组内最上层出现一次。资源命名差异使得第一季不一定是 S01，因此前缀永远
+     挂在显示顺序的第一条上，而不是钉死在某个季号。
+     v0.9.95（审查 N-6）：季名与季简介继续保留（都有才渲染，全部 esc）。 */
   const seasonName = String(season.name || "").trim();
   const seasonOverview = String(season.overview || "").trim();
-  const headExtra = seasonName ? ` · ${esc(seasonName)}` : "";
-  const overviewLine = seasonOverview ? `<p class="series-season-overview">${esc(seasonOverview)}</p>` : "";
-  return `<section class="series-season-block" data-season="${esc(season.season)}"><h3 class="series-season-head" onclick="toggleSeriesSeason(this)"><span class="series-season-chev">${isFirst?"▾":"▸"}</span>${esc(show.title)} ${esc(seriesPlexSeasonLabel(season.season))}${headExtra} <small>共${epCount}集</small></h3>${overviewLine}<div ${listClass} style="${listStyle}">${epBody}</div></section>`;
+  const art = ep => ep.thumb || show.poster || show.fanart || "";
+  const prefix = eps.length ? `<div class="series-season-prefix"><button type="button" class="series-season-toggle" aria-expanded="${isFirst ? "true" : "false"}" title="展开/收起该季其余剧集" onclick="event.stopPropagation();toggleSeriesSeason(this)"><span class="series-season-chev">${isFirst ? "▾" : "▸"}</span><b>${esc(show.title)}</b> ${esc(seriesPlexSeasonLabel(season.season))}${seasonName ? ` · ${esc(seasonName)}` : ""} <small>共${epCount}集</small></button>${seasonOverview ? `<p class="series-season-overview">${esc(seasonOverview)}</p>` : ""}</div>` : "";
+  const firstRow = eps.length ? renderSeriesEpisodeRow(lib, eps[0], art(eps[0]), prefix) : "";
+  const restRows = eps.slice(1).map(ep => renderSeriesEpisodeRow(lib, ep, art(ep), "")).join("");
+  const listClass = isFirst ? 'class="series-episode-list series-episode-list-rest"' : 'class="series-episode-list series-episode-list-rest is-collapsed"';
+  const listStyle = isFirst ? "" : "display:none";
+  return `<section class="series-season-block" data-season="${esc(season.season)}">${firstRow}${eps.length > 1 ? `<div ${listClass} style="${listStyle}">${restRows}</div>` : ""}</section>`;
 }
-function toggleSeriesSeason(head){ const list=head.parentElement.querySelector(".series-episode-list"); if(!list)return; const open=list.classList.contains("is-collapsed"); list.classList.toggle("is-collapsed",!open); list.style.display=open?"":"none"; const ch=head.querySelector(".series-season-chev"); if(ch)ch.textContent=open?"▾":"▸"; }
+/* v0.9.99（需求4）：折叠对象变成「首条之外」的集列表；首条本身是前缀行，始终可见。 */
+function toggleSeriesSeason(btn){
+  const sec = btn.closest(".series-season-block");
+  const list = sec ? sec.querySelector(".series-episode-list-rest") : null;
+  if(!list) return;
+  const open = list.classList.contains("is-collapsed");
+  list.classList.toggle("is-collapsed", !open);
+  list.style.display = open ? "" : "none";
+  const ch = btn.querySelector(".series-season-chev");
+  if(ch) ch.textContent = open ? "▾" : "▸";
+  btn.setAttribute("aria-expanded", open ? "true" : "false");
+}
 
 function renderMovieHero(lib,path,meta) { const heroArt = movieHeroArt(meta); const safeArt = cssUrlValue(heroArt.url); const style = safeArt ? `--movie-hero-art:url('${esc(safeArt)}')` : ""; const logo=meta.logo?`<img class="movie-detail-logo" src="${esc(meta.logo)}" alt="${esc(meta.title)} Logo">`:`<h1>${esc(meta.title)}</h1>`; /* v0.9.87：剧集在「无刮削信息且无简介」时整段不渲染（客户要求）；电影保持原有兜底文案。 */
   const heroText = String(meta.overview || "").trim() || (meta.media_type === "series" ? "" : "暂无电影介绍；可在系统设置中配置 TMDB API 进行刮削。");
@@ -3061,6 +3087,62 @@ function castRoleLabel(meta) {
   const genres = (meta && meta.genres) || [];
   const animated = genres.some(g => /动画|動畫|Animation|Anime/i.test(String(g)));
   return t(animated ? "castVoiceAs" : "castAs");
+}
+/* v0.9.99（需求1）：本地 NFO 与 TMDB 的演职人员合并 —— 本地条目优先
+   （NFO 里的姓名/角色是刮削器写好的本地化结果），TMDB 只补本地没有的人（带头像）。
+   旧实现直接用 TMDB 的 cast 覆盖 meta.cast，本地 NFO 的演职人员因此整段消失。 */
+function mergeCastKeepLocal(localCast, tmdbCast) {
+  const out = [], seen = {};
+  const key = x => String((x && (x.name || x.original_name)) || "").trim().toLowerCase();
+  (Array.isArray(localCast) ? localCast : []).forEach(x => {
+    const k = key(x); if (!k || seen[k]) return; seen[k] = true;
+    out.push({ name: x.name, character: x.character || x.role || "", avatar: x.avatar || "", profile_path: x.profile_path || "", from_nfo: true });
+  });
+  (Array.isArray(tmdbCast) ? tmdbCast : []).forEach(x => {
+    const k = key(x); if (!k || seen[k]) return; seen[k] = true;
+    out.push({ name: x.name, character: x.character || "", profile_path: x.profile_path || "" });
+  });
+  return out.slice(0, 24);
+}
+/* v0.9.99（需求1）：推荐列表合并 —— TMDB 推荐在前，本地同类补位，按标题去重。 */
+function fillRecommendations(primary, local, limit = 20) {
+  const out = [], seen = {};
+  (Array.isArray(primary) ? primary : []).concat(Array.isArray(local) ? local : []).forEach(x => {
+    const k = String((x && x.title) || "").trim().toLowerCase();
+    if (!k || seen[k]) return; seen[k] = true; out.push(x);
+  });
+  return out.slice(0, limit);
+}
+/* v0.9.99（需求1）：本地相关推荐 —— 只依据「本地 NFO/刮削结果」也能出推荐：
+   同一类型的条目 +3，共同演职人员 +2，评分作为次级排序；同剧其它集排除。
+   这样未配置 TMDB 密钥、或 TMDB 未命中时，「视频推荐」不再是空白。 */
+function localRecommendationItems(baseMeta, lib, opts = {}) {
+  const base = baseMeta || {};
+  const genreSet = new Set((base.genres || []).map(s => String(s).trim().toLowerCase()).filter(Boolean));
+  const castSet = new Set(((base.cast || []).map(c => String((c && c.name) || "").trim().toLowerCase())).filter(Boolean));
+  const selfTitle = String(base.title || base.name || "").trim().toLowerCase();
+  /* 同剧排除：剧集详情传 excludeShow（剧名），单集元数据自带 show_title。 */
+  const excludeShow = String(opts.excludeShow || base.show_title || "").trim().toLowerCase();
+  const libId = String((lib && lib.id) || scraperStatus._recLibId || "");
+  const out = [], seenTitle = {};
+  try {
+    const all = readMovieMetadata();
+    Object.keys(all).forEach(path => {
+      const m = all[path] || {};
+      const title = String(m.title || m.name || "").trim();
+      const key = title.toLowerCase();
+      if (!title || key === selfTitle || seenTitle[key]) return;
+      if (excludeShow && String(m.show_title || "").trim().toLowerCase() === excludeShow) return;
+      let score = 0;
+      (m.genres || []).forEach(g => { if (genreSet.has(String(g).trim().toLowerCase())) score += 3; });
+      (m.cast || []).forEach(c => { const k = String((c && c.name) || "").trim().toLowerCase(); if (k && castSet.has(k)) score += 2; });
+      if (score <= 0) return;
+      seenTitle[key] = true;
+      out.push({ title, year: String(m.year || ""), rating: Number(m.rating) || 0, poster: m.poster || "", backdrop: m.backdrop || m.fanart || "", overview: m.overview || "", media_type: m.media_type || (lib && lib.type) || "", reason: "本地库同类", local: { path }, _score: score });
+    });
+  } catch (e) { return []; }
+  out.sort((a, b) => (b._score - a._score) || (b.rating - a.rating));
+  return out.slice(0, 12).map(x => { delete x._score; return x; });
 }
 function renderCastPanel(meta) {
   const roleLabel = castRoleLabel(meta);
@@ -6809,9 +6891,131 @@ function handleVideoKeyboard(event, video) {
   if(event.repeat) return;
   if(['ArrowLeft','ArrowRight',' ','k','K'].includes(event.key)) { event.preventDefault(); if(event.key==='ArrowLeft')video.currentTime=Math.max(0,video.currentTime-10); else if(event.key==='ArrowRight')video.currentTime=Math.min(video.duration||Infinity,video.currentTime+10); else video.paused?video.play().catch(()=>{}):video.pause(); saveVideoPlaybackState(video); }
 }
-function selectVideoAudioTrack(video, index) { const root=video.closest('.media-video-body'); const lib={id:root.dataset.library}; const path=root.dataset.path; const url=mediaCompatUrl(lib,path)+`&audio_track=${encodeURIComponent(index)}`; const time=video.currentTime; const paused=video.paused; video.src=url; video.dataset.currentSrc=url; video.load(); video.addEventListener('loadedmetadata',()=>{video.currentTime=Math.min(time,video.duration||time); if(!paused)video.play().catch(()=>{});},{once:true}); }
+function selectVideoAudioTrack(video, index) {
+  const root = video.closest('.media-video-body');
+  const lib = { id: root.dataset.library };
+  const path = root.dataset.path;
+  /* v0.9.99：切音轨时不能把「图形字幕烧录」丢掉 —— 两条参数一起拼。 */
+  root.dataset.audioTrackIndex = String(index);
+  const pick = videoBurnSubOf(lib.id, path);
+  const url = videoTrackCompatUrl(lib, path, { audio: Number(index), sub: pick ? Number(pick.track) : -1 });
+  const time = video.currentTime;
+  const paused = video.paused;
+  video.src = url;
+  video.dataset.currentSrc = url;
+  video.load();
+  video.addEventListener('loadedmetadata',()=>{video.currentTime=Math.min(time,video.duration||time); if(!paused)video.play().catch(()=>{});},{once:true});
+  syncVideoSubtitleButtons(root, video);
+}
+/* v0.9.99（需求2）：字幕条目的统一渲染 —— 文本轨与图形轨走两条通道。 */
+function subtitleButtonHTML(s, i) {
+  const label = String((s && (s.label || s.name)) || `内嵌字幕 ${Number(i) + 1}`);
+  const bitmap = !!(s && (s.burn_in || s.kind === "bitmap" || s.text === false));
+  if (bitmap) {
+    const track = Number(s.burn_track ?? s.index ?? i ?? 0);
+    return `<button type="button" class="is-bitmap" data-sub-track="${track}" title="图形字幕 · 服务端烧录进画面" onclick="event.stopPropagation();selectVideoBurnInSubtitle(this,${track},${jsAttrArg(label)})">🖼 ${esc(label)}</button>`;
+  }
+  return `<button type="button" class="is-text" title="文本字幕 · 浏览器直接渲染" onclick="event.stopPropagation();attachVideoSubtitle(this.closest('.media-video-body').querySelector('video'),${jsAttrArg((s && s.url) || "")},${jsAttrArg(label)})">${esc(label)}</button>`;
+}
+/* 记住/读取「这条媒体选过的图形字幕」。图形字幕只能烧录，切换音轨或重新
+   打开时要保持一致，否则用户会以为选择丢了。 */
+function videoBurnSubKey(libId, path) { return `vaulthub_video_burnsub_${libId}_${path}`; }
+function videoBurnSubOf(libId, path) {
+  try {
+    const raw = localStorage.getItem(videoBurnSubKey(libId, path));
+    if (!raw) return null;
+    const v = JSON.parse(raw);
+    return v && Number(v.track) >= 0 ? v : null;
+  } catch (e) { return null; }
+}
+function rememberVideoBurnSub(libId, path, track, label) {
+  try {
+    if (Number(track) >= 0) localStorage.setItem(videoBurnSubKey(libId, path), JSON.stringify({ track: Number(track), label: String(label || "") }));
+    else localStorage.removeItem(videoBurnSubKey(libId, path));
+  } catch (e) {}
+}
+/* 统一的兼容流地址：可同时带「图形字幕烧录」与「音轨选择」。 */
+function videoTrackCompatUrl(lib, path, opts = {}) {
+  let url = withDiscPick(mediaCompatUrl(lib, path), discPickOf(lib, path));
+  const sub = Number(opts.sub ?? -1), audio = Number(opts.audio ?? -1);
+  if (sub >= 0) url += `&mode=full_transcode&sub_track=${encodeURIComponent(sub)}`;
+  if (audio >= 0) url += `&audio_track=${encodeURIComponent(audio)}`;
+  return url;
+}
+function syncVideoSubtitleButtons(root, video) {
+  const pick = videoBurnSubOf(root?.dataset.library || "", root?.dataset.path || "");
+  root?.querySelectorAll('[data-video-subtitle-options] button').forEach(b => {
+    const t = Number(b.dataset.subTrack ?? -1);
+    const on = pick && t >= 0 && t === Number(pick.track);
+    b.classList.toggle("active", !!on);
+  });
+}
+/* 选择图形字幕：切到服务端烧录流（画面里直接烧进字幕位图）。 */
+function selectVideoBurnInSubtitle(btn, track, label) {
+  const root = btn.closest(".media-video-body");
+  const video = root?.querySelector("video[data-movie-player]");
+  if (!root || !video) return;
+  const lib = { id: root.dataset.library }, path = root.dataset.path;
+  rememberVideoBurnSub(lib.id, path, track, label);
+  video.dataset.burnSub = String(track);
+  const time = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+  const paused = video.paused;
+  const url = videoTrackCompatUrl(lib, path, { audio: Number(root.dataset.audioTrackIndex ?? -1), sub: track });
+  video.src = url;
+  video.dataset.currentSrc = url;
+  video.load();
+  video.addEventListener("loadedmetadata", () => {
+    if (time > 2 && Number.isFinite(video.duration)) video.currentTime = Math.min(time, video.duration - 1);
+    if (!paused) video.play().catch(() => {});
+  }, { once: true });
+  setMovieCompatStatus(root, `图形字幕烧录：${label || "字幕 " + (track + 1)}`);
+  updateVideoStatus(root, video, "正在播放（图形字幕已烧录）");
+  syncVideoSubtitleButtons(root, video);
+  toast(`🖼 已开启图形字幕烧录：${label || "字幕 " + (track + 1)}`);
+}
+/* 关闭字幕并回到普通兼容流。 */
+function clearVideoSubtitle(btn) {
+  const root = btn?.closest(".media-video-body");
+  const video = root?.querySelector("video[data-movie-player]");
+  if (!root || !video) return;
+  const lib = { id: root.dataset.library }, path = root.dataset.path;
+  rememberVideoBurnSub(lib.id, path, -1, "");
+  video.dataset.burnSub = "";
+  try { [...video.textTracks].forEach(tr => { tr.mode = "disabled"; }); } catch (e) {}
+  const wasBurn = !!video.dataset.currentSrc && video.dataset.currentSrc.indexOf("sub_track=") >= 0;
+  if (wasBurn) {
+    const time = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+    const paused = video.paused;
+    const url = videoTrackCompatUrl(lib, path, { audio: Number(root.dataset.audioTrackIndex ?? -1), sub: -1 });
+    video.src = url;
+    video.dataset.currentSrc = url;
+    video.load();
+    video.addEventListener("loadedmetadata", () => {
+      if (time > 2 && Number.isFinite(video.duration)) video.currentTime = Math.min(time, video.duration - 1);
+      if (!paused) video.play().catch(() => {});
+    }, { once: true });
+  }
+  setMovieCompatStatus(root, "字幕已关闭");
+  syncVideoSubtitleButtons(root, video);
+}
 function attachVideoSubtitle(video, url, label) { let track=[...video.textTracks].find(t=>t.label===label); if(track)track.mode='showing'; else { const el=document.createElement('track'); el.kind='subtitles'; el.label=label||'外挂字幕'; el.srclang='und'; el.src=url; el.default=true; video.appendChild(el); } [...video.textTracks].forEach(t=>{t.mode=t.label===label?'showing':'disabled';}); }
-async function searchVideoSubtitles(button) { const root=button.closest('.media-video-body'); const box=root.querySelector('[data-video-subtitle-options]'); box.textContent='搜索中...'; try { const res=await fetch(`/api/media/subtitles/search?id=${encodeURIComponent(root.dataset.library)}&path=${encodeURIComponent(root.dataset.path)}`,{cache:'no-store'}); const data=await res.json(); box.innerHTML=(data.items||[]).map((x,i)=>`<button type="button" onclick="attachVideoSubtitle(this.closest('.media-video-body').querySelector('video'), '${esc(x.url)}', '${esc(x.label||`字幕 ${i+1}`)}')">${esc(x.label||`字幕 ${i+1}`)}</button>`).join('')||'没有找到字幕'; } catch(e) { box.textContent='字幕搜索失败'; } }
+/* v0.9.99（需求2）：搜索结果里既有内嵌字幕轨（文本 + 图形）也有本地字幕文件。
+   旧实现只列「与视频同目录同前缀」的本地字幕文件，原盘库必然为空。 */
+async function searchVideoSubtitles(button) {
+  const root = button.closest('.media-video-body');
+  const box = root.querySelector('[data-video-subtitle-options]');
+  box.textContent = '搜索中...';
+  try {
+    const res = await fetch(`/api/media/subtitles/search?id=${encodeURIComponent(root.dataset.library)}&path=${encodeURIComponent(root.dataset.path)}${discPickOf({ id: root.dataset.library }, root.dataset.path) > 0 ? `&disc_playlist=${encodeURIComponent(discPickOf({ id: root.dataset.library }, root.dataset.path))}` : ""}`, { cache: 'no-store' });
+    const data = await res.json();
+    const items = data.items || [];
+    if (!items.length) { box.textContent = '没有找到字幕'; return; }
+    box.innerHTML = items.map(subtitleButtonHTML).join('') +
+      `<button type="button" class="is-off" onclick="event.stopPropagation();clearVideoSubtitle(this)">${esc(t('vpSubtitleNone'))}</button>`;
+    syncVideoSubtitleButtons(root, root.querySelector('video[data-movie-player]'));
+    toast(`找到 ${items.length} 条字幕（含内嵌轨）`);
+  } catch (e) { box.textContent = '字幕搜索失败'; }
+}
 /* ==================== v0.9.98：原盘（BDMV / ISO）媒体菜单 ====================
    客户诉求：「优化 bdmv/ISO 等原盘刮削播放，增加针对 BDMV 文件的播放菜单选择
    （刮削后将文件从多个项目变成单个项目，然后通过加入播放菜单选择进行选择播放），
@@ -6926,11 +7130,15 @@ function populateVideoTracks(root, video, info) {
   const audio = root.querySelector('[data-video-audio-options]');
   const tracks = info?.audio_tracks || [];
   if (audio) audio.innerHTML = (tracks.length ? tracks : [{ index: 0, label: '默认音源' }]).map((x, i) => `<button type="button" class="${i === 0 ? 'active' : ''}" onclick="selectVideoAudioTrack(this.closest('.media-video-body').querySelector('video'),${Number(x.index ?? i)})">${esc(x.label || `音源 ${i + 1}`)}</button>`).join('');
-  // Embedded (in-container) text subtitle tracks extracted to WebVTT.
+  /* v0.9.99（需求2）：内嵌字幕轨全部列出 —— 文本轨直接挂载（WebVTT），
+     图形轨（PGS / DVD 子图 / DVB 子图）用「烧录」入口切到服务端 overlay 流。
+     旧实现把图形轨整条丢掉，原盘库在播放器里一个字幕都选不了。 */
   const subBox = root.querySelector('[data-video-subtitle-options]');
   const subs = info?.subtitle_tracks || [];
   if (subBox && subs.length) {
-    subBox.innerHTML = subs.map((s, i) => `<button type="button" onclick="attachVideoSubtitle(this.closest('.media-video-body').querySelector('video'), '${esc(s.url)}', '${esc(s.label || `内嵌字幕 ${i + 1}`)}')">${esc(s.label || `内嵌字幕 ${i + 1}`)}</button>`).join('');
+    subBox.innerHTML = subs.map(subtitleButtonHTML).join('') +
+      `<button type="button" class="is-off" onclick="event.stopPropagation();clearVideoSubtitle(this)">${esc(t('vpSubtitleNone'))}</button>`;
+    syncVideoSubtitleButtons(root, video);
   }
 }
 function switchMovieSource(video, url, { autoplay = true } = {}) {

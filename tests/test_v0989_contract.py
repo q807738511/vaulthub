@@ -132,15 +132,15 @@ check("3j 不做物理改名（无 rename 媒体文件调用）",
       "renameMediaFile" not in MEDIA and "/api/media/rename" not in MEDIA)
 
 # ============================================================ 版本与文档
-check("4a index.html 资源版本 ≥10 且为本版", HTML.count("?v=0.9.98") >= 10)
-check("4b ASSET_VERSION 0.9.90", 'window.VAULTHUB_ASSET_VERSION = "0.9.98";' in HTML)
-check("4c SCRIPT_VERSION 0.9.90", 'const VAULTHUB_SCRIPT_VERSION = "0.9.98";' in STATE)
+check("4a index.html 资源版本 ≥10 且为本版", HTML.count("?v=0.9.99") >= 10)
+check("4b ASSET_VERSION 0.9.90", 'window.VAULTHUB_ASSET_VERSION = "0.9.99";' in HTML)
+check("4c SCRIPT_VERSION 0.9.90", 'const VAULTHUB_SCRIPT_VERSION = "0.9.99";' in STATE)
 # v0.9.90：标语随版本推进 —— 校验版本前缀 + 侧栏/页脚/关于三处一致。
 # v0.9.92（上轮审查项）：标语整串一致，而不是只数版本前缀。
 _slogans_4d = re.findall(r"v0\.9\.9\d · [^<\"]+", HTML)
 check("4d 标语三处整串一致",
       len(_slogans_4d) == 3 and len(set(_slogans_4d)) == 1, sorted(set(_slogans_4d)))
-check("4e 更新日志有 v0.9.90 章节", LOG.lstrip().startswith("# VaultHub 蜀鼠之家 v0.9.98"))
+check("4e 更新日志有 v0.9.90 章节", LOG.lstrip().startswith("# VaultHub 蜀鼠之家 v0.9.99"))
 check("4f 更新日志写明并发写根因", "fatal error: concurrent map read and map write" in LOG)
 check("4g 发布说明文件存在", (ROOT / ".github/RELEASE_NOTES_0.9.90.md").is_file())
 # v0.9.95（安全审查 M4）：README 里原本写着真实对外域名，已改为示例域名 —— 这是唯一允许的

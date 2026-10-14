@@ -43,7 +43,9 @@ check("3 存在 renderSeriesInfoPanel", "function renderSeriesInfoPanel" in MEDI
 check("4 季度列表为网格", ".series-episode-list { display:grid" in CSS and "repeat(auto-fill,minmax(150px,1fr))" in CSS.split(".series-episode-list")[1][:120])
 check("4 集格为纵向(缩略图+标题)", ".series-episode-row { display:flex; flex-direction:column" in CSS)
 check("4 已删除详情按钮", 'event.stopPropagation();openEpisodeDetails(' not in MEDIA)
-check("4 集格显示集号+标题", '<div class="series-episode-title"><b>${esc(label)}</b>' in MEDIA and 'epTitle ? `<small' in MEDIA)
+# v0.9.99（需求4）：季度标题作为该季首条目的前缀插进标题区，模板因此多了 ${seasonPrefix} 占位。
+check("4 集格显示集号+标题（v0.9.99 起标题区带季度前缀占位）",
+      '<div class="series-episode-title">${seasonPrefix || ""}<b>${esc(label)}</b>' in MEDIA and 'epTitle ? `<small' in MEDIA)
 
 # 5) 演职人员网格头像
 check("5 演职网格 CSS", ".movie-cast-strip { display:grid" in CSS and "repeat(auto-fill,minmax(104px,1fr))" in CSS)
@@ -52,7 +54,7 @@ check("5 演职卡头像+名称+角色（v0.9.85 加饰演/配音标签）",
       and "String(x.character || \"\").trim()" in MEDIA and "castRoleLabel" in MEDIA)
 
 # 版本
-check("6 版本 0.9.90", 'VAULTHUB_ASSET_VERSION = "0.9.98"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.98"' in (ROOT/"web/js/01-state.js").read_text(encoding="utf-8"))
+check("6 版本 0.9.90", 'VAULTHUB_ASSET_VERSION = "0.9.99"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.99"' in (ROOT/"web/js/01-state.js").read_text(encoding="utf-8"))
 
 print(f"v0.9.85 {OK}/{OK+FAIL} 项剧集网格/推荐/演职契约通过" if FAIL==0 else f"v0.9.85 契约 {FAIL} 项未通过")
 raise SystemExit(1 if FAIL else 0)

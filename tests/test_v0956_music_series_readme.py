@@ -102,7 +102,8 @@ check("T4 renderSeriesEpisodeRow 卡片化", "series-episode-card" in JS and "da
 check("T4 缩略图 + 集号角标", "series-episode-thumb" in JS and "series-episode-label" in JS and "S" in JS)
 check("T4 整卡点击播放", 'onclick="openLocalMedia(\'movie\'' in JS)
 check("T4 集卡片不再含「详情」按钮（v0.9.84 改网格直点播放）", 'onclick="event.stopPropagation();openEpisodeDetails(' not in JS and "openEpisodeDetails(" in JS)
-check("T4 容器 series-episode-list", 'class="series-episode-list"' in JS)
+# v0.9.99：容器类名改为 series-episode-list series-episode-list-rest（首条 + 季度前缀留在外层）。
+check("T4 容器 series-episode-list", "series-episode-list-rest" in JS)
 check("T4 剧集封面传入", "const firstPath = show.files?.[0]?.path" in JS or "const episodeArt = show.poster || show.fanart || show.backdrop" in JS)
 check("T4 CSS 卡片样式", ".series-episode-list" in CSS and ".series-episode-thumb" in CSS and ".series-episode-label" in CSS)
 check("T4 CSS 移动端缩略图", "@media (max-width: 560px)" in CSS)
@@ -122,7 +123,7 @@ for fname, txt in [("README.md", README), ("Update Log.md", UPDATELOG)]:
 
 # ============ 版本号 ============
 check("版本 HTML >=2", HTML.count("v0.9.56") >= 2)
-check("版本 script 变量", 'VAULTHUB_SCRIPT_VERSION = "0.9.98"' in STATE)
+check("版本 script 变量", 'VAULTHUB_SCRIPT_VERSION = "0.9.99"' in STATE)
 check("版本 release notes 存在", (ROOT / ".github/RELEASE_NOTES_0.9.56.md").exists())
 
 if fails:

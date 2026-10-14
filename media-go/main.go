@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
@@ -386,6 +387,31 @@ func (a *App) cleanCache() {
 		}
 		items = append(items, item{p, info.Size(), info.ModTime()})
 		total += info.Size()
+	}
+	/* v0.9.99：原盘图形字幕抽出的 .sup 放在 burnsub/ 子目录（上面按 .mp4 过滤不会碰到它，
+	   也不会被计入配额）。它们是为烧录服务的中间产物，按同样的过期口径回收即可，
+	   否则每换一条字幕轨就多留一份整片大小的 PGS。 */
+	if subDir := filepath.Join(cacheDir, "burnsub"); true {
+		if subEnts, e := os.ReadDir(subDir); e == nil {
+			for _, se := range subEnts {
+				if se.IsDir() || !strings.HasSuffix(se.Name(), ".sup") {
+					continue
+				}
+				si, e := se.Info()
+				if e != nil {
+					continue
+				}
+				sp := filepath.Join(subDir, se.Name())
+				if cacheMaxAge > 0 && now.Sub(si.ModTime()) > cacheMaxAge {
+					_ = os.Remove(sp)
+					continue
+				}
+				if strings.HasPrefix(se.Name(), ".") || strings.HasSuffix(se.Name(), ".part") {
+					continue
+				}
+				total += si.Size()
+			}
+		}
 	}
 	/* v0.9.92：配额与过期都关掉（= 不做自动清理）时仍要写用量快照 ——
 	   清理可以不发生，但「当前占用多少」必须一直刷新（同上，审查低危项）。 */
@@ -2347,23 +2373,29 @@ func streams(w http.ResponseWriter, r *http.Request, a *App) {
 			tracks = append(tracks, map[string]any{"index": ai, "stream_index": s.Index, "label": label})
 			ai++
 		case "subtitle":
-			// Only text-based subtitles can be extracted to WebVTT for the
-			// browser. Bitmap subtitles (pgs/dvdsub) are skipped.
-			if s.CodecName == "hdmv_pgs_subtitle" || s.CodecName == "dvd_subtitle" || s.CodecName == "dvb_subtitle" {
-				si++
-				continue
-			}
-			label := s.Tags["title"]
+			/* v0.9.99：旧实现把图形字幕（PGS / DVD 子图）整条 continue 掉了，
+			   于是全部是原盘/图形字幕的库在播放器里「一个字幕都选不了」。
+			   现在全部列出：文本轨给 WebVTT 提取地址，图形轨给出烧录地址
+			   （compat + sub_track，服务端把字幕位图叠进画面）。 */
+			label := strings.TrimSpace(s.Tags["title"])
 			if label == "" {
 				label = fmt.Sprintf("内嵌字幕 %d", si+1)
 			}
-			if lang := s.Tags["language"]; lang != "" {
+			if lang := s.Tags["language"]; lang != "" && !strings.Contains(label, lang) {
 				label += " · " + lang
 			}
-			subs = append(subs, map[string]any{
+			kind := subtitleTrackKind(s.CodecName)
+			item := map[string]any{
 				"index": si, "label": label, "codec": s.CodecName,
-				"url": "/api/media/subtitles/extract?id=" + url.QueryEscape(l.ID) + "&path=" + url.QueryEscape(r.URL.Query().Get("path")) + "&track=" + strconv.Itoa(si),
-			})
+				"kind": kind, "text": kind == "text", "burn_in": kind == "bitmap",
+				"stream_index": s.Index,
+			}
+			if kind == "text" {
+				item["url"] = "/api/media/subtitles/extract?id=" + url.QueryEscape(l.ID) + "&path=" + url.QueryEscape(r.URL.Query().Get("path")) + "&track=" + strconv.Itoa(si)
+			} else {
+				item["burn_track"] = si
+			}
+			subs = append(subs, item)
 			si++
 		}
 	}
@@ -2513,6 +2545,61 @@ func hwEncodeArgs(mode, device string) (pre []string, vcodec string, post []stri
 
 // extractSubtitle pulls one embedded text subtitle track out of a video and
 // converts it to WebVTT so the browser <track> element can display it.
+// subtitleTrackKind 区分「能转成 WebVTT 的文本字幕」与「只能烧录进画面的图形字幕」。
+// 图形字幕（PGS / DVD subpicture / DVB subpicture / XSUB）没有文本层，浏览器
+// 无法渲染，OCR 不在本项目范围内 —— 唯一可行路径是服务端 overlay 烧录。
+func subtitleTrackKind(codec string) string {
+	switch strings.ToLower(strings.TrimSpace(codec)) {
+	case "hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle", "xsub", "dvb_teletext":
+		return "bitmap"
+	}
+	return "text"
+}
+
+// embeddedSubtitleTracks 读取当前输入（含原盘解析）的内嵌字幕轨清单，
+// 供播放器字幕面板与「搜索并挂载」共用，避免两处口径漂移。
+func embeddedSubtitleTracks(ctx context.Context, disc discInput, libID, relPath string) []map[string]any {
+	args := []string{"-v", "error", "-select_streams", "s", "-show_entries", "stream=index,codec_name:stream_tags=language,title", "-of", "json"}
+	args = append(args, disc.InputArgs()...)
+	args = append(args, disc.Spec)
+	b, e := exec.CommandContext(ctx, "ffprobe", args...).Output()
+	if e != nil {
+		return nil
+	}
+	var x struct {
+		Streams []struct {
+			Index     int               `json:"index"`
+			CodecName string            `json:"codec_name"`
+			Tags      map[string]string `json:"tags"`
+		} `json:"streams"`
+	}
+	if json.Unmarshal(b, &x) != nil {
+		return nil
+	}
+	out := make([]map[string]any, 0, len(x.Streams))
+	for si, s := range x.Streams {
+		label := strings.TrimSpace(s.Tags["title"])
+		if label == "" {
+			label = fmt.Sprintf("内嵌字幕 %d", si+1)
+		}
+		if lang := s.Tags["language"]; lang != "" && !strings.Contains(label, lang) {
+			label += " · " + lang
+		}
+		kind := subtitleTrackKind(s.CodecName)
+		item := map[string]any{
+			"index": si, "label": label, "codec": s.CodecName, "kind": kind,
+			"text": kind == "text", "burn_in": kind == "bitmap", "stream_index": s.Index,
+		}
+		if kind == "text" {
+			item["url"] = "/api/media/subtitles/extract?id=" + url.QueryEscape(libID) + "&path=" + url.QueryEscape(relPath) + "&track=" + strconv.Itoa(si)
+		} else {
+			item["burn_track"] = si
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
 func (a *App) extractSubtitle(w http.ResponseWriter, r *http.Request) {
 	l, ok := a.find(r.URL.Query().Get("id"))
 	if !ok {
@@ -2701,28 +2788,149 @@ func main() {
 	fmt.Println("VaultHub media API listening on 127.0.0.1:9100")
 	http.ListenAndServe("127.0.0.1:9100", mux)
 }
+/* v0.9.99：字幕搜索（播放器「搜索并挂载」）。旧实现只在本集目录里找
+   以文件名开头的 .srt/.vtt/.ass/.ssa，原盘 / 内嵌图形字幕的库必然返回空 ——
+   用户看到的就是「点了搜索并挂载什么都没有」。现在合并三个来源：
+   ① 内嵌字幕轨（文本轨可直接挂载，图形轨给出烧录入口）；
+   ② 本集目录与常见字幕子目录、剧名根目录下的字幕文件；
+   ③ 匹配规则放宽：文件名包含关系，或「集号标记」一致（S01E02 / 01x02 / 第2集 / 独立两位数）。 */
 func (a *App) subtitle(w http.ResponseWriter, r *http.Request) {
+	if !readAuth(r) {
+		errJSON(w, 401, "login required")
+		return
+	}
 	l, ok := a.find(r.URL.Query().Get("id"))
 	if !ok {
 		errJSON(w, 404, "invalid media path")
 		return
 	}
-	p, _, e := safeFile(l, r.URL.Query().Get("path"))
+	relPath := r.URL.Query().Get("path")
+	p, _, e := safeFile(l, relPath)
 	if e != nil {
 		errJSON(w, 404, "invalid media path")
 		return
 	}
+	items := []map[string]any{}
+	/* ① 内嵌字幕轨 */
+	subCtx, subCancel := context.WithTimeout(r.Context(), 25*time.Second)
+	disc := a.resolveDiscInputWithPlaylist(subCtx, p, discPlaylistArg(r))
+	for _, s := range embeddedSubtitleTracks(subCtx, disc, l.ID, relPath) {
+		label := "内嵌 · " + fmt.Sprintf("字幕 %d · %s", s["index"].(int)+1, fmt.Sprint(s["label"]))
+		entry := map[string]any{"label": label, "kind": s["kind"], "text": s["text"], "burn_in": s["burn_in"], "index": s["index"], "codec": s["codec"]}
+		if s["text"] == true {
+			entry["url"] = s["url"]
+		} else {
+			entry["burn_track"] = s["burn_track"]
+		}
+		items = append(items, entry)
+	}
+	subCancel()
+	/* ② 本地字幕文件 */
 	d := filepath.Dir(p)
 	stem := strings.TrimSuffix(filepath.Base(p), filepath.Ext(p))
-	ents, _ := os.ReadDir(d)
-	items := []map[string]string{}
-	for _, x := range ents {
-		if strings.HasPrefix(strings.ToLower(x.Name()), strings.ToLower(stem)) && strings.Contains(".srt .vtt .ass .ssa", strings.ToLower(filepath.Ext(x.Name()))) {
-			rel, _ := filepath.Rel(l.Path, filepath.Join(d, x.Name()))
-			items = append(items, map[string]string{"label": "本地 · " + x.Name(), "url": "/api/media/subtitles/proxy?id=" + url.QueryEscape(l.ID) + "&path=" + url.QueryEscape(rel)})
+	subDirs := []string{"Subs", "subs", "Sub", "sub", "Subtitles", "subtitles", "字幕"}
+	bases := []string{d}
+	if l.Type == "series" {
+		/* 单集在 Season NN/ 时，字幕常放在剧名根目录或其 Subs/ 下。 */
+		bases = append(bases, seriesShowDirs(l, d)...)
+	}
+	dirs := []string{}
+	for _, base := range bases {
+		dirs = append(dirs, base)
+		for _, sd := range subDirs {
+			cand := filepath.Join(base, sd)
+			if st, err := os.Stat(cand); err == nil && st.IsDir() {
+				dirs = append(dirs, cand)
+			}
 		}
 	}
-	writeJSON(w, 200, map[string]any{"items": items})
+	seen := map[string]bool{}
+	for _, dir := range dirs {
+		ents, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, x := range ents {
+			if x.IsDir() {
+				continue
+			}
+			ext := strings.ToLower(filepath.Ext(x.Name()))
+			if !map[string]bool{".srt": true, ".vtt": true, ".ass": true, ".ssa": true}[ext] {
+				continue
+			}
+			if !subtitleNameMatches(stem, x.Name()) {
+				continue
+			}
+			abs := filepath.Join(dir, x.Name())
+			if seen[abs] {
+				continue
+			}
+			seen[abs] = true
+			rel := indexRelFor(l, abs)
+			if rel == "" {
+				continue
+			}
+			items = append(items, map[string]any{"label": "本地 · " + x.Name(), "kind": "text", "text": true,
+				"url": "/api/media/subtitles/proxy?id=" + url.QueryEscape(l.ID) + "&path=" + url.QueryEscape(filepath.ToSlash(rel))})
+		}
+	}
+	writeJSON(w, 200, map[string]any{"items": items, "count": len(items)})
+}
+
+// subtitleNameMatches 判断某个本地字幕文件是否属于当前视频。
+// 先比文件名包含关系，再比「集号标记」—— 原盘 / 压制组的字幕常与视频文件名
+// 毫无共同前缀，但都带同一集号（S01E02 / 01x02 / 第2集 / [02]）。
+func subtitleNameMatches(mediaStem, subName string) bool {
+	ms, sn := strings.ToLower(strings.TrimSpace(mediaStem)), strings.ToLower(strings.TrimSpace(subName))
+	if ms == "" || sn == "" {
+		return false
+	}
+	if strings.Contains(sn, ms) || strings.Contains(ms, strings.TrimSuffix(sn, filepath.Ext(sn))) {
+		return true
+	}
+	a, b := episodeTokenOf(ms), episodeTokenOf(sn)
+	if a == "" || b == "" {
+		return false
+	}
+	if a == b {
+		return true
+	}
+	/* 只有一方带季号时（s01e01 ↔ 01）：比集号即可；
+	   双方都带季号却不一致（s01e01 ↔ s02e01）→ 判定不是同一集。 */
+	if strings.Contains(a, "S") && strings.Contains(b, "S") {
+		return false
+	}
+	ea, eb := episodeNoOf(a), episodeNoOf(b)
+	return ea != "" && ea == eb
+}
+
+// episodeNoOf 取集号部分（S01E002 → 002，E002 → 002）。
+func episodeNoOf(token string) string {
+	if i := strings.Index(token, "E"); i >= 0 {
+		return token[i+1:]
+	}
+	return ""
+}
+
+// episodeTokenOf 从文件名里抽出规整的集号标记，抽不到返回空串。
+// 末尾一支是「裸集号」（01 / 12）：要求前后都不是数字，因此 1080p / 2160p 不会被误当成集号。
+var episodeTokenPattern = regexp.MustCompile(`(?i)s(\d{1,2})\s*[ex._-]\s*(\d{1,3})|(\d{1,2})x(\d{1,3})|第\s*(\d{1,3})\s*[集话話]|(?:^|[\s._\-\[\]()])(\d{1,2})(?:[\s._\-\[\]()]|$)`)
+
+func episodeTokenOf(name string) string {
+	m := episodeTokenPattern.FindStringSubmatch(name)
+	if m == nil {
+		return ""
+	}
+	atoi := func(s string) int { n, _ := strconv.Atoi(s); return n }
+	switch {
+	case m[1] != "":
+		return fmt.Sprintf("S%02dE%02d", atoi(m[1]), atoi(m[2]))
+	case m[3] != "":
+		return fmt.Sprintf("S%02dE%02d", atoi(m[3]), atoi(m[4]))
+	case m[5] != "":
+		return fmt.Sprintf("E%02d", atoi(m[5]))
+	}
+	return fmt.Sprintf("E%02d", atoi(m[6]))
 }
 
 /*
@@ -3126,7 +3334,7 @@ func cancelCompatBuildsForMedia(mediaPath string) int {
 // background cache build: pick the video codec (copy when the source is already
 // H.264), map the requested audio track, and always deliver stereo AAC.
 func compatArgs(ctx context.Context, p, audioTrack, hw, mode string) (pre []string, mid []string) {
-	return compatArgsScaled(ctx, p, audioTrack, hw, mode, 0)
+	return compatArgsScaled(ctx, p, audioTrack, hw, mode, 0, -1, "")
 }
 
 // compatArgsScaled builds the ffmpeg arguments for the compatibility stream.
@@ -3140,7 +3348,45 @@ func compatArgs(ctx context.Context, p, audioTrack, hw, mode string) (pre []stri
 //	  修正长播放后音频时钟相对于视频时钟的累积漂移
 //	· 统一 -vsync cfr + -r 源帧率，保证输出恒定帧率，消除因 VFR 内容导致的
 //	  音频时钟与视频时钟脱钩
-func compatArgsScaled(ctx context.Context, p, audioTrack, hw, mode string, maxHeight int) (pre []string, mid []string) {
+func compatArgsScaled(ctx context.Context, p, audioTrack, hw, mode string, maxHeight int, subTrack int, burnInput string) (pre []string, mid []string) {
+	/* v0.9.99 图形字幕烧录：把字幕位图 overlay 到视频上，必须重编码视频。
+	   这里刻意走软编码（libx264）—— overlay 需要把字幕位图解码到内存再合成，
+	   硬件编码链要额外做 hwdownload/hwupload 往返，跨驱动不稳定，宁可慢也要出画面。
+
+	   v0.9.99 续（容器实测发现）：原盘用 bluray:/dvdvideo 直接做输入时，PGS 字幕流在
+	   libbluray 里没有尺寸信息（ffprobe 报 unspecified size），ffmpeg 的 sub2video 会退回
+	   720x480 默认画布，字幕位图落在画布外 —— 逐帧比对下「有/无 overlay」两帧完全一致
+	   （黑底测量 YMAX 恒为 16，即纯黑），等于什么都没烧。把选中的字幕轨先 copy 成独立
+	   .sup（PGS 自带 PTS，时间轴与主视频一致）再当第二个输入 overlay，字幕才真正出现
+	   （同一测点 YMAX=217）。所以原盘一律走 burnInput 分支。 */
+	if subTrack >= 0 {
+		subSpec := fmt.Sprintf("0:s:%d", subTrack)
+		if burnInput != "" {
+			subSpec = "1:s:0"
+		}
+		srcFps := "25"
+		if fc, ok := detectFramerate(ctx, p); ok && fc > 0 {
+			srcFps = fmt.Sprintf("%d", fc)
+		}
+		chain := ""
+		if maxHeight > 0 {
+			chain = fmt.Sprintf("scale=-2:min(ih\\,%d),", maxHeight)
+		}
+		audioMap := "0:a:0?"
+		if n, err := strconv.Atoi(audioTrack); audioTrack != "" && err == nil && n >= 0 {
+			audioMap = fmt.Sprintf("0:a:%d?", n)
+		}
+		pre = []string{"-fflags", "+genpts+igndts", "-async", "1"}
+		mid = []string{
+			"-filter_complex", fmt.Sprintf("[0:v:0]%ssetpts=PTS-STARTPTS[v0];[v0][%s]overlay=format=auto:eof_action=pass[vout]", chain, subSpec),
+			"-map", "[vout]",
+			"-map", audioMap,
+			"-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-tune", "zerolatency",
+			"-c:a", "aac", "-ac", "2", "-b:a", "160k",
+			"-r", srcFps, "-vsync", "cfr",
+		}
+		return pre, mid
+	}
 	vcodec := ""
 	var post []string
 	srcFps := "25" // safe fallback
@@ -3241,12 +3487,62 @@ func withScaleFilter(post []string, vcodec string, maxHeight int) []string {
 	return append(out, "-vf", filter)
 }
 
+// prepareBurnSubtitle 把原盘里选中的图形字幕轨抽成独立 .sup，供 overlay 当第二个输入用。
+//
+// 为什么必须这么做：用 bluray:/dvdvideo 当输入时，libbluray 交给 ffmpeg 的 PGS 字幕流没有
+// 尺寸信息（ffprobe 报 unspecified size），ffmpeg 的 sub2video 机制退回 720x480 默认画布，
+// 字幕位图实际落在画布之外。实测（容器内对真实《黑鹰坠落》BDMV）：「有/无 overlay」逐帧
+// blend=difference 的 YAVG 恒为 0，把字幕叠到纯黑底上 YMAX 恒为 16（纯黑），字幕等于没烧。
+// 用 -c:s copy 抽成 .sup 后，同一测点的黑底 YMAX=217，字幕正常渲染 —— PGS .sup 自带 PTS，
+// 时间轴与主视频一致，直接当第二路输入即可。
+//
+// 失败时返回 ""，调用方退回原地的 0:s:N（普通 MKV/MP4 图形字幕走原地路径本来就正常）。
+// 抽出物放在缓存目录的 burnsub/ 子目录（缓存清理器只扫 .mp4，不会误删也不会把它计入配额），
+// 文件名由「媒体路径 + sub_track」派生，同一字幕轨只抽一次、可供不同音频/画质档复用。
+func (a *App) prepareBurnSubtitle(ctx context.Context, disc discInput, st os.FileInfo, cache string, subTrack int) string {
+	if disc.Kind != discInputBluRay && disc.Kind != discInputDVD {
+		/* 普通文件（plain）的图形字幕原地 overlay 就正常，不需要先抽 .sup。 */
+		return ""
+	}
+	if st == nil {
+		return ""
+	}
+	h := sha256.Sum256([]byte(fmt.Sprintf("%s:%d:%d:s%d", disc.Spec, st.Size(), st.ModTime().UnixNano(), subTrack)))
+	dir := filepath.Join(filepath.Dir(cache), "burnsub")
+	if e := os.MkdirAll(dir, 0755); e != nil {
+		return ""
+	}
+	out := filepath.Join(dir, hex.EncodeToString(h[:])+".sup")
+	if fi, e := os.Stat(out); e == nil && fi.Size() > 0 {
+		return out
+	}
+	ectx, cancel := context.WithTimeout(ctx, compatBuildTimeout)
+	defer cancel()
+	tmp := out + ".part"
+	args := []string{"-hide_banner", "-loglevel", "error", "-y"}
+	args = append(args, disc.InputArgs()...)
+	args = append(args, "-i", disc.Spec, "-map", fmt.Sprintf("0:s:%d", subTrack), "-c:s", "copy", "-f", "sup", tmp)
+	if e := exec.CommandContext(ectx, "ffmpeg", args...).Run(); e != nil {
+		_ = os.Remove(tmp)
+		return ""
+	}
+	if fi, e := os.Stat(tmp); e != nil || fi.Size() == 0 {
+		_ = os.Remove(tmp)
+		return ""
+	}
+	if e := os.Rename(tmp, out); e != nil {
+		_ = os.Remove(tmp)
+		return ""
+	}
+	return out
+}
+
 // buildCompatCache produces the seekable (faststart) MP4 in the background so
 // the *next* open is a plain cache hit with full Range support. It deliberately
 // uses a detached context: the user closing the tab must not abort it.
 // parent 是发起播放的那个客户端请求的 context：客户端断开（关播放器 / 关页面）
 // 时 parent 结束，后台转码立即取消，不再空转。
-func (a *App) buildCompatCache(parent context.Context, disc discInput, cache, audioTrack, hw, mode string, maxHeight int) {
+func (a *App) buildCompatCache(parent context.Context, disc discInput, cache, audioTrack, hw, mode string, maxHeight int, subTrack int, burnInput string) {
 	compatMu.Lock()
 	if _, running := compatBuilds[cache]; running {
 		compatMu.Unlock()
@@ -3275,10 +3571,13 @@ func (a *App) buildCompatCache(parent context.Context, disc discInput, cache, au
 		defer func() { compatMu.Lock(); delete(compatBuilds, cache); compatMu.Unlock() }()
 		defer cancel()
 		tmp := cache + fmt.Sprintf(".bg-%d", os.Getpid())
-		pre, mid := compatArgsScaled(ctx, disc.Spec, audioTrack, hw, mode, maxHeight)
+		pre, mid := compatArgsScaled(ctx, disc.Spec, audioTrack, hw, mode, maxHeight, subTrack, burnInput)
 		args := append([]string{"-hide_banner", "-loglevel", "error"}, pre...)
 		args = append(args, disc.InputArgs()...)
 		args = append(args, "-i", disc.Spec)
+		if burnInput != "" {
+			args = append(args, "-i", burnInput)
+		}
 		args = append(args, mid...)
 		args = append(args, "-movflags", "+faststart", "-f", "mp4", "-y", tmp)
 		if e := exec.CommandContext(ctx, "ffmpeg", args...).Run(); e != nil {
@@ -3330,6 +3629,15 @@ func (a *App) compat(w http.ResponseWriter, r *http.Request) {
 	if mode != "remux" && mode != "audio_transcode" && mode != "full_transcode" {
 		mode = "audio_transcode"
 	}
+	/* v0.9.99：图形字幕（PGS / DVD 子图 / DVB 子图）没有文本层，浏览器无法渲染，
+	   也无法像 SRT 那样转成 WebVTT —— 唯一可行路径是服务端把它叠进画面（burn-in）。
+	   sub_track 是字幕流序号（ffmpeg 的 0:s:N，N 就是这里的值），-1 表示不烧录。
+	   烧录必须重编码视频，因此强制 full_transcode。 */
+	subTrack := -1
+	if n, err := strconv.Atoi(r.URL.Query().Get("sub_track")); err == nil && n >= 0 && n < 256 {
+		subTrack = n
+		mode = "full_transcode"
+	}
 	// v0.9.50: height caps the output resolution (播放器 设置 → 转码质量). It is part
 	// of the cache key so 1080p and 720p renditions never collide on disk.
 	maxHeight := 0
@@ -3339,7 +3647,7 @@ func (a *App) compat(w http.ResponseWriter, r *http.Request) {
 	/* v0.9.88：原盘镜像的转码输入与探测保持一致（bluray: / dvdvideo），
 	   并把它并入缓存键 —— 否则同一镜像换了解析方式会命中旧缓存。 */
 	disc := a.resolveDiscInputWithPlaylist(r.Context(), p, discPlaylistArg(r))
-	cache := a.cacheKey(fmt.Sprintf("%s:%d:%d:%s:%s:a%s:h%d:d%s:r%d", p, st.Size(), st.ModTime().UnixNano(), hw, mode, audioTrack, maxHeight, disc.Kind, disc.SelectedRef()))
+	cache := a.cacheKey(fmt.Sprintf("%s:%d:%d:%s:%s:a%s:h%d:d%s:r%d:s%d", p, st.Size(), st.ModTime().UnixNano(), hw, mode, audioTrack, maxHeight, disc.Kind, disc.SelectedRef(), subTrack))
 	// Fully built cache: serve it with byte ranges so seeking works.
 	if f, e := os.Open(cache); e == nil {
 		defer f.Close()
@@ -3376,10 +3684,20 @@ func (a *App) compat(w http.ResponseWriter, r *http.Request) {
 	// about a second even for a multi-gigabyte source. Range is intentionally
 	// not honoured here (we answer 200 with the full stream); the seekable copy
 	// is produced in the background for the next open.
-	pre, mid := compatArgsScaled(ctx, disc.Spec, audioTrack, hw, mode, maxHeight)
+	/* v0.9.99：原盘（bluray:/dvdvideo）的 PGS 字幕无法直接从 bluray: 输入 overlay（见
+	   compatArgsScaled 注释里的实测），先把选中的字幕轨 copy 成独立 .sup，再把它当第二个
+	   输入。抽不出来就退回原地的 0:s:N（普通 MKV/MP4 的图形字幕走这条路本就正常）。 */
+	burnInput := ""
+	if subTrack >= 0 {
+		burnInput = a.prepareBurnSubtitle(r.Context(), disc, st, cache, subTrack)
+	}
+	pre, mid := compatArgsScaled(ctx, disc.Spec, audioTrack, hw, mode, maxHeight, subTrack, burnInput)
 	args := append([]string{"-hide_banner", "-loglevel", "error"}, pre...)
 	args = append(args, disc.InputArgs()...)
 	args = append(args, "-i", disc.Spec)
+	if burnInput != "" {
+		args = append(args, "-i", burnInput)
+	}
 	args = append(args, mid...)
 	args = append(args, "-movflags", "+frag_keyframe+empty_moov+default_base_moof", "-f", "mp4", "pipe:1")
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
@@ -3399,7 +3717,7 @@ func (a *App) compat(w http.ResponseWriter, r *http.Request) {
 	noteCompatWatcher(cache)
 	defer releaseCompatWatcher(cache)
 	if env("COMPAT_PRECACHE", "1") != "0" {
-		a.buildCompatCache(r.Context(), disc, cache, audioTrack, hw, mode, maxHeight)
+		a.buildCompatCache(r.Context(), disc, cache, audioTrack, hw, mode, maxHeight, subTrack, burnInput)
 	}
 	w.Header().Set("Content-Type", "video/mp4")
 	w.Header().Set("Accept-Ranges", "none")

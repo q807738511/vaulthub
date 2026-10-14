@@ -164,17 +164,17 @@ check("6c CSS 让开关贴到行尾（勾选框原生尺寸 + 行显式 flex，�
       and ".cfg-field label.toggle-row { display: flex; align-items: center; }" in CSS)
 
 print("\n== 7. 版本与文档 ==")
-check("7a 版本串 ?v=0.9.98（≥11 处）且无其它版本串",
-      len(re.findall(r"\?v=0\.9\.98", HTML)) >= 11
-      and set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"0.9.98"})
+check("7a 版本串 ?v=0.9.99（≥11 处）且无其它版本串",
+      len(re.findall(r"\?v=0\.9\.99", HTML)) >= 11
+      and set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"0.9.99"})
 check("7b ASSET_VERSION / SCRIPT_VERSION = 0.9.98",
-      'VAULTHUB_ASSET_VERSION = "0.9.98"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.98"' in S)
+      'VAULTHUB_ASSET_VERSION = "0.9.99"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.99"' in S)
 check("7c 新标语 ×3 且旧标语已清除",
-      HTML.count("v0.9.98 · 原盘播放菜单与演职人员补全") == 3
+      HTML.count("v0.9.99 · 演职人员补全与图形字幕可选") == 3
       and "v0.9.97 ·" not in HTML)
 check("7d install/upgrade 脚本版本同步",
-      'VERSION="v0.9.98"' in rd("scripts/install.sh") and 'VERSION="v0.9.98"' in rd("scripts/upgrade.sh"))
-check("7e Update Log 顶部为 v0.9.98 段且保留 v0.9.97", LOG.startswith("# VaultHub 蜀鼠之家 v0.9.98"))
+      'VERSION="v0.9.99"' in rd("scripts/install.sh") and 'VERSION="v0.9.99"' in rd("scripts/upgrade.sh"))
+check("7e Update Log 顶部为 v0.9.98 段且保留 v0.9.97", LOG.startswith("# VaultHub 蜀鼠之家 v0.9.99"))
 check("7f 发布说明覆盖本轮四项需求",
       all(k in NOTES for k in ("演职人员", "/api/media/disc/playlists", "多季剧集刮削（Plex 口径）", "自动测速"))
       and "多季诊断" in NOTES and "刮削配置" in NOTES)

@@ -24,6 +24,13 @@ type Subtitle struct {
 	Provider string `json:"provider"`
 	Language string `json:"language,omitempty"`
 	Format   string `json:"format,omitempty"`
+	/* v0.9.99：内嵌字幕轨（来自媒体 API，库感知 + 原盘解析）。
+	   文本轨给 url（WebVTT 提取），图形轨给 burn_track（服务端烧录）。 */
+	Kind      string `json:"kind,omitempty"`
+	Text      bool   `json:"text,omitempty"`
+	BurnIn    bool   `json:"burn_in,omitempty"`
+	BurnTrack *int   `json:"burn_track,omitempty"`
+	Index     *int   `json:"index,omitempty"`
 }
 type Provider interface {
 	Name() string
@@ -238,29 +245,101 @@ func search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.URL.Query().Get("id")
-	v, e := safeVideo(r.URL.Query().Get("path"))
-	if e != nil {
-		http.Error(w, e.Error(), 400)
-		return
-	}
-	ps := []Provider{localProvider{id: id}, shooter{os.Getenv("SUBTITLE_SHOOTER_ENDPOINT")}, webProvider{"zimuku", os.Getenv("SUBTITLE_ZIMUKU_BASE")}, webProvider{"subhd", os.Getenv("SUBTITLE_SUBHD_BASE")}}
+	rawPath := r.URL.Query().Get("path")
 	items := []Subtitle{}
 	seen := map[string]bool{}
-	for _, p := range ps {
-		xs, e := p.Search(v, id)
-		if e != nil {
-			log.Printf("subtitle provider=%s error=%v", p.Name(), e)
-			continue
-		}
+	add := func(xs []Subtitle) {
 		for _, x := range xs {
-			if !seen[x.URL] {
-				seen[x.URL] = true
-				items = append(items, x)
+			key := x.URL
+			if key == "" {
+				key = "label:" + x.Label
 			}
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			items = append(items, x)
 		}
 	}
+	/* v0.9.99：① 内嵌字幕轨 + 库感知的本地字幕文件（媒体 API）。
+	   旧实现只有下面那段「单一 MEDIA_ROOT + 同目录同前缀」的扫描，原盘片段路径
+	   直接 400「video not found」—— 用户看到的就是「搜索并挂载什么都没有」。 */
+	add(embeddedFromMediaAPI(r, id, rawPath))
+	providers := []string{"embedded", "local"}
+	/* ② 文件能被本服务解析时，再叠加它自己的本地扫描与在线字幕源。 */
+	if v, e := safeVideo(rawPath); e == nil {
+		ps := []Provider{localProvider{id: id}, shooter{os.Getenv("SUBTITLE_SHOOTER_ENDPOINT")}, webProvider{"zimuku", os.Getenv("SUBTITLE_ZIMUKU_BASE")}, webProvider{"subhd", os.Getenv("SUBTITLE_SUBHD_BASE")}}
+		for _, p := range ps {
+			xs, e := p.Search(v, id)
+			if e != nil {
+				log.Printf("subtitle provider=%s error=%v", p.Name(), e)
+				continue
+			}
+			add(xs)
+		}
+		providers = append(providers, "shooter", "zimuku", "subhd")
+	} else {
+		log.Printf("subtitle: skip local/online providers (%v)", e)
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{"items": items, "providers": []string{"local", "shooter", "zimuku", "subhd"}})
+	json.NewEncoder(w).Encode(map[string]any{"items": items, "count": len(items), "providers": providers})
+}
+
+/* v0.9.99：媒体 API 才是「库感知」的一侧 —— 它知道每个媒体库的根目录、能按原盘
+   解析（bluray:/dvdvideo:）并列出内嵌字幕轨。这里带上调用方的 Cookie 转发一次请求，
+   让鉴权沿用同一会话；失败只记日志，不影响在线字幕源。 */
+func embeddedFromMediaAPI(r *http.Request, id, rawPath string) []Subtitle {
+	if id == "" || rawPath == "" {
+		return nil
+	}
+	base := strings.TrimRight(os.Getenv("MEDIA_API"), "/")
+	if base == "" {
+		base = "http://127.0.0.1:9100"
+	}
+	u := base + "/api/media/subtitles/search?id=" + esc(id) + "&path=" + esc(rawPath)
+	ctx, cancel := context.WithTimeout(r.Context(), 35*time.Second)
+	defer cancel()
+	req, e := http.NewRequestWithContext(ctx, "GET", u, nil)
+	if e != nil {
+		return nil
+	}
+	if ck := r.Header.Get("Cookie"); ck != "" {
+		req.Header.Set("Cookie", ck)
+	}
+	req.Header.Set("User-Agent", "VaultHub-Subtitle/0.9.99")
+	res, e := client.Do(req)
+	if e != nil {
+		log.Printf("subtitle: media api unavailable (%v)", e)
+		return nil
+	}
+	defer res.Body.Close()
+	if res.StatusCode/100 != 2 {
+		log.Printf("subtitle: media api HTTP %d", res.StatusCode)
+		return nil
+	}
+	var payload struct {
+		Items []struct {
+			Label     string `json:"label"`
+			URL       string `json:"url"`
+			Kind      string `json:"kind"`
+			Text      bool   `json:"text"`
+			BurnIn    bool   `json:"burn_in"`
+			BurnTrack *int   `json:"burn_track"`
+			Index     *int   `json:"index"`
+			Codec     string `json:"codec"`
+		} `json:"items"`
+	}
+	if json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(&payload) != nil {
+		return nil
+	}
+	out := make([]Subtitle, 0, len(payload.Items))
+	for _, s := range payload.Items {
+		out = append(out, Subtitle{
+			Label: s.Label, URL: s.URL, Provider: "内嵌", Format: s.Codec,
+			Kind: s.Kind, Text: s.Text, BurnIn: s.BurnIn, BurnTrack: s.BurnTrack, Index: s.Index,
+		})
+	}
+	return out
 }
 
 type localProvider struct{ id string }

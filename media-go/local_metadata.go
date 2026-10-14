@@ -178,6 +178,18 @@ func readLocalMediaMetadata(lib Library, mediaPath string) (localMediaMetadata, 
 		nfoNames = append(nfoNames, "tvshow.nfo")
 	}
 	nfo := firstExistingFile(dir, nfoNames)
+	/* v0.9.99：剧集库的 tvshow.nfo 放在「剧名根目录」，而单集通常在 Season NN/ 子目录中，
+	   旧实现只在本集目录里找 nfo，于是永远读不到 show 级 NFO —— 演职人员、评分、tmdbid
+	   全为空（用户可见症状：本地明明有 NFO，却看不到演职人员与相关推荐）。
+	   这里复用 seriesShowDirs 逐级向上回溯到剧名根目录补找 tvshow.nfo / movie.nfo。 */
+	if nfo == "" && lib.Type == "series" {
+		for _, showDir := range seriesShowDirs(lib, dir) {
+			if cand := firstExistingFile(showDir, []string{"tvshow.nfo", "movie.nfo"}); cand != "" {
+				nfo = cand
+				break
+			}
+		}
+	}
 	var doc nfoDocument
 	if nfo != "" {
 		f, e := os.Open(nfo)
@@ -209,7 +221,8 @@ func readLocalMediaMetadata(lib Library, mediaPath string) (localMediaMetadata, 
 				if name == "" {
 					continue
 				}
-				avatar, kind, raw := localCastAvatar(lib, dir, strings.TrimSpace(a.Thumb))
+				/* v0.9.99：show 级 NFO 里的相对头像（.actors/x.jpg）要相对 NFO 所在目录解析。 */
+				avatar, kind, raw := localCastAvatar(lib, filepath.Dir(nfo), strings.TrimSpace(a.Thumb))
 				m.Cast = append(m.Cast, localMetadataCast{
 					Name: name, Character: strings.TrimSpace(a.Role),
 					Avatar: avatar, AvatarKind: kind, AvatarThumb: raw,

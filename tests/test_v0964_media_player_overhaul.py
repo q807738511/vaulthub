@@ -45,7 +45,10 @@ checks = {
         and 'style="${esc(detailBackdropStyle(meta))}"' in MEDIA,
     "互斥暂停不销毁视频会话": 'mediaKeepAliveStop("video"); clearTimeout(root.__videoProgressTimer);' in MEDIA
         and 'if (root) stopVideoPlaybackSession(root);' not in MEDIA.split("function claimExclusivePlayback", 1)[1].split("}", 4)[0],
-    "移动端停靠不裁切": "height:180px; overflow:auto" in CSS,
+    # v0.9.99（需求3）：窄屏停靠态同样收紧（180 → 128）并改为「外层不裁切 + 内层裁切」，
+    # 因为 overflow:auto 正是缩小后播放器内部出现滚动条的来源。
+    "移动端停靠不裁切": "height:128px; overflow:visible" in CSS
+        and ".media-video-body { height:128px; overflow:hidden; }" in CSS,
 
     # 3. 音视频播放唯一性
     "统一互斥协调器": "function claimExclusivePlayback(" in MEDIA,
@@ -66,8 +69,8 @@ checks = {
     "还原清理新状态": 'overlay.classList.remove("video-minimized", "video-controller-docked")' in MEDIA,
 
     # 版本与发布资料
-    "HTML版本": 'VAULTHUB_ASSET_VERSION = "0.9.98"' in HTML and HTML.count("?v=0.9.98") >= 7,
-    "脚本版本": 'VAULTHUB_SCRIPT_VERSION = "0.9.98"' in STATE,
+    "HTML版本": 'VAULTHUB_ASSET_VERSION = "0.9.99"' in HTML and HTML.count("?v=0.9.99") >= 7,
+    "脚本版本": 'VAULTHUB_SCRIPT_VERSION = "0.9.99"' in STATE,
     "发布说明": NOTES.exists(),
 }
 
