@@ -108,20 +108,20 @@ check("5e 翻页忙标记保持到这一页取回（成功 120ms / 失败进冷�
 check("5f cleanCache 不再在函数入口直接 return",
       "if cacheMaxBytes <= 0 && cacheMaxAge <= 0 {\n\t\treturn\n\t}" not in GO_MAIN)
 # 测试断言升级（审查项：标语整串一致 + 冗余 or）
-check("5g 标语断言已升级为整串一致（至少 5 处）",
+check("5g 标语断言已升级为整串一致（至少 5 处；正则与版本号无关）",
       sum(1 for f in list((ROOT / "tests").glob("*.py")) + list((ROOT / "tests").glob("*.js"))
-          if "len(set(" in f.read_text(encoding="utf-8") and 'v0\\.9\\.9\\d · ' in f.read_text(encoding="utf-8")) >= 5)
+          if "len(set(" in f.read_text(encoding="utf-8") and 'v\\d+\\.\\d+\\.\\d+ · ' in f.read_text(encoding="utf-8")) >= 5)
 # v0.9.94：改成与版本号无关的正则，避免每次升版都要机械改断言。
 check("5h test_v0960 冗余 or 已清理",
       not re.search(r'"v0\.9\.\d+" in HTML or "v0\.9\.\d+" in HTML', (ROOT / "tests/test_v0960_audio_edit_jump.py").read_text(encoding="utf-8")))
 
 # ============ 6) 版本与文档 ============
-check("6a 资源版本号已升至本版（≥10 处）", HTML.count("?v=0.9.99") >= 10)
+check("6a 资源版本号已升至本版（≥10 处）", HTML.count("?v=1.0.0") >= 10)
 check("6b ASSET / SCRIPT 版本一致",
-      'VAULTHUB_ASSET_VERSION = "0.9.99"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.99"' in STATE)
-_slogans = re.findall(r"v0\.9\.9\d · [^<\"]+", HTML)
+      'VAULTHUB_ASSET_VERSION = "1.0.0"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "1.0.0"' in STATE)
+_slogans = re.findall(r"v\d+\.\d+\.\d+ · [^<\"]+", HTML)
 check("6c 标语三处整串一致", len(_slogans) == 3 and len(set(_slogans)) == 1, sorted(set(_slogans)))
-check("6d Update Log 顶部为本版", LOG.startswith("# VaultHub 蜀鼠之家 v0.9.99"))
+check("6d Update Log 顶部为本版", LOG.startswith("# VaultHub 蜀鼠之家 v1.0.0"))
 check("6e Release Notes 存在且写明四项需求",
       (ROOT / ".github/RELEASE_NOTES_0.9.92.md").exists()
       and "铺满" in NOTES and "正在播放" in NOTES and "sidecar" in NOTES and "缓存目录" in NOTES)

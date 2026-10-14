@@ -124,14 +124,14 @@ check("4e 前端只保留当前库的重型缓存（切库即释放）",
       and re.search(r"async function loadLocalFiles\(group, lib, offset = 0\) \{[\s\S]{0,200}releaseMediaHeavyCaches\(lib\.id\)", MEDIA) is not None)
 
 # ============ 5) 版本与文档 ============
-check("5a 资源版本号已升至本版（≥10 处）", HTML.count("?v=0.9.99") >= 10)
+check("5a 资源版本号已升至本版（≥10 处）", HTML.count("?v=1.0.0") >= 10)
 check("5b ASSET_VERSION / SCRIPT_VERSION = 0.9.91",
-      'window.VAULTHUB_ASSET_VERSION = "0.9.99";' in HTML
-      and 'const VAULTHUB_SCRIPT_VERSION = "0.9.99";' in STATE)
-slogans = re.findall(r"v0\.9\.9\d · [^<\"]+", HTML)
+      'window.VAULTHUB_ASSET_VERSION = "1.0.0";' in HTML
+      and 'const VAULTHUB_SCRIPT_VERSION = "1.0.0";' in STATE)
+slogans = re.findall(r"v\d+\.\d+\.\d+ · [^<\"]+", HTML)
 check("5c 三处标语完全一致（审查项：断言强度，不只是前缀）",
       len(slogans) == 3 and len(set(slogans)) == 1, sorted(set(slogans)))
-check("5d 更新日志顶部为 v0.9.97", LOG.lstrip().startswith("# VaultHub 蜀鼠之家 v0.9.99"))
+check("5d 更新日志顶部为 v0.9.97", LOG.lstrip().startswith("# VaultHub 蜀鼠之家 v1.0.0"))
 check("5e 发布说明存在且覆盖四项反馈",
       (ROOT / ".github/RELEASE_NOTES_0.9.91.md").is_file()
       and "解/转码风向标" in NOTES and "下滑自动翻页" in NOTES

@@ -858,23 +858,30 @@
 .media-reader-overlay.movie-player.video-controller-docked .vc-icon.vc-play .vc-svg { width:17px; height:17px; }
 .media-reader-overlay.movie-player.video-controller-docked .vc-collapse,
 .media-reader-overlay.movie-player.video-controller-docked .vc-fullscreen { width:24px; height:24px; }
-  /* v0.9.99（需求3）：还原按钮在缩小态常显可点。v0.9.94 把它做成「鼠标停在小窗
-     画面上才浮现」，用户找不到入口 → 缩小后无法还原（这是本次要修的核心症状）。 */
-  .media-reader-overlay.movie-player.video-minimized.video-controller-docked .vc-restore {
-  display:flex; left:12px; bottom:12px; top:auto; right:auto; transform:none; z-index:11;
-  width:30px; height:30px; opacity:1; visibility:visible; pointer-events:auto;
-  width:30px; height:30px; opacity:1; visibility:visible; pointer-events:auto;
-  transition:opacity .15s ease, visibility .15s ease;
+  /* v1.0.0（需求2）：还原按钮改成「居中压在小窗画面上」+「鼠标移入才显示」。
+     v0.9.99 让它常显在画面左下角（挡画面）；更早的 v0.9.94 用
+     `video:hover ~ .vc-restore` 兄弟选择器 —— 视频嵌在
+     `.media-reader-body > .media-reader-wrap > .media-video-body` 里，与按钮
+     并非兄弟，选择器永远选不中，于是按钮要么不出现、要么只能常显。
+     现在显示状态由 JS 打在小窗容器上的 `vc-restore-hover` 标记决定；
+     键盘聚焦与触屏（无 hover）仍然直接可见。 */
+.media-reader-overlay.movie-player.video-minimized.video-controller-docked .vc-restore {
+  display:flex; left:76px; bottom:47px; top:auto; right:auto;
+  transform:translate(-50%,50%); z-index:12;
+  width:34px; height:34px; opacity:0; visibility:hidden; pointer-events:none;
+  background:rgba(0,0,0,.55); box-shadow:0 4px 14px rgba(0,0,0,.5);
+  transition:opacity .15s ease, visibility .15s ease, border-color .15s ease, color .15s ease;
 }
 .media-reader-overlay.movie-player.video-controller-docked .vc-restore .vc-svg { width:16px; height:16px; }
 .media-reader-overlay.movie-player.video-controller-docked .media-video-body video { cursor:pointer; }
-.media-reader-overlay.movie-player.video-controller-docked .media-video-body video:hover ~ .vc-restore,
-.media-reader-overlay.movie-player.video-controller-docked .vc-restore:focus-visible {
+.media-reader-overlay.movie-player.video-minimized.video-controller-docked.vc-restore-hover .vc-restore,
+.media-reader-overlay.movie-player.video-minimized.video-controller-docked:hover .vc-restore,
+.media-reader-overlay.movie-player.video-minimized.video-controller-docked .vc-restore:focus-visible {
   opacity:1; visibility:visible; pointer-events:auto;
 }
 @media (hover: none) {
   /* 触屏没有 hover：小窗态直接显示还原按钮，否则没法还原。 */
-  .media-reader-overlay.movie-player.video-controller-docked .vc-restore { opacity:1; visibility:visible; pointer-events:auto; }
+  .media-reader-overlay.movie-player.video-minimized.video-controller-docked .vc-restore { opacity:1; visibility:visible; pointer-events:auto; }
 }
 
 /* 停靠前：保留一个向上的 V 形尖角用于还原完整播放器。 */
@@ -1053,7 +1060,7 @@
     .audio-fs-lyrics-hint { bottom:14px; font-size:11px; }
   }
   @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
-  @media (max-width:768px) { .audio-fullscreen-overlay{ left:0; } .audio-fullscreen-overlay { --poster-size:min(420px,90vw); } .audio-fullscreen-poster { width:var(--poster-size,min(420px,90vw)); } .media-reader-overlay.movie-player.video-controller-docked{ left:0; height:128px; overflow:visible; } .media-reader-overlay.movie-player.video-controller-docked .media-reader-body, .media-reader-overlay.movie-player.video-controller-docked .media-reader-wrap, .media-reader-overlay.movie-player.video-controller-docked .media-video-body { height:128px; overflow:hidden; } .media-reader-overlay.movie-player.video-controller-docked video { width:118px; height:66px; left:8px; bottom:8px; } .media-reader-overlay.movie-player.video-controller-docked .vc-top { padding-left:134px; padding-top:5px; } .media-reader-overlay.movie-player.video-controller-docked .vc-bottom { margin-left:134px; padding-bottom:5px; } .media-reader-overlay.movie-player.video-minimized.video-controller-docked .vc-restore { left:8px; bottom:8px; } }
+  @media (max-width:768px) { .audio-fullscreen-overlay{ left:0; } .audio-fullscreen-overlay { --poster-size:min(420px,90vw); } .audio-fullscreen-poster { width:var(--poster-size,min(420px,90vw)); } .media-reader-overlay.movie-player.video-controller-docked{ left:0; height:128px; overflow:visible; } .media-reader-overlay.movie-player.video-controller-docked .media-reader-body, .media-reader-overlay.movie-player.video-controller-docked .media-reader-wrap, .media-reader-overlay.movie-player.video-controller-docked .media-video-body { height:128px; overflow:hidden; } .media-reader-overlay.movie-player.video-controller-docked video { width:118px; height:66px; left:8px; bottom:8px; } .media-reader-overlay.movie-player.video-controller-docked .vc-top { padding-left:134px; padding-top:5px; } .media-reader-overlay.movie-player.video-controller-docked .vc-bottom { margin-left:134px; padding-bottom:5px; } .media-reader-overlay.movie-player.video-minimized.video-controller-docked .vc-restore { left:67px; bottom:41px; } }
   .audio-player-main { min-width:0; flex:1; }
   .audio-player-title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
   .audio-player-meta { color:var(--text2); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:4px; }
@@ -2126,8 +2133,8 @@ html[data-quality="minimal"] :is(.audio-expand, .audio-fullscreen, .audio-player
   .toggle-row input[type="checkbox"] { width: auto; flex: 0 0 auto; }
   .toggle-row.toggle-row-tail .toggle-tail-input { width: auto; flex: 0 0 auto; margin-left: auto; accent-color: var(--accent); }
   .toggle-row.toggle-row-tail .toggle-tail-hint { display: none; }
-  /* 详情页提示：多季工具条已搬到系统设置。 */
-  .series-plex-moved { font-size: 12px; color: var(--text3); margin: 6px 0 0; }
+  /* v1.0.0（需求1）：详情页区块标题（演职人员 / 视频推荐 / 季度 …）统一加粗。 */
+  .movie-detail-scroll .detail-section-h { font-weight:700; }
   /* 设置页里的多季面板容器。 */
   .series-plex-panel { margin-top: 12px; display: block; }
   .series-plex-panel:empty { display: none; }
@@ -2145,12 +2152,13 @@ html[data-quality="minimal"] :is(.audio-expand, .audio-fullscreen, .audio-player
   .video-disc-hint { display: block; margin-top: 8px; font-size: 10.5px; color: var(--text3); line-height: 1.6; }
 
 
-/* —— v0.9.99（需求4）：季度标题改为该季「第一条目」的前缀，组内最上层只出现一次。 —— */
+/* —— v0.9.99（需求4）：季度标题改为该季「第一条目」的前缀，组内最上层只出现一次。
+   v1.0.0（需求1）：季名与「共N集」保持常规字重（加粗只留给区块标题）。 —— */
 .series-season-prefix { display:flex; flex-direction:column; gap:4px; margin-bottom:6px; min-width:0; }
-.series-season-toggle { display:inline-flex; align-items:center; gap:6px; max-width:100%; padding:3px 9px; border:1px solid var(--border); border-radius:999px; background:color-mix(in srgb,var(--accent) 12%,transparent); color:var(--text); font:600 11.5px/1.6 inherit; cursor:pointer; }
+.series-season-toggle { display:inline-flex; align-items:center; gap:6px; max-width:100%; padding:3px 9px; border:1px solid var(--border); border-radius:999px; background:color-mix(in srgb,var(--accent) 12%,transparent); color:var(--text); font:400 11.5px/1.6 inherit; cursor:pointer; }
 .series-season-toggle:hover { border-color:var(--accent); color:var(--accent); }
-.series-season-toggle b { font-weight:700; max-width:38vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.series-season-toggle small { color:var(--text2); font-weight:500; }
+.series-season-toggle .series-season-title { font-weight:400; max-width:38vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.series-season-toggle small { color:var(--text2); font-weight:400; }
 .series-season-toggle .series-season-chev { font-size:10px; opacity:.85; }
 .series-season-prefix .series-season-overview { margin:0; font-size:11.5px; line-height:1.6; }
 .series-episode-row.is-season-top { border-color:color-mix(in srgb,var(--accent) 34%,var(--border)); }

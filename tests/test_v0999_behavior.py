@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""v0.9.99 行为测试：跑 tests/v0999_behavior.js（Node VM 桩，真实执行 web/js/02-media.js）。
+"""v1.0.0 行为测试：跑 tests/v0999_behavior.js（Node VM 桩，真实执行 web/js/02-media.js）。
 
 覆盖：
   A. 季度标题作为「该季首条目的前缀」：无独立标题行、前缀只出现一次、折叠只作用于首条之外的集、
@@ -18,7 +18,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 if shutil.which("node") is None:
-    print("SKIP: 本机没有 node，跳过 v0.9.99 行为测试")
+    print("SKIP: 本机没有 node，跳过 v1.0.0 行为测试")
     sys.exit(0)
 
 env = dict(os.environ)

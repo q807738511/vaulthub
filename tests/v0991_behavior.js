@@ -289,12 +289,12 @@ const GO_SCRAPE = fs.readFileSync(ROOT + "/media-go/scrape_store.go", "utf8");
 
   /* ================= E. 版本与审查项 ================= */
   {
-    chk("E1 资源版本 本版（≥10 处）", (HTML_SRC.match(/\?v=0\.9\.99/g) || []).length >= 10);
+    chk("E1 资源版本 本版（≥10 处）", (HTML_SRC.match(/\?v=1\.0\.0/g) || []).length >= 10);
     chk("E2 ASSET_VERSION / SCRIPT_VERSION = 0.9.97",
-        HTML_SRC.includes('window.VAULTHUB_ASSET_VERSION = "0.9.99";') &&
-        STATE_SRC.includes('const VAULTHUB_SCRIPT_VERSION = "0.9.99";'));
+        HTML_SRC.includes('window.VAULTHUB_ASSET_VERSION = "1.0.0";') &&
+        STATE_SRC.includes('const VAULTHUB_SCRIPT_VERSION = "1.0.0";'));
     /* 审查项：标语断言必须校验「三处完全一致」，而不是各自存在。 */
-    const slogans = (HTML_SRC.match(/v0\.9\.9\d · [^<"]+/g) || []);
+    const slogans = (HTML_SRC.match(/v\d+\.\d+\.\d+ · [^<"]+/g) || []);
     chk("E3 三处标语完全一致（审查项：断言强度）",
         slogans.length === 3 && new Set(slogans).size === 1, [...new Set(slogans)]);
     chk("E4 面板提示行重置旧胶囊底色（审查项：CSS 药丸）",
