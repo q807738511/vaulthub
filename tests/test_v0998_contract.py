@@ -145,7 +145,8 @@ check("5e 面板按钮各自携带库/剧（整库不串台）",
       "seriesPlexAction('compare',${jsAttrArg(lib.id)},${jsAttrArg(show.key)})" in P
       and "seriesPlexScrapeSeason(${Number(planSeason.season) || 0},${jsAttrArg(lib.id)},${jsAttrArg(show.key)})" in P)
 check("5f 旧实现已移除：详情页既无工具条也无迁移提示（v1.0.0 口径）",
-      '<h3 class="detail-section-h">季度</h3>' in M
+      '<h3 class="detail-section-h season-inline-title">季度</h3>' in M
+      and '<section><h3 class="detail-section-h">季度</h3></section>' not in M
       and "seriesPlexToolbarHtml" not in M and "seriesPlexToolbarHtml" not in P
       and "series-plex-moved" not in M and "多季诊断与多季全量刮削已移到" not in M)
 check("5g 缺失集结果按「库|剧」缓存（整库面板不再共用单上下文）",

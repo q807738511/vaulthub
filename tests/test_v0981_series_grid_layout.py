@@ -34,7 +34,7 @@ seg = MEDIA.split("const renderPage = (extras)")[1].split("scrollViewerIntoView(
 i_hero = seg.find("renderMovieHero")
 i_cast = seg.find("renderCastPanel")
 i_rec = seg.find("renderRecPanel")
-i_season = seg.find('>季度</h3>')  # v1.0.0：季度标题带上 detail-section-h 类（加粗）
+i_season = seg.find('${seasons}')  # v1.0.0（需求1）：季度标题已并入首季前缀行，这里按季度容器占位定序
 i_info = seg.find("renderSeriesInfoPanel")
 check("3 剧集详情顺序 hero→演职→推荐→季度→信息", -1 < i_hero < i_cast < i_rec < i_season < i_info)
 check("3 存在 renderSeriesInfoPanel", "function renderSeriesInfoPanel" in MEDIA)

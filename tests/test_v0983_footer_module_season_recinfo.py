@@ -89,7 +89,8 @@ check("4a 季度提示长文案已删除",
 # （客户明确要求），因此这里断言「新落点存在」+「旧接线已彻底消失」。
 # v1.0.0（需求1）：连那行「已移到系统设置」的迁移提示也一并删除 —— 入口搬完已久，留着只是噪音。
 check("4b 季度区块保留，多季工具条与迁移提示都已清除（旧入口不残留）",
-      '<h3 class="detail-section-h">季度</h3>' in MEDIA
+      '<h3 class="detail-section-h season-inline-title">季度</h3>' in MEDIA
+      and '<section><h3 class="detail-section-h">季度</h3></section>' not in MEDIA
       and 'series-plex-moved' not in MEDIA
       and '多季诊断与多季全量刮削已移到' not in MEDIA
       and "seriesPlexToolbarHtml" not in MEDIA

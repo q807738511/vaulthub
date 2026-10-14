@@ -2153,12 +2153,15 @@ html[data-quality="minimal"] :is(.audio-expand, .audio-fullscreen, .audio-player
 
 
 /* —— v0.9.99（需求4）：季度标题改为该季「第一条目」的前缀，组内最上层只出现一次。
-   v1.0.0（需求1）：季名与「共N集」保持常规字重（加粗只留给区块标题）。 —— */
-.series-season-prefix { display:flex; flex-direction:column; gap:4px; margin-bottom:6px; min-width:0; }
+   v1.0.0（需求1）：「季度」区块标题也并到同一行 —— 加粗只给「季度」两个字，
+   季名与「共N集」保持常规字重。 —— */
+.series-season-prefix { display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; margin-bottom:6px; min-width:0; }
+.series-season-prefix .season-inline-title { margin:0; padding:0; flex:0 0 auto; font-weight:700; white-space:nowrap; }
+.season-inline-title-orphan { padding:0; }
 .series-season-toggle { display:inline-flex; align-items:center; gap:6px; max-width:100%; padding:3px 9px; border:1px solid var(--border); border-radius:999px; background:color-mix(in srgb,var(--accent) 12%,transparent); color:var(--text); font:400 11.5px/1.6 inherit; cursor:pointer; }
 .series-season-toggle:hover { border-color:var(--accent); color:var(--accent); }
 .series-season-toggle .series-season-title { font-weight:400; max-width:38vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .series-season-toggle small { color:var(--text2); font-weight:400; }
 .series-season-toggle .series-season-chev { font-size:10px; opacity:.85; }
-.series-season-prefix .series-season-overview { margin:0; font-size:11.5px; line-height:1.6; }
+.series-season-prefix .series-season-overview { flex:1 0 100%; margin:0; font-size:11.5px; line-height:1.6; }
 .series-episode-row.is-season-top { border-color:color-mix(in srgb,var(--accent) 34%,var(--border)); }

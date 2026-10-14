@@ -2359,7 +2359,7 @@ async function openSeriesDetails(libId, showKey) { const lib=findMediaLibrary(li
   const renderPage = (extras) => {
     const meta = { ...hero, ...(extras||{}) };
     const seasons = (show.seasonList||[]).map(season => renderSeriesSeasonCard(lib, show, season)).join("");
-    viewer.innerHTML = `<div class="media-reader-overlay movie-detail-page series-detail-page media-detail-backdrop" style="${esc(detailBackdropStyle(meta))}"><div class="movie-detail-scroll">${movieDetailCloseButton()}${renderMovieHero(lib,firstPath,meta)}${renderCastPanel(meta)}${renderRecPanel(meta)}<section><h3 class="detail-section-h">季度</h3></section>${seasons}${renderSeriesInfoPanel(show, meta.rating)}</div></div>`;
+    viewer.innerHTML = `<div class="media-reader-overlay movie-detail-page series-detail-page media-detail-backdrop" style="${esc(detailBackdropStyle(meta))}"><div class="movie-detail-scroll">${movieDetailCloseButton()}${renderMovieHero(lib,firstPath,meta)}${renderCastPanel(meta)}${renderRecPanel(meta)}${seasons}${renderSeriesInfoPanel(show, meta.rating)}</div></div>`;
     scrollViewerIntoView(viewer);
   };
   renderPage();
@@ -3036,16 +3036,22 @@ function renderSeriesSeasonCard(lib, show, season) {
   /* v0.9.99（需求4）：季度标题不再单独占一行，改为该季「第一条目」的前缀 ——
      只在组内最上层出现一次。资源命名差异使得第一季不一定是 S01，因此前缀永远
      挂在显示顺序的第一条上，而不是钉死在某个季号。
+     v1.0.0（需求1）：再加粗的「季度」区块标题也并入同一行 —— 即「(加粗)季度
+     (常规字体)剧名 第N季 共M集」，仅出现在排序最上层的那一季；后面的季只有
+     常规字重的季名行。若最上层那一季没有剧集（前缀行为空），则退回独立的
+     「季度」标题，避免标题整体消失。
      v0.9.95（审查 N-6）：季名与季简介继续保留（都有才渲染，全部 esc）。 */
   const seasonName = String(season.name || "").trim();
   const seasonOverview = String(season.overview || "").trim();
   const art = ep => ep.thumb || show.poster || show.fanart || "";
-  const prefix = eps.length ? `<div class="series-season-prefix"><button type="button" class="series-season-toggle" aria-expanded="${isFirst ? "true" : "false"}" title="展开/收起该季其余剧集" onclick="event.stopPropagation();toggleSeriesSeason(this)"><span class="series-season-chev">${isFirst ? "▾" : "▸"}</span><span class="series-season-title">${esc(show.title)}</span> ${esc(seriesPlexSeasonLabel(season.season))}${seasonName ? ` · ${esc(seasonName)}` : ""} <small>共${epCount}集</small></button>${seasonOverview ? `<p class="series-season-overview">${esc(seasonOverview)}</p>` : ""}</div>` : "";
+  const seasonHeading = isFirst ? '<h3 class="detail-section-h season-inline-title">季度</h3>' : "";
+  const orphanHeading = isFirst && !eps.length ? `<section class="season-inline-title-orphan">${seasonHeading}</section>` : "";
+  const prefix = eps.length ? `<div class="series-season-prefix">${seasonHeading}<button type="button" class="series-season-toggle" aria-expanded="${isFirst ? "true" : "false"}" title="展开/收起该季其余剧集" onclick="event.stopPropagation();toggleSeriesSeason(this)"><span class="series-season-chev">${isFirst ? "▾" : "▸"}</span><span class="series-season-title">${esc(show.title)}</span> ${esc(seriesPlexSeasonLabel(season.season))}${seasonName ? ` · ${esc(seasonName)}` : ""} <small>共${epCount}集</small></button>${seasonOverview ? `<p class="series-season-overview">${esc(seasonOverview)}</p>` : ""}</div>` : "";
   const firstRow = eps.length ? renderSeriesEpisodeRow(lib, eps[0], art(eps[0]), prefix) : "";
   const restRows = eps.slice(1).map(ep => renderSeriesEpisodeRow(lib, ep, art(ep), "")).join("");
   const listClass = isFirst ? 'class="series-episode-list series-episode-list-rest"' : 'class="series-episode-list series-episode-list-rest is-collapsed"';
   const listStyle = isFirst ? "" : "display:none";
-  return `<section class="series-season-block" data-season="${esc(season.season)}">${firstRow}${eps.length > 1 ? `<div ${listClass} style="${listStyle}">${restRows}</div>` : ""}</section>`;
+  return `${orphanHeading}<section class="series-season-block" data-season="${esc(season.season)}">${firstRow}${eps.length > 1 ? `<div ${listClass} style="${listStyle}">${restRows}</div>` : ""}</section>`;
 }
 /* v0.9.99（需求4）：折叠对象变成「首条之外」的集列表；首条本身是前缀行，始终可见。 */
 function toggleSeriesSeason(btn){

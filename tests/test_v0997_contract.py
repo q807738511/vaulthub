@@ -91,7 +91,8 @@ check("3g 解析失败以文件名当展示名与标签", ": clean(stem);" in PA
 check("3h 剧名剥离年份与季标签（plexShowTitleLocal）",
       "function plexShowTitleLocal(" in M and "plexShowTitleLocal(dirs[showIdx]" in PARSE)
 check("3i 剧集详情「季度」区保留，工具条与迁移提示都已清除（v1.0.0 口径）",
-      '<h3 class="detail-section-h">季度</h3>' in M
+      '<h3 class="detail-section-h season-inline-title">季度</h3>' in M
+      and '<section><h3 class="detail-section-h">季度</h3></section>' not in M
       and 'series-plex-moved' not in M and '多季诊断与多季全量刮削已移到' not in M
       and "seriesPlexToolbarHtml" not in M
       and 'id="multiSeasonScrapeBlock"' in HTML and "function plexSettingsRun" in P)

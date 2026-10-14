@@ -56,10 +56,18 @@ check("1h 发布说明按本版命名且够长",
 print("\n== 2. 需求1：详情页标题加粗与季度排版 ==")
 check("2a 区块标题加粗样式存在",
       ".movie-detail-scroll .detail-section-h { font-weight:700; }" in CSS)
-check("2b 演职人员 / 视频推荐 / 季度 三个标题都带该类",
-      MEDIA.count('class="detail-section-h"') >= 3, MEDIA.count('class="detail-section-h"'))
-check("2c 季度区块保留且标题带该类",
-      '<h3 class="detail-section-h">季度</h3>' in MEDIA)
+check("2b 演职人员 / 视频推荐 标题都带该类（季度标题另带 inline 类，见 2c）",
+      MEDIA.count('class="detail-section-h"') >= 2, MEDIA.count('class="detail-section-h"'))
+INLINE_HEADING = '<h3 class="detail-section-h season-inline-title">季度</h3>'
+check("2c 季度标题不再是独立成行的区块",
+      '<section><h3 class="detail-section-h">季度</h3></section>' not in MEDIA)
+check("2c2 季度标题已并入最上层那一季的前缀行（加粗仅「季度」二字）",
+      '<div class="series-season-prefix">${seasonHeading}<button' in MEDIA
+      and MEDIA.count(INLINE_HEADING) == 1
+      and '.series-season-prefix .season-inline-title { margin:0; padding:0; flex:0 0 auto; font-weight:700;' in CSS
+      and '.series-season-prefix { display:flex; flex-wrap:wrap;' in CSS)
+check("2c3 最上层那一季没有剧集时退回独立「季度」标题（标题不会整体消失）",
+      'const orphanHeading = isFirst && !eps.length ? `<section class="season-inline-title-orphan">${seasonHeading}</section>` : "";' in MEDIA)
 check("2d 迁移提示行已删除（渲染与样式都不再引用）",
       "series-plex-moved" not in MEDIA and "series-plex-moved" not in CSS
       and "多季诊断与多季全量刮削已移到" not in MEDIA)
