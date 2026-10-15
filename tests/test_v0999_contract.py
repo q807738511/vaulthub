@@ -40,16 +40,16 @@ NOTES = rd(".github/RELEASE_NOTES_1.0.0.md")
 NOTES_V0999 = rd(".github/RELEASE_NOTES_0.9.99.md")
 
 # ---------------------------------------------------------------- 1 版本
-check("1 版本串 ?v=1.0.0 且 ≥11 处（新增脚本后仍全站同版）",
-      len(re.findall(r"\?v=1\.0\.0", HTML)) >= 11 and "?v=0.9.98" not in HTML,
-      len(re.findall(r"\?v=1\.0\.0", HTML)))
+check("1 版本串 ?v=1.0.1 且 ≥11 处（新增脚本后仍全站同版）",
+      len(re.findall(r"\?v=1\.0\.1", HTML)) >= 11 and "?v=0.9.98" not in HTML,
+      len(re.findall(r"\?v=1\.0\.1", HTML)))
 check("1 资源版本常量一致",
-      'window.VAULTHUB_ASSET_VERSION = "1.0.0";' in HTML
-      and 'const VAULTHUB_SCRIPT_VERSION = "1.0.0";' in STATE)
+      'window.VAULTHUB_ASSET_VERSION = "1.0.1";' in HTML
+      and 'const VAULTHUB_SCRIPT_VERSION = "1.0.1";' in STATE)
 check("1 安装/升级脚本同版",
-      'VERSION="v1.0.0"' in rd("scripts/install.sh") and 'VERSION="v1.0.0"' in rd("scripts/upgrade.sh"))
+      'VERSION="v1.0.1"' in rd("scripts/install.sh") and 'VERSION="v1.0.1"' in rd("scripts/upgrade.sh"))
 check("1 标语 ×3 且历史标语已清除",
-      HTML.count("v1.0.0 · 正式版：内嵌字幕语言识别与播放器小窗还原") == 3
+      HTML.count("v1.0.1 · 季度中文序号与小窗96px微调") == 3
       and "v0.9.98 · 原盘播放菜单与演职人员补全" not in HTML)
 
 # ---------------------------------------------------------------- 2 文档
@@ -58,7 +58,7 @@ check("2 发布说明覆盖四项需求",
       all(k in NOTES_V0999 for k in ["演职人员", "图形字幕", "缩小", "前缀"]))
 check("2 发布说明写明发布策略（GitHub 频率 + windows-desktop）",
       "GitHub" in NOTES_V0999 and "20 个版本" in NOTES_V0999 and "windows-desktop" in NOTES_V0999)
-check("2 Update Log 顶部为本版（仓库格式：# VaultHub 蜀鼠之家 vX 置顶）", LOG.startswith("# VaultHub 蜀鼠之家 v1.0.0"))
+check("2 Update Log 顶部为本版（仓库格式：# VaultHub 蜀鼠之家 vX 置顶）", LOG.startswith("# VaultHub 蜀鼠之家 v1.0.1"))
 
 # ---------------------------------------------------------------- 3 Go：图形字幕
 check("3a 新增字幕类型判定（图形字幕含 PGS/DVD/DVB/XSUB）",
@@ -173,10 +173,10 @@ check("7c 折叠对象只含首条之外的集",
 check("7d 前缀样式存在", ".series-season-prefix" in CSS and ".series-season-toggle" in CSS)
 
 # ---------------------------------------------------------------- 8 缩小态 CSS
-check("8a 停靠高度 138px → 112px（旧值已清除）",
-      "height:112px" in CSS and "height:138px" not in CSS)
+check("8a 停靠高度 138px → 96px（旧值已清除）",
+      "height:96px" in CSS and "height:138px" not in CSS)
 check("8b 内层裁切、外层不裁切（消除内部滚动条）",
-      ".media-video-body { height:112px; min-height:0; padding:0; overflow:hidden; }" in CSS
+      ".media-video-body { height:96px; min-height:0; padding:0; overflow:hidden; }" in CSS
       and "border-radius:16px 16px 0 0; overflow:visible;" in CSS)
 check("8c 还原按钮在缩小态常显可点",
       ".video-minimized.video-controller-docked .vc-restore {" in CSS

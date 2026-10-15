@@ -30,28 +30,28 @@ MEDIA = rd("web/js/02-media.js")
 CSS = rd("web/css/main.css")
 GO = rd("media-go/main.go")
 LOG = rd("Update Log.md")
-NOTES = rd(".github/RELEASE_NOTES_1.0.0.md")
+NOTES = rd(".github/RELEASE_NOTES_1.0.1.md")
 
 print("== 1. 正式版版本口径 ==")
 check("1a index.html 资源版本 ≥11 处且为本版",
-      len(re.findall(r"\?v=1\.0\.0", HTML)) >= 11 and "?v=0.9.99" not in HTML,
-      len(re.findall(r"\?v=1\.0\.0", HTML)))
+      len(re.findall(r"\?v=1\.0\.1", HTML)) >= 11 and "?v=0.9.99" not in HTML,
+      len(re.findall(r"\?v=1\.0\.1", HTML)))
 check("1b 全部静态资源版本串只出现本版",
-      set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"1.0.0"})
+      set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"1.0.1"})
 check("1c ASSET / SCRIPT 版本一致",
-      'window.VAULTHUB_ASSET_VERSION = "1.0.0";' in HTML
-      and 'const VAULTHUB_SCRIPT_VERSION = "1.0.0";' in STATE)
+      'window.VAULTHUB_ASSET_VERSION = "1.0.1";' in HTML
+      and 'const VAULTHUB_SCRIPT_VERSION = "1.0.1";' in STATE)
 check("1d 页面标语 ×3 且整串一致",
-      len(re.findall(r"v1\.0\.0 · [^<\"]+", HTML)) == 3
-      and len(set(re.findall(r"v1\.0\.0 · [^<\"]+", HTML))) == 1,
-      sorted(set(re.findall(r"v1\.0\.0 · [^<\"]+", HTML))))
+      len(re.findall(r"v1\.0\.1 · [^<\"]+", HTML)) == 3
+      and len(set(re.findall(r"v1\.0\.1 · [^<\"]+", HTML))) == 1,
+      sorted(set(re.findall(r"v1\.0\.1 · [^<\"]+", HTML))))
 check("1e 上一版标语已清除", "v0.9.99 · " not in HTML)
 check("1f 安装 / 升级脚本版本同步",
-      'VERSION="v1.0.0"' in rd("scripts/install.sh") and 'VERSION="v1.0.0"' in rd("scripts/upgrade.sh"))
+      'VERSION="v1.0.1"' in rd("scripts/install.sh") and 'VERSION="v1.0.1"' in rd("scripts/upgrade.sh"))
 check("1g Update Log 顶部为本版（仓库格式：# VaultHub 蜀鼠之家 vX 置顶）",
-      LOG.startswith("# VaultHub 蜀鼠之家 v1.0.0"))
+      LOG.startswith("# VaultHub 蜀鼠之家 v1.0.1"))
 check("1h 发布说明按本版命名且够长",
-      len(NOTES) >= 2000 and (ROOT / ".github/RELEASE_NOTES_1.0.0.md").exists(), len(NOTES))
+      len(NOTES) >= 2000 and (ROOT / ".github/RELEASE_NOTES_1.0.1.md").exists(), len(NOTES))
 
 print("\n== 2. 需求1：详情页标题加粗与季度排版 ==")
 check("2a 区块标题加粗样式存在",
@@ -102,8 +102,8 @@ check("3i 上一版「常显可点」的旧规则已移除",
 check("3j 旧的兄弟选择器规则已移除（video 与按钮并非兄弟，选不中；注释中的说明保留）",
       ".media-video-body video:hover ~ .vc-restore," not in CSS
       and "video:hover ~ .vc-restore {" not in CSS)
-check("3k 停靠态高度仍是 v0.9.99 的 112px（不回退）",
-      "height:112px" in CSS and "height:138px" not in CSS)
+check("3k 停靠态高度降至 96px（旧值已清除）",
+      "height:96px" in CSS and "height:138px" not in CSS)
 
 print("\n== 4. 需求3：内嵌字幕语言 / 内容识别 ==")
 check("4a 语言码 → 中文名映射存在",

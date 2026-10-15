@@ -29,7 +29,14 @@ function seriesPlexStripBrackets(text) {
 /* 季标签：第 0 季是 Plex 的特别篇季（Season 00 / Specials）。 */
 function seriesPlexSeasonLabel(season) {
   const n = Number(season) || 0;
-  return n <= 0 ? "特别篇" : `第 ${n} 季`;
+  if (n <= 0) return "特别篇";
+  const digits = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
+  let cn = "";
+  if (n <= 10) cn = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"][n];
+  else if (n < 20) cn = "十" + digits[n % 10];
+  else if (n < 100) cn = digits[Math.floor(n / 10)] + "十" + (n % 10 === 0 ? "" : digits[n % 10]);
+  else cn = String(n);
+  return `第${cn}季`;
 }
 
 /* 季目录名：Season 01 / Season 00（特别篇）。 */

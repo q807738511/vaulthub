@@ -140,7 +140,7 @@ const J = v => JSON.stringify(v);
 
   /* ================= D. 工具函数 ================= */
   {
-    chk("D1 特别篇称号", call(sb, "seriesPlexSeasonLabel(0)") === "特别篇" && call(sb, "seriesPlexSeasonLabel(3)") === "第 3 季");
+    chk("D1 特别篇称号", call(sb, "seriesPlexSeasonLabel(0)") === "特别篇" && call(sb, "seriesPlexSeasonLabel(3)") === "第三季");
     chk("D2 季目录名", call(sb, "seriesPlexSeasonDir(0)") === "Season 00" && call(sb, "seriesPlexSeasonDir(3)") === "Season 03");
     chk("D3 剧根目录名带年份", call(sb, 'seriesPlexShowDirName("The Flash","2014")') === "The Flash (2014)"
         && call(sb, 'seriesPlexShowDirName("某剧","")') === "某剧 (年份)");
