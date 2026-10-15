@@ -69,7 +69,7 @@ function makeSandbox(extra) {
     pushNotification() {}, upsertNotification() {},
     activePlayback: () => null, updatePlaybackDock: () => {}, liveActiveVideoElement: () => null,
     parseSeriesEpisode: () => ({ season: 1, episode: 1, label: "S01E01" }),
-    seriesPlexSeasonLabel: n => `第 ${n} 季`,
+    seriesPlexSeasonLabel: n => `第${["零","一","二","三","四","五","六","七","八","九","十"][n] || n}季`,
   };
   return Object.assign(sb, extra || {});
 }

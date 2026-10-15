@@ -837,12 +837,12 @@
   /* v0.9.99（需求3）：缩小态高度 138 → 112；外层 overflow:visible + 内层 overflow:hidden。
      138 时「顶栏 42 + 时间轴 + 底栏 54 + 内边距」刚好越过容器高度，浏览器会在播放器内部
      画出滚动条 —— 用户看到的就是「缩小时出现滑动条」。现在控件同步收小并明确裁切。 */
-  .media-reader-overlay.movie-player.video-minimized.video-controller-docked { position:fixed; left:var(--sidebar-w); right:0; top:auto; bottom:0; width:auto; height:112px; z-index:650; border:1px solid rgba(255,255,255,.22); border-radius:16px 16px 0 0; overflow:visible; box-shadow:0 -16px 44px rgba(0,0,0,.48); background:rgba(10,12,16,.9); backdrop-filter:blur(22px) saturate(135%); }
+  .media-reader-overlay.movie-player.video-minimized.video-controller-docked { position:fixed; left:var(--sidebar-w); right:0; top:auto; bottom:0; width:auto; height:96px; z-index:650; border:1px solid rgba(255,255,255,.22); border-radius:16px 16px 0 0; overflow:visible; box-shadow:0 -16px 44px rgba(0,0,0,.48); background:rgba(10,12,16,.9); backdrop-filter:blur(22px) saturate(135%); }
   .media-reader-overlay.movie-player.video-controller-docked .media-reader-body,
   .media-reader-overlay.movie-player.video-controller-docked .media-reader-wrap,
   .media-reader-overlay.movie-player.video-controller-docked .media-reader-body,
   .media-reader-overlay.movie-player.video-controller-docked .media-reader-wrap,
-  .media-reader-overlay.movie-player.video-controller-docked .media-video-body { height:112px; min-height:0; padding:0; overflow:hidden; }
+  .media-reader-overlay.movie-player.video-controller-docked .media-video-body { height:96px; min-height:0; padding:0; overflow:hidden; }
   .media-reader-overlay.movie-player.video-controller-docked video { position:absolute; left:10px; bottom:10px; z-index:3; width:132px; height:74px; object-fit:cover; border-radius:9px; box-shadow:0 6px 22px rgba(0,0,0,.55); cursor:pointer; }
   .media-reader-overlay.movie-player.video-controller-docked .video-chrome { opacity:1; pointer-events:auto; }
   .media-reader-overlay.movie-player.video-controller-docked .vc-top { padding-left:150px; padding-top:6px; }
