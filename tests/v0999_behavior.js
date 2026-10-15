@@ -253,6 +253,6 @@ const call = (sb, expr) => vm.runInContext(expr, sb);
       call(sb2, "localRecommendationItems({ title:'孤片', genres:['不存在类型'], cast:[] }, { id:'lib1' })").length === 0);
   }
 
-  console.log(`\n===== v0.9.99 行为测试：通过 ${passed} / 失败 ${failed} =====`);
+  console.log(`\n===== v1.0.0 行为测试：通过 ${passed} / 失败 ${failed} =====`);
   process.exit(failed ? 1 : 0);
 })();

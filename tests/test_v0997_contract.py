@@ -90,8 +90,10 @@ check("3f 纯数字命名标记 by=number（Plex 不认，交由体检提示）"
 check("3g 解析失败以文件名当展示名与标签", ": clean(stem);" in PARSE and "title = episode > 0 ? `第 ${episode} 集` : clean(stem)" in PARSE)
 check("3h 剧名剥离年份与季标签（plexShowTitleLocal）",
       "function plexShowTitleLocal(" in M and "plexShowTitleLocal(dirs[showIdx]" in PARSE)
-check("3i 剧集详情「季度」区保留，多季工具条已迁到系统设置（v0.9.98 口径）",
-      '<section><h3>季度</h3><p class="series-plex-moved">' in M
+check("3i 剧集详情「季度」区保留，工具条与迁移提示都已清除（v1.0.0 口径）",
+      '<h3 class="detail-section-h season-inline-title">季度</h3>' in M
+      and '<section><h3 class="detail-section-h">季度</h3></section>' not in M
+      and 'series-plex-moved' not in M and '多季诊断与多季全量刮削已移到' not in M
       and "seriesPlexToolbarHtml" not in M
       and 'id="multiSeasonScrapeBlock"' in HTML and "function plexSettingsRun" in P)
 check("3j 季卡标题走 Plex 季称号（第 0 季 = 特别篇）",
@@ -102,8 +104,8 @@ check("3j 季卡标题走 Plex 季称号（第 0 季 = 特别篇）",
 
 print("\n== 4. 前端多季刮削与诊断（03-series-plex.js）==")
 check("4a 脚本加载于 02-media.js 之后且带版本参数",
-      '<script src="/web/js/03-series-plex.js?v=0.9.99"></script>' in HTML
-      and HTML.index("02-media.js?v=0.9.99") < HTML.index("03-series-plex.js?v=0.9.99"))
+      '<script src="/web/js/03-series-plex.js?v=1.0.0"></script>' in HTML
+      and HTML.index("02-media.js?v=1.0.0") < HTML.index("03-series-plex.js?v=1.0.0"))
 check("4b 多季全量刮削：逐季取季元数据并按集号写分集名",
       "async function scrapeSeriesAllSeasons(" in P and "function applySeriesSeasonScrape(" in P
       and "const first = byNum.get(Number(parsed.episode) || 0);" in P)
@@ -144,20 +146,20 @@ check("4n CSS 面板样式齐备", ".series-plex-table {" in CSS and ".series-pl
       and ".series-plex-suggest code {" in CSS)
 
 print("\n== 5. 版本与文档 ==")
-check("5a 版本串 ?v=0.9.99 ≥11（新增 03-series-plex.js 后仍全站同版）且无其它版本串",
-      len(re.findall(r"\?v=0\.9\.99", HTML)) >= 11
-      and set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"0.9.99"})
+check("5a 版本串 ?v=1.0.0 ≥11（新增 03-series-plex.js 后仍全站同版）且无其它版本串",
+      len(re.findall(r"\?v=1\.0\.0", HTML)) >= 11
+      and set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"1.0.0"})
 check("5b ASSET_VERSION / SCRIPT_VERSION = 0.9.98",
-      'VAULTHUB_ASSET_VERSION = "0.9.99"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.99"' in S)
+      'VAULTHUB_ASSET_VERSION = "1.0.0"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "1.0.0"' in S)
 check("5c 新标语 ×3 且旧标语已清除",
-      HTML.count("v0.9.99 · 演职人员补全与图形字幕可选") == 3
+      HTML.count("v1.0.0 · 正式版：内嵌字幕语言识别与播放器小窗还原") == 3
       and "v0.9.96 ·" not in HTML)
 check("5d install/upgrade 脚本版本同步",
-      'VERSION="v0.9.99"' in rd("scripts/install.sh") and 'VERSION="v0.9.99"' in rd("scripts/upgrade.sh"))
+      'VERSION="v1.0.0"' in rd("scripts/install.sh") and 'VERSION="v1.0.0"' in rd("scripts/upgrade.sh"))
 check("5e 发布说明覆盖四项需求",
       all(k in NOTES for k in ("方括号", "sXXeYY-eZZ", "缺失集", "Plex Dance", "Local Media Assets")))
 check("5f Update Log 顶部为 v0.9.98 段且保留 v0.9.96",
-      LOG.startswith("# VaultHub 蜀鼠之家 v0.9.99") and "# VaultHub 蜀鼠之家 v0.9.96" in LOG
+      LOG.startswith("# VaultHub 蜀鼠之家 v1.0.0") and "# VaultHub 蜀鼠之家 v0.9.96" in LOG
       and "## 验证（本轮实测）" in LOG)
 
 print("\n== 6. 洗版自查（本仓禁止真实域名 / 内网 IP / 卷路径字面量）==")

@@ -2359,7 +2359,7 @@ async function openSeriesDetails(libId, showKey) { const lib=findMediaLibrary(li
   const renderPage = (extras) => {
     const meta = { ...hero, ...(extras||{}) };
     const seasons = (show.seasonList||[]).map(season => renderSeriesSeasonCard(lib, show, season)).join("");
-    viewer.innerHTML = `<div class="media-reader-overlay movie-detail-page series-detail-page media-detail-backdrop" style="${esc(detailBackdropStyle(meta))}"><div class="movie-detail-scroll">${movieDetailCloseButton()}${renderMovieHero(lib,firstPath,meta)}${renderCastPanel(meta)}${renderRecPanel(meta)}<section><h3>季度</h3><p class="series-plex-moved">多季诊断与多季全量刮削已移到「系统设置 → 刮削配置 → 多季剧集刮削」。</p></section>${seasons}${renderSeriesInfoPanel(show, meta.rating)}</div></div>`;
+    viewer.innerHTML = `<div class="media-reader-overlay movie-detail-page series-detail-page media-detail-backdrop" style="${esc(detailBackdropStyle(meta))}"><div class="movie-detail-scroll">${movieDetailCloseButton()}${renderMovieHero(lib,firstPath,meta)}${renderCastPanel(meta)}${renderRecPanel(meta)}${seasons}${renderSeriesInfoPanel(show, meta.rating)}</div></div>`;
     scrollViewerIntoView(viewer);
   };
   renderPage();
@@ -3036,16 +3036,22 @@ function renderSeriesSeasonCard(lib, show, season) {
   /* v0.9.99（需求4）：季度标题不再单独占一行，改为该季「第一条目」的前缀 ——
      只在组内最上层出现一次。资源命名差异使得第一季不一定是 S01，因此前缀永远
      挂在显示顺序的第一条上，而不是钉死在某个季号。
+     v1.0.0（需求1）：再加粗的「季度」区块标题也并入同一行 —— 即「(加粗)季度
+     (常规字体)剧名 第N季 共M集」，仅出现在排序最上层的那一季；后面的季只有
+     常规字重的季名行。若最上层那一季没有剧集（前缀行为空），则退回独立的
+     「季度」标题，避免标题整体消失。
      v0.9.95（审查 N-6）：季名与季简介继续保留（都有才渲染，全部 esc）。 */
   const seasonName = String(season.name || "").trim();
   const seasonOverview = String(season.overview || "").trim();
   const art = ep => ep.thumb || show.poster || show.fanart || "";
-  const prefix = eps.length ? `<div class="series-season-prefix"><button type="button" class="series-season-toggle" aria-expanded="${isFirst ? "true" : "false"}" title="展开/收起该季其余剧集" onclick="event.stopPropagation();toggleSeriesSeason(this)"><span class="series-season-chev">${isFirst ? "▾" : "▸"}</span><b>${esc(show.title)}</b> ${esc(seriesPlexSeasonLabel(season.season))}${seasonName ? ` · ${esc(seasonName)}` : ""} <small>共${epCount}集</small></button>${seasonOverview ? `<p class="series-season-overview">${esc(seasonOverview)}</p>` : ""}</div>` : "";
+  const seasonHeading = isFirst ? '<h3 class="detail-section-h season-inline-title">季度</h3>' : "";
+  const orphanHeading = isFirst && !eps.length ? `<section class="season-inline-title-orphan">${seasonHeading}</section>` : "";
+  const prefix = eps.length ? `<div class="series-season-prefix">${seasonHeading}<button type="button" class="series-season-toggle" aria-expanded="${isFirst ? "true" : "false"}" title="展开/收起该季其余剧集" onclick="event.stopPropagation();toggleSeriesSeason(this)"><span class="series-season-chev">${isFirst ? "▾" : "▸"}</span><span class="series-season-title">${esc(show.title)}</span> ${esc(seriesPlexSeasonLabel(season.season))}${seasonName ? ` · ${esc(seasonName)}` : ""} <small>共${epCount}集</small></button>${seasonOverview ? `<p class="series-season-overview">${esc(seasonOverview)}</p>` : ""}</div>` : "";
   const firstRow = eps.length ? renderSeriesEpisodeRow(lib, eps[0], art(eps[0]), prefix) : "";
   const restRows = eps.slice(1).map(ep => renderSeriesEpisodeRow(lib, ep, art(ep), "")).join("");
   const listClass = isFirst ? 'class="series-episode-list series-episode-list-rest"' : 'class="series-episode-list series-episode-list-rest is-collapsed"';
   const listStyle = isFirst ? "" : "display:none";
-  return `<section class="series-season-block" data-season="${esc(season.season)}">${firstRow}${eps.length > 1 ? `<div ${listClass} style="${listStyle}">${restRows}</div>` : ""}</section>`;
+  return `${orphanHeading}<section class="series-season-block" data-season="${esc(season.season)}">${firstRow}${eps.length > 1 ? `<div ${listClass} style="${listStyle}">${restRows}</div>` : ""}</section>`;
 }
 /* v0.9.99（需求4）：折叠对象变成「首条之外」的集列表；首条本身是前缀行，始终可见。 */
 function toggleSeriesSeason(btn){
@@ -3156,11 +3162,11 @@ function renderCastPanel(meta) {
     const roleText = role ? `${roleLabel} ${role}` : "";
     return `<article class="movie-cast-card">${face}<b title="${esc(x.name||"")}">${esc(x.name||"")}</b>${roleText ? `<small title="${esc(roleText)}">${esc(roleText)}</small>` : ""}</article>`;
   }).join("") || `<div class="empty-tip">${esc(t("castEmpty"))}</div>`;
-  return `<section><h3>${esc(t("castTitle"))}</h3><div class="movie-detail-strip movie-cast-strip">${cast}</div></section>`;
+  return `<section><h3 class="detail-section-h">${esc(t("castTitle"))}</h3><div class="movie-detail-strip movie-cast-strip">${cast}</div></section>`;
 }
 /* v0.9.81：视频推荐改为「网格展示」，限制文字穿模并优化观看（宽卡横排略缩图 + 标题/年份/评分）。 */
 function renderRecPanel(meta) {
-  return `<section><h3>视频推荐</h3><div class="movie-rec-grid">${movieRecStripHTML(meta)}</div></section>`;
+  return `<section><h3 class="detail-section-h">视频推荐</h3><div class="movie-rec-grid">${movieRecStripHTML(meta)}</div></section>`;
 }
 function renderVideoInfoPanel(path, meta) {
   return `<section><h3>视频信息</h3><dl class="movie-meta-list"><dt>文件</dt><dd>${esc(path)}</dd><dt>年份</dt><dd>${esc(meta.year||"--")}</dd><dt>类型</dt><dd>${esc((meta.genres||[]).join(" / ")||"--")}</dd><dt>时长</dt><dd>${meta.runtime?esc(meta.runtime+" 分钟"):"--"}</dd><dt>TMDB 评分</dt><dd>${meta.rating?esc(Number(meta.rating).toFixed(1)):"--"}</dd><dt>来源</dt><dd>${esc(meta.provider||"文件名")}</dd></dl></section>`;
@@ -6537,7 +6543,11 @@ function minimizeVideoPlayer(el) {
      小窗被全屏容器约束会错位。先退出全屏再缩成小窗。 */
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   const overlay = root.closest(".media-reader-overlay.movie-player");
-  if (overlay) overlay.classList.add("video-minimized", "video-controller-docked");
+  if (overlay) {
+    overlay.classList.add("video-minimized", "video-controller-docked");
+    /* v1.0.0：刚缩下去时指针多半还在画面上，先不显示还原按钮，等鼠标再移入。 */
+    overlay.classList.remove("vc-restore-hover");
+  }
   clearTimeout(root.__videoChromeTimer);
   root.dataset.videoChromeCollapsed = "false";
   root.classList.add("video-controls-visible");
@@ -6551,7 +6561,10 @@ function expandVideoPlayer(el) {
   const root = videoRootOf(el);
   if (!root) return;
   const overlay = root.closest(".media-reader-overlay.movie-player");
-  if (overlay) overlay.classList.remove("video-minimized", "video-controller-docked");
+  if (overlay) {
+    overlay.classList.remove("video-minimized", "video-controller-docked");
+    overlay.classList.remove("vc-restore-hover");
+  }
   root.querySelector(".video-chrome")?.classList.remove("video-chrome-minimized");
   root.dataset.videoChromeCollapsed = "false";
   scheduleVideoChromeHide(root);
@@ -6818,6 +6831,8 @@ function bindVideoStatus(root, video) {
   video.addEventListener("click", () => { if (video.paused) video.play().catch(()=>{}); else video.pause(); });
   /* 只拦控制条与浮层内的点击；画面本身的点击必须落到 video 上。 */
   root.querySelectorAll(".vc-top,.vc-bottom,[data-video-panel],.vc-restore").forEach(el => el.addEventListener("click", event => event.stopPropagation()));
+  /* v1.0.0（需求2）：小窗还原按钮的「鼠标移入才显示」。 */
+  bindDockedRestoreHover(root, video);
   document.addEventListener("fullscreenchange", () => {
     const button = root.querySelector(".vc-fullscreen");
     const active = document.fullscreenElement === root || root.contains(document.fullscreenElement);
@@ -6825,6 +6840,34 @@ function bindVideoStatus(root, video) {
     if (button) button.title = active ? t("vpFullscreenExit") : t("vpFullscreen");
   });
   syncVideoChromeState(root, video);
+}
+/* v1.0.0（需求2）：小窗（停靠）态还原按钮的显示逻辑改成「鼠标移入才显示」。
+   旧实现依赖 `video:hover ~ .vc-restore` 兄弟选择器 —— 视频在
+   `.media-reader-body > .media-reader-wrap > .media-video-body` 里层层嵌套，
+   与按钮并不是兄弟，所以选择器永远选不中；v0.9.99 只好退化成「常显」，
+   结果按钮一直压在画面左下角很碍事。这里用指针事件在「小窗整条控制栏 /
+   小窗画面」上打标记，CSS 只认这个标记类，触屏（无 hover）仍然常显。 */
+function bindDockedRestoreHover(root, video) {
+  if (!root || !video || root.__restoreHoverBound) return;
+  root.__restoreHoverBound = true;
+  const setVisible = on => {
+    const overlay = root.closest(".media-reader-overlay.movie-player");
+    if (!overlay) return;
+    if (on) overlay.classList.add("vc-restore-hover");
+    else overlay.classList.remove("vc-restore-hover");
+  };
+  const enter = () => setVisible(true);
+  const leave = event => {
+    const overlay = root.closest(".media-reader-overlay.movie-player");
+    /* 指针在小窗内部换目标（画面 ↔ 控制栏）不算离开。 */
+    if (overlay && event && event.relatedTarget && overlay.contains(event.relatedTarget)) return;
+    setVisible(false);
+  };
+  [root, video].forEach(el => {
+    el.addEventListener("pointerenter", enter, { passive: true });
+    el.addEventListener("pointerleave", leave, { passive: true });
+  });
+  video.addEventListener("mousemove", enter, { passive: true });
 }
 function formatVideoTime(value) { return formatMediaTime(value); }
 function videoPlaybackKey(lib, path) { return `vaulthub_video_${lib.id}_${path}`; }
@@ -7424,7 +7467,10 @@ const VIDEO_ICON_SVG = {
   /* v0.9.98：原盘「媒体菜单」按钮图标（光盘 + 中心孔），描边风格与其它图标一致。 */
   disc: '<circle cx="12" cy="12" r="8.6"/><circle cx="12" cy="12" r="2.6"/>',
   collapse: '<path d="M12 3.2v10.6"/><path d="m7.6 9.6 4.4 4.2 4.4-4.2"/><path d="M4 20.6h16"/>',
-  restore: '<path d="M12 20.8V10.2"/><path d="m7.6 14.4 4.4-4.2 4.4 4.2"/><path d="M4 3.4h16"/>',
+  /* v1.0.0（需求2）：还原图标从「向上箭头 + 顶线」改成四向外扩的对角箭头 ——
+     现在它居中压在小窗画面上（音频播放器那颗居中按钮的观感），
+     继续用向上箭头会与「收起」的箭头混淆。 */
+  restore: '<path d="M13.6 4.4h6v6"/><path d="M19.6 4.4 11.8 12.2"/><path d="M10.4 19.6h-6v-6"/><path d="M4.4 19.6 12.2 11.8"/>',
   fullscreen: '<path d="M4 9.6V4h5.6"/><path d="M20 9.6V4h-5.6"/><path d="M4 14.4V20h5.6"/><path d="M20 14.4V20h-5.6"/>',
   fullscreenExit: '<path d="M9.6 4v5.6H4"/><path d="M14.4 4v5.6H20"/><path d="M9.6 20v-5.6H4"/><path d="M14.4 20v-5.6H20"/>',
   play: '<path d="M8.2 5.6v12.8a.9.9 0 0 0 1.37.77l10.2-6.4a.9.9 0 0 0 0-1.54L9.57 4.83A.9.9 0 0 0 8.2 5.6Z" fill="currentColor" stroke="none"/>',

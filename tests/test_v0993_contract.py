@@ -196,7 +196,7 @@ check("6a index.html 资源缓存串与本版一致（≥10 处）",
 check("6b ASSET / SCRIPT 版本一致",
       f'window.VAULTHUB_ASSET_VERSION = "{VERSION}";' in HTML
       and f'const VAULTHUB_SCRIPT_VERSION = "{VERSION}";' in STATE)
-_slogans = re.findall(r"v0\.9\.9\d · [^<\"]+", HTML)
+_slogans = re.findall(r"v\d+\.\d+\.\d+ · [^<\"]+", HTML)
 check("6c 标语三处整串一致", len(_slogans) == 3 and len(set(_slogans)) == 1, sorted(set(_slogans)))
 check("6d Update Log 顶部为本版", LOG.startswith(f"# VaultHub 蜀鼠之家 v{VERSION}"))
 check("6e Release Notes 存在", (ROOT / f".github/RELEASE_NOTES_{VERSION}.md").exists())

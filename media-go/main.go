@@ -2340,7 +2340,7 @@ func streams(w http.ResponseWriter, r *http.Request, a *App) {
 	}
 	/* v0.9.88：原盘的音轨/字幕轨要按解析后的输入读取（ISO 直接读镜像）。 */
 	disc := a.resolveDiscInputWithPlaylist(r.Context(), p, discPlaylistArg(r))
-	streamArgs := []string{"-v", "error", "-show_entries", "stream=index,codec_type,codec_name:stream_tags=language,title", "-of", "json"}
+	streamArgs := []string{"-v", "error", "-show_entries", "stream=index,codec_type,codec_name,id:stream_tags=language,title", "-of", "json"}
 	streamArgs = append(streamArgs, disc.InputArgs()...)
 	streamArgs = append(streamArgs, disc.Spec)
 	b, e := exec.CommandContext(r.Context(), "ffprobe", streamArgs...).Output()
@@ -2353,7 +2353,9 @@ func streams(w http.ResponseWriter, r *http.Request, a *App) {
 			Index     int               `json:"index"`
 			CodecType string            `json:"codec_type"`
 			CodecName string            `json:"codec_name"`
-			Tags      map[string]string `json:"tags"`
+			// v1.0.0：原盘用 id（= PID）与 M2TS 的 PMT 语言描述符精确对齐。
+			ID   string            `json:"id"`
+			Tags map[string]string `json:"tags"`
 		} `json:"streams"`
 	}
 	_ = json.Unmarshal(b, &x)
@@ -2377,17 +2379,14 @@ func streams(w http.ResponseWriter, r *http.Request, a *App) {
 			   于是全部是原盘/图形字幕的库在播放器里「一个字幕都选不了」。
 			   现在全部列出：文本轨给 WebVTT 提取地址，图形轨给出烧录地址
 			   （compat + sub_track，服务端把字幕位图叠进画面）。 */
-			label := strings.TrimSpace(s.Tags["title"])
+			label := subtitleLabelFor(r.Context(), disc, s.CodecName, s.Tags["title"], s.Tags["language"], s.ID, si)
 			if label == "" {
 				label = fmt.Sprintf("内嵌字幕 %d", si+1)
 			}
-			if lang := s.Tags["language"]; lang != "" && !strings.Contains(label, lang) {
-				label += " · " + lang
-			}
 			kind := subtitleTrackKind(s.CodecName)
 			item := map[string]any{
-				"index": si, "label": label, "codec": s.CodecName,
-				"kind": kind, "text": kind == "text", "burn_in": kind == "bitmap",
+				"index": si, "label": label, "codec": s.CodecName, "language": s.Tags["language"],
+				"pid": s.ID, "kind": kind, "text": kind == "text", "burn_in": kind == "bitmap",
 				"stream_index": s.Index,
 			}
 			if kind == "text" {
@@ -2556,10 +2555,359 @@ func subtitleTrackKind(codec string) string {
 	return "text"
 }
 
+/* —— v1.0.0（需求3）：内嵌字幕「语言 / 内容」识别 ——
+   旧实现只会给出「内嵌字幕 1/2/3」再拼一个 ISO 码（chi、eng…），用户看不出哪条是
+   简体、哪条是繁体、哪条是中英双语，只能一条条试。现在按层次推导标签：
+     ① 轨道自带的 title 标签（「简体中文」「繁體中文」「English」… remux 常见）；
+     ② 文本轨采样真实内容 → 简繁与中英混排判定（图形字幕没有文本层，跳过）；
+     ③ 轨道自带的 language 标签 → 中文语言名；
+     ④ 原盘 PGS 常常一个标签都没有 → 回落读原盘自己的 M2TS PMT 语言描述符；
+     ⑤ 都拿不到才回到「内嵌字幕 N」。
+   结果按「输入 + 轨号」缓存，播放器每次打开不会重复抽样本。 */
+
+var subLangNames = map[string]string{
+	"zho": "中文", "chi": "中文", "zh": "中文", "cmn": "中文", "chs": "简体中文", "cht": "繁体中文",
+	"eng": "英语", "en": "英语", "jpn": "日语", "ja": "日语", "jp": "日语",
+	"kor": "韩语", "ko": "韩语", "fra": "法语", "fre": "法语", "deu": "德语", "ger": "德语",
+	"spa": "西班牙语", "rus": "俄语", "ita": "意大利语", "por": "葡萄牙语", "tha": "泰语",
+	"vie": "越南语", "ara": "阿拉伯语", "hin": "印地语", "ind": "印尼语", "msa": "马来语",
+	"nld": "荷兰语", "pol": "波兰语", "swe": "瑞典语", "tur": "土耳其语", "ukr": "乌克兰语", "heb": "希伯来语",
+	// 原盘常见的小语种（实测《黑鹰坠落》原盘就带 bul / hrv / slv / hun 等 22 条字幕轨）。
+	"bul": "保加利亚语", "hrv": "克罗地亚语", "slv": "斯洛文尼亚语", "hun": "匈牙利语",
+	"ces": "捷克语", "cze": "捷克语", "dan": "丹麦语", "fin": "芬兰语", "ell": "希腊语", "gre": "希腊语",
+	"nor": "挪威语", "nob": "挪威语", "ron": "罗马尼亚语", "rum": "罗马尼亚语", "srp": "塞尔维亚语",
+	"slk": "斯洛伐克语", "slo": "斯洛伐克语", "est": "爱沙尼亚语", "lav": "拉脱维亚语", "lit": "立陶宛语",
+	"isl": "冰岛语", "ice": "冰岛语", "cat": "加泰罗尼亚语", "fas": "波斯语", "per": "波斯语",
+	"urd": "乌尔都语", "ben": "孟加拉语", "tam": "泰米尔语", "tel": "泰卢固语", "mar": "马拉地语",
+	"guj": "古吉拉特语", "kan": "卡纳达语", "mal": "马拉雅拉姆语", "pan": "旁遮普语", "sin": "僧伽罗语",
+	"nep": "尼泊尔语", "mya": "缅甸语", "bur": "缅甸语", "khm": "高棉语", "lao": "老挝语",
+	"fil": "菲律宾语", "tgl": "菲律宾语", "swa": "斯瓦希里语", "afr": "南非荷兰语", "sqi": "阿尔巴尼亚语",
+	"alb": "阿尔巴尼亚语", "hye": "亚美尼亚语", "arm": "亚美尼亚语", "aze": "阿塞拜疆语", "bel": "白俄罗斯语",
+	"bos": "波斯尼亚语", "eus": "巴斯克语", "baq": "巴斯克语", "glg": "加利西亚语", "kat": "格鲁吉亚语",
+	"geo": "格鲁吉亚语", "kaz": "哈萨克语", "mkd": "马其顿语", "mac": "马其顿语", "mlt": "马耳他语",
+	"mon": "蒙古语", "yue": "粤语", "lat": "拉丁语", "ces2": "",
+}
+
+// subLangName 把 ffprobe / PMT 里的语言码翻成中文名；不认识时返回 ""。
+func subLangName(code string) string {
+	c := strings.ToLower(strings.TrimSpace(code))
+	if c == "" || c == "und" || c == "unknown" {
+		return ""
+	}
+	if n, ok := subLangNames[c]; ok {
+		return n
+	}
+	if len(c) > 3 {
+		if n, ok := subLangNames[c[:3]]; ok {
+			return n
+		}
+	}
+	return ""
+}
+
+/* 简繁判别用的「只在单边出现」的常见字幕字。两侧都列的是同一字的两种写法，
+   所以某个样本里只有一侧的字反复出现时，就能判断这条字幕是简还是繁。 */
+const (
+	subHansChars = "们这说时对来国学开关见听么无发华电车马鸟鱼龙义体儿头买卖单动务医会众优传伤价伟伞余仅从仓仪侧凭划则刚创删剑剧劝办势区协卫却压历县双变号岁币师当录彻态怀总恶惊惧惨戏战户执扩扫扬护报担拟择挂挤挥损换据揽权欢气爱铁银钱长间问闻闲阵队随难顺须领风飞饭饮验齐齿个与为请谢样让觉过还进远边转"
+	subHantChars = "們這說時對來國學開關見聽麼無發華電車馬鳥魚龍義體兒頭買賣單動務醫會眾優傳傷價偉傘餘僅從倉儀側憑劃則剛創刪劍劇勸辦勢區協衛卻壓歷縣雙變號歲幣師當錄徹態懷總惡驚懼慘戲戰戶執擴掃揚護報擔擬擇掛擠揮損換據攬權歡氣愛鐵銀錢長間問聞閒陣隊隨難順須領風飛飯飲驗齊齒個與為請謝樣讓覺過還進遠邊轉"
+)
+
+var (
+	subHansSet = map[rune]bool{}
+	subHantSet = map[rune]bool{}
+)
+
+func init() {
+	for _, r := range subHansChars {
+		subHansSet[r] = true
+	}
+	for _, r := range subHantChars {
+		subHantSet[r] = true
+	}
+}
+
+// subtitleSampleLabel 按字幕文本判定语言类别；样本太短或没有可用信号时返回 ""。
+func subtitleSampleLabel(sample string) string {
+	var cjk, hans, hant, latin, kana, hangul int
+	for _, r := range sample {
+		switch {
+		case r >= 0x3040 && r <= 0x30ff:
+			kana++
+		case r >= 0xac00 && r <= 0xd7a3:
+			hangul++
+		case r >= 0x4e00 && r <= 0x9fff:
+			cjk++
+			if subHantSet[r] {
+				hant++
+			}
+			if subHansSet[r] {
+				hans++
+			}
+		case (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z'):
+			latin++
+		}
+	}
+	total := cjk + latin
+	if total < 8 && kana == 0 && hangul == 0 {
+		return ""
+	}
+	switch {
+	case kana > 0 && kana*4 >= cjk:
+		return "日语"
+	case hangul > 0 && hangul*4 >= cjk:
+		return "韩语"
+	case cjk == 0:
+		return "英语"
+	case latin*100 >= total*25:
+		return "中英双语"
+	case hant > hans*2 && hant >= 2:
+		return "繁体中文"
+	case hans > hant*2 && hans >= 2:
+		return "简体中文"
+	}
+	return "中文"
+}
+
+// subtitleTitleHint 从轨标题里识别语言（含简繁 / 双语提示）；识别不到返回 ""。
+// ASCII 部分按「分词后整词匹配」，避免 "en" 命中 "extended" 这类误判。
+func subtitleTitleHint(title string) string {
+	t := strings.ToLower(strings.TrimSpace(title))
+	if t == "" {
+		return ""
+	}
+	has := func(keys ...string) bool {
+		for _, k := range keys {
+			if strings.Contains(t, k) {
+				return true
+			}
+		}
+		return false
+	}
+	tok := map[string]bool{}
+	for _, part := range regexp.MustCompile(`[^a-z0-9]+`).Split(t, -1) {
+		if part != "" {
+			tok[part] = true
+		}
+	}
+	hasTok := func(keys ...string) bool {
+		for _, k := range keys {
+			if tok[k] {
+				return true
+			}
+		}
+		return false
+	}
+	zh := has("中文", "简体", "繁体") || hasTok("chi", "zho", "chs", "cht", "zh", "cn", "chinese", "mandarin")
+	en := has("英文", "英语") || hasTok("eng", "en", "english")
+	if has("中英", "双语") || hasTok("bilingual") || (zh && en) {
+		return "中英双语"
+	}
+	switch {
+	case has("简") || hasTok("chs", "simplified", "sc"):
+		return "简体中文"
+	case has("繁") || hasTok("cht", "traditional", "tc"):
+		return "繁体中文"
+	case zh:
+		return "中文"
+	case en:
+		return "英语"
+	case has("日文", "日语") || hasTok("jpn", "jp", "japanese"):
+		return "日语"
+	case has("韩文", "韩语") || hasTok("kor", "kr", "korean"):
+		return "韩语"
+	}
+	return ""
+}
+
+/* subtitleSampleBuf：给 ffmpeg 的输出装一个上限，样本够用就停止增长 —
+   整条字幕轨可能有几十 MB，全部读进来既慢又没必要。 */
+type subtitleSampleBuf struct {
+	buf []byte
+	max int
+}
+
+func (b *subtitleSampleBuf) Write(p []byte) (int, error) {
+	if n := b.max - len(b.buf); n > 0 {
+		if n > len(p) {
+			n = len(p)
+		}
+		b.buf = append(b.buf, p[:n]...)
+	}
+	return len(p), nil
+}
+
+func (b *subtitleSampleBuf) String() string { return string(b.buf) }
+
+// sampleEmbeddedSubtitle 把一条文本字幕轨的前若干行抽成 SRT 当作样本。
+// 图形字幕（PGS / DVD 子图）没有文本层，调用方需先按 kind 过滤。
+func sampleEmbeddedSubtitle(ctx context.Context, disc discInput, track int) string {
+	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	args := []string{"-hide_banner", "-loglevel", "error", "-nostdin"}
+	args = append(args, disc.InputArgs()...)
+	args = append(args, "-i", disc.Spec, "-map", fmt.Sprintf("0:s:%d", track), "-f", "srt", "pipe:1")
+	buf := &subtitleSampleBuf{max: 64 << 10}
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
+	cmd.Stdout = buf
+	// 样本够了就会被超时/管道关闭打断，有输出即算成功。
+	_ = cmd.Run()
+	return buf.String()
+}
+
+var (
+	subLabelMu    sync.Mutex
+	subLabelCache = map[string]string{}
+	subLabelTimes = map[string]time.Time{}
+)
+
+// subtitleSampleCached 内容采样结果按「输入 + 轨号 + 尺寸 + mtime」缓存。
+func subtitleSampleCached(ctx context.Context, disc discInput, track int) string {
+	key := fmt.Sprintf("sample|%s|%d", disc.Spec, track)
+	if st, err := os.Stat(disc.File); err == nil {
+		key = fmt.Sprintf("sample|%s|%d|%d|%d", disc.Spec, track, st.Size(), st.ModTime().Unix())
+	}
+	subLabelMu.Lock()
+	if v, ok := subLabelCache[key]; ok {
+		subLabelMu.Unlock()
+		return v
+	}
+	subLabelMu.Unlock()
+	label := subtitleSampleLabel(sampleEmbeddedSubtitle(ctx, disc, track))
+	subLabelMu.Lock()
+	subLabelCache[key] = label
+	subLabelTimes[key] = time.Now()
+	// 缓存上限：字幕轨数不多，超过 512 条就整体清一次，避免长跑进程无界增长。
+	if len(subLabelCache) > 512 {
+		subLabelCache = map[string]string{}
+		subLabelTimes = map[string]time.Time{}
+	}
+	subLabelMu.Unlock()
+	return label
+}
+
+/* discSubtitleLangInfo 原盘 PGS/DVD 子图轨常一个标签都没有，但原盘自己的 M2TS 里带着
+   PMT 语言描述符。ffprobe 对 bluray: 输入的每条字幕流都带 id（= PID，如 0x1201），与 M2TS
+   内的 PID 一一对应 —— 所以按 PID 精确回填，不按位置猜。
+   实测《黑鹰坠落》原盘：bluray: 输入报 0x1200 / 0x1201 两条 PGS 无标签；
+   同一 M2TS 里 0x1200=eng、0x1201=zho。 */
+type discSubLangInfo struct {
+	byPID map[string]string
+	// 当整个 M2TS 的字幕语言只有一种时给出该语言（PID 对不上时的兜底）。
+	only string
+}
+
+var (
+	discLangMu    sync.Mutex
+	discLangCache = map[string]discSubLangInfo{}
+)
+
+func discSubtitleLangInfo(ctx context.Context, disc discInput) discSubLangInfo {
+	empty := discSubLangInfo{byPID: map[string]string{}}
+	if disc.Kind != discInputBluRay || disc.DiscRoot == "" {
+		return empty
+	}
+	key := disc.DiscRoot
+	discLangMu.Lock()
+	if v, ok := discLangCache[key]; ok {
+		discLangMu.Unlock()
+		return v
+	}
+	discLangMu.Unlock()
+	info := discSubLangInfo{byPID: map[string]string{}}
+	streamDir := filepath.Join(disc.DiscRoot, "BDMV", "STREAM")
+	if ents, err := os.ReadDir(streamDir); err == nil {
+		biggest, size := "", int64(-1)
+		for _, x := range ents {
+			if x.IsDir() || !strings.EqualFold(filepath.Ext(x.Name()), ".m2ts") {
+				continue
+			}
+			if st, e := x.Info(); e == nil && st.Size() > size {
+				biggest, size = filepath.Join(streamDir, x.Name()), st.Size()
+			}
+		}
+		if biggest != "" {
+			ctx2, cancel := context.WithTimeout(ctx, 20*time.Second)
+			defer cancel()
+			if b, e := exec.CommandContext(ctx2, "ffprobe", "-v", "error", "-select_streams", "s",
+				"-show_entries", "stream=id:stream_tags=language", "-of", "json", biggest).Output(); e == nil {
+				var x struct {
+					Streams []struct {
+						ID   string            `json:"id"`
+						Tags map[string]string `json:"tags"`
+					} `json:"streams"`
+				}
+				if json.Unmarshal(b, &x) == nil {
+					seen := map[string]bool{}
+					for _, s := range x.Streams {
+						lang := subLangName(s.Tags["language"])
+						if lang == "" {
+							continue
+						}
+						if pid := normalizeStreamPID(s.ID); pid != "" {
+							info.byPID[pid] = lang
+						}
+						seen[lang] = true
+					}
+					if len(seen) == 1 {
+						for l := range seen {
+							info.only = l
+						}
+					}
+				}
+			}
+		}
+	}
+	discLangMu.Lock()
+	// 缓存上限：原盘数量有限，超过 64 条整体清一次。
+	if len(discLangCache) > 64 {
+		discLangCache = map[string]discSubLangInfo{}
+	}
+	discLangCache[key] = info
+	discLangMu.Unlock()
+	return info
+}
+
+// normalizeStreamPID 统一 PID 写法（ffprobe 给 "0x1201"，大小写与 0x 前缀都可能变化）。
+func normalizeStreamPID(id string) string {
+	s := strings.ToLower(strings.TrimSpace(id))
+	if s == "" {
+		return ""
+	}
+	s = strings.TrimPrefix(s, "0x")
+	return s
+}
+
+// subtitleLabelFor 推导一条内嵌字幕轨的展示标签；毫无线索时返回 ""（调用方回落「内嵌字幕 N」）。
+// pid 是 ffprobe 报的流 id（PID），仅原盘用于精确回填语言。
+func subtitleLabelFor(ctx context.Context, disc discInput, codec, title, lang, pid string, track int) string {
+	kind := subtitleTrackKind(codec)
+	if hint := subtitleTitleHint(title); hint != "" {
+		return hint
+	}
+	if kind == "text" {
+		if l := subtitleSampleCached(ctx, disc, track); l != "" {
+			return l
+		}
+	}
+	if n := subLangName(lang); n != "" {
+		return n
+	}
+	if kind == "bitmap" {
+		info := discSubtitleLangInfo(ctx, disc)
+		if n := info.byPID[normalizeStreamPID(pid)]; n != "" {
+			return n
+		}
+		if info.only != "" {
+			return info.only
+		}
+	}
+	return strings.TrimSpace(title)
+}
+
 // embeddedSubtitleTracks 读取当前输入（含原盘解析）的内嵌字幕轨清单，
 // 供播放器字幕面板与「搜索并挂载」共用，避免两处口径漂移。
 func embeddedSubtitleTracks(ctx context.Context, disc discInput, libID, relPath string) []map[string]any {
-	args := []string{"-v", "error", "-select_streams", "s", "-show_entries", "stream=index,codec_name:stream_tags=language,title", "-of", "json"}
+	args := []string{"-v", "error", "-select_streams", "s", "-show_entries", "stream=index,codec_name,id:stream_tags=language,title", "-of", "json"}
 	args = append(args, disc.InputArgs()...)
 	args = append(args, disc.Spec)
 	b, e := exec.CommandContext(ctx, "ffprobe", args...).Output()
@@ -2570,6 +2918,7 @@ func embeddedSubtitleTracks(ctx context.Context, disc discInput, libID, relPath 
 		Streams []struct {
 			Index     int               `json:"index"`
 			CodecName string            `json:"codec_name"`
+			ID        string            `json:"id"`
 			Tags      map[string]string `json:"tags"`
 		} `json:"streams"`
 	}
@@ -2578,17 +2927,14 @@ func embeddedSubtitleTracks(ctx context.Context, disc discInput, libID, relPath 
 	}
 	out := make([]map[string]any, 0, len(x.Streams))
 	for si, s := range x.Streams {
-		label := strings.TrimSpace(s.Tags["title"])
+		label := subtitleLabelFor(ctx, disc, s.CodecName, s.Tags["title"], s.Tags["language"], s.ID, si)
 		if label == "" {
 			label = fmt.Sprintf("内嵌字幕 %d", si+1)
 		}
-		if lang := s.Tags["language"]; lang != "" && !strings.Contains(label, lang) {
-			label += " · " + lang
-		}
 		kind := subtitleTrackKind(s.CodecName)
 		item := map[string]any{
-			"index": si, "label": label, "codec": s.CodecName, "kind": kind,
-			"text": kind == "text", "burn_in": kind == "bitmap", "stream_index": s.Index,
+			"index": si, "label": label, "codec": s.CodecName, "language": s.Tags["language"],
+			"pid": s.ID, "kind": kind, "text": kind == "text", "burn_in": kind == "bitmap", "stream_index": s.Index,
 		}
 		if kind == "text" {
 			item["url"] = "/api/media/subtitles/extract?id=" + url.QueryEscape(libID) + "&path=" + url.QueryEscape(relPath) + "&track=" + strconv.Itoa(si)
@@ -2815,8 +3161,10 @@ func (a *App) subtitle(w http.ResponseWriter, r *http.Request) {
 	subCtx, subCancel := context.WithTimeout(r.Context(), 25*time.Second)
 	disc := a.resolveDiscInputWithPlaylist(subCtx, p, discPlaylistArg(r))
 	for _, s := range embeddedSubtitleTracks(subCtx, disc, l.ID, relPath) {
-		label := "内嵌 · " + fmt.Sprintf("字幕 %d · %s", s["index"].(int)+1, fmt.Sprint(s["label"]))
-		entry := map[string]any{"label": label, "kind": s["kind"], "text": s["text"], "burn_in": s["burn_in"], "index": s["index"], "codec": s["codec"]}
+		/* v1.0.0（需求3）：标签直接用语言/内容识别结果（「简体中文」「繁体中文」
+		   「中英双语」…），不再出现「字幕 1 · 内嵌字幕 1」这种两段式冗余。 */
+		label := "内嵌 · " + fmt.Sprint(s["label"])
+		entry := map[string]any{"label": label, "kind": s["kind"], "text": s["text"], "burn_in": s["burn_in"], "index": s["index"], "codec": s["codec"], "language": s["language"], "pid": s["pid"]}
 		if s["text"] == true {
 			entry["url"] = s["url"]
 		} else {

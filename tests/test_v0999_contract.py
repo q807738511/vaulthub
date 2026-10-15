@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""v0.9.99 契约测试：版本、文档、Go 侧图形字幕烧录、前端演职人员/推荐/季度前缀、缩小态 CSS。
+"""v1.0.0 契约测试：版本、文档、Go 侧图形字幕烧录、前端演职人员/推荐/季度前缀、缩小态 CSS。
 
 本测试只做静态契约与「旧实现确实被移除」的断言，行为验证在 v0999_behavior.js 与
 真实容器验证里。
@@ -34,28 +34,31 @@ MAIN = rd("media-go/main.go")
 LM = rd("media-go/local_metadata.go")
 STATE = rd("web/js/01-state.js")
 LOG = rd("Update Log.md")
-NOTES = rd(".github/RELEASE_NOTES_0.9.99.md")
+NOTES = rd(".github/RELEASE_NOTES_1.0.0.md")
+# v1.0.0：本文件是 v0.9.99 那一轮的契约测试，功能断言指向当时的发布说明，
+# 版本类断言才跟着当前版本号走（否则每次升版都会误判「需求没写进说明」）。
+NOTES_V0999 = rd(".github/RELEASE_NOTES_0.9.99.md")
 
 # ---------------------------------------------------------------- 1 版本
-check("1 版本串 ?v=0.9.99 且 ≥11 处（新增脚本后仍全站同版）",
-      len(re.findall(r"\?v=0\.9\.99", HTML)) >= 11 and "?v=0.9.98" not in HTML,
-      len(re.findall(r"\?v=0\.9\.99", HTML)))
+check("1 版本串 ?v=1.0.0 且 ≥11 处（新增脚本后仍全站同版）",
+      len(re.findall(r"\?v=1\.0\.0", HTML)) >= 11 and "?v=0.9.98" not in HTML,
+      len(re.findall(r"\?v=1\.0\.0", HTML)))
 check("1 资源版本常量一致",
-      'window.VAULTHUB_ASSET_VERSION = "0.9.99";' in HTML
-      and 'const VAULTHUB_SCRIPT_VERSION = "0.9.99";' in STATE)
+      'window.VAULTHUB_ASSET_VERSION = "1.0.0";' in HTML
+      and 'const VAULTHUB_SCRIPT_VERSION = "1.0.0";' in STATE)
 check("1 安装/升级脚本同版",
-      'VERSION="v0.9.99"' in rd("scripts/install.sh") and 'VERSION="v0.9.99"' in rd("scripts/upgrade.sh"))
+      'VERSION="v1.0.0"' in rd("scripts/install.sh") and 'VERSION="v1.0.0"' in rd("scripts/upgrade.sh"))
 check("1 标语 ×3 且历史标语已清除",
-      HTML.count("v0.9.99 · 演职人员补全与图形字幕可选") == 3
+      HTML.count("v1.0.0 · 正式版：内嵌字幕语言识别与播放器小窗还原") == 3
       and "v0.9.98 · 原盘播放菜单与演职人员补全" not in HTML)
 
 # ---------------------------------------------------------------- 2 文档
 check("2 发布说明存在且够长", len(NOTES) >= 2000, len(NOTES))
 check("2 发布说明覆盖四项需求",
-      all(k in NOTES for k in ["演职人员", "图形字幕", "缩小", "前缀"]))
+      all(k in NOTES_V0999 for k in ["演职人员", "图形字幕", "缩小", "前缀"]))
 check("2 发布说明写明发布策略（GitHub 频率 + windows-desktop）",
-      "GitHub" in NOTES and "20 个版本" in NOTES and "windows-desktop" in NOTES)
-check("2 Update Log 顶部为本版（仓库格式：# VaultHub 蜀鼠之家 vX 置顶）", LOG.startswith("# VaultHub 蜀鼠之家 v0.9.99"))
+      "GitHub" in NOTES_V0999 and "20 个版本" in NOTES_V0999 and "windows-desktop" in NOTES_V0999)
+check("2 Update Log 顶部为本版（仓库格式：# VaultHub 蜀鼠之家 vX 置顶）", LOG.startswith("# VaultHub 蜀鼠之家 v1.0.0"))
 
 # ---------------------------------------------------------------- 3 Go：图形字幕
 check("3a 新增字幕类型判定（图形字幕含 PGS/DVD/DVB/XSUB）",
@@ -186,12 +189,12 @@ check("9a 新增 Go 测试文件", (ROOT / "media-go/v0999_subtitle_burn_test.go
 check("9b 新增行为测试与包装器",
       (ROOT / "tests/v0999_behavior.js").exists() and (ROOT / "tests/test_v0999_behavior.py").exists())
 check("9c 发布说明文件按当前版本命名",
-      (ROOT / ".github/RELEASE_NOTES_0.9.99.md").exists())
+      (ROOT / ".github/RELEASE_NOTES_1.0.0.md").exists())
 
 # ---------------------------------------------------------------- 10 敏感信息不落库
 NEW_FILES = ["media-go/v0999_subtitle_burn_test.go", "tests/v0999_behavior.js",
              "tests/test_v0999_behavior.py", "tests/test_v0999_contract.py",
-             ".github/RELEASE_NOTES_0.9.99.md"]
+             ".github/RELEASE_NOTES_1.0.0.md"]
 bad = []
 for f in NEW_FILES:
     txt = rd(f)
@@ -201,5 +204,5 @@ for f in NEW_FILES:
             bad.append(f"{f}:{token}")
 check("10 新文件不含内网域名/IP/卷路径", not bad, bad)
 
-print("\n===== v0.9.99 契约测试：", "全部通过" if ok else "存在失败", "=====")
+print("\n===== v1.0.0 契约测试：", "全部通过" if ok else "存在失败", "=====")
 raise SystemExit(0 if ok else 1)

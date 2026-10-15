@@ -87,8 +87,12 @@ check("4a 季度提示长文案已删除",
       "点击季度标题展开/收起该季集列表" not in MEDIA and "多季剧集会为每一季生成独立季度卡片" not in MEDIA)
 # v0.9.98（口径变更）：多季诊断 / 多季全量刮削已从剧集详情迁到系统设置 → 刮削配置
 # （客户明确要求），因此这里断言「新落点存在」+「旧接线已彻底消失」。
-check("4b 季度区块保留，多季工具条已迁到系统设置刮削配置（旧入口不残留）",
-      '<section><h3>季度</h3><p class="series-plex-moved">' in MEDIA
+# v1.0.0（需求1）：连那行「已移到系统设置」的迁移提示也一并删除 —— 入口搬完已久，留着只是噪音。
+check("4b 季度区块保留，多季工具条与迁移提示都已清除（旧入口不残留）",
+      '<h3 class="detail-section-h season-inline-title">季度</h3>' in MEDIA
+      and '<section><h3 class="detail-section-h">季度</h3></section>' not in MEDIA
+      and 'series-plex-moved' not in MEDIA
+      and '多季诊断与多季全量刮削已移到' not in MEDIA
       and "seriesPlexToolbarHtml" not in MEDIA
       and "seriesPlexToolbarHtml" not in (ROOT / "web" / "js" / "03-series-plex.js").read_text(encoding="utf-8")
       and 'id="multiSeasonScrapeBlock"' in (ROOT / "index.html").read_text(encoding="utf-8")
@@ -97,8 +101,8 @@ check("4b 季度区块保留，多季工具条已迁到系统设置刮削配置�
 # 并在标题下渲染季简介 —— 这两个字段此前只被持久化、界面上没有落点。
 # v0.9.97：季称号走 seriesPlexSeasonLabel —— 第 0 季在 Plex 口径里是「特别篇」。
 # v0.9.99（需求4）：季度标题从独立一行改为「该季首条目的前缀」，文案口径不变（剧名 + 第N季/特别篇 + · 季名 + 共M集）。
-check("4c 季度标题为「剧名 第N季/特别篇 (· 季名) 共M集」（v0.9.99 起作为首条目前缀）",
-      '<b>${esc(show.title)}</b> ${esc(seriesPlexSeasonLabel(season.season))}${seasonName ? ` · ${esc(seasonName)}` : ""} <small>共${epCount}集</small>' in MEDIA
+check("4c 季度标题为「剧名 第N季/特别篇 (· 季名) 共M集」（v1.0.0 起作为首条目前缀）",
+      '<span class="series-season-title">${esc(show.title)}</span> ${esc(seriesPlexSeasonLabel(season.season))}${seasonName ? ` · ${esc(seasonName)}` : ""} <small>共${epCount}集</small>' in MEDIA
       and 'class="series-season-prefix"' in MEDIA
       and 'series-season-head' not in MEDIA)
 check("4c2 季名/季简介从该季分集的刮削元数据汇总并渲染（v0.9.97 N-6 落点）",
@@ -155,14 +159,14 @@ check("5k 简介排版与 16:9 画框保留（旧契约不破）",
 
 print("6. 版本")
 check("6a 页面与脚本版本一致",
-      'VAULTHUB_ASSET_VERSION = "0.9.99"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "0.9.99"' in STATE)
+      'VAULTHUB_ASSET_VERSION = "1.0.0"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "1.0.0"' in STATE)
 # v0.9.92（上轮发布前审查项）：标语断言升级为「整串完全一致」——
 # 旧写法只数 "v0.9.9x · " 出现 3 次，三处文案不一致也能过。
-_slogans_6b = re.findall(r"v0\.9\.9\d · [^<\"]+", HTML)
+_slogans_6b = re.findall(r"v\d+\.\d+\.\d+ · [^<\"]+", HTML)
 check("6b 关于 / 侧栏 / 页脚标语整串一致",
       len(_slogans_6b) == 3 and len(set(_slogans_6b)) == 1)
 check("6c Update Log 有 v0.9.85 段",
-      (ROOT / "Update Log.md").read_text(encoding="utf-8").startswith("# VaultHub 蜀鼠之家 v0.9.99"))
+      (ROOT / "Update Log.md").read_text(encoding="utf-8").startswith("# VaultHub 蜀鼠之家 v1.0.0"))
 check("6d Release Notes 存在", (ROOT / ".github/RELEASE_NOTES_0.9.90.md").exists())
 
 if FAILS:
