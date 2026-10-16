@@ -186,3 +186,70 @@ func TestV1002DoubanMobileFallbackNoMatch(t *testing.T) {
 		t.Fatalf("未命中说明应为「未命中」：%q", hit.MatchNote)
 	}
 }
+
+/*
+生产实测形态：配了境外出口的 SCRAPER_PROXY 时，直连豆瓣会 EOF；
+
+	这时必须换用代理出口重试（豆瓣分不该因为一个代理配置就永远取不到）。
+*/
+func TestV1002DoubanFallsBackToProxy(t *testing.T) {
+	hits := 0
+	v1002ResetDoubanCache()
+	old := outboundHTTPClient
+	outboundHTTPClient = func(proxy string) (*http.Client, error) {
+		if proxy == "" {
+			/* 直连：模拟生产上的 EOF */
+			return &http.Client{Transport: v1002RoundTrip(func(r *http.Request) (*http.Response, error) {
+				hits++
+				return nil, io.ErrUnexpectedEOF
+			})}, nil
+		}
+		/* 代理出口：正常 */
+		return &http.Client{Transport: v1002RoundTrip(func(r *http.Request) (*http.Response, error) {
+			hits++
+			body := `[{"id":"1292052","title":"肖申克的救赎","year":"1994","type":"movie","img":"https://img/x.jpg"}]`
+			if strings.Contains(r.URL.Path, "/rexxar/") {
+				body = `{"title":"肖申克的救赎","year":"1994","type":"movie","url":"https://movie.douban.com/subject/1292052/","rating":{"value":9.7,"count":3350810},"pic":{"normal":"https://img/n.jpg"}}`
+			}
+			return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}},
+				Body: io.NopCloser(strings.NewReader(body)), Request: r, Status: "200 OK"}, nil
+		})}, nil
+	}
+	t.Cleanup(func() { outboundHTTPClient = old })
+
+	a := &App{scraperProxy: "http://proxy.example.com:7890"}
+	hit := a.lookupDouban("肖申克的救赎", "1994", "movie")
+	if !hit.Match || hit.ID != "1292052" || hit.Rating != 9.7 {
+		t.Fatalf("直连 EOF 时应回落代理出口取分：%+v", hit)
+	}
+	if hits < 4 {
+		t.Fatalf("应先在直连上失败再走代理（直连 2 次 + 代理 2 次），实际 %d 次", hits)
+	}
+}
+
+func TestV1002DoubanDirectFirstWhenNoProxy(t *testing.T) {
+	v1002ResetDoubanCache()
+	old := outboundHTTPClient
+	seen := []string{}
+	outboundHTTPClient = func(proxy string) (*http.Client, error) {
+		seen = append(seen, proxy)
+		return &http.Client{Transport: v1002RoundTrip(func(r *http.Request) (*http.Response, error) {
+			body := `[{"id":"1292052","title":"肖申克的救赎","year":"1994","type":"movie","img":"https://img/x.jpg"}]`
+			if strings.Contains(r.URL.Path, "/rexxar/") {
+				body = `{"title":"肖申克的救赎","year":"1994","type":"movie","url":"https://movie.douban.com/subject/1292052/","rating":{"value":9.7,"count":3350810}}`
+			}
+			return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}},
+				Body: io.NopCloser(strings.NewReader(body)), Request: r, Status: "200 OK"}, nil
+		})}, nil
+	}
+	t.Cleanup(func() { outboundHTTPClient = old })
+
+	a := &App{}
+	hit := a.lookupDouban("肖申克的救赎", "1994", "movie")
+	if !hit.Match || hit.Rating != 9.7 {
+		t.Fatalf("未配代理时应直连取分：%+v", hit)
+	}
+	if len(seen) != 1 || seen[0] != "" {
+		t.Fatalf("没有代理时只该建一个直连客户端：%v", seen)
+	}
+}

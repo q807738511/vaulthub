@@ -172,11 +172,27 @@ func doubanStore(key string, hit doubanHit) {
 	doubanCache[key] = doubanCacheEntry{hit: hit, at: time.Now()}
 }
 
-func (a *App) doubanClient() (*http.Client, error) {
+/*
+豆瓣的出口顺序：**先直连**，直连不通才回落刮削代理。
+
+	实测（生产环境）：配了走境外出口的 SCRAPER_PROXY（Clash 类代理）时，
+	movie.douban.com 的 TLS 连接被直接重置（Go 侧报 EOF），豆瓣分永远取不到；
+	同一容器里 curl 直连正常。豆瓣是国内站，直连既快又不被拦，代理只作为兜底。
+*/
+func (a *App) doubanClients() []*http.Client {
 	a.mu.RLock()
-	proxy := a.scraperProxy
+	proxy := strings.TrimSpace(a.scraperProxy)
 	a.mu.RUnlock()
-	return outboundHTTPClient(proxy)
+	var out []*http.Client
+	if c, err := outboundHTTPClient(""); err == nil {
+		out = append(out, c)
+	}
+	if proxy != "" {
+		if c, err := outboundHTTPClient(proxy); err == nil {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 func (a *App) doubanGetJSON(client *http.Client, raw string, out any, limit int64) error {
@@ -283,10 +299,13 @@ func parseDoubanMobileSearch(doc string) []doubanSuggestItem {
 	return out
 }
 
-/* 片名拆候选：NFO / 文件夹常写成「黑鹰坠落 Black Hawk Down」这种中英混合串，
-   整串丢给豆瓣一条也匹配不上（豆瓣条目名要么中文要么外文）。这里按分隔符拆词分组：
-   中文段（豆瓣以中文条目为准，优先）→ 外文段。候选都来自这一部片自己的名字，
-   不是拿别的片子顶替，匹配打分仍然是「片名一致才要」。 */
+/*
+片名拆候选：NFO / 文件夹常写成「黑鹰坠落 Black Hawk Down」这种中英混合串，
+
+	整串丢给豆瓣一条也匹配不上（豆瓣条目名要么中文要么外文）。这里按分隔符拆词分组：
+	中文段（豆瓣以中文条目为准，优先）→ 外文段。候选都来自这一部片自己的名字，
+	不是拿别的片子顶替，匹配打分仍然是「片名一致才要」。
+*/
 func doubanTitleCandidates(title string) []string {
 	t := strings.TrimSpace(title)
 	if t == "" {
@@ -471,36 +490,42 @@ func (a *App) lookupDouban(title, year, kind string) doubanHit {
 }
 
 func (a *App) fetchDouban(title, year, kind string) doubanHit {
-	client, err := a.doubanClient()
-	if err != nil {
-		return doubanHit{Error: "outbound client: " + err.Error()}
+	clients := a.doubanClients()
+	if len(clients) == 0 {
+		return doubanHit{Error: "outbound client: 不可用"}
 	}
 	var best doubanSuggestItem
 	note, noteFallback := "", ""
 	var serr error
+candLoop:
 	for i, cand := range doubanTitleCandidates(title) {
-		items, qerr := a.doubanSearch(client, cand)
-		via := ""
-		if len(items) == 0 {
-			/* suggest 被限流时是「HTTP 200 + 空数组」，所以空结果同样要走备用通道。 */
-			if mitems, merr := a.doubanSearchMobile(client, cand); merr == nil && len(mitems) > 0 {
-				items, via = mitems, "·搜索页兜底"
-			} else if qerr != nil && i == 0 {
-				serr = qerr
+		for _, client := range clients {
+			items, qerr := a.doubanSearch(client, cand)
+			via := ""
+			if len(items) == 0 {
+				/* suggest 被限流时是「HTTP 200 + 空数组」，所以空结果同样要走备用通道。 */
+				if mitems, merr := a.doubanSearchMobile(client, cand); merr == nil && len(mitems) > 0 {
+					items, via = mitems, "·搜索页兜底"
+				} else if qerr != nil {
+					serr = qerr
+				} else if merr != nil {
+					serr = merr
+				}
 			}
+			if len(items) == 0 {
+				continue
+			}
+			b, n := doubanBest(items, kind, year, cand)
+			if strings.TrimSpace(b.ID) == "" {
+				/* 这个出口给了候选列表但没匹配上 → 不再换出口，换下一个候选串。 */
+				break
+			}
+			best, note, noteFallback = b, n, via
+			if i > 0 {
+				note += "·按拆分片名取分(" + cand + ")"
+			}
+			break candLoop
 		}
-		if len(items) == 0 {
-			continue
-		}
-		b, n := doubanBest(items, kind, year, cand)
-		if strings.TrimSpace(b.ID) == "" {
-			continue
-		}
-		best, note, noteFallback = b, n, via
-		if i > 0 {
-			note += "·按拆分片名取分(" + cand + ")"
-		}
-		break
 	}
 	if strings.TrimSpace(best.ID) == "" {
 		if serr != nil {
@@ -509,7 +534,23 @@ func (a *App) fetchDouban(title, year, kind string) doubanHit {
 		return doubanHit{Title: title, MatchNote: "未命中"}
 	}
 	note += noteFallback
-	detail, derr := a.doubanDetail(client, best.ID, firstNonEmpty(doubanKind(best.Type), kind))
+	var detail doubanRexxarDetail
+	detailOK := false
+	var derr error
+	for _, client := range clients {
+		d, e := a.doubanDetail(client, best.ID, firstNonEmpty(doubanKind(best.Type), kind))
+		if e == nil {
+			detail, detailOK = d, true
+			derr = nil
+			if d.Rating.Value > 0 {
+				break
+			}
+			continue
+		}
+		if derr == nil {
+			derr = e
+		}
+	}
 	out := doubanHit{
 		Match:     true,
 		ID:        strings.TrimSpace(best.ID),
@@ -520,7 +561,7 @@ func (a *App) fetchDouban(title, year, kind string) doubanHit {
 		Poster:    strings.TrimSpace(firstNonEmpty(detail.Pic.Normal, detail.Pic.Large, best.Img)),
 		MatchNote: note,
 	}
-	if derr == nil && detail.Rating.Value > 0 {
+	if detailOK && detail.Rating.Value > 0 {
 		out.Rating = detail.Rating.Value
 		out.Votes = detail.Rating.Count
 		return out
@@ -531,7 +572,7 @@ func (a *App) fetchDouban(title, year, kind string) doubanHit {
 		out.MatchNote = note + "·评分取自搜索页"
 		return out
 	}
-	if derr != nil {
+	if !detailOK && derr != nil {
 		/* 搜索命中了、详情取不到、页面也没分：保留条目与链接，评分留 0（前端显示「暂缺」）。 */
 		out.Error = "豆瓣详情失败：" + derr.Error()
 	}
