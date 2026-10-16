@@ -2165,3 +2165,133 @@ html[data-quality="minimal"] :is(.audio-expand, .audio-fullscreen, .audio-player
 .series-season-toggle .series-season-chev { font-size:10px; opacity:.85; }
 .series-season-prefix .series-season-overview { flex:1 0 100%; margin:0; font-size:11.5px; line-height:1.6; }
 .series-episode-row.is-season-top { border-color:color-mix(in srgb,var(--accent) 34%,var(--border)); }
+
+
+/* ============================================================================
+   v1.0.2（需求6/7）操作模式 —— html[data-opmode] = apple | emby | plex
+   三档各自给出「时长 / 缓动 / 圆角 / 抬升 / 按下缩放 / 高亮」令牌，下面的交互组件
+   统一读这些令牌，所以切换操作模式换的是整体操作手感，而不是只换一层颜色。
+   图标风格的差异在 web/js/06-theme.js 的 OP_ICON_PACK 里（播放器与顶栏图标）。
+   ============================================================================ */
+html[data-opmode="apple"] {
+  --op-dur: 240ms;
+  --op-dur-fast: 150ms;
+  --op-ease: cubic-bezier(.32,.72,0,1);
+  --op-radius: 14px;
+  --op-radius-sm: 10px;
+  --op-lift: -3px;
+  --op-press: .965;
+  --op-chrome-blur: blur(16px) saturate(1.35);
+  --op-shadow: 0 14px 34px rgba(0,0,0,.26);
+  --op-focus: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+html[data-opmode="emby"] {
+  --op-dur: 165ms;
+  --op-dur-fast: 110ms;
+  --op-ease: cubic-bezier(.4,0,.2,1);
+  --op-radius: 5px;
+  --op-radius-sm: 4px;
+  --op-lift: -5px;
+  --op-press: .94;
+  --op-chrome-blur: none;
+  --op-shadow: 0 12px 26px rgba(0,0,0,.34);
+  --op-focus: 0 0 0 3px color-mix(in srgb, var(--accent) 34%, transparent);
+}
+html[data-opmode="plex"] {
+  --op-dur: 115ms;
+  --op-dur-fast: 90ms;
+  --op-ease: ease-out;
+  --op-radius: 3px;
+  --op-radius-sm: 3px;
+  --op-lift: -1px;
+  --op-press: .975;
+  --op-chrome-blur: none;
+  --op-accent-hard: #e5a00d;
+  --op-shadow: 0 6px 18px rgba(0,0,0,.42);
+  --op-focus: 0 0 0 2px color-mix(in srgb, #e5a00d 55%, transparent);
+}
+/* 卡片类组件：圆角 / 抬升 / 按下缩放 / 高亮全部跟随操作模式。 */
+.media-poster-card, .movie-rec-card, .movie-cast-card, .series-episode-card, .book-card, .audio-album-card, .ep-grid-card {
+  border-radius: var(--op-radius, var(--radius-lg, 12px));
+  transition: transform var(--op-dur) var(--op-ease), box-shadow var(--op-dur) var(--op-ease), border-color var(--op-dur) var(--op-ease), background-color var(--op-dur) var(--op-ease);
+}
+.media-poster-card:hover, .movie-rec-card:hover, .movie-cast-card:hover, .series-episode-card:hover,
+.book-card:hover, .audio-album-card:hover, .ep-grid-card:hover {
+  transform: translateY(var(--op-lift, -3px));
+  box-shadow: var(--op-shadow, 0 10px 26px rgba(0,0,0,.18));
+}
+.media-poster-card:active, .movie-rec-card:active, .movie-cast-card:active, .series-episode-card:active,
+.book-card:active, .audio-album-card:active, .ep-grid-card:active, .btn:active, .seg-btn:active, .tn-btn:active {
+  transform: scale(var(--op-press, 1));
+  transition-duration: var(--op-dur-fast, 120ms);
+}
+.btn, .seg-btn, .tn-btn, .movie-return-pill {
+  border-radius: var(--op-radius-sm, var(--radius-sm, 6px));
+  transition: transform var(--op-dur-fast) var(--op-ease), background-color var(--op-dur) var(--op-ease), border-color var(--op-dur) var(--op-ease), color var(--op-dur) var(--op-ease), box-shadow var(--op-dur) var(--op-ease);
+}
+.btn:focus-visible, .seg-btn:focus-visible, .tn-btn:focus-visible, .movie-rec-card:focus-visible {
+  outline: none;
+  box-shadow: var(--op-focus, 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent));
+}
+/* Apple：毛玻璃顶栏 + 卡片入场上浮（弹性缓动）。 */
+html[data-opmode="apple"] .topnav, html[data-opmode="apple"] .tn-bar, html[data-opmode="apple"] .media-reader-overlay .vc-bar {
+  backdrop-filter: var(--op-chrome-blur);
+  -webkit-backdrop-filter: var(--op-chrome-blur);
+}
+html[data-opmode="apple"] .movie-rec-card, html[data-opmode="apple"] .media-poster-card {
+  animation: opAppleIn var(--op-dur) var(--op-ease) both;
+}
+@keyframes opAppleIn { from { opacity: 0; transform: translateY(10px) scale(.985); } to { opacity: 1; transform: none; } }
+/* Emby：Material 式「水波」高亮（hover/active 时从指针位置扩散）。 */
+html[data-opmode="emby"] .btn, html[data-opmode="emby"] .seg-btn, html[data-opmode="emby"] .movie-rec-card {
+  position: relative;
+  overflow: hidden;
+}
+html[data-opmode="emby"] .btn::after, html[data-opmode="emby"] .seg-btn::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--accent) 30%, transparent), transparent 68%);
+  opacity: 0;
+  transition: opacity var(--op-dur) var(--op-ease);
+  pointer-events: none;
+}
+html[data-opmode="emby"] .btn:hover::after, html[data-opmode="emby"] .seg-btn:hover::after { opacity: 1; }
+html[data-opmode="emby"] .movie-rec-card:hover { box-shadow: var(--op-shadow); }
+/* Plex：海报琥珀色高亮描边 + 标签大写字母间距。 */
+html[data-opmode="plex"] .movie-rec-card:hover .movie-rec-poster,
+html[data-opmode="plex"] .media-poster-card:hover .media-poster-art,
+html[data-opmode="plex"] .series-episode-card:hover .series-episode-thumb {
+  outline: 2px solid var(--op-accent-hard);
+  outline-offset: -2px;
+}
+html[data-opmode="plex"] .movie-rec-badge, html[data-opmode="plex"] .detail-section-h, html[data-opmode="plex"] .tc-name {
+  letter-spacing: .04em;
+}
+/* 播放器控制条：三档的图标尺寸/描边微调（配合 OP_ICON_PACK）。 */
+html[data-opmode="apple"] .vc-svg { stroke-linecap: round; }
+html[data-opmode="apple"] .vc-btn .vc-svg { width: 17px; height: 17px; }
+html[data-opmode="emby"] .vc-btn .vc-svg { width: 20px; height: 20px; }
+html[data-opmode="plex"] .vc-btn .vc-svg { width: 19px; height: 19px; }
+
+/* ==================== v1.0.2（需求5）豆瓣评分徽标 ==================== */
+.movie-douban-rating {
+  display: inline-flex; align-items: center; gap: 5px; padding: 0 12px; height: 34px;
+  border: 1px solid var(--border); border-radius: var(--op-radius-sm, 8px); background: var(--card);
+}
+.movie-douban-rating b { color: #3f9d54; font-size: 13px; }
+.movie-douban-rating small { font-size: 10.5px; color: var(--text2); letter-spacing: .5px; }
+
+/* ==================== v1.0.2（需求1）季名行（回归 0.9.89 版式） ==================== */
+.series-season-head .season-inline-title { font-weight: 700; flex: 0 0 auto; font-size: 18px; color: var(--text); }
+.series-season-head .series-season-title { font-weight: 400; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.series-season-head small { color: var(--text2); font-weight: 400; }
+.series-season-head:hover .series-season-title { color: var(--accent); }
+
+/* ==================== v1.0.2（需求8）多重垂直滚动条治理 ====================
+   详情/阅读器/播放器这类整页覆盖层打开时，背景页不该还能滚 —— 旧实现下
+   浏览器会出现「页面一条 + 覆盖层内一条」的多重竖滚动条。这里在覆盖层存在时
+   锁住外层滚动，只留覆盖层内部那一条；内部滚动条也禁止把滚动传给外层。 */
+html.vh-overlay-open, html.vh-overlay-open body { overflow: hidden !important; }
+html.vh-overlay-open { overscroll-behavior: none; }
+.movie-detail-scroll, .media-reader-body, .epub-viewer, .comic-viewer, .media-viewer { overscroll-behavior: contain; }

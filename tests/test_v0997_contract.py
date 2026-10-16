@@ -90,22 +90,22 @@ check("3f 纯数字命名标记 by=number（Plex 不认，交由体检提示）"
 check("3g 解析失败以文件名当展示名与标签", ": clean(stem);" in PARSE and "title = episode > 0 ? `第 ${episode} 集` : clean(stem)" in PARSE)
 check("3h 剧名剥离年份与季标签（plexShowTitleLocal）",
       "function plexShowTitleLocal(" in M and "plexShowTitleLocal(dirs[showIdx]" in PARSE)
-check("3i 剧集详情「季度」区保留，工具条与迁移提示都已清除（v1.0.0 口径）",
-      '<h3 class="detail-section-h season-inline-title">季度</h3>' in M
+check("3i 剧集详情「季度」区保留，工具条与迁移提示都已清除（v1.0.2 口径：季名行内加粗）",
+      '<span class="season-inline-title">季度</span>' in M
       and '<section><h3 class="detail-section-h">季度</h3></section>' not in M
       and 'series-plex-moved' not in M and '多季诊断与多季全量刮削已移到' not in M
       and "seriesPlexToolbarHtml" not in M
       and 'id="multiSeasonScrapeBlock"' in HTML and "function plexSettingsRun" in P)
 check("3j 季卡标题走 Plex 季称号（第 0 季 = 特别篇）",
-      # v0.9.99（需求4）：季称号仍是 Plex 口径，只是从独立标题行挪进「首条目的前缀」。
+      # v0.9.99（需求4）：季称号走 Plex 口径；v1.0.2（需求1）回到独立季名行。
       "${esc(seriesPlexSeasonLabel(season.season))}${seasonName ? ` · ${esc(seasonName)}` : \"\"}" in M
-      and "series-season-prefix" in M
-      and "series-season-head" not in M)
+      and "series-season-head" in M
+      and "series-season-prefix" not in M)
 
 print("\n== 4. 前端多季刮削与诊断（03-series-plex.js）==")
 check("4a 脚本加载于 02-media.js 之后且带版本参数",
-      '<script src="/web/js/03-series-plex.js?v=1.0.1"></script>' in HTML
-      and HTML.index("02-media.js?v=1.0.1") < HTML.index("03-series-plex.js?v=1.0.1"))
+      '<script src="/web/js/03-series-plex.js?v=1.0.2"></script>' in HTML
+      and HTML.index("02-media.js?v=1.0.2") < HTML.index("03-series-plex.js?v=1.0.2"))
 check("4b 多季全量刮削：逐季取季元数据并按集号写分集名",
       "async function scrapeSeriesAllSeasons(" in P and "function applySeriesSeasonScrape(" in P
       and "const first = byNum.get(Number(parsed.episode) || 0);" in P)
@@ -146,20 +146,20 @@ check("4n CSS 面板样式齐备", ".series-plex-table {" in CSS and ".series-pl
       and ".series-plex-suggest code {" in CSS)
 
 print("\n== 5. 版本与文档 ==")
-check("5a 版本串 ?v=1.0.1 ≥11（新增 03-series-plex.js 后仍全站同版）且无其它版本串",
-      len(re.findall(r"\?v=1\.0\.1", HTML)) >= 11
-      and set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"1.0.1"})
+check("5a 版本串 ?v=1.0.2 ≥11（新增 03-series-plex.js 后仍全站同版）且无其它版本串",
+      len(re.findall(r"\?v=1\.0\.2", HTML)) >= 11
+      and set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"1.0.2"})
 check("5b ASSET_VERSION / SCRIPT_VERSION = 0.9.98",
-      'VAULTHUB_ASSET_VERSION = "1.0.1"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "1.0.1"' in S)
+      'VAULTHUB_ASSET_VERSION = "1.0.2"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "1.0.2"' in S)
 check("5c 新标语 ×3 且旧标语已清除",
-      HTML.count("v1.0.1 · 季度中文序号与小窗96px微调") == 3
+      HTML.count("v1.0.2 · 季度版式回归 · 演职人员/推荐修复 · 豆瓣评分 · 操作模式") == 3
       and "v0.9.96 ·" not in HTML)
 check("5d install/upgrade 脚本版本同步",
-      'VERSION="v1.0.1"' in rd("scripts/install.sh") and 'VERSION="v1.0.1"' in rd("scripts/upgrade.sh"))
+      'VERSION="v1.0.2"' in rd("scripts/install.sh") and 'VERSION="v1.0.2"' in rd("scripts/upgrade.sh"))
 check("5e 发布说明覆盖四项需求",
       all(k in NOTES for k in ("方括号", "sXXeYY-eZZ", "缺失集", "Plex Dance", "Local Media Assets")))
 check("5f Update Log 顶部为 v0.9.98 段且保留 v0.9.96",
-      LOG.startswith("# VaultHub 蜀鼠之家 v1.0.1") and "# VaultHub 蜀鼠之家 v0.9.96" in LOG
+      LOG.startswith("# VaultHub 蜀鼠之家 v1.0.2") and "# VaultHub 蜀鼠之家 v0.9.96" in LOG
       and "## 验证（本轮实测）" in LOG)
 
 print("\n== 6. 洗版自查（本仓禁止真实域名 / 内网 IP / 卷路径字面量）==")

@@ -75,4 +75,21 @@ if (typeof runDailySpeedTest === "function") {
 } else if (typeof ensureWeakNetworkProbe === "function") ensureWeakNetworkProbe();
 /* 首页四栏（服务器监控 / 正在进行 / 最近入库）在媒体库拉取完成后渲染 */
 refreshMediaLibraries(false).then(initHome);
+
+/* v1.0.2（需求8）：整页覆盖层（影视详情 / 阅读器 / 播放器 / 设置）打开时锁住背景页滚动
+   —— 旧实现下浏览器会同时出现「页面竖滚动条 + 覆盖层内竖滚动条」的多重滚动条。
+   用 MutationObserver 观察覆盖层出现/消失，避免在几十处打开/关闭逻辑里逐个挂钩子。 */
+(function vhBindOverlayScrollLock() {
+  const OVERLAY_SELECTOR = ".media-reader-overlay, .modal-overlay, .setpage, .epub-viewer, .comic-viewer";
+  const sync = () => {
+    let open = false;
+    try { open = !!document.querySelector(OVERLAY_SELECTOR); } catch (e) { open = false; }
+    document.documentElement.classList.toggle("vh-overlay-open", open);
+  };
+  sync();
+  try {
+    const obs = new MutationObserver(() => sync());
+    obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style"] });
+  } catch (e) { /* 老浏览器没有 MutationObserver：退化为只在启动时算一次 */ }
+})();
 }

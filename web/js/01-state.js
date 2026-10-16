@@ -18,7 +18,7 @@ let vaultHubSessionPingedAt = 0;
    历史故障：v0.8.3→v0.8.5 的前端修改在服务端已生效，但浏览器仍执行缓存里的
    旧 02-media.js，用户看到「没有更新」。现在入口页 no-store、静态资源带 ?v=，
    并在启动时做一次一致性自查，不一致就绕过缓存强制重载一次。 */
-const VAULTHUB_SCRIPT_VERSION = "1.0.1";
+const VAULTHUB_SCRIPT_VERSION = "1.0.2";
 function ensureFreshAssets() {
   /* expected 为空 = 浏览器执行的 index.html 早于 v0.8.6（旧版本入口页没有声明
      版本号），同样属于"页面是旧的"，也需要换 URL 重新取一次。 */
@@ -468,6 +468,10 @@ const I18N = {
     notifyOpenLibrary: "查看媒体库",
     castAs: "饰演",
     castTitle: "演职人员",
+    opModeLbl: "操作模式",
+    opModeDesc: "Apple / Emby / Plex：分别按对应开源客户端的操作手感还原动效节奏、圆角阴影与图标风格（只影响本机观感，不改功能）。",
+    uiSpecLbl: "界面规格",
+    opModeSaved: "操作模式已保存",
     castVoiceAs: "配音",
     castEmpty: "暂无演职人员信息",
     nowResume: "继续播放",
@@ -692,6 +696,10 @@ const I18N = {
     notifyOpenLibrary: "查看媒體庫",
     castAs: "飾演",
     castTitle: "演職人員",
+    opModeLbl: "操作模式",
+    opModeDesc: "Apple / Emby / Plex：分別按對應開源客戶端的手感還原動效節奏、圓角陰影與圖示風格（只影響本機觀感）。",
+    uiSpecLbl: "介面規格",
+    opModeSaved: "操作模式已儲存",
     castVoiceAs: "配音",
     castEmpty: "暫無演職人員資訊",
     nowResume: "繼續播放",
@@ -975,6 +983,10 @@ const I18N = {
     notifyOpenLibrary: "Open library",
     castAs: "as",
     castTitle: "Cast",
+    opModeLbl: "Operation mode",
+    opModeDesc: "Apple / Emby / Plex: motion pacing, radii, shadows and icon style restored per client (look only).",
+    uiSpecLbl: "Layout profile",
+    opModeSaved: "Operation mode saved",
     castVoiceAs: "voice",
     castEmpty: "No cast information yet",
     nowResume: "Resume",
@@ -1218,7 +1230,8 @@ let settings = {
   palette: "emerald",     /* 调色板层：emerald | plum | neon | clay */
   accent: "theme",        /* 强调色层：theme（跟随调色板）| teal | indigo | rose | amber | violet */
   customBg: false,        /* 背景图层：是否启用自定义背景图片 */
-  uiMode: "auto",         /* v0.9.76 UI 设备模式：auto(按设备识别) | phone | tv | pc */       /* v0.9.74 布局层：topnav（媒体库平铺顶栏，默认）| sidebar（v0.9.73 的侧栏） */
+  uiMode: "auto",         /* v0.9.76 界面规格：auto(按设备识别) | phone | tv | pc */
+  opMode: "apple",        /* v1.0.2 操作模式：apple | emby | plex（动效 + 圆角阴影 + 图标风格） */       /* v0.9.74 布局层：topnav（媒体库平铺顶栏，默认）| sidebar（v0.9.73 的侧栏） */
   reduceMotion: false,    /* 动效：减弱过渡与动画 */
   hardwareAcceleration: "auto",
   /* v0.9.91 解/转码风向标：auto = 服务端按需转/解码；off = 禁用服务端转/解码，
@@ -1262,6 +1275,7 @@ function loadSettings() {
     if (["emerald", "plum", "neon", "clay"].includes(s.palette)) settings.palette = s.palette;
     if (["theme", "teal", "indigo", "rose", "amber", "violet"].includes(s.accent)) settings.accent = s.accent;
     if (UI_MODES.includes(s.uiMode)) settings.uiMode = s.uiMode;
+    if (OP_MODES.includes(s.opMode)) settings.opMode = s.opMode;
     if (s.theme === "custom") settings.customBg = true;
     if (typeof s.customBg === "boolean") settings.customBg = s.customBg;
     settings.reduceMotion = !!s.reduceMotion;

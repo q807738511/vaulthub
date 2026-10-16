@@ -3116,6 +3116,9 @@ func main() {
 	mux.HandleFunc("/api/media/subtitles/extract", a.extractSubtitle)
 	mux.HandleFunc("/api/media/subtitles/proxy", a.externalSubtitle)
 	mux.HandleFunc("/api/media/tmdb", a.tmdb)
+	/* v1.0.2（需求5）：豆瓣评分代理（浏览器直连豆瓣必然被 CORS 拦）。 */
+	mux.HandleFunc("/api/media/douban", a.douban)
+	mux.HandleFunc("/api/media/douban/batch", a.doubanBatch)
 	mux.HandleFunc("/api/media/cast/avatar", a.castAvatar)
 	mux.HandleFunc("/api/media/tvdb", a.tvdb)
 	mux.HandleFunc("/api/media/metadata", a.localMetadata)

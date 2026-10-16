@@ -98,30 +98,35 @@ const call = (sb, expr) => vm.runInContext(expr, sb);
     const first = call(sb, "renderSeriesSeasonCard(__lib, __show, __season)");
     const second = call(sb, "renderSeriesSeasonCard(__lib, __show, __season2)");
 
-    chk("A1 季度标题不再是独立一行（无 series-season-head）", first.indexOf("series-season-head") < 0, first.slice(0, 120));
-    chk("A2 季度标题作为首条目前缀存在", first.indexOf("series-season-prefix") >= 0 && first.indexOf("series-season-toggle") >= 0);
-    chk("A3 前缀在组内只出现一次（最上层）",
-      (first.match(/series-season-prefix/g) || []).length === 1
-      && (first.match(/series-season-toggle/g) || []).length === 1, (first.match(/series-season-prefix/g) || []).length);
-    chk("A4 首条目的行标上 is-season-top，其余行没有",
-      (first.match(/is-season-top/g) || []).length === 1);
+    chk("A1 季名回到独立季名行（无首条目前缀）",
+      first.indexOf("series-season-head") >= 0 && first.indexOf("series-season-prefix") < 0, first.slice(0, 120));
+    chk("A2 「季度」二字在最上层季名行内（加粗 span）",
+      first.indexOf('<span class="season-inline-title">季度</span>') >= 0
+      && first.indexOf("season-inline-title") < first.indexOf("series-season-title"));
+    chk("A3 「季度」在组内只出现一次（最上层）",
+      (first.match(/season-inline-title/g) || []).length === 1
+      && (second.match(/season-inline-title/g) || []).length === 0, (first.match(/season-inline-title/g) || []).length);
+    chk("A4 不再有首集大图（is-season-top 消失，两集都是网格卡片）",
+      first.indexOf("is-season-top") < 0 && (first.match(/series-episode-card/g) || []).length === 2);
     chk("A5 前缀带上季名与集数", first.indexOf("第一季") >= 0 && first.indexOf("共2集") >= 0);
-    chk("A6 折叠容器只包住首条之外的集（series-episode-list-rest）",
-      (first.match(/series-episode-list-rest/g) || []).length === 1 && first.indexOf("S01E01") >= 0);
+    chk("A6 全部集在同一网格容器（不再有 -rest 容器）",
+      first.indexOf('class="series-episode-list"') >= 0 && first.indexOf("series-episode-list-rest") < 0
+      && first.indexOf("S01E01") >= 0);
     chk("A7 首季默认展开、其余折叠",
       first.indexOf("is-collapsed") < 0 && second.indexOf("is-collapsed") >= 0 && second.indexOf("display:none") >= 0);
-    chk("A8 单集季度不产生折叠容器（前缀仍在该条上）",
-      (call(sb, "renderSeriesSeasonCard(__lib, __show, __show.seasonList[2])").match(/series-episode-list-rest/g) || []).length === 0
-      && call(sb, "renderSeriesSeasonCard(__lib, __show, __show.seasonList[2])").indexOf("series-season-prefix") >= 0);
-    chk("A9 前缀落在首条目内部（首条之后、第二条之前）",
-      first.indexOf("S01E01") < first.indexOf("series-season-prefix")
-      && first.indexOf("series-season-prefix") < first.indexOf("S01E02"));
+    const third = call(sb, "renderSeriesSeasonCard(__lib, __show, __show.seasonList[2])");
+    chk("A8 单集季度同样渲染为网格卡片（不再单独占整行）",
+      (third.match(/series-episode-card/g) || []).length === 1
+      && (third.match(/series-episode-list/g) || []).length === 1
+      && third.indexOf("season-inline-title") < 0);
+    chk("A9 季名行在分集网格之前（标题在上、集在下）",
+      first.indexOf("series-season-head") < first.indexOf("series-episode-list"));
 
     // 折叠按钮真实切换
-    const listEl = fakeEl({ classes: ["series-episode-list-rest"] });
+    const listEl = fakeEl({ classes: ["series-episode-list"] });
     const chev = fakeEl(); chev.textContent = "▾";
     const btn = fakeEl({
-      closest: () => ({ querySelector: sel => (sel.indexOf("series-episode-list-rest") >= 0 ? listEl : null) }),
+      closest: () => ({ querySelector: sel => (sel.indexOf("series-episode-list") >= 0 ? listEl : null) }),
       querySelector: sel => (sel.indexOf("series-season-chev") >= 0 ? chev : null),
     });
     sb.__btn = btn;
@@ -129,7 +134,7 @@ const call = (sb, expr) => vm.runInContext(expr, sb);
     const collapsedNow = listEl.classList.contains("is-collapsed") && listEl.style.display === "none" && chev.textContent === "▸";
     call(sb, "toggleSeriesSeason(__btn)");
     const openedNow = !listEl.classList.contains("is-collapsed") && listEl.style.display === "" && chev.textContent === "▾";
-    chk("A10 点击前缀折叠/展开只针对首条之外的集", collapsedNow && openedNow,
+    chk("A10 点击季名行折叠/展开整季集列表", collapsedNow && openedNow,
       { collapsedNow, openedNow, display: listEl.style.display, chev: chev.textContent });
   }
 
