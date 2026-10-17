@@ -21,13 +21,14 @@ check("1 剧集详情异步解析 TMDB 取评分", "async function openSeriesDet
 
 # 2) 多季季度卡片 + 点击展开/收起
 # v0.9.99（需求4）：季度标题不再是独立一行，改为该季第一条目的前缀。
-check("2 季度卡片渲染函数（标题作为首条目前缀）",
+# v1.0.3（需求1）：季度版式回归 0.9.89 —— 季名回到独立 h3 季名行，不再做「首条目前缀」。
+check("2 季度卡片渲染函数（季名行 + 分集网格）",
       "function renderSeriesSeasonCard" in MEDIA
-      and "series-season-prefix" in MEDIA
-      and "series-season-head" not in MEDIA)
-check("2 第一季默认展开/其余折叠（折叠对象只含首条之外的集）",
-      "series-episode-list-rest" in MEDIA and "is-collapsed" in MEDIA)
-check("2 点击季度前缀切换展开/收起", "function toggleSeriesSeason" in MEDIA and ".series-episode-list-rest" in MEDIA)
+      and "series-season-head" in MEDIA
+      and "series-season-prefix" not in MEDIA)
+check("2 第一季默认展开/其余折叠（折叠对象＝整季分集网格）",
+      "series-episode-list" in MEDIA and "series-episode-list-rest" not in MEDIA and "is-collapsed" in MEDIA)
+check("2 点击季名行切换展开/收起", "function toggleSeriesSeason" in MEDIA and 'querySelector(".series-episode-list")' in MEDIA)
 check("2 季卡 CSS", ".series-season-head" in CSS)
 
 # 3) 单集详情 X排Y列 网格 + 集略缩图
@@ -46,7 +47,7 @@ check("7 showRecInfo 弹窗", "function showRecInfo" in MEDIA and "recInfoModal"
 check("7 Bangumi 回落", "api.bgm.tv/v0/search/subjects" in MEDIA and "Bangumi" in MEDIA)
 
 # 版本
-check("8 版本 0.9.90", 'VAULTHUB_ASSET_VERSION = "1.0.1"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "1.0.1"' in (ROOT/"web/js/01-state.js").read_text(encoding="utf-8"))
+check("8 版本 0.9.90", 'VAULTHUB_ASSET_VERSION = "1.0.3"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "1.0.3"' in (ROOT/"web/js/01-state.js").read_text(encoding="utf-8"))
 
 print(f"v0.9.85 {OK}/{OK+FAIL} 项剧集/季/集/推荐契约通过" if FAIL==0 else f"v0.9.85 契约 {FAIL} 项未通过")
 raise SystemExit(1 if FAIL else 0)

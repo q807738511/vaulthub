@@ -116,12 +116,12 @@ check("5h test_v0960 冗余 or 已清理",
       not re.search(r'"v0\.9\.\d+" in HTML or "v0\.9\.\d+" in HTML', (ROOT / "tests/test_v0960_audio_edit_jump.py").read_text(encoding="utf-8")))
 
 # ============ 6) 版本与文档 ============
-check("6a 资源版本号已升至本版（≥10 处）", HTML.count("?v=1.0.1") >= 10)
+check("6a 资源版本号已升至本版（≥10 处）", HTML.count("?v=1.0.3") >= 10)
 check("6b ASSET / SCRIPT 版本一致",
-      'VAULTHUB_ASSET_VERSION = "1.0.1"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "1.0.1"' in STATE)
+      'VAULTHUB_ASSET_VERSION = "1.0.3"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "1.0.3"' in STATE)
 _slogans = re.findall(r"v\d+\.\d+\.\d+ · [^<\"]+", HTML)
 check("6c 标语三处整串一致", len(_slogans) == 3 and len(set(_slogans)) == 1, sorted(set(_slogans)))
-check("6d Update Log 顶部为本版", LOG.startswith("# VaultHub 蜀鼠之家 v1.0.1"))
+check("6d Update Log 顶部为本版", LOG.startswith("# VaultHub 蜀鼠之家 v1.0.3"))
 check("6e Release Notes 存在且写明四项需求",
       (ROOT / ".github/RELEASE_NOTES_0.9.92.md").exists()
       and "铺满" in NOTES and "正在播放" in NOTES and "sidecar" in NOTES and "缓存目录" in NOTES)

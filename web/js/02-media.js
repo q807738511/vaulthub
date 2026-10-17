@@ -2354,12 +2354,15 @@ function closeEpisodeDetail() {
 async function openSeriesDetails(libId, showKey) { const lib=findMediaLibrary(libId), viewer=document.getElementById("local-media-viewer-movie"); if(!lib||!viewer)return; const show=readSeriesShow(libId,showKey); if(!show)return; activeSeriesDetail={libId, showKey}; seriesEpisodeReturn=null; const hero={title:show.title,overview:seriesHeroOverview(show),scrape_ok:hasScrapedInfo(show),poster:show.poster,logo:show.logo,fanart:show.fanart,backdrop:show.backdrop,year:show.year,provider:show.provider,watched:show.watched,media_type:"series"}; /* v0.9.51：进入剧集详情即把该剧的分集按季/集顺序设为播放队列，
      这样播放器的「上一个 / 下一个 / 播放列表」走的是同一部剧而不是整库。 */
   setVideoPlaylist(libId, (show.seasonList||[]).flatMap(season=>(season.episodes||[]).map(ep=>({path:ep.path}))));
-  const firstPath = show.files?.[0]?.path || "";
+  /* v1.0.2（需求3）：服务端元数据要用「真视频」的第一集路径 —— 剧集目录里
+     poster.jpg / season.nfo 也在同一份文件列表里，旧的 files[0] 可能拿到海报，
+     按海报解析出的剧集级信息不完整（演职人员/推荐随之缺失）。 */
+  const firstPath = seriesFirstVideoPath(show) || (show.files?.[0]?.path || "");
   /* v0.9.81：剧集详情顺序 —— 视频介绍(hero) → 演职人员(网格头像) → 视频推荐(网格略缩图) → 季度(网格集数) → 视频信息(底部)。 */
   const renderPage = (extras) => {
-    const meta = { ...hero, ...(extras||{}) };
+    const meta = { ...hero, __libId: lib.id, ...(extras||{}) };
     const seasons = (show.seasonList||[]).map(season => renderSeriesSeasonCard(lib, show, season)).join("");
-    viewer.innerHTML = `<div class="media-reader-overlay movie-detail-page series-detail-page media-detail-backdrop" style="${esc(detailBackdropStyle(meta))}"><div class="movie-detail-scroll">${movieDetailCloseButton()}${renderMovieHero(lib,firstPath,meta)}${renderCastPanel(meta)}${renderRecPanel(meta)}${seasons}${renderSeriesInfoPanel(show, meta.rating)}</div></div>`;
+    viewer.innerHTML = `<div class="media-reader-overlay movie-detail-page series-detail-page media-detail-backdrop" style="${esc(detailBackdropStyle(meta))}"><div class="movie-detail-scroll">${movieDetailCloseButton()}${renderMovieHero(lib,firstPath,meta)}${renderCastPanel(meta)}${renderRecPanel(meta)}${seasons}${renderSeriesInfoPanel(show, meta.rating, meta)}</div></div>`;
     scrollViewerIntoView(viewer);
   };
   renderPage();
@@ -2370,14 +2373,36 @@ async function openSeriesDetails(libId, showKey) { const lib=findMediaLibrary(li
     const extras = {};
     /* v0.9.99（需求1）：剧集级 NFO（tvshow.nfo）里的演职人员 —— 服务端已按剧名
        根目录上溯读取，这里拿到的就是本地 NFO 的演员表（含 TMDB 头像地址）。 */
+    /* v1.0.2（需求2）：服务端从 season.nfo / tvshow.nfo / 剧名目录推导出的剧名
+       （show_title）优先 —— 历史刮削写错的剧名会被同步给整部剧，用它查 TMDB
+       必然查到别的片子（演职人员、推荐一起空掉）。这里即时修回缓存与本次渲染。 */
+    const nfoTitle = String((sdata && sdata.show_title) || "").trim();
+    const nfoTitleSource = String((sdata && sdata.show_title_source) || "");
+    /* 只信任「用户自己刮削器写下的剧名」（season.nfo / tvshow.nfo）。
+       目录名兜底（folder）只用来补空剧名 —— 目录名可能是 "Tokyo Ghoul" 而用户要显示
+       「东京喰种」，不能拿它覆盖已刮削的本地化剧名。 */
+    const trustNfoTitle = !!nfoTitle && (nfoTitleSource === "season-nfo" || nfoTitleSource === "tvshow-nfo");
+    const cachedTitle = String(show.title || "").trim();
+    /* 两种情况下改用本地剧名：① 来源是用户自己的 NFO（最权威）；
+       ② 现在根本没有剧名（空标题比目录名兜底更差）。 */
+    if (nfoTitle && (trustNfoTitle ? nfoTitle !== cachedTitle : !cachedTitle)) {
+      extras.title = nfoTitle;
+      try { repairSeriesShowTitleFromNFO(libId, show, nfoTitle); } catch(e) {}
+    }
+    const lookupTitle = (trustNfoTitle ? nfoTitle : "") || cachedTitle || nfoTitle;
     const localShowCast = Array.isArray(sdata && sdata.cast) ? sdata.cast : [];
     if (localShowCast.length) extras.cast = mergeCastKeepLocal(localShowCast, []);
     const sRating = Number(sdata && (sdata.rating||sdata.vote_average)) || 0;
     if (sRating) extras.rating = sRating;
-    let tid = show.tmdb_id || (sdata && sdata.tmdb_id) || "";
+    /* v1.0.2（需求2）：剧集级 TMDB ID 只认 tvshow.nfo 的（show_tmdb_id）——
+       单集 NFO 的 tmdbid 是「这一集」的 id，拿它查 tv/{id} 会 404，演职人员与推荐
+       因此整段消失（旧实现先取 show.tmdb_id，再退到 sdata.tmdb_id，两者都可能是
+       分集 id）。没拿到剧集级 ID 时按剧名搜，不拿分集 id 硬查。 */
+    const showYear = String((sdata && sdata.year) || show.year || "").trim();
+    let tid = String((sdata && sdata.show_tmdb_id) || show.tmdb_id || "").trim();
     const imgBase = scraperStatus.tmdb_image_base || "https://image.tmdb.org/t/p";
-    if (!tid && scraperStatus.tmdb_enabled && show.title) {
-      const q = await fetch(`/api/media/tmdb?query=${encodeURIComponent(show.title)}&type=series&lang=${tmdbLangTag()}`,{cache:"force-cache"});
+    if (!tid && scraperStatus.tmdb_enabled && lookupTitle) {
+      const q = await fetch(`/api/media/tmdb?query=${encodeURIComponent(lookupTitle)}&type=series&lang=${tmdbLangTag()}`,{cache:"force-cache"});
       if (q.ok) { const found=(await q.json())?.results||[]; const hit=found.find(x=>x.poster_path||x.overview||x.name); if (hit) { tid=hit.id; if(Number(hit.vote_average)) extras.rating=Number(hit.vote_average); if(!hero.overview && hit.overview) extras.overview=hit.overview; if(!hero.poster && hit.poster_path) extras.poster=`${imgBase}/w342${hit.poster_path}`; } }
     }
     if (tid) {
@@ -2392,12 +2417,28 @@ async function openSeriesDetails(libId, showKey) { const lib=findMediaLibrary(li
         extras.recommendations = movieRecommendationsFor(d, { ...hero, rating: extras.rating || Number(hero.rating) || 0 });
       }
     }
+    /* v1.0.2（需求5）：剧集豆瓣评分（服务端代理；CORS 使浏览器直连豆瓣必然失败）。 */
+    try {
+      const dub = await fetchDoubanRating(lookupTitle, showYear, "series");
+      /* 豆瓣匿名检索不返回动画类目（实测：东京喰种/鬼灭之刃 空结果，琅琊榜/老友记 正常）
+         —— 未命中时把状态带到界面上，避免只显示一个让人误解的「--」。 */
+      if (dub && !dub.match) extras.douban_status = String(dub.match_note || "未收录").trim() || "未收录";
+      if (dub && dub.match) {
+        extras.douban_rating = Number(dub.rating) || 0;
+        extras.douban_votes = Number(dub.votes) || 0;
+        extras.douban_url = String(dub.url || "");
+        extras.douban_title = String(dub.title || "");
+        extras.douban_year = String(dub.year || "");
+      }
+    } catch(e) {}
     /* v0.9.99（需求1）：无论 TMDB 是否命中，推荐都要有内容 ——
        先用 TMDB 推荐，再用「本地库同类」补位（同类型 + 同演职人员）。 */
     extras.recommendations = fillRecommendations(
       extras.recommendations || [],
       localRecommendationItems({ ...hero, cast: extras.cast || localShowCast, genres: extras.genres || hero.genres }, lib, { excludeShow: show.title })
     );
+    /* v1.0.2（需求4）：推荐综合 TMDB × 豆瓣评分重排（本地可播的仍在最前）。 */
+    try { extras.recommendations = await rankRecommendationsWithDouban(extras.recommendations, extras.rating); } catch(e) {}
     if (!extras.cast && localShowCast.length) extras.cast = mergeCastKeepLocal(localShowCast, []);
     if (Object.keys(extras).length) {
       show.rating = Number(extras.rating) || show.rating;
@@ -2569,12 +2610,19 @@ function movieLocalTitleIndex() {
   let map = {};
   try {
     const all = readMovieMetadata();
-    for (const path in all) { const title = String(all[path].title || "").toLowerCase(); if (title) (map[title] = map[title] || []).push({ path }); }
+    for (const path in all) { const title = String(all[path].title || "").toLowerCase(); if (title) (map[title] = map[title] || []).push({ path, libId: libraryIdForMediaPath(path) }); }
   } catch (e) { map = {}; }
   movieLocalTitleIndexCache = map;
   return map;
 }
-function movieRecLocalHit(title){ return (movieLocalTitleIndex()[String(title||"").toLowerCase()]||[])[0] || null; }
+/* v1.0.2（需求3）：本地命中只认「真视频」条目，并带上它所属的媒体库 id ——
+   推荐卡片点播必须用命中条目自己的库，用当前库 id 会打不开（旧实现把库 id 放在
+   scraperStatus._recLibId 这个全局旁路上，剧集详情路径下经常是空的）。 */
+function movieRecLocalHit(title){
+  const list = movieLocalTitleIndex()[String(title||"").toLowerCase()] || [];
+  if (!list.length) return null;
+  return list.find(x => /\.(mp4|mkv|avi|mov|m4v|webm|ts|m2ts)$/i.test(String(x.path||""))) || list[0];
+}
 /* v0.9.80 jsObjArg：把任意对象安全地内联进 onclick 引号参数（esc 后 JSON）。 */
 function jsObjArg(value) { return esc(JSON.stringify(value)); }
 /* v0.9.82：本地封面按展示尺寸取缩略图（远程访问提速）。
@@ -2656,15 +2704,23 @@ function movieRecStripHTML(meta) {
     if (meta.tmdb_error) return `<div class="empty-tip movie-rec-error">视频推荐不可用：${esc(meta.tmdb_error)}</div>`;
     return '<div class="empty-tip">暂无视频推荐</div>';
   }
-  const withLocal = list.map(x => ({ ...x, local: movieRecLocalHit(x.title) ? { path: movieRecLocalHit(x.title).path } : null }));
+  /* v1.0.2（需求3）：本地命中带上「它自己的库 id」—— 推荐可能命中别的库的条目。 */
+  const withLocal = list.map(x => { const hit = movieRecLocalHit(x.title); return { ...x, local: hit ? { path: hit.path, libId: hit.libId || "" } : null }; });
+  const recLibId = String(meta.__libId || scraperStatus._recLibId || "");
   withLocal.sort((a, b) => (b.local?1:0) - (a.local?1:0)); /* 有本地资源的优先 */
   return withLocal.slice(0, 8).map(x => {
     const art = x.poster ? `<img src="${esc(x.poster)}" alt="${esc(x.title)}" loading="lazy">` : `<span class="movie-rec-fallback">${esc((x.title||"?").slice(0,1))}</span>`;
     /* v0.9.82：播放按钮移到略缩图之上（hover / 键盘聚焦时显示），不再占一行挤在标题下。 */
-    const play = x.local ? `<button class="movie-rec-play" type="button" title="播放" aria-label="播放 ${esc(x.title)}" onclick="event.stopPropagation();openMovieDetails(${jsAttrArg(scraperStatus._recLibId||"")},${jsAttrArg(x.local.path)})"><span aria-hidden="true">▶</span><em>播放</em></button>` : "";
+    /* v1.0.2（需求3）：▶ 直接播放（用命中条目自己的库 id），点卡片进详情 ——
+       旧实现的播放按钮走的是 openMovieDetails（只打开详情页）且库 id 取自
+       scraperStatus._recLibId 这个全局旁路，剧集详情下为空 →「定位及播放异常」。 */
+    const recLocalLib = String((x.local && x.local.libId) || recLibId || "");
+    const play = x.local ? `<button class="movie-rec-play" type="button" title="播放" aria-label="播放 ${esc(x.title)}" onclick="event.stopPropagation();openLocalMedia('movie',${jsAttrArg(recLocalLib)},${jsAttrArg(x.local.path)})"><span aria-hidden="true">▶</span><em>播放</em></button>` : "";
     const badge = x.local ? '<span class="movie-rec-badge is-local">本地可播</span>' : `<span class="movie-rec-badge">${esc(movieRecBadge(x, meta))}</span>`;
-    const onClick = x.local ? `openMovieDetails(${jsAttrArg(scraperStatus._recLibId||"")},${jsAttrArg(x.local.path)})` : `showRecInfo(${jsObjArg(x)})`;
-    return `<article class="movie-rec-card" onclick="${onClick}" title="${esc(x.title)}">${badge}<div class="movie-rec-poster">${art}${play}</div><div class="movie-rec-meta"><b>${esc(x.title)}</b><small>${esc(String(x.year||""))}${x.rating?` · ⭐ ${x.rating.toFixed(1)}`:""}</small></div></article>`;
+    const onClick = x.local ? `openMovieDetails(${jsAttrArg(recLocalLib)},${jsAttrArg(x.local.path)})` : `showRecInfo(${jsObjArg(x)})`;
+    /* v1.0.2（需求4/5）：卡片同时显示 TMDB 与豆瓣评分（有才显示）。 */
+    const scores = [String(x.year||""), x.rating?`⭐ TMDB ${Number(x.rating).toFixed(1)}`:"", Number(x.douban_rating)>0?`豆瓣 ${Number(x.douban_rating).toFixed(1)}`:""].filter(Boolean).join(" · ");
+    return `<article class="movie-rec-card" onclick="${onClick}" title="${esc(x.title)}">${badge}<div class="movie-rec-poster">${art}${play}</div><div class="movie-rec-meta"><b>${esc(x.title)}</b><small>${esc(scores)}</small></div></article>`;
   }).join("");
 }
 /* v0.9.82：无本地资源 → 「视频信息」窗口（客户反馈「依旧没有修复」，根因有两层）：
@@ -2959,12 +3015,34 @@ if (tid || (scraperStatus.tmdb_enabled && (meta.title||meta.name))) {
     }
     if (tidRes) {
       const res = await fetch(`/api/media/tmdb?id=${encodeURIComponent(tidRes)}&type=${tmdbType}&lang=${tmdbLangTag()}`,{cache:"force-cache"});
-      if (res.ok){const detail=await res.json();meta={...meta,overview:detail.overview||meta.overview,rating:Number(detail.vote_average||meta.rating||0),runtime:detail.runtime||detail.episode_run_time?.[0],genres:(detail.genres||[]).map(x=>x.name),cast:mergeCastKeepLocal(meta.cast,detail.credits?.cast),cast_lang:tmdbLangTag(),recommendations:fillRecommendations(movieRecommendationsFor(detail,meta),localRecommendationItems(meta,lib)),tmdb_error:""};viewer.innerHTML=renderMovieDetails(lib,path,meta);}
+      if (res.ok){const detail=await res.json();meta={...meta,overview:detail.overview||meta.overview,rating:Number(detail.vote_average||meta.rating||0),runtime:detail.runtime||detail.episode_run_time?.[0],genres:(detail.genres||[]).map(x=>x.name),cast:mergeCastKeepLocal(meta.cast,detail.credits?.cast),cast_lang:tmdbLangTag(),recommendations:fillRecommendations(movieRecommendationsFor(detail,meta),localRecommendationItems(meta,lib)),tmdb_error:""};
+        /* v1.0.2（需求4/5）：电影同样取豆瓣评分，并按 TMDB × 豆瓣综合分重排推荐。 */
+        try{const dub=await fetchDoubanRating(meta.title,String(meta.year||(detail.release_date||"").slice(0,4)),"movie");if(dub&&dub.match){meta={...meta,douban_rating:Number(dub.rating)||0,douban_votes:Number(dub.votes)||0,douban_url:String(dub.url||"")};}else if(dub){meta={...meta,douban_status:String(dub.match_note||"未收录").trim()||"未收录"};}}catch(e){}
+        try{meta={...meta,recommendations:await rankRecommendationsWithDouban(meta.recommendations,meta.rating)};}catch(e){}
+        try{const all=readMovieMetadata();all[path]={...movieMetadataFor(path),...meta};writeMovieMetadata(all);}catch(e){}
+        viewer.innerHTML=renderMovieDetails(lib,path,meta);}
       else{const err=await res.json().catch(()=>({}));meta={...meta,recommendations:fillRecommendations(meta.recommendations||[],localRecommendationItems(meta,lib)),tmdb_error:movieTMDBErrorText(err,res.status)};viewer.innerHTML=renderMovieDetails(lib,path,meta);}
     } else {
       meta={...meta,recommendations:fillRecommendations(meta.recommendations||[],localRecommendationItems(meta,lib)),tmdb_error:"TMDB 未命中《'+(meta.title||meta.name||'')+'》，无法取推荐与 TMDB 评分"};viewer.innerHTML=renderMovieDetails(lib,path,meta);
     }
   } catch(e){meta={...meta,recommendations:fillRecommendations(meta.recommendations||[],localRecommendationItems(meta,lib)),tmdb_error:"TMDB 请求失败："+e.message};viewer.innerHTML=renderMovieDetails(lib,path,meta);}
+}
+/* v1.0.2（需求5）：豆瓣评分不依赖 TMDB 凭据 —— 只要拿到片名就补一次（服务端代理 + 24h 缓存）。
+   上面 TMDB 分支已经在有凭据时取过；这里只在「还没有分、也没有状态」时兜一次，
+   避免没有 TMDB 凭据的机器上电影永远显示 "--"。 */
+if ((meta.title||meta.name) && !meta.douban_status && !(Number(meta.douban_rating)>0)) {
+  try {
+    const dub=await fetchDoubanRating(meta.title||meta.name,String(meta.year||""),"movie");
+    if (dub) {
+      const ok=!!dub.match;
+      meta={...meta,douban_rating:ok?(Number(dub.rating)||0):(Number(meta.douban_rating)||0),
+        douban_votes:ok?(Number(dub.votes)||0):(Number(meta.douban_votes)||0),
+        douban_url:ok?String(dub.url||""):String(meta.douban_url||""),
+        douban_status:ok?"":(String(dub.match_note||"未收录").trim()||"未收录")};
+      try{const all=readMovieMetadata();all[path]={...movieMetadataFor(path),...meta};writeMovieMetadata(all);}catch(e){}
+      viewer.innerHTML=renderMovieDetails(lib,path,meta);
+    }
+  } catch(e){}
 }
 scrollViewerIntoView(viewer);}
 /* v0.9.85：语言切换后刷新已打开的影视详情 —— 让演职人员姓名/角色名跟随系统语言
@@ -3019,56 +3097,54 @@ function episodeGridHTML(lib, meta) {
   const cards = eps.map(e => `<figure class="ep-grid-card" onclick="openLocalMedia('movie',${jsAttrArg(lib.id)},${jsAttrArg(e.path)})" title="${esc(e.title||e.label)}">${e.thumb?`<img src="${esc(e.thumb)}" alt="${esc(e.label)}" loading="lazy">`:`<span class="ep-grid-fallback">${esc(e.label)}</span>`}<figcaption>${esc(e.label)}</figcaption></figure>`).join("");
   return `<section class="episode-grid-section"><h3>${esc(ctx.showTitle||"")} 第${esc(ctx.seasonNum)}季 · 单集</h3><div class="episode-grid">${cards}</div></section>`;
 }
-function renderSeriesEpisodeRow(lib, ep, artUrl, seasonPrefix) {
-  /* v0.9.81：季度集数改为「网格展示」——删除「详情」按钮，格子内同时显示集号与集标题。 */
+function renderSeriesEpisodeRow(lib, ep, artUrl) {
+  /* v0.9.81：季度集数＝「网格展示」，格子内同时显示集号与集标题。
+     v1.0.2（需求1）：分集行不再接收「季名前缀」—— 季名/季度标题回到独立的
+     h3 季名行（0.9.89 版式），所有分集一律进 .series-episode-list 网格。 */
   const path = String(ep.path), meta = ep.meta || movieMetadataFor(path), parsed = ep.parsed || parseSeriesEpisode(path);
   const safeArt = cssUrlValue(coverThumbUrl(ep.thumb || artUrl || meta.poster || "", 320));
   const style = safeArt ? `style="background-image:url('${esc(safeArt)}')"` : "";
   const label = parsed.label || `S${String(parsed.season||1).padStart(2,"0")}E${String(parsed.episode||0).padStart(2,"0")}`;
   const epTitle = String(meta.title || parsed.title || "").trim();
-  return `<article class="series-episode-row series-episode-card${seasonPrefix ? " is-season-top" : ""}" data-series-episode="${esc(path)}" onclick="openLocalMedia('movie',${jsAttrArg(lib.id)},${jsAttrArg(path)})" title="${esc(path)}"><div class="series-episode-thumb" ${style}><span class="series-episode-label">${esc(label)}</span></div><div class="series-episode-title">${seasonPrefix || ""}<b>${esc(label)}</b>${epTitle ? `<small title="${esc(epTitle)}">${esc(epTitle)}</small>` : ""}</div></article>`;
+  return `<article class="series-episode-row series-episode-card" data-series-episode="${esc(path)}" onclick="openLocalMedia('movie',${jsAttrArg(lib.id)},${jsAttrArg(path)})" title="${esc(path)}"><div class="series-episode-thumb" ${style}><span class="series-episode-label">${esc(label)}</span></div><div class="series-episode-title"><b>${esc(label)}</b>${epTitle ? `<small title="${esc(epTitle)}">${esc(epTitle)}</small>` : ""}</div></article>`;
 }
 function renderSeriesSeasonCard(lib, show, season) {
+  /* v1.0.2（需求1）：季度展示回归 0.9.89 版式 ——
+     每季 = 一个 h3 季名行（▾ 剧名 第一季 共N集）+ 下面一张分集网格。
+     旧实现（v0.9.99~v1.0.1）把该季第一集抽到网格之外当「前缀行」，
+     它会被 .series-season-block 拉满整行，16:9 缩略图因此放大成 1030×580 的
+     大图（用户看到的「大图模式」）。
+     保留 v1.0.1 的两条口径：季名用中文序号（第一季/第二季），加粗的「季度」
+     仍在排序最上层那一季的季名行行首（不单独占一行）。
+     v0.9.95（审查 N-6）：季名与季简介都渲染（有值才出，全部 esc）。 */
   const idx = show.seasonList.findIndex(s => s.season === season.season);
   const isFirst = idx === 0;
   const eps = season.episodes || [];
   const epCount = eps.length;
-  /* v0.9.99（需求4）：季度标题不再单独占一行，改为该季「第一条目」的前缀 ——
-     只在组内最上层出现一次。资源命名差异使得第一季不一定是 S01，因此前缀永远
-     挂在显示顺序的第一条上，而不是钉死在某个季号。
-     v1.0.0（需求1）：再加粗的「季度」区块标题也并入同一行 —— 即「(加粗)季度
-     (常规字体)剧名 第N季 共M集」，仅出现在排序最上层的那一季；后面的季只有
-     常规字重的季名行。若最上层那一季没有剧集（前缀行为空），则退回独立的
-     「季度」标题，避免标题整体消失。
-     v0.9.95（审查 N-6）：季名与季简介继续保留（都有才渲染，全部 esc）。 */
   const seasonName = String(season.name || "").trim();
   const seasonOverview = String(season.overview || "").trim();
   const art = ep => ep.thumb || show.poster || show.fanart || "";
-  const seasonHeading = isFirst ? '<h3 class="detail-section-h season-inline-title">季度</h3>' : "";
-  const orphanHeading = isFirst && !eps.length ? `<section class="season-inline-title-orphan">${seasonHeading}</section>` : "";
-  const prefix = eps.length ? `<div class="series-season-prefix">${seasonHeading}<button type="button" class="series-season-toggle" aria-expanded="${isFirst ? "true" : "false"}" title="展开/收起该季其余剧集" onclick="event.stopPropagation();toggleSeriesSeason(this)"><span class="series-season-chev">${isFirst ? "▾" : "▸"}</span><span class="series-season-title">${esc(show.title)}</span> ${esc(seriesPlexSeasonLabel(season.season))}${seasonName ? ` · ${esc(seasonName)}` : ""} <small>共${epCount}集</small></button>${seasonOverview ? `<p class="series-season-overview">${esc(seasonOverview)}</p>` : ""}</div>` : "";
-  const firstRow = eps.length ? renderSeriesEpisodeRow(lib, eps[0], art(eps[0]), prefix) : "";
-  const restRows = eps.slice(1).map(ep => renderSeriesEpisodeRow(lib, ep, art(ep), "")).join("");
-  const listClass = isFirst ? 'class="series-episode-list series-episode-list-rest"' : 'class="series-episode-list series-episode-list-rest is-collapsed"';
+  const epBody = eps.map(ep => renderSeriesEpisodeRow(lib, ep, art(ep))).join("");
+  const listClass = isFirst ? 'class="series-episode-list"' : 'class="series-episode-list is-collapsed"';
   const listStyle = isFirst ? "" : "display:none";
-  return `${orphanHeading}<section class="series-season-block" data-season="${esc(season.season)}">${firstRow}${eps.length > 1 ? `<div ${listClass} style="${listStyle}">${restRows}</div>` : ""}</section>`;
+  const head = `<span class="series-season-chev">${isFirst ? "▾" : "▸"}</span>${isFirst ? '<span class="season-inline-title">季度</span>' : ""}<span class="series-season-title">${esc(show.title)} ${esc(seriesPlexSeasonLabel(season.season))}${seasonName ? ` · ${esc(seasonName)}` : ""}</span> <small>共${epCount}集</small>`;
+  return `<section class="series-season-block" data-season="${esc(season.season)}"><h3 class="series-season-head" onclick="toggleSeriesSeason(this)">${head}</h3>${seasonOverview ? `<p class="series-season-overview">${esc(seasonOverview)}</p>` : ""}${eps.length ? `<div ${listClass} style="${listStyle}">${epBody}</div>` : ""}</section>`;
 }
-/* v0.9.99（需求4）：折叠对象变成「首条之外」的集列表；首条本身是前缀行，始终可见。 */
-function toggleSeriesSeason(btn){
-  const sec = btn.closest(".series-season-block");
-  const list = sec ? sec.querySelector(".series-episode-list-rest") : null;
+/* v1.0.2（需求1）：折叠对象回到 0.9.89 的整季分集网格。 */
+function toggleSeriesSeason(head){
+  const sec = head && head.closest ? head.closest(".series-season-block") : null;
+  const list = sec ? sec.querySelector(".series-episode-list") : null;
   if(!list) return;
   const open = list.classList.contains("is-collapsed");
   list.classList.toggle("is-collapsed", !open);
   list.style.display = open ? "" : "none";
-  const ch = btn.querySelector(".series-season-chev");
+  const ch = head.querySelector(".series-season-chev");
   if(ch) ch.textContent = open ? "▾" : "▸";
-  btn.setAttribute("aria-expanded", open ? "true" : "false");
 }
 
 function renderMovieHero(lib,path,meta) { const heroArt = movieHeroArt(meta); const safeArt = cssUrlValue(heroArt.url); const style = safeArt ? `--movie-hero-art:url('${esc(safeArt)}')` : ""; const logo=meta.logo?`<img class="movie-detail-logo" src="${esc(meta.logo)}" alt="${esc(meta.title)} Logo">`:`<h1>${esc(meta.title)}</h1>`; /* v0.9.87：剧集在「无刮削信息且无简介」时整段不渲染（客户要求）；电影保持原有兜底文案。 */
   const heroText = String(meta.overview || "").trim() || (meta.media_type === "series" ? "" : "暂无电影介绍；可在系统设置中配置 TMDB API 进行刮削。");
-  return `<header class="movie-detail-hero ${heroArt.kind}" style="${style}">${logo}${heroText ? `<p>${esc(heroText)}</p>` : ""}<div class="movie-detail-actions"><button class="btn btn-primary" onclick="openLocalMedia('movie',${jsAttrArg(lib.id)},${jsAttrArg(path)})">▶ 播放</button><button class="btn" onclick="shareMovie(${jsAttrArg(lib.id)},${jsAttrArg(path)},${jsAttrArg(meta.title)})">↗ 分享</button><button class="btn" onclick="toggleMovieFavorite(${jsAttrArg(lib.id)},${jsAttrArg(path)},this)">${movieFlag("favorite",lib.id,path)?"♥ 已收藏":"♡ 收藏"}</button>${movieRatingWidget(lib.id,path)}<span class="movie-tmdb-rating" title="TMDB 评分">${meta.rating ? `<b>⭐ ${meta.rating.toFixed(1)}</b><small>TMDB</small>` : ""}</span><button class="btn" onclick="toggleMovieWatched(${jsAttrArg(lib.id)},${jsAttrArg(path)},this)">${meta.watched||movieFlag("watched",lib.id,path)?"✓ 已观看":"○ 未观看"}</button><button class="btn" onclick="openMediaMetadataEditor(${jsAttrArg(lib.id)},${jsAttrArg(path)})">✎ 编辑</button></div></header>`; }
+  return `<header class="movie-detail-hero ${heroArt.kind}" style="${style}">${logo}${heroText ? `<p>${esc(heroText)}</p>` : ""}<div class="movie-detail-actions"><button class="btn btn-primary" onclick="openLocalMedia('movie',${jsAttrArg(lib.id)},${jsAttrArg(path)})">▶ 播放</button><button class="btn" onclick="shareMovie(${jsAttrArg(lib.id)},${jsAttrArg(path)},${jsAttrArg(meta.title)})">↗ 分享</button><button class="btn" onclick="toggleMovieFavorite(${jsAttrArg(lib.id)},${jsAttrArg(path)},this)">${movieFlag("favorite",lib.id,path)?"♥ 已收藏":"♡ 收藏"}</button>${movieRatingWidget(lib.id,path)}<span class="movie-tmdb-rating" title="TMDB 评分">${meta.rating ? `<b>⭐ ${meta.rating.toFixed(1)}</b><small>TMDB</small>` : ""}</span>${Number(meta.douban_rating)>0?`<span class="movie-douban-rating" title="豆瓣评分${meta.douban_votes?` · ${meta.douban_votes} 人评价`:''}"><b>⭐ ${Number(meta.douban_rating).toFixed(1)}</b><small>豆瓣</small></span>`:""}<button class="btn" onclick="toggleMovieWatched(${jsAttrArg(lib.id)},${jsAttrArg(path)},this)">${meta.watched||movieFlag("watched",lib.id,path)?"✓ 已观看":"○ 未观看"}</button><button class="btn" onclick="openMediaMetadataEditor(${jsAttrArg(lib.id)},${jsAttrArg(path)})">✎ 编辑</button></div></header>`; }
 /* v0.9.81：演职人员改为「网格排序的头像展示」（auto-fill 网格，头像 + 名称 + 角色，长文本省略防穿模）。 */
 /* v0.9.85：TMDB 请求语言跟随界面语言（演职人员姓名/角色名随之本地化）。
    zh-CN 是 media-go 的历史默认值，保持兼容。 */
@@ -3109,6 +3185,117 @@ function mergeCastKeepLocal(localCast, tmdbCast) {
     out.push({ name: x.name, character: x.character || "", profile_path: x.profile_path || "" });
   });
   return out.slice(0, 24);
+}
+/* ==================== v1.0.2 助手（需求2/3/4/5） ==================== */
+/* 剧集目录里混着 poster.jpg / season.nfo，取「元数据用的第一条」必须挑真视频。 */
+function seriesFirstVideoPath(show) {
+  const paths = (typeof seriesShowEpisodePaths === "function") ? seriesShowEpisodePaths(show) : [];
+  return paths.find(p => /\.(mp4|mkv|avi|mov|m4v|webm|ts|m2ts|iso|strm)$/i.test(String(p))) || "";
+}
+/* 反向查「这条路径属于哪个媒体库」—— 推荐的本地命中可能落在别的库（例如剧集库里
+   推荐到电影），用当前库的 id 去播会打不开。 */
+function libraryIdForMediaPath(path) {
+  const p = String(path || "").replace(/\\/g, "/").replace(/\/+$/, "");
+  if (!p) return "";
+  const norm = v => String(v || "").replace(/\\/g, "/").replace(/\/+$/, "");
+  try {
+    for (const lib of (localMediaLibraries || [])) {
+      const roots = [lib.path].concat(Array.isArray(lib.paths) ? lib.paths : []).map(norm).filter(Boolean);
+      if (roots.some(r => p === r || p.startsWith(r + "/"))) return String(lib.id);
+    }
+  } catch (e) {}
+  return "";
+}
+/* 需求2：本地 NFO/目录名推导出的剧名（服务端 show_title）优先 —— 历史刮削写错的
+   剧名会被同步给整部剧，把 TMDB 查询（演职人员/推荐）整段带偏。这里把正确的剧名
+   修回分集记录、服务端刮削缓存与剧集卡缓存，本次渲染立即生效。 */
+function repairSeriesShowTitleFromNFO(libId, show, title) {
+  const next = String(title || "").trim();
+  if (!next || !show || next === String(show.title || "").trim()) return 0;
+  const paths = (typeof seriesShowEpisodePaths === "function") ? seriesShowEpisodePaths(show) : [];
+  let changed = 0;
+  try {
+    const all = readMovieMetadata();
+    paths.forEach(p => {
+      const cur = all[p] || movieBaseMetadata(p);
+      if (cur.show_title === next) return;
+      all[p] = { ...cur, show_title: next, media_type: "series" };
+      changed++;
+    });
+    if (changed) { writeMovieMetadata(all); pushMovieScrapeResults(libId, paths); }
+  } catch (e) {}
+  show.title = next;
+  show.scrapedTitle = next;
+  try { rememberSeriesShow(libId, show); } catch (e) {}
+  return changed;
+}
+/* 需求5：豆瓣评分。服务端代理（浏览器直连 movie.douban.com 没有 CORS 头，必然失败）。
+   结果按「类型|片名|年份」缓存在会话内，同一部剧只查一次。 */
+function doubanNormKey(raw) {
+  return String(raw || "").replace(/[\uFF01-\uFF5E]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0))
+    .replace(/[\s\u3000\-_\u00b7\u30fb:\uff1a!\uff01?\uff1f,\uff0c.\u3002'"\u300a\u300b()\uff08\uff09\[\]\u3010\u3011\u301c~]/g, "").toLowerCase();
+}
+function doubanKeyOf(kind, title, year) {
+  const k = (kind === "movie" || kind === "film") ? "movie" : (kind ? "tv" : "");
+  return k + "|" + doubanNormKey(title) + "|" + String(year || "").trim();
+}
+function doubanCacheStore() {
+  if (!scraperStatus.__douban || typeof scraperStatus.__douban !== "object") scraperStatus.__douban = {};
+  return scraperStatus.__douban;
+}
+async function fetchDoubanRating(title, year, type) {
+  const name = String(title || "").trim();
+  if (!name) return null;
+  const kind = (type === "movie" || type === "film") ? "movie" : "series";
+  const key = doubanKeyOf(kind, name, year);
+  const cache = doubanCacheStore();
+  if (cache[key]) return cache[key];
+  try {
+    const res = await fetch(`/api/media/douban?query=${encodeURIComponent(name)}&type=${encodeURIComponent(kind)}&year=${encodeURIComponent(String(year || ""))}`, { cache: "no-store", credentials: "same-origin" });
+    if (!res.ok) return null;
+    const hit = await res.json();
+    cache[key] = hit;
+    return hit;
+  } catch (e) { return null; }
+}
+/* 需求4：综合 TMDB 与豆瓣评分的推荐排序。
+   两条都拿到 → 按票数加权平均；只有一条 → 用那一条（不惩罚单一来源的作品，
+   否则未收录进豆瓣的老片会被整段挤出推荐位）。 */
+function combinedDoubanTmdbScore(tmdb, douban, tmdbVotes, doubanVotes) {
+  const t = Number(tmdb) || 0, d = Number(douban) || 0;
+  if (t > 0 && d > 0) {
+    const tw = Math.max(1, Number(tmdbVotes) || 0), dw = Math.max(1, Number(doubanVotes) || 0);
+    return (t * tw + d * dw) / (tw + dw);
+  }
+  return t || d;
+}
+async function rankRecommendationsWithDouban(list, tmdbVotes) {
+  const items = (Array.isArray(list) ? list : []).slice();
+  if (!items.length) return items;
+  const pending = items.filter(x => x && x.title && !(Number(x.douban_rating) > 0)).slice(0, 12);
+  if (pending.length) {
+    try {
+      const res = await fetch("/api/media/douban/batch", {
+        method: "POST", cache: "no-store", credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: pending.map(x => ({ title: String(x.title || ""), year: String(x.year || ""), type: (x.media_type === "movie" ? "movie" : "series") })) })
+      });
+      if (res.ok) {
+        const got = ((await res.json()) || {}).items || {};
+        pending.forEach(x => {
+          const kind = x.media_type === "movie" ? "movie" : "series";
+          const hit = got[doubanKeyOf(kind, x.title, x.year)];
+          if (hit && hit.match) {
+            x.douban_rating = Number(hit.rating) || 0;
+            x.douban_votes = Number(hit.votes) || 0;
+          }
+        });
+      }
+    } catch (e) { /* 豆瓣取分失败不影响推荐本身：按 TMDB 排序照常展示 */ }
+  }
+  items.forEach(x => { x.combined_rating = combinedDoubanTmdbScore(x.rating, x.douban_rating, 0, x.douban_votes); });
+  items.sort((a, b) => (b.combined_rating || 0) - (a.combined_rating || 0));
+  return items;
 }
 /* v0.9.99（需求1）：推荐列表合并 —— TMDB 推荐在前，本地同类补位，按标题去重。 */
 function fillRecommendations(primary, local, limit = 20) {
@@ -3169,12 +3356,12 @@ function renderRecPanel(meta) {
   return `<section><h3 class="detail-section-h">视频推荐</h3><div class="movie-rec-grid">${movieRecStripHTML(meta)}</div></section>`;
 }
 function renderVideoInfoPanel(path, meta) {
-  return `<section><h3>视频信息</h3><dl class="movie-meta-list"><dt>文件</dt><dd>${esc(path)}</dd><dt>年份</dt><dd>${esc(meta.year||"--")}</dd><dt>类型</dt><dd>${esc((meta.genres||[]).join(" / ")||"--")}</dd><dt>时长</dt><dd>${meta.runtime?esc(meta.runtime+" 分钟"):"--"}</dd><dt>TMDB 评分</dt><dd>${meta.rating?esc(Number(meta.rating).toFixed(1)):"--"}</dd><dt>来源</dt><dd>${esc(meta.provider||"文件名")}</dd></dl></section>`;
+  return `<section><h3>视频信息</h3><dl class="movie-meta-list"><dt>文件</dt><dd>${esc(path)}</dd><dt>年份</dt><dd>${esc(meta.year||"--")}</dd><dt>类型</dt><dd>${esc((meta.genres||[]).join(" / ")||"--")}</dd><dt>时长</dt><dd>${meta.runtime?esc(meta.runtime+" 分钟"):"--"}</dd><dt>TMDB 评分</dt><dd>${meta.rating?esc(Number(meta.rating).toFixed(1)):"--"}</dd><dt>豆瓣评分</dt><dd>${Number(meta.douban_rating)>0?esc(Number(meta.douban_rating).toFixed(1))+(meta.douban_votes?`（${meta.douban_votes} 人评价）`:""):esc(meta.douban_status||"--")}</dd><dt>来源</dt><dd>${esc(meta.provider||"文件名")}</dd></dl></section>`;
 }
 /* v0.9.81：剧集版「视频信息」（移至详情底部）。 */
-function renderSeriesInfoPanel(show, rating) {
+function renderSeriesInfoPanel(show, rating, meta) {
   const r = Number(rating || show.rating) || 0;
-  return `<section><h3>视频信息</h3><dl class="movie-meta-list"><dt>剧名</dt><dd>${esc(show.title)}</dd><dt>年份</dt><dd>${esc(show.year||"--")}</dd><dt>季度</dt><dd>${esc(seriesShowSeasonCount(show))} 季 · 共${esc(seriesShowEpisodeCount(show))}集</dd><dt>TMDB 评分</dt><dd>${r?esc(r.toFixed(1)):"--"}</dd><dt>来源</dt><dd>${esc(show.provider||"文件名")}</dd></dl></section>`;
+  return `<section><h3>视频信息</h3><dl class="movie-meta-list"><dt>剧名</dt><dd>${esc(show.title)}</dd><dt>年份</dt><dd>${esc(show.year||"--")}</dd><dt>季度</dt><dd>${esc(seriesShowSeasonCount(show))} 季 · 共${esc(seriesShowEpisodeCount(show))}集</dd><dt>TMDB 评分</dt><dd>${r?esc(r.toFixed(1)):"--"}</dd><dt>豆瓣评分</dt><dd>${Number(meta&&meta.douban_rating)>0?esc(Number(meta.douban_rating).toFixed(1))+(meta.douban_votes?`（${meta.douban_votes} 人评价）`:""):esc((meta&&meta.douban_status)||"--")}</dd><dt>来源</dt><dd>${esc(show.provider||"文件名")}</dd></dl></section>`;
 }
 
 function renderMovieDetails(lib,path,meta){try{meta={...meta,__path:path};}catch(e){}
@@ -7455,7 +7642,7 @@ const AUDIO_ICON_SVG = {
   sequence: '<path d="M4.4 6.6h11.2M4.4 12h11.2M4.4 17.4h7.6"/><path d="m16.6 14.2 4 3.2-4 3.2Z" fill="currentColor" stroke="none"/>',
 };
 function audioIcon(name) {
-  const body = AUDIO_ICON_SVG[name];
+  const body = (typeof opModeIcon === "function" ? opModeIcon(name) : "") || AUDIO_ICON_SVG[name];
   if (!body) return "";
   return `<svg class="vc-svg audio-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${body}</svg>`;
 }
@@ -7497,7 +7684,9 @@ const VIDEO_ICON_SVG = {
   close: '<path d="m6.2 6.2 11.6 11.6M17.8 6.2 6.2 17.8"/>',
 };
 function videoIcon(name) {
-  const body = VIDEO_ICON_SVG[name];
+  /* v1.0.2（需求6）：操作模式各自的图标包优先（Apple 细描边 / Emby 实心 / Plex 粗圆角），
+     没有覆盖的图标沿用站内默认图标。 */
+  const body = (typeof opModeIcon === "function" ? opModeIcon(name) : "") || VIDEO_ICON_SVG[name];
   if (!body) return "";
   return `<svg class="vc-svg video-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${body}</svg>`;
 }

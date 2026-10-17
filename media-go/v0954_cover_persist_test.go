@@ -2,15 +2,27 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 )
 
-/* v0.9.56：封面持久化端点单测（真实 httptest 下载 + 落盘 + 读回）。 */
+/* v0.9.56：封面持久化端点单测（真实 httptest 下载 + 落盘 + 读回）。
+   v1.0.3：出站目标公网校验（审查 S-1）默认生效，本地 httptest 源是回环地址会被拒；
+   这里只在本文件的用例里替换 coverTargetGuard 放行，生产路径仍走 ensurePublicTarget。
+   该防线本身的正反用例见 v1003_audit_test.go。 */
+
+func v0954AllowLocalCoverSource(t *testing.T) {
+	t.Helper()
+	old := coverTargetGuard
+	coverTargetGuard = func(ctx context.Context, u *url.URL) error { return nil }
+	t.Cleanup(func() { coverTargetGuard = old })
+}
 
 func TestV0954SniffImageExt(t *testing.T) {
 	cases := map[string]string{
@@ -45,6 +57,7 @@ func TestV0954CoverSidecarRel(t *testing.T) {
 }
 
 func TestV0954CoverSaveAndGet(t *testing.T) {
+	v0954AllowLocalCoverSource(t)
 	dir := t.TempDir()
 	mediaFile := filepath.Join(dir, "One Piece v01.cbz")
 	if err := os.WriteFile(mediaFile, []byte("fake-cbz"), 0644); err != nil {
@@ -108,6 +121,7 @@ func TestV0954CoverSaveAndGet(t *testing.T) {
 }
 
 func TestV0954CoverSaveRejectsBadInput(t *testing.T) {
+	v0954AllowLocalCoverSource(t)
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "a.cbz"), []byte("x"), 0644)
 	oldAuth := managerSessionOK

@@ -127,22 +127,24 @@ function fakeNode(opts) {
     const card1 = call(sb2, "renderSeriesSeasonCard(__lib, __show, __show.seasonList[0])");
     const card2 = call(sb2, "renderSeriesSeasonCard(__lib, __show, __show.seasonList[1])");
     chk("A3 季名用常规字重容器（series-season-title，不再是 <b>）",
-      card1.indexOf('<span class="series-season-title">保龄球少女！</span>') >= 0 && card1.indexOf("<b>保龄球少女！</b>") < 0,
-      card1.slice(card1.indexOf("series-season-prefix"), card1.indexOf("series-season-prefix") + 220));
+      card1.indexOf('<span class="series-season-title">保龄球少女！') >= 0 && card1.indexOf("<b>保龄球少女！</b>") < 0,
+      card1.slice(card1.indexOf("series-season-head"), card1.indexOf("series-season-head") + 240));
     chk("A4 第二季同样带该季前缀（每季只一次）",
       (card2.match(/series-season-title/g) || []).length === 1 && card2.indexOf("第二季") >= 0);
 
     chk("A5 迁移提示行已从源码删除（渲染与样式都不再引用）",
       MEDIA_SRC.indexOf("多季诊断与多季全量刮削已移到") < 0 && MEDIA_SRC.indexOf("series-plex-moved") < 0);
-    const INLINE = '<h3 class="detail-section-h season-inline-title">季度</h3>';
+    /* v1.0.3（需求1）：「季度」二字改为季名行内的加粗 span。 */
+    const INLINE = '<span class="season-inline-title">季度</span>';
     chk("A6 独立成行的「季度」标题区块已从源码移除",
       MEDIA_SRC.indexOf('<section><h3 class="detail-section-h">季度</h3></section>') < 0);
-    chk("A7 最上层季：加粗「季度」与该季前缀在同一行容器内（季度 → 按钮 → 季名/共N集）",
-      card1.indexOf('<div class="series-season-prefix">' + INLINE + '<button') >= 0
-      && card1.indexOf(INLINE + '<button') < card1.indexOf("series-season-title"),
-      card1.slice(card1.indexOf("series-season-prefix"), card1.indexOf("series-season-prefix") + 200));
+    chk("A7 最上层季：加粗「季度」在季名行内、且在季名之前（季度 → 季名 → 共N集）",
+      card1.indexOf('<h3 class="series-season-head"') >= 0
+      && card1.indexOf(INLINE) > card1.indexOf('<h3 class="series-season-head"')
+      && card1.indexOf(INLINE) < card1.indexOf("series-season-title"),
+      card1.slice(card1.indexOf("series-season-head"), card1.indexOf("series-season-head") + 220));
     chk("A8 后续季只有常规字重季名行，不再出现「季度」标题",
-      card2.indexOf("season-inline-title") < 0 && card2.indexOf("series-season-prefix") >= 0);
+      card2.indexOf("season-inline-title") < 0 && card2.indexOf("series-season-head") >= 0);
     chk("A9 所有季卡片中「季度」标题恰好出现一次（只显示在最上层季位）",
       (card1 + card2).split(INLINE).length - 1 === 1, (card1 + card2).split(INLINE).length - 1);
 
@@ -157,16 +159,16 @@ function fakeNode(opts) {
       ],
     };
     const cardEmpty = call(sb3, "renderSeriesSeasonCard(__lib, __show, __show.seasonList[0])");
-    chk("A10 最上层季无剧集时退回独立「季度」标题",
-      cardEmpty.indexOf('<section class="season-inline-title-orphan">' + INLINE + '</section>') >= 0,
-      cardEmpty.slice(0, 160));
-    chk("A11 加粗只给「季度」二字：前缀行 flex 同行 + 标题 700 + 季名 400",
-      CSS_SRC.indexOf(".series-season-prefix { display:flex; flex-wrap:wrap;") >= 0
-      && CSS_SRC.indexOf(".series-season-prefix .season-inline-title { margin:0; padding:0; flex:0 0 auto; font-weight:700;") >= 0
-      && CSS_SRC.indexOf(".series-season-toggle .series-season-title { font-weight:400;") >= 0
-      && CSS_SRC.indexOf(".series-season-toggle small { color:var(--text2); font-weight:400; }") >= 0);
-    chk("A12 季简介在前缀行里独占整行（flex:1 0 100%）",
-      CSS_SRC.indexOf(".series-season-prefix .series-season-overview { flex:1 0 100%;") >= 0);
+    chk("A10 最上层季无剧集时季名行仍然渲染（加粗「季度」不消失）",
+      cardEmpty.indexOf('<h3 class="series-season-head"') >= 0 && cardEmpty.indexOf(INLINE) >= 0,
+      cardEmpty.slice(0, 200));
+    chk("A11 加粗只给「季度」二字：季名行 flex 同行 + 季度 700 + 季名 400",
+      CSS_SRC.indexOf(".series-season-head { display:flex; align-items:center; gap:8px;") >= 0
+      && CSS_SRC.indexOf(".series-season-head .season-inline-title { font-weight: 700;") >= 0
+      && CSS_SRC.indexOf(".series-season-head .series-season-title { font-weight: 400;") >= 0
+      && CSS_SRC.indexOf(".series-season-head small { color: var(--text2); font-weight: 400; }") >= 0);
+    chk("A12 季简介在季名行下独立成段（.series-season-overview 样式仍在）",
+      CSS_SRC.indexOf(".series-season-overview {") >= 0);
   }
 
   /* ================= B. 小窗还原按钮（需求2） ================= */

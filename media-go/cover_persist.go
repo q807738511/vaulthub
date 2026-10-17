@@ -153,6 +153,11 @@ func coverSidecarRel(mediaRel, ext string) string {
 	return filepath.ToSlash(filepath.Join(dir, side))
 }
 
+/* coverTargetGuard 是可替换的包级校验（v1.0.3 审查 S-1）。
+   生产恒为 ensurePublicTarget；单测里用本地 httptest 当封面源时临时替换，
+   生产代码路径不允许替换成「放行」。 */
+var coverTargetGuard = ensurePublicTarget
+
 func (a *App) coverDownloadClient() (*http.Client, error) {
 	a.mu.RLock()
 	proxy := a.scraperProxy
@@ -200,6 +205,12 @@ func (a *App) coverSave(w http.ResponseWriter, r *http.Request) {
 	u, err := url.Parse(strings.TrimSpace(body.URL))
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || len(body.URL) > 4096 {
 		errJSON(w, 400, "invalid cover url")
+		return
+	}
+	/* v1.0.3（审查 S-1）：先确认目标是公网地址，再下载 —— 配了代理时
+	   safeTransport 的 DialContext 校验不生效（它连的是代理），必须在这里挡。 */
+	if err := coverTargetGuard(r.Context(), u); err != nil {
+		errJSON(w, 400, "cover url rejected: "+err.Error())
 		return
 	}
 	client, err := a.coverDownloadClient()

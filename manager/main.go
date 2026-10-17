@@ -514,7 +514,12 @@ func clientKey(r *http.Request) string {
 	h := r.RemoteAddr
 	if strings.HasPrefix(h, "127.0.0.1:") || strings.HasPrefix(h, "[::1]:") {
 		if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-			h = strings.TrimSpace(strings.Split(forwarded, ",")[0])
+			/* v1.0.3（审查 S-4）：取**最后一跳**而不是第一跳。
+			   X-Forwarded-For 是客户端可伪造的，反代会把真实来源追加在末尾；
+			   旧实现取第一跳 = 取攻击者自己写的值 → 换一个假 IP 就重置登录失败计数，
+			   5 次/5 分钟的限流形同虚设。 */
+			parts := strings.Split(forwarded, ",")
+			h = strings.TrimSpace(parts[len(parts)-1])
 		}
 	}
 	if i := strings.LastIndexByte(h, ':'); i >= 0 && strings.Count(h, ":") == 1 {

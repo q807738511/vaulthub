@@ -267,52 +267,54 @@ func nfoBuildDoc(m nfoWriteMeta) nfoWriteDoc {
 	return doc
 }
 
-// writeNFOFile 原子写入一个 NFO；已存在且不是 VaultHub 写的，默认保留。
-func writeNFOFile(path string, doc nfoWriteDoc, overwrite bool) (written bool, kept bool, err error) {
+/* writeNFOFile 写入一个 NFO（v1.0.3 需求2 起带合并语义）：
+     · 目标不存在            → 直接写新文档；
+     · 本工具写的（有标记）/ overwrite=true → 整份重写（保持旧语义，刮削更新能落地）；
+     · 外部 NFO（用户手写 / 别的刮削器）   → **字段级合并**：原有非空字段一律保留，
+       只补齐缺失字段，两边不一致的记入 conflicts 但**不覆盖**，合并结果写回同一个文件；
+     · 无法解析 / 根标签未知 → 一个字节都不动（kept），绝不破坏用户文件。 */
+func writeNFOFile(path string, doc nfoWriteDoc, overwrite bool) (written bool, kept bool, merge nfoMergeResult, err error) {
+	merge = nfoMergeResult{Merged: []string{}, Conflicts: []string{}}
 	if info, e := os.Stat(path); e == nil {
 		if info.IsDir() {
-			return false, false, fmt.Errorf("nfo target is a directory")
+			return false, false, merge, fmt.Errorf("nfo target is a directory")
 		}
-		if !overwrite {
-			if b, rerr := os.ReadFile(path); rerr == nil && !strings.Contains(string(b), nfoMarker) {
-				return false, true, nil // 用户手写 / 别的工具写过的 NFO：不动它
+		existing, rerr := os.ReadFile(path)
+		if rerr != nil {
+			return false, false, merge, rerr
+		}
+		if !overwrite && !strings.Contains(string(nfoDecodeText(existing)), nfoMarker) {
+			out, res, ok := nfoMergeIntoExisting(existing, doc)
+			merge = res
+			if !ok {
+				return false, true, merge, nil // 不可解析：保持原样
 			}
+			if !res.Changed {
+				return false, true, merge, nil // 已有全部字段，无需写盘
+			}
+			if werr := nfoAtomicWrite(path, out); werr != nil {
+				return false, false, merge, werr
+			}
+			return true, false, merge, nil
 		}
+	} else if !os.IsNotExist(e) {
+		return false, false, merge, e
 	}
-	body, err := xml.MarshalIndent(doc, "", "  ")
-	if err != nil {
-		return false, false, err
+	body, merr := xml.MarshalIndent(doc, "", "  ")
+	if merr != nil {
+		return false, false, merge, merr
 	}
 	// 没有 fanart 时 encoding/xml 会留下空元素 <fanart></fanart>，清掉让文件干净。
 	body = bytes.ReplaceAll(body, []byte("  <fanart></fanart>\n"), nil)
 	buf := append([]byte("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<!-- written by "+nfoMarker+" -->\n"), body...)
 	buf = append(buf, '\n')
 	if len(buf) > nfoWriteMaxBytes {
-		return false, false, fmt.Errorf("nfo too large")
+		return false, false, merge, fmt.Errorf("nfo too large")
 	}
-	dir := filepath.Dir(path)
-	f, err := os.CreateTemp(dir, ".vaulthub-nfo-*.tmp")
-	if err != nil {
-		return false, false, err
+	if werr := nfoAtomicWrite(path, buf); werr != nil {
+		return false, false, merge, werr
 	}
-	tmp := f.Name()
-	defer os.Remove(tmp)
-	if _, err = f.Write(buf); err == nil {
-		err = f.Sync()
-	}
-	if closeErr := f.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return false, false, err
-	}
-	if err = os.Chmod(tmp, 0644); err != nil {
-		return false, false, err
-	}
-	if err = os.Rename(tmp, path); err != nil {
-		return false, false, err
-	}
-	return true, false, nil
+	return true, false, merge, nil
 }
 
 // nfoPortableArtURL 把图片地址规范成 NFO 里可移植的形式。
@@ -426,11 +428,19 @@ func (a *App) nfoWrite(w http.ResponseWriter, r *http.Request) {
 
 	written := []string{}
 	kept := []string{}
+	mergedFields := []string{}
+	conflicts := []string{}
 	for _, t := range targets {
-		wrote, keep, err := writeNFOFile(t.Abs, doc, body.Overwrite)
-		if err != nil {
-			errJSON(w, 500, "nfo write failed: "+err.Error())
+		wrote, keep, mr, werr := writeNFOFile(t.Abs, doc, body.Overwrite)
+		if werr != nil {
+			errJSON(w, 500, "nfo write failed: "+werr.Error())
 			return
+		}
+		for _, f := range mr.Merged {
+			mergedFields = append(mergedFields, t.Name+":"+f)
+		}
+		for _, f := range mr.Conflicts {
+			conflicts = append(conflicts, t.Name+":"+f)
 		}
 		switch {
 		case wrote:
@@ -446,6 +456,9 @@ func (a *App) nfoWrite(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{
 		"ok": true, "id": body.ID, "path": body.Path,
 		"nfo": first, "written": written, "kept": kept, "skipped": skippedExtras,
+		// v1.0.3（需求2）：外置 NFO 合并报告 —— merged 是补进去的字段，
+		// conflicts 是两边都有值但不同、按「保留原 NFO」处理未覆盖的字段。
+		"merged": mergedFields, "conflicts": conflicts,
 		"written_at": time.Now().UnixMilli(),
 	})
 }

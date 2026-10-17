@@ -30,54 +30,55 @@ MEDIA = rd("web/js/02-media.js")
 CSS = rd("web/css/main.css")
 GO = rd("media-go/main.go")
 LOG = rd("Update Log.md")
-NOTES = rd(".github/RELEASE_NOTES_1.0.1.md")
+NOTES = rd(".github/RELEASE_NOTES_1.0.0.md")
 
 print("== 1. 正式版版本口径 ==")
 check("1a index.html 资源版本 ≥11 处且为本版",
-      len(re.findall(r"\?v=1\.0\.1", HTML)) >= 11 and "?v=0.9.99" not in HTML,
-      len(re.findall(r"\?v=1\.0\.1", HTML)))
+      len(re.findall(r"\?v=1\.0\.3", HTML)) >= 11 and "?v=0.9.99" not in HTML,
+      len(re.findall(r"\?v=1\.0\.3", HTML)))
 check("1b 全部静态资源版本串只出现本版",
-      set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"1.0.1"})
+      set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"1.0.3"})
 check("1c ASSET / SCRIPT 版本一致",
-      'window.VAULTHUB_ASSET_VERSION = "1.0.1";' in HTML
-      and 'const VAULTHUB_SCRIPT_VERSION = "1.0.1";' in STATE)
+      'window.VAULTHUB_ASSET_VERSION = "1.0.3";' in HTML
+      and 'const VAULTHUB_SCRIPT_VERSION = "1.0.3";' in STATE)
 check("1d 页面标语 ×3 且整串一致",
-      len(re.findall(r"v1\.0\.1 · [^<\"]+", HTML)) == 3
-      and len(set(re.findall(r"v1\.0\.1 · [^<\"]+", HTML))) == 1,
-      sorted(set(re.findall(r"v1\.0\.1 · [^<\"]+", HTML))))
+      len(re.findall(r"v1\.0\.3 · [^<\"]+", HTML)) == 3
+      and len(set(re.findall(r"v1\.0\.3 · [^<\"]+", HTML))) == 1,
+      sorted(set(re.findall(r"v1\.0\.3 · [^<\"]+", HTML))))
 check("1e 上一版标语已清除", "v0.9.99 · " not in HTML)
 check("1f 安装 / 升级脚本版本同步",
-      'VERSION="v1.0.1"' in rd("scripts/install.sh") and 'VERSION="v1.0.1"' in rd("scripts/upgrade.sh"))
+      'VERSION="v1.0.3"' in rd("scripts/install.sh") and 'VERSION="v1.0.3"' in rd("scripts/upgrade.sh"))
 check("1g Update Log 顶部为本版（仓库格式：# VaultHub 蜀鼠之家 vX 置顶）",
-      LOG.startswith("# VaultHub 蜀鼠之家 v1.0.1"))
+      LOG.startswith("# VaultHub 蜀鼠之家 v1.0.3"))
 check("1h 发布说明按本版命名且够长",
-      len(NOTES) >= 2000 and (ROOT / ".github/RELEASE_NOTES_1.0.1.md").exists(), len(NOTES))
+      len(NOTES) >= 2000 and (ROOT / ".github/RELEASE_NOTES_1.0.0.md").exists(), len(NOTES))
 
 print("\n== 2. 需求1：详情页标题加粗与季度排版 ==")
 check("2a 区块标题加粗样式存在",
       ".movie-detail-scroll .detail-section-h { font-weight:700; }" in CSS)
 check("2b 演职人员 / 视频推荐 标题都带该类（季度标题另带 inline 类，见 2c）",
       MEDIA.count('class="detail-section-h"') >= 2, MEDIA.count('class="detail-section-h"'))
-INLINE_HEADING = '<h3 class="detail-section-h season-inline-title">季度</h3>'
+# v1.0.3（需求1）：「季度」二字改为季名行内的加粗 span，不再是 h3 区块标题。
+INLINE_HEADING = '<span class="season-inline-title">季度</span>'
 check("2c 季度标题不再是独立成行的区块",
       '<section><h3 class="detail-section-h">季度</h3></section>' not in MEDIA)
-check("2c2 季度标题已并入最上层那一季的前缀行（加粗仅「季度」二字）",
-      '<div class="series-season-prefix">${seasonHeading}<button' in MEDIA
+check("2c2 「季度」并入最上层那一季的季名行（加粗仅「季度」二字）",
+      '${isFirst ? ' + "'" + '<span class="season-inline-title">季度</span>' + "'" + ' : ""}' in MEDIA
       and MEDIA.count(INLINE_HEADING) == 1
-      and '.series-season-prefix .season-inline-title { margin:0; padding:0; flex:0 0 auto; font-weight:700;' in CSS
-      and '.series-season-prefix { display:flex; flex-wrap:wrap;' in CSS)
-check("2c3 最上层那一季没有剧集时退回独立「季度」标题（标题不会整体消失）",
-      'const orphanHeading = isFirst && !eps.length ? `<section class="season-inline-title-orphan">${seasonHeading}</section>` : "";' in MEDIA)
+      and '.series-season-head .season-inline-title { font-weight: 700;' in CSS)
+check("2c3 最上层那一季没有剧集时季名行仍然渲染（标题不会整体消失）",
+      '<h3 class="series-season-head" onclick="toggleSeriesSeason(this)">${head}</h3>' in MEDIA
+      and "${eps.length ? `<div ${listClass}" in MEDIA)
 check("2d 迁移提示行已删除（渲染与样式都不再引用）",
       "series-plex-moved" not in MEDIA and "series-plex-moved" not in CSS
       and "多季诊断与多季全量刮削已移到" not in MEDIA)
 check("2e 季名改为常规字重容器（不再是 <b>）",
-      '<span class="series-season-title">${esc(show.title)}</span>' in MEDIA
-      and ".series-season-toggle .series-season-title { font-weight:400;" in CSS)
+      '<span class="series-season-title">${esc(show.title)} ${esc(seriesPlexSeasonLabel(season.season))}' in MEDIA
+      and ".series-season-head .series-season-title { font-weight: 400;" in CSS)
 check("2f 季度条整体常规字重（加粗只留给区块标题）",
       "font:400 11.5px/1.6 inherit" in CSS and ".series-season-toggle small { color:var(--text2); font-weight:400; }" in CSS)
-check("2g 季度前缀仍为「该季首条目前缀」口径（每季一次）",
-      "is-season-top" in MEDIA and "series-season-prefix" in CSS and "series-season-head" not in MEDIA)
+check("2g 季名行为「每季一次」口径（回归 0.9.89 季名行）",
+      "series-season-head" in MEDIA and "series-season-prefix" not in MEDIA and "is-season-top" not in MEDIA)
 
 print("\n== 3. 需求2：小窗还原按钮居中 + 鼠标移入才显示 ==")
 check("3a 居中压在小窗画面上（76/47 + translate(-50%,50%)）",

@@ -87,8 +87,91 @@ function setUIMode(mode) {
   settings.uiMode = UI_MODES.includes(String(mode)) ? String(mode) : "auto";
   saveSettings();
   const applied = applyUIMode();
-  toast("🖥 UI 模式：" + themeLabel(UI_MODE_LABEL[settings.uiMode]) + (settings.uiMode === "auto" ? "（当前 " + applied + "）" : ""));
+  toast("🖥 界面规格：" + themeLabel(UI_MODE_LABEL[settings.uiMode]) + (settings.uiMode === "auto" ? "（当前 " + applied + "）" : ""));
 }
+/* ==================== v1.0.2 操作模式（需求6/7） ====================
+   三档操作模式，各按对应开源客户端的「操作手感」还原：
+     apple —— 圆角更大、弹性缓动、半透明毛玻璃、细描边圆头图标（SF Symbols 风格）；
+     emby  —— Material：方一些的圆角、标准缓动、点击水波高亮、实心图标、卡片抬升；
+     plex  —— 扁平硬朗：小圆角、极短过渡、海报琥珀色高亮、粗圆角图标。
+   落点：<html data-opmode>（CSS 令牌与动效在 web/css/main.css 的「操作模式」段）
+        + OP_ICON_PACK（播放器/顶栏图标按模式替换）。
+   说明：图标是按各客户端的视觉语言手写的，不使用对方私有素材，避免授权问题。 */
+const OP_MODES = ["apple", "emby", "plex"];
+const OP_MODE_LABEL = {
+  apple: { "zh-CN": "Apple", "zh-TW": "Apple", en: "Apple" },
+  emby: { "zh-CN": "Emby", "zh-TW": "Emby", en: "Emby" },
+  plex: { "zh-CN": "Plex", "zh-TW": "Plex", en: "Plex" }
+};
+const OP_MODE_DESC = {
+  "zh-CN": "Apple / Emby / Plex：动效节奏、圆角阴影与图标风格各按对应客户端还原",
+  "zh-TW": "Apple / Emby / Plex：動效節奏、圓角陰影與圖示風格各按對應客戶端還原",
+  en: "Apple / Emby / Plex: motion, radii, shadows and icon style per client"
+};
+/* 各模式只覆盖「看得见差别」的那几个图标，其余沿用站内默认图标。 */
+const OP_ICON_PACK = {
+  apple: {
+    play: '<path d="M8.8 6.1 18.9 12 8.8 17.9Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>',
+    pause: '<path d="M9.4 5.7v12.6M14.6 5.7v12.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>',
+    prev: '<path d="M6.2 5.8v12.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M18.4 6.6 10.6 12l7.8 5.4Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>',
+    next: '<path d="M17.8 5.8v12.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M5.6 6.6 13.4 12l-7.8 5.4Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>',
+    heart: '<path d="M20.6 5.1a5.1 5.1 0 0 0-7.2 0L12 6.5l-1.4-1.4a5.1 5.1 0 0 0-7.2 7.2L12 21l8.6-8.7a5.1 5.1 0 0 0 0-7.2Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>',
+    search: '<circle cx="10.8" cy="10.8" r="6.4" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="m15.5 15.5 4.7 4.7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>',
+    settings: '<circle cx="12" cy="12" r="3.1" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 3.6v2.2M12 18.2v2.2M20.4 12h-2.2M5.8 12H3.6M17.9 6.1l-1.6 1.6M7.7 16.3l-1.6 1.6M17.9 17.9l-1.6-1.6M7.7 7.7 6.1 6.1" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>',
+    more: '<circle cx="6" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="18" cy="12" r="1.7" fill="currentColor" stroke="none"/>'
+  },
+  emby: {
+    play: '<path d="M8 5.4 19 12 8 18.6Z" fill="currentColor" stroke="none"/>',
+    pause: '<rect x="7" y="5" width="3.7" height="14" fill="currentColor" stroke="none"/><rect x="13.3" y="5" width="3.7" height="14" fill="currentColor" stroke="none"/>',
+    prev: '<path d="M5.6 5.4h2.2v13.2H5.6z" fill="currentColor" stroke="none"/><path d="M19 6.2 10 12l9 5.8Z" fill="currentColor" stroke="none"/>',
+    next: '<path d="M16.2 5.4h2.2v13.2h-2.2z" fill="currentColor" stroke="none"/><path d="M5 6.2 14 12l-9 5.8Z" fill="currentColor" stroke="none"/>',
+    heart: '<path d="M12 20.8 3.7 12.5a5.2 5.2 0 0 1 7.4-7.4l.9.9.9-.9a5.2 5.2 0 0 1 7.4 7.4Z" fill="currentColor" stroke="none"/>',
+    heartFill: '<path d="M12 20.8 3.7 12.5a5.2 5.2 0 0 1 7.4-7.4l.9.9.9-.9a5.2 5.2 0 0 1 7.4 7.4Z" fill="currentColor" stroke="none"/>',
+    search: '<path d="M10.6 3.6a7 7 0 1 0 4.1 12.7l4.2 4.2 1.5-1.5-4.2-4.2A7 7 0 0 0 10.6 3.6Zm0 2.4a4.6 4.6 0 1 1 0 9.2 4.6 4.6 0 0 1 0-9.2Z" fill="currentColor" stroke="none"/>',
+    settings: '<path d="M12 8.6a3.4 3.4 0 1 0 0 6.8 3.4 3.4 0 0 0 0-6.8Zm0 5.2a1.8 1.8 0 1 1 0-3.6 1.8 1.8 0 0 1 0 3.6Z" fill="currentColor" stroke="none"/><path d="M19.6 12c0-.5-.1-1-.2-1.4l1.7-1.3-1.4-2.4-2 .8c-.7-.6-1.5-1-2.4-1.3L15 4.2h-2.8l-.3 2.2c-.9.3-1.7.7-2.4 1.3l-2-.8-1.4 2.4 1.7 1.3a7 7 0 0 0 0 2.8L6.1 15l1.4 2.4 2-.8c.7.6 1.5 1 2.4 1.3l.3 2.2H15l.3-2.2c.9-.3 1.7-.7 2.4-1.3l2 .8 1.4-2.4-1.7-1.3c.1-.4.2-.9.2-1.4Z" fill="currentColor" stroke="none" opacity=".55"/>',
+    more: '<circle cx="5.4" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="18.6" cy="12" r="2" fill="currentColor" stroke="none"/>'
+  },
+  plex: {
+    play: '<path d="M8.6 5.2 19.6 12 8.6 18.8Z" fill="currentColor" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>',
+    pause: '<rect x="7" y="5" width="3.9" height="14" rx=".7" fill="currentColor" stroke="none"/><rect x="13.1" y="5" width="3.9" height="14" rx=".7" fill="currentColor" stroke="none"/>',
+    prev: '<path d="M5.4 5.2h2.6v13.6H5.4z" fill="currentColor" stroke="none"/><path d="M19.4 5.6 10.2 12l9.2 6.4Z" fill="currentColor" stroke="none"/>',
+    next: '<path d="M16 5.2h2.6v13.6H16z" fill="currentColor" stroke="none"/><path d="M4.6 5.6 13.8 12l-9.2 6.4Z" fill="currentColor" stroke="none"/>',
+    heart: '<path d="M12 20.8 3.9 12.7a5.4 5.4 0 0 1 7.6-7.6l.5.5.5-.5a5.4 5.4 0 0 1 7.6 7.6Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>',
+    search: '<circle cx="10.8" cy="10.8" r="6.2" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="m15.4 15.4 4.9 4.9" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="square"/>',
+    more: '<circle cx="5.6" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="18.4" cy="12" r="2" fill="currentColor" stroke="none"/>'
+  }
+};
+function currentOpMode() { return OP_MODES.includes(settings.opMode) ? settings.opMode : "apple"; }
+function opModeIcon(name) {
+  const pack = OP_ICON_PACK[currentOpMode()];
+  return (pack && pack[name]) || "";
+}
+/* 顶栏等「静态 HTML 图标」：按 data-op-icon 挂点替换内容。 */
+function applyOpModeIcons() {
+  const nodes = document.querySelectorAll("[data-op-icon]");
+  for (const el of nodes) {
+    const body = opModeIcon(el.getAttribute("data-op-icon"));
+    if (body && el.innerHTML !== body) el.innerHTML = body;
+  }
+}
+function applyOpMode() {
+  const mode = currentOpMode();
+  document.documentElement.setAttribute("data-opmode", mode);
+  applyOpModeIcons();
+  return mode;
+}
+function setOpMode(mode) {
+  settings.opMode = OP_MODES.includes(String(mode)) ? String(mode) : "apple";
+  saveSettings();
+  const applied = applyOpMode();
+  /* v1.0.2：切换后必须同步选中态 —— 否则按钮高亮停在上一档（实测发现的缺陷）。 */
+  try { syncThemeControls(); } catch (e) {}
+  const active = document.querySelector("#opModeSeg [data-op-opt].on");
+  if (active && active.getAttribute("data-op-opt") !== applied) active.classList.add("on");
+  document.querySelectorAll("#opModeSeg [data-op-opt]").forEach(el => el.classList.toggle("on", el.dataset.opOpt === applied));
+  toast("🖱 " + t("opModeSaved") + "：" + themeLabel(OP_MODE_LABEL[applied]));
+}
+
 const THEME_MODE_LABEL = {
   dark: { "zh-CN": "暗色", "zh-TW": "暗色", en: "Dark" },
   light: { "zh-CN": "亮色", "zh-TW": "亮色", en: "Light" },
@@ -134,6 +217,7 @@ function applyTheme(options = {}) {
     el.classList.add(readerThemeClass());
   });
   syncThemeControls();
+  try { applyOpModeIcons(); } catch (e) {}
   if (options.animate) themeTransitionPulse();
 }
 /* 切换主题时给整页挂一段统一颜色过渡，避免硬切；260ms 后摘掉，
@@ -208,6 +292,10 @@ function renderThemePanel() {
         <span class="tc-desc">${esc(themeLabel(def.desc))} · ${def.r}px · ${def.dur}ms</span>
       </div>`).join("");
   }
+  const opSeg = document.getElementById("opModeSeg");
+  if (opSeg) {
+    opSeg.innerHTML = OP_MODES.map(m => `<button type="button" class="seg-btn" data-op-opt="${m}" onclick="setOpMode('${m}')">${esc(themeLabel(OP_MODE_LABEL[m]))}</button>`).join("");
+  }
   const uiSeg = document.getElementById("uiModeSeg");
   if (uiSeg) {
     uiSeg.innerHTML = UI_MODES.map(m => `<button type="button" class="seg-btn" data-ui-opt="${m}" onclick="setUIMode('${m}')">${esc(themeLabel(UI_MODE_LABEL[m]))}</button>`).join("");
@@ -240,9 +328,12 @@ function syncThemeControls() {
   document.querySelectorAll("[data-theme-accent]").forEach(el => el.classList.toggle("on", el.dataset.themeAccent === accent));
   document.querySelectorAll("#themeModeSeg [data-mode-opt]").forEach(el => el.classList.toggle("on", el.dataset.modeOpt === mode));
   document.querySelectorAll("#uiModeSeg [data-ui-opt]").forEach(el => el.classList.toggle("on", el.dataset.uiOpt === (settings.uiMode || "auto")));
+  document.querySelectorAll("#opModeSeg [data-op-opt]").forEach(el => el.classList.toggle("on", el.dataset.opOpt === currentOpMode()));
 }
 function initTheme() {
   renderThemePanel();
   applyTheme();
   applyUIMode();
+  /* v1.0.2（需求6/7）：操作模式要在首帧就落到 <html>，避免先按默认模式画一遍。 */
+  applyOpMode();
 }

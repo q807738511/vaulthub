@@ -42,8 +42,17 @@ _shown = re.findall(r'class="ver">v(\d+)\.(\d+)\.(\d+)', HTML)
 _shown += re.findall(r'data-i18n="aboutVer">[^<]*</span><b>v(\d+)\.(\d+)\.(\d+)', HTML)
 check("1f 侧栏 / 关于 / 页脚三处版本一致",
       len(_shown) >= 3 and len({tuple(x) for x in _shown}) == 1)
-check("1g 页脚样式齐备", ".app-footer {" in CSS and ".app-footer .af-note {" in CSS
+# v1.0.3（需求1）：页尾精简 —— 只保留「当前版本 + 版本功能提示」一行，
+# 品牌名与「与关于页保持一致」的说明文字都去掉，并压缩上下留白降低高度。
+check("1g 页脚样式齐备（v1.0.3 精简版）", ".app-footer {" in CSS and ".app-footer .ver {" in CSS
       and "@media (max-width:640px) { .app-footer {" in CSS)
+check("1h 页尾已去掉「与关于页保持一致」说明与品牌名",
+      "af-note" not in HTML and "版本与「系统设置 → 账户与登录 → 关于」中的版本参数保持一致" not in HTML
+      and "af-name" not in HTML and "af-note" not in CSS and "af-name" not in CSS)
+check("1i 页尾只展示版本 + 功能提示一行", HTML.count('id="appFooterVer"') == 1
+      and "v1.0.3 · 页尾精简 · NFO 合并写回 · 全量安全审查" in HTML)
+check("1j 页尾高度已压缩（margin/padding 下调）",
+      "margin:10px 0 0" in CSS and "padding:5px 2px 3px" in CSS)
 
 print("2. 自定义模块入口移入「系统设置 → 媒体库」")
 # v0.9.93：侧栏移除后，自定义模块入口重新回到头像菜单（原入口在已删除的侧栏里）。
@@ -68,7 +77,8 @@ check("2g 旧 custom 入口仍兼容（打开媒体库 + 模块设置）",
       and 'if (typeof openModuleModal === "function") openModuleModal();' in STATE)
 check("2h 三个语种语言包都补了新键",
       STATE.count("setLibCustomModule:") == 3 and STATE.count("setLibCustomModuleHint:") == 3
-      and STATE.count("footerAboutHint:") == 3)
+      # v1.0.3（需求1）：页尾不再需要「与关于一致」的提示键
+      and STATE.count("footerAboutHint:") == 0)
 
 print("3. 清除右上角搜索框内的装饰图标")
 check("3a 搜索框内不再有 ⌕ 图标", "⌕" not in HEADER)
@@ -88,8 +98,9 @@ check("4a 季度提示长文案已删除",
 # v0.9.98（口径变更）：多季诊断 / 多季全量刮削已从剧集详情迁到系统设置 → 刮削配置
 # （客户明确要求），因此这里断言「新落点存在」+「旧接线已彻底消失」。
 # v1.0.0（需求1）：连那行「已移到系统设置」的迁移提示也一并删除 —— 入口搬完已久，留着只是噪音。
+# v1.0.3（需求1）：「季度」二字留在最上层季名行行首（加粗），不再是独立 detail-section-h。
 check("4b 季度区块保留，多季工具条与迁移提示都已清除（旧入口不残留）",
-      '<h3 class="detail-section-h season-inline-title">季度</h3>' in MEDIA
+      '<span class="season-inline-title">季度</span>' in MEDIA
       and '<section><h3 class="detail-section-h">季度</h3></section>' not in MEDIA
       and 'series-plex-moved' not in MEDIA
       and '多季诊断与多季全量刮削已移到' not in MEDIA
@@ -101,10 +112,10 @@ check("4b 季度区块保留，多季工具条与迁移提示都已清除（旧�
 # 并在标题下渲染季简介 —— 这两个字段此前只被持久化、界面上没有落点。
 # v0.9.97：季称号走 seriesPlexSeasonLabel —— 第 0 季在 Plex 口径里是「特别篇」。
 # v0.9.99（需求4）：季度标题从独立一行改为「该季首条目的前缀」，文案口径不变（剧名 + 第N季/特别篇 + · 季名 + 共M集）。
-check("4c 季度标题为「剧名 第N季/特别篇 (· 季名) 共M集」（v1.0.0 起作为首条目前缀）",
-      '<span class="series-season-title">${esc(show.title)}</span> ${esc(seriesPlexSeasonLabel(season.season))}${seasonName ? ` · ${esc(seasonName)}` : ""} <small>共${epCount}集</small>' in MEDIA
-      and 'class="series-season-prefix"' in MEDIA
-      and 'series-season-head' not in MEDIA)
+check("4c 季名行为「剧名 第N季/特别篇 (· 季名) 共M集」（v1.0.3 起回到独立季名行）",
+      '<span class="series-season-title">${esc(show.title)} ${esc(seriesPlexSeasonLabel(season.season))}${seasonName ? ` · ${esc(seasonName)}` : ""}</span> <small>共${epCount}集</small>' in MEDIA
+      and 'class="series-season-head"' in MEDIA
+      and 'class="series-season-prefix"' not in MEDIA)
 check("4c2 季名/季简介从该季分集的刮削元数据汇总并渲染（v0.9.97 N-6 落点）",
       'if (!name && m.season_name) name = String(m.season_name);' in MEDIA
       and 'if (!overview && m.season_overview) overview = String(m.season_overview);' in MEDIA
@@ -124,8 +135,8 @@ check("4g 旧的「第 N 季 / N 集」写法已不存在",
       "第 ${esc(season.season)} 季" not in MEDIA and "第 ${esc(ctx.seasonNum)} 季" not in MEDIA)
 # v0.9.99（需求4）：折叠按钮变成前缀里的切换按钮，折叠对象是「首条之外」的集列表。
 check("4h 展开/收起行为与复选箭头保留",
-      "function toggleSeriesSeason(btn)" in MEDIA and "series-season-chev" in MEDIA
-      and "series-episode-list-rest" in MEDIA)
+      "function toggleSeriesSeason(head)" in MEDIA and "series-season-chev" in MEDIA
+      and 'querySelector(".series-episode-list")' in MEDIA)
 
 print("5. 推荐「视频信息」弹窗")
 INFO = MEDIA[MEDIA.index("function recInfoShotUrls"):MEDIA.index("function buildRecInfoModal")]
@@ -159,14 +170,14 @@ check("5k 简介排版与 16:9 画框保留（旧契约不破）",
 
 print("6. 版本")
 check("6a 页面与脚本版本一致",
-      'VAULTHUB_ASSET_VERSION = "1.0.1"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "1.0.1"' in STATE)
+      'VAULTHUB_ASSET_VERSION = "1.0.3"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "1.0.3"' in STATE)
 # v0.9.92（上轮发布前审查项）：标语断言升级为「整串完全一致」——
 # 旧写法只数 "v0.9.9x · " 出现 3 次，三处文案不一致也能过。
 _slogans_6b = re.findall(r"v\d+\.\d+\.\d+ · [^<\"]+", HTML)
 check("6b 关于 / 侧栏 / 页脚标语整串一致",
       len(_slogans_6b) == 3 and len(set(_slogans_6b)) == 1)
 check("6c Update Log 有 v0.9.85 段",
-      (ROOT / "Update Log.md").read_text(encoding="utf-8").startswith("# VaultHub 蜀鼠之家 v1.0.1"))
+      (ROOT / "Update Log.md").read_text(encoding="utf-8").startswith("# VaultHub 蜀鼠之家 v1.0.3"))
 check("6d Release Notes 存在", (ROOT / ".github/RELEASE_NOTES_0.9.90.md").exists())
 
 if FAILS:

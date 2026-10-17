@@ -31,26 +31,37 @@ type localMetadataSubtitle struct {
 	URL      string `json:"url"`
 }
 type localMediaMetadata struct {
-	Title      string                  `json:"title,omitempty"`
-	ShowTitle  string                  `json:"show_title,omitempty"`
-	Year       string                  `json:"year,omitempty"`
-	Overview   string                  `json:"overview,omitempty"`
-	Runtime    int                     `json:"runtime,omitempty"`
-	Rating     float64                 `json:"rating,omitempty"`
-	UserRating float64                 `json:"user_rating,omitempty"`
-	Genres     []string                `json:"genres"`
-	Cast       []localMetadataCast     `json:"cast"`
-	TMDBID     string                  `json:"tmdb_id,omitempty"`
-	TVDBID     string                  `json:"tvdb_id,omitempty"`
-	Poster     string                  `json:"poster,omitempty"`
-	Logo       string                  `json:"logo,omitempty"`
-	Fanart     string                  `json:"fanart,omitempty"`
-	Backdrop   string                  `json:"backdrop,omitempty"`
-	Tags       []string                `json:"tags,omitempty"`
-	Watched    bool                    `json:"watched,omitempty"`
-	Subtitles  []localMetadataSubtitle `json:"subtitles"`
-	Provider   string                  `json:"provider"`
-	NFO        string                  `json:"nfo,omitempty"`
+	Title      string              `json:"title,omitempty"`
+	ShowTitle  string              `json:"show_title,omitempty"`
+	Year       string              `json:"year,omitempty"`
+	Overview   string              `json:"overview,omitempty"`
+	Runtime    int                 `json:"runtime,omitempty"`
+	Rating     float64             `json:"rating,omitempty"`
+	UserRating float64             `json:"user_rating,omitempty"`
+	Genres     []string            `json:"genres"`
+	Cast       []localMetadataCast `json:"cast"`
+	TMDBID     string              `json:"tmdb_id,omitempty"`
+	TVDBID     string              `json:"tvdb_id,omitempty"`
+	/* v1.0.2（需求2/演职人员全量修复）：剧集级（show 级）字段 —— 单集 NFO 里
+	   只有分集信息与「分集自己的 tmdbid」（例如 1019299 是第 1 集的 id），
+	   拿它去查剧集详情/推荐必然查错片子。这里把剧名根目录 tvshow.nfo 的
+	   剧集级 ID 单独带出来，前端查演职人员与推荐时优先用它。 */
+	ShowTMDBID string `json:"show_tmdb_id,omitempty"`
+	ShowTVDBID string `json:"show_tvdb_id,omitempty"`
+	/* 剧名的来源：season-nfo / tvshow-nfo / folder。前端据此判断「本地 NFO 的
+	   剧名」是否可用（本地优先），避免历史刮削写错的剧名（例如东京喰种被写成
+	   别的片名）继续把演职人员/推荐带偏。 */
+	ShowTitleSource string                  `json:"show_title_source,omitempty"`
+	EpisodeTMDBID   string                  `json:"episode_tmdb_id,omitempty"`
+	Poster          string                  `json:"poster,omitempty"`
+	Logo            string                  `json:"logo,omitempty"`
+	Fanart          string                  `json:"fanart,omitempty"`
+	Backdrop        string                  `json:"backdrop,omitempty"`
+	Tags            []string                `json:"tags,omitempty"`
+	Watched         bool                    `json:"watched,omitempty"`
+	Subtitles       []localMetadataSubtitle `json:"subtitles"`
+	Provider        string                  `json:"provider"`
+	NFO             string                  `json:"nfo,omitempty"`
 }
 type nfoActor struct {
 	Name  string `xml:"name"`
@@ -66,8 +77,9 @@ type nfoUniqueID struct {
 	Value string `xml:",chardata"`
 }
 type nfoDocument struct {
-	Title        string        `xml:"title"`
-	ShowTitle    string        `xml:"showtitle"`
+	Title         string        `xml:"title"`
+	OriginalTitle string        `xml:"originaltitle"`
+	ShowTitle     string        `xml:"showtitle"`
 	Year         string        `xml:"year"`
 	Premiered    string        `xml:"premiered"`
 	Plot         string        `xml:"plot"`
@@ -79,6 +91,13 @@ type nfoDocument struct {
 	UniqueIDs    []nfoUniqueID `xml:"uniqueid"`
 	Thumbs       []nfoThumb    `xml:"thumb"`
 	FanartThumbs []string      `xml:"fanart>thumb"`
+	/* v1.0.2：刮削器（tinyMediaManager / MoviePilot / Emby）写的 NFO 里
+	   ID 有两种写法并存：`<uniqueid type="tmdb">` 与直接的 `<tmdbid>` /
+	   `<tvdbid>`。旧实现只读 uniqueid，tvshow.nfo 只写 <tmdbid> 时剧集级 ID
+	   就丢了（前端拿不到 <tmdbid>61374</tmdbid>，只能退回分集 id 去查，必然查错）。 */
+	TMDBID string `xml:"tmdbid"`
+	TVDBID string `xml:"tvdbid"`
+	IMDBID string `xml:"imdbid"`
 }
 
 // indexRelFor maps an absolute path back to the indexed rel path the files API
@@ -113,6 +132,11 @@ func mediaAssetURL(libID, rel string) string {
 	return "/api/media/file?id=" + url.QueryEscape(libID) + "&path=" + url.QueryEscape(filepath.ToSlash(rel))
 }
 func firstExistingFile(dir string, names []string) string {
+	/* v1.0.3（需求2）：精确名找不到时按「大小写不敏感」再找一次。
+	   Linux 上 `Movie.NFO` / `Poster.JPG` 与候选名 `movie.nfo` / `poster.jpg`
+	   不相等 —— Windows 端工具（Emby/Kodi/手工整理）常写出大写扩展名，
+	   旧实现直接判定「没有 NFO / 没有海报」，用户看到的就是「本地文件识别不到」。 */
+	var entries []os.DirEntry
 	for _, name := range names {
 		name = strings.TrimSpace(name)
 		if name == "" || filepath.IsAbs(name) || strings.Contains(name, "..") {
@@ -121,6 +145,18 @@ func firstExistingFile(dir string, names []string) string {
 		p := filepath.Join(dir, filepath.FromSlash(name))
 		if st, e := os.Stat(p); e == nil && !st.IsDir() {
 			return p
+		}
+		if entries == nil {
+			entries, _ = os.ReadDir(dir)
+		}
+		for _, ent := range entries {
+			if ent.IsDir() || !strings.EqualFold(ent.Name(), filepath.Base(name)) {
+				continue
+			}
+			ci := filepath.Join(dir, ent.Name())
+			if st, e := os.Stat(ci); e == nil && !st.IsDir() {
+				return ci
+			}
 		}
 	}
 	return ""
@@ -192,12 +228,8 @@ func readLocalMediaMetadata(lib Library, mediaPath string) (localMediaMetadata, 
 	}
 	var doc nfoDocument
 	if nfo != "" {
-		f, e := os.Open(nfo)
-		if e == nil {
-			e = xml.NewDecoder(io.LimitReader(f, 2<<20)).Decode(&doc)
-			f.Close()
-		}
-		if e == nil {
+		doc, _ = parseNFODocument(nfo)
+		if true {
 			m.Provider = "本地 NFO"
 			m.Title = strings.TrimSpace(doc.Title)
 			m.ShowTitle = strings.TrimSpace(doc.ShowTitle)
@@ -216,18 +248,7 @@ func readLocalMediaMetadata(lib Library, mediaPath string) (localMediaMetadata, 
 					m.Genres = append(m.Genres, g)
 				}
 			}
-			for _, a := range doc.Actors {
-				name := strings.TrimSpace(a.Name)
-				if name == "" {
-					continue
-				}
-				/* v0.9.99：show 级 NFO 里的相对头像（.actors/x.jpg）要相对 NFO 所在目录解析。 */
-				avatar, kind, raw := localCastAvatar(lib, filepath.Dir(nfo), strings.TrimSpace(a.Thumb))
-				m.Cast = append(m.Cast, localMetadataCast{
-					Name: name, Character: strings.TrimSpace(a.Role),
-					Avatar: avatar, AvatarKind: kind, AvatarThumb: raw,
-				})
-			}
+			m.Cast = append(m.Cast, nfoCastEntries(lib, filepath.Dir(nfo), doc.Actors)...)
 			for _, id := range doc.UniqueIDs {
 				switch strings.ToLower(strings.TrimSpace(id.Type)) {
 				case "tmdb":
@@ -236,12 +257,23 @@ func readLocalMediaMetadata(lib Library, mediaPath string) (localMediaMetadata, 
 					m.TVDBID = strings.TrimSpace(id.Value)
 				}
 			}
+			/* v1.0.2：部分刮削器只写 <tmdbid>/<tvdbid>（没有 <uniqueid>）——
+			   旧实现只认 uniqueid，这类 NFO 的 ID 就丢了。这里补一次兜底。 */
+			if strings.TrimSpace(m.TMDBID) == "" {
+				m.TMDBID = strings.TrimSpace(doc.TMDBID)
+			}
+			if strings.TrimSpace(m.TVDBID) == "" {
+				m.TVDBID = strings.TrimSpace(doc.TVDBID)
+			}
 			rel := indexRelFor(lib, nfo)
 			m.NFO = filepath.ToSlash(rel)
 		}
 	}
 	// series：单集 nfo 里常见只给 show 名（<showtitle>），标题留空时用 show 名回填，
 	// 保证剧集列表行始终有可读标题，而不只是“S01E01”。
+	if lib.Type == "series" {
+		mergeSeriesShowNFO(lib, dir, &m)
+	}
 	if lib.Type == "series" && m.Title == "" && m.ShowTitle != "" {
 		m.Title = m.ShowTitle
 	}
@@ -319,15 +351,209 @@ func readLocalMediaMetadata(lib Library, mediaPath string) (localMediaMetadata, 
 	return m, nil
 }
 
-/* localCastAvatar：把本地 NFO 里 <actor><thumb> 的值换成可直接显示的头像地址。
-   三种形态（都实测于常见刮削器的输出）：
-     1. TMDB 图片地址（https://image.tmdb.org/t/p/w500/xxx.jpg）→ 走图片代理
-        /api/media/cast/avatar?person=…，与在线刮削的头像同一条路
-        （浏览器直连 TMDB 会被 CORS/防盗链拦住，代理后稳）；
-     2. `.actors/姓名.jpg` 这类本地文件（Emby / Jellyfin 下载的头像）→ 走本地头像代理
-        /api/media/cast/avatar?id=&path=；
-     3. 其它 http(s) 地址 → 原样返回，交给浏览器。
-   返回值第三项是原始 thumb，写回 NFO 时原样保留（不让本地刮削成果被我们改坏）。 */
+/*
+v1.0.2（需求2）：NFO 解析抽成独立函数 —— 单集 NFO 之外还要读季目录的
+
+	season.nfo 与剧名根目录的 tvshow.nfo。上限 2 MB，解析失败返回 false（不报错，
+	本地 NFO 只是「有则优先」的增强项）。
+*/
+func parseNFODocument(path string) (nfoDocument, bool) {
+	var doc nfoDocument
+	f, e := os.Open(path)
+	if e != nil {
+		return doc, false
+	}
+	defer f.Close()
+	/* v1.0.3（需求2）：NFO 识别加固 —— 先整块读入（上限 2 MB）并剥掉 BOM / 转 UTF-16，
+	   再用 xml.Unmarshal。旧实现直接 xml.Decoder 流式解码：
+	     · 带 UTF-8 BOM 的文件首字符非法 → 解析失败（Windows 记事本/部分刮削器会写 BOM）；
+	     · UTF-16 文件（记事本「Unicode」另存）整份乱码 → 解析失败；
+	   两种都表现为「本地有 NFO，界面却是空的」。 */
+	raw, re := io.ReadAll(io.LimitReader(f, 2<<20))
+	if re != nil || len(raw) == 0 {
+		return doc, false
+	}
+	if e = xml.Unmarshal(nfoDecodeText(raw), &doc); e != nil {
+		return doc, false
+	}
+	return doc, true
+}
+
+/* v1.0.2（需求2）：NFO 演员表 -> 可直接渲染的演职人员条目。 */
+func nfoCastEntries(lib Library, nfoDir string, actors []nfoActor) []localMetadataCast {
+	out := make([]localMetadataCast, 0, len(actors))
+	for _, a := range actors {
+		name := strings.TrimSpace(a.Name)
+		if name == "" {
+			continue
+		}
+		/* v0.9.99：show 级 NFO 里的相对头像（.actors/x.jpg）要相对 NFO 所在目录解析。 */
+		avatar, kind, raw := localCastAvatar(lib, nfoDir, strings.TrimSpace(a.Thumb))
+		out = append(out, localMetadataCast{Name: name, Character: strings.TrimSpace(a.Role), Avatar: avatar, AvatarKind: kind, AvatarThumb: raw})
+	}
+	return out
+}
+
+/*
+v1.0.2（需求2）：剧集库的「剧名 / 剧集级 ID / 演职人员」以剧名根目录的
+
+	tvshow.nfo（必要时 season.nfo）为准。
+	旧实现的缺口：单集位于 Season 01/ 下且存在分集 NFO 时，只读分集 NFO 就不再向上
+	找 tvshow.nfo —— 而 <episodedetails> 里根本没有 <actor>，于是「本地明明有 NFO，
+	剧集详情却看不到演职人员」（用户反馈「部分可以展示、部分无法展示」）。
+	这里对剧集库无条件补一次 show 级 NFO：
+	  1. season.nfo 的 <title> 优先当剧名（tinyMediaManager / MoviePilot 的季 NFO
+	     写的是剧名），但「Season 1 / 第1季 / Specials」这类季标记要排除；
+	  2. tvshow.nfo 提供演职人员（本集 NFO 没有演员时补入）、剧集级 TMDB/TVDB ID、
+	     以及剧名/年份/类型/简介的兜底；
+	  3. 都没有时用剧名目录名兜底（plexParseShowDir 会去掉年份与方括号）。
+	剧名一律不覆盖已有值（本集 NFO 的 <showtitle> 更精确时保留），并在
+	ShowTitleSource 里记录来源，供前端「本地 NFO 优先」的判断使用。
+*/
+func mergeSeriesShowNFO(lib Library, dir string, m *localMediaMetadata) {
+	if m == nil {
+		return
+	}
+	dirs := append([]string{dir}, seriesShowDirs(lib, dir)...)
+	if strings.TrimSpace(m.TMDBID) != "" && strings.TrimSpace(m.ShowTMDBID) == "" {
+		m.EpisodeTMDBID = strings.TrimSpace(m.TMDBID)
+	}
+	/* 本集目录里没有 NFO、主 NFO 恰好就是剧集级 tvshow.nfo（扁平结构）时，
+	   剧名/<showtitle> 本来就来自剧集级 NFO —— 来源标成 tvshow-nfo，前端不必再猜。 */
+	if lower := strings.ToLower(strings.TrimSpace(m.NFO)); strings.HasSuffix(lower, "tvshow.nfo") || strings.HasSuffix(lower, "movie.nfo") {
+		if strings.TrimSpace(m.ShowTitle) != "" && strings.TrimSpace(m.ShowTitleSource) == "" {
+			m.ShowTitleSource = "tvshow-nfo"
+		}
+	}
+	// 1) season.nfo（季目录内）
+	if m.ShowTitle == "" {
+		for _, d := range dirs {
+			if _, isSeason := plexParseSeasonDir(filepath.Base(d)); !isSeason {
+				continue
+			}
+			cand := firstExistingFile(d, []string{"season.nfo"})
+			if cand == "" {
+				continue
+			}
+			doc, ok := parseNFODocument(cand)
+			if !ok {
+				break
+			}
+			if t := strings.TrimSpace(doc.Title); t != "" && !seasonMarkerTitle(t) {
+				m.ShowTitle = t
+				m.ShowTitleSource = "season-nfo"
+			}
+			if m.Overview == "" {
+				if o := strings.TrimSpace(doc.Plot); o != "" {
+					m.Overview = o
+				}
+			}
+			break
+		}
+	}
+	// 2) tvshow.nfo（剧名根目录）
+	for _, d := range seriesShowDirs(lib, dir) {
+		cand := firstExistingFile(d, []string{"tvshow.nfo", "movie.nfo"})
+		if cand == "" || cand == m.NFO {
+			continue
+		}
+		doc, ok := parseNFODocument(cand)
+		if !ok {
+			break
+		}
+		if len(m.Cast) == 0 {
+			m.Cast = nfoCastEntries(lib, filepath.Dir(cand), doc.Actors)
+		}
+		for _, id := range doc.UniqueIDs {
+			switch strings.ToLower(strings.TrimSpace(id.Type)) {
+			case "tmdb":
+				if m.ShowTMDBID == "" {
+					m.ShowTMDBID = strings.TrimSpace(id.Value)
+				}
+			case "tvdb":
+				if m.ShowTVDBID == "" {
+					m.ShowTVDBID = strings.TrimSpace(id.Value)
+				}
+			}
+		}
+		if m.ShowTMDBID == "" && strings.TrimSpace(doc.TMDBID) != "" {
+			m.ShowTMDBID = strings.TrimSpace(doc.TMDBID)
+		}
+		if m.ShowTVDBID == "" && strings.TrimSpace(doc.TVDBID) != "" {
+			m.ShowTVDBID = strings.TrimSpace(doc.TVDBID)
+		}
+		if m.ShowTitle == "" {
+			if t := strings.TrimSpace(doc.Title); t != "" && !seasonMarkerTitle(t) {
+				m.ShowTitle = t
+				m.ShowTitleSource = "tvshow-nfo"
+			}
+		}
+		if m.Year == "" {
+			if y := strings.TrimSpace(doc.Year); y != "" {
+				m.Year = y
+			} else if len(doc.Premiered) >= 4 {
+				m.Year = doc.Premiered[:4]
+			}
+		}
+		if m.Overview == "" {
+			if o := strings.TrimSpace(doc.Plot); o != "" {
+				m.Overview = o
+			}
+		}
+		if len(m.Genres) == 0 {
+			for _, g := range doc.Genres {
+				if g = strings.TrimSpace(g); g != "" {
+					m.Genres = append(m.Genres, g)
+				}
+			}
+		}
+		break
+	}
+	// 3) 剧名目录兜底
+	if m.ShowTitle == "" {
+		for _, d := range dirs {
+			if _, isSeason := plexParseSeasonDir(filepath.Base(d)); isSeason {
+				continue
+			}
+			if t, _, _ := plexParseShowDir(filepath.Base(d)); strings.TrimSpace(t) != "" {
+				m.ShowTitle = strings.TrimSpace(t)
+				m.ShowTitleSource = "folder"
+				break
+			}
+		}
+	}
+	// 4) 剧集级 ID 兜底：分集 NFO 的 tmdbid 是「分集 id」，只有在完全没有 show 级
+	//    ID 时才退而求其次（并同时留在 EpisodeTMDBID 里）。
+	if m.ShowTMDBID == "" {
+		m.ShowTMDBID = ""
+	}
+}
+
+/* 季标记标题（"Season 3" / "第 1 季" / "Specials"）不能当剧名。 */
+func seasonMarkerTitle(t string) bool {
+	t = strings.TrimSpace(t)
+	if t == "" {
+		return true
+	}
+	if n, ok := plexParseSeasonDir(t); ok && n >= 0 {
+		return true
+	}
+	low := strings.ToLower(t)
+	return low == "specials" || low == "特别篇" || low == "花絮"
+}
+
+/*
+localCastAvatar：把本地 NFO 里 <actor><thumb> 的值换成可直接显示的头像地址。
+
+	三种形态（都实测于常见刮削器的输出）：
+	  1. TMDB 图片地址（https://image.tmdb.org/t/p/w500/xxx.jpg）→ 走图片代理
+	     /api/media/cast/avatar?person=…，与在线刮削的头像同一条路
+	     （浏览器直连 TMDB 会被 CORS/防盗链拦住，代理后稳）；
+	  2. `.actors/姓名.jpg` 这类本地文件（Emby / Jellyfin 下载的头像）→ 走本地头像代理
+	     /api/media/cast/avatar?id=&path=；
+	  3. 其它 http(s) 地址 → 原样返回，交给浏览器。
+	返回值第三项是原始 thumb，写回 NFO 时原样保留（不让本地刮削成果被我们改坏）。
+*/
 func localCastAvatar(lib Library, dir, thumb string) (avatar, kind, raw string) {
 	thumb = strings.TrimSpace(thumb)
 	if thumb == "" {
@@ -407,11 +633,14 @@ func seriesShowDirs(lib Library, startDir string) []string {
 	return dirs
 }
 
-/* v0.9.90：批量本地元数据。
-   前端进影视库时原实现对每个文件串行 GET /api/media/metadata —— 1000+ 部剧集就是
-   1000+ 次往返，大库进库极慢（用户报告「链接大媒体库后非常慢」）。这里提供一次
-   最多 500 条的批量读，前端按 200 条一批，请求数降到个位数。
-   结果与单条接口逐字段一致（同一个 readLocalMediaMetadata + 覆盖层合并）。 */
+/*
+v0.9.90：批量本地元数据。
+
+	前端进影视库时原实现对每个文件串行 GET /api/media/metadata —— 1000+ 部剧集就是
+	1000+ 次往返，大库进库极慢（用户报告「链接大媒体库后非常慢」）。这里提供一次
+	最多 500 条的批量读，前端按 200 条一批，请求数降到个位数。
+	结果与单条接口逐字段一致（同一个 readLocalMediaMetadata + 覆盖层合并）。
+*/
 func (a *App) localMetadataBatch(w http.ResponseWriter, r *http.Request) {
 	if !writeAuth(r) {
 		errJSON(w, 401, "login required")
