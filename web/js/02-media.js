@@ -3791,7 +3791,12 @@ function renderLocalMedia(group) {
   loadLocalFiles(group, selected);
 }
 function selectLocalLibrary(group, id) {
+  const prev = localMediaSelection[group];
   localMediaSelection[group] = id;
+  const host = document.getElementById("local-media-content-" + group);
+  /* v1.0.4（需求8）：点回同一个库、且内容已经在页面上 → 不重绘。
+     大库重绘等于把整库索引再拉一遍，用户看到的就是「切回来反复刷新」。 */
+  if (prev === id && host && host.childElementCount && !host.querySelector(".empty-tip")) return;
   renderLocalMedia(group);
 }
 
@@ -4257,7 +4262,30 @@ function reducedMotionOn() {
 }
 installMediaScrollPaging();
 
-async function loadLocalFiles(group, lib, offset = 0) {
+/* v1.0.4（需求8）：大库「切回来反复刷新」的两层保护。
+   ① 同一个库 + 同一页正在加载时，直接复用那个 Promise —— 旧实现每次点击都新起
+      一整套分页请求，几十万条的库会同时跑好几条链，界面看起来就是不停刷新；
+   ② 每次加载带一个代次号，只有最后一次的结果允许写进 DOM，早先的过期结果丢弃。 */
+const localFilesInflight = new Map();
+const localFilesToken = { comic: 0, movie: 0, audio: 0 };
+function loadLocalFiles(group, lib, offset = 0) {
+  const key = group + ":" + (lib && lib.id ? lib.id : "") + ":" + offset;
+  /* 去重只在「同一个宿主节点」上生效：renderLocalMedia 会重建
+     #local-media-content-<group>，此时旧请求的目标节点已经脱离文档，
+     复用它等于把结果写进看不见的节点（实测表现：刷新恢复页面后一直停在
+     「正在读取最近入库…」）。宿主变了就开新的一轮，旧结果由代次号丢弃。 */
+  const host = document.getElementById("local-media-content-" + group);
+  const running = localFilesInflight.get(key);
+  if (running && running.host === host) return running.promise;
+  const token = (localFilesToken[group] = (localFilesToken[group] || 0) + 1);
+  const entry = { host };
+  entry.promise = loadLocalFilesInner(group, lib, offset, token).finally(() => {
+    if (localFilesInflight.get(key) === entry) localFilesInflight.delete(key);
+  });
+  localFilesInflight.set(key, entry);
+  return entry.promise;
+}
+async function loadLocalFilesInner(group, lib, offset = 0, token = 0) {
   const target = document.getElementById("local-media-content-" + group);
   if (!target) return;
   /* v0.9.92：切库即释放其它库的重型缓存（整库索引 / 书架列表 / 阅读状态索引）。 */
@@ -4309,6 +4337,8 @@ async function loadLocalFiles(group, lib, offset = 0) {
         data.has_more = false;
       }
     }
+    /* 代次校验：期间用户又切了库/又点了一次，这次的结果已经过期，直接丢弃。 */
+    if (token && token !== localFilesToken[group]) return;
     files = files.sort((a, b) => String(a.path).localeCompare(String(b.path), "zh-CN"));
     files = files.filter(file => supportedLocalMediaFile(group, lib, String(file.path)));
     if (data.status === "indexing") {

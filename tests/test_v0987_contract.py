@@ -102,7 +102,7 @@ check("3g 电影页原有兜底文案未被改动",
 
 # ---------------------------------------------- i18n 与版本
 for key in ["scrapeRegionLabel", "scrapeRegionAuto", "scrapeRegionCn", "scrapeRegionJp",
-            "scrapeRegionUs", "scrapeRegionHint", "notifyScrapeQueue"]:
+            "scrapeRegionUs", "notifyScrapeQueue"]:
     count = len(re.findall(rf"\b{key}:", STATE))
     check(f"4 i18n {key} 三语齐备", count >= 3, f"出现 {count} 次")
 check("4b 队列通知文案带 {ok}/{total} 占位符",

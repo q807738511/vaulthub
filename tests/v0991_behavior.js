@@ -271,7 +271,8 @@ const GO_SCRAPE = fs.readFileSync(ROOT + "/media-go/scrape_store.go", "utf8");
     chk("D4 非当前库时书架可见列表也清空",
         call(sb, `releaseMediaHeavyCaches("OTHER"); (bookShelfVisibleCache || []).length`) === 0);
     chk("D5 loadLocalFiles 进入库时先释放其它库缓存",
-        /async function loadLocalFiles\(group, lib, offset = 0\) \{\s*\n\s*const target = document\.getElementById\("local-media-content-" \+ group\);\s*\n\s*if \(!target\) return;\s*\n[\s\S]{0,160}releaseMediaHeavyCaches\(lib\.id\)/.test(MEDIA_SRC));
+        /* v1.0.4（需求8）：实现体改名 loadLocalFilesInner，释放逻辑不变。 */
+        /async function loadLocalFilesInner\(group, lib, offset = 0, token = 0\) \{\s*\n\s*const target = document\.getElementById\("local-media-content-" \+ group\);\s*\n\s*if \(!target\) return;\s*\n[\s\S]{0,300}releaseMediaHeavyCaches\(lib\.id\)/.test(MEDIA_SRC));
     chk("D6 后端转码缓存有兜底清理间隔与单条目上限",
         GO_MAIN.includes("cacheCleanupFallback = 10 * time.Minute") &&
         GO_MAIN.includes("cacheEntryMaxShare   = 4") &&
@@ -289,10 +290,10 @@ const GO_SCRAPE = fs.readFileSync(ROOT + "/media-go/scrape_store.go", "utf8");
 
   /* ================= E. 版本与审查项 ================= */
   {
-    chk("E1 资源版本 本版（≥10 处）", (HTML_SRC.match(/\?v=1\.0\.3/g) || []).length >= 10);
+    chk("E1 资源版本 本版（≥10 处）", (HTML_SRC.match(/\?v=1\.0\.4/g) || []).length >= 10);
     chk("E2 ASSET_VERSION / SCRIPT_VERSION = 0.9.97",
-        HTML_SRC.includes('window.VAULTHUB_ASSET_VERSION = "1.0.3";') &&
-        STATE_SRC.includes('const VAULTHUB_SCRIPT_VERSION = "1.0.3";'));
+        HTML_SRC.includes('window.VAULTHUB_ASSET_VERSION = "1.0.4";') &&
+        STATE_SRC.includes('const VAULTHUB_SCRIPT_VERSION = "1.0.4";'));
     /* 审查项：标语断言必须校验「三处完全一致」，而不是各自存在。 */
     const slogans = (HTML_SRC.match(/v\d+\.\d+\.\d+ · [^<"]+/g) || []);
     chk("E3 三处标语完全一致（审查项：断言强度）",

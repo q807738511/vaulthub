@@ -46,6 +46,32 @@ function openHomeLibrary(group, libId) {
   selectLocalLibrary(group, libId);
   switchView(group, libId);
 }
+/* v1.0.4（需求7）：刷新后回到刷新前所在的页面。
+   媒体库视图必须带 libId 恢复 —— 同组可能有多个库（漫画/电子书都落在 comic）。
+   恢复失败（库被删了/视图不存在）就安静地留在首页，不报错。 */
+function restoreVaultHubRoute() {
+  let route = null;
+  try { route = typeof savedVaultHubRoute === "function" ? savedVaultHubRoute() : null; } catch (e) { route = null; }
+  if (!route || !route.v) return false;
+  const v = String(route.v);
+  if (v === "home" || v === "search") return false;
+  const view = document.getElementById("view-" + v);
+  if (!view) return false;
+  if (v === "settings") {
+    if (typeof openSettingsPage === "function") openSettingsPage(route.tab || "library");
+    return true;
+  }
+  if (["comic", "movie", "audio"].includes(v)) {
+    const libs = (typeof localMediaLibraries !== "undefined" && localMediaLibraries) || [];
+    const types = typeof mediaTypesForGroup === "function" ? mediaTypesForGroup(v) : [];
+    const lib = libs.find(l => l.id === route.libId) || libs.find(l => types.includes(l.type));
+    if (!lib) return false;
+    openHomeLibrary(v, lib.id);
+    return true;
+  }
+  switchView(v);
+  return true;
+}
 function formatHomeCount(n) {
   const v = Number(n) || 0;
   return v >= 1000 ? (v / 1000).toFixed(1).replace(/\.0$/, "") + "k" : String(v);
@@ -519,6 +545,7 @@ function renderHomeLibTable() {
       <td>${homeScrapePill(lib)}</td>
       <td><div class="row-acts">
         ${(lib.type === "movie" || lib.type === "series") ? `<button class="icon-btn" title="${esc(t("libScanAuto"))}" onclick="autoScanLibrary('${esc(lib.id)}')">⚡</button><button class="icon-btn" title="${esc(t("libScanItem"))}" onclick="openLibraryItemScan('${esc(lib.id)}')">▤</button>` : ""}
+        <button class="icon-btn" title="${esc(t("libPathEdit"))}" onclick="openLibraryPathEditor('${esc(lib.id)}')">✎</button>
         <button class="icon-btn" title="${esc(t("actRescan"))}" onclick="rebuildOneLibrary('${esc(lib.id)}')">🔄</button>
         <button class="icon-btn" title="${esc(t("actOpenLib"))}" onclick="openHomeLibrary('${esc(group)}','${esc(lib.id)}')">↗</button>
         <button class="icon-btn" title="${esc(t("actRemove"))}" onclick="deleteMediaLibrary('${esc(lib.id)}')">✕</button>

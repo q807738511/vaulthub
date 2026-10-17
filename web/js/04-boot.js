@@ -74,7 +74,13 @@ if (typeof runDailySpeedTest === "function") {
   });
 } else if (typeof ensureWeakNetworkProbe === "function") ensureWeakNetworkProbe();
 /* 首页四栏（服务器监控 / 正在进行 / 最近入库）在媒体库拉取完成后渲染 */
-refreshMediaLibraries(false).then(initHome);
+refreshMediaLibraries(false).then(() => {
+  initHome();
+  /* v1.0.4（需求7）：媒体库列表就绪后再恢复上次的页面，刷新不会被踢回首页。 */
+  if (typeof restoreVaultHubRoute === "function") {
+    try { restoreVaultHubRoute(); } catch (e) { console.warn("恢复上次页面失败", e); }
+  }
+});
 
 /* v1.0.2（需求8）：整页覆盖层（影视详情 / 阅读器 / 播放器 / 设置）打开时锁住背景页滚动
    —— 旧实现下浏览器会同时出现「页面竖滚动条 + 覆盖层内竖滚动条」的多重滚动条。

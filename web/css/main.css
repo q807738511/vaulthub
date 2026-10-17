@@ -2296,3 +2296,120 @@ html[data-opmode="plex"] .vc-btn .vc-svg { width: 19px; height: 19px; }
 html.vh-overlay-open, html.vh-overlay-open body { overflow: hidden !important; }
 html.vh-overlay-open { overscroll-behavior: none; }
 .movie-detail-scroll, .media-reader-body, .epub-viewer, .comic-viewer, .media-viewer { overscroll-behavior: contain; }
+
+/* ============================================================================
+   v1.0.4（需求1/3/4/6）—— 监控栅格自适应 · 界面规格换肤 · 操作模式卡片 · TV 焦点
+   ============================================================================ */
+
+/* ---- 需求6：服务器监控三张卡自适应成 N 列，不再留第四格空白 ----
+   旧写法 .g-4 固定四列，只有三张卡 → 每行两格 + 一格空。auto-fit 会把空轨道
+   折叠掉，宽屏三张一排、窄屏两列、手机一列，任何宽度都不留空洞。 */
+.grid.monitor-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr)); align-items: stretch; }
+@media (min-width: 1500px) { .grid.monitor-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 330px), 1fr)); } }
+.grid.monitor-grid > .card { min-width: 0; }
+
+/* ---- 需求3/4：界面规格与操作模式的选择卡片 ----
+   两档都是「图标 + 名称 + 一句效果」，选中态有勾选点；遥控/键盘都能 Tab 到。
+   这里不写说明段落（客户要求去掉提示文案），副标题只说这一档换什么。 */
+.spec-seg, .mode-seg { display:grid; gap:8px; grid-template-columns:repeat(auto-fit, minmax(min(100%, 148px), 1fr)); }
+.spec-card, .mode-card {
+  position:relative; display:flex; align-items:center; gap:9px; text-align:left;
+  padding:10px 12px; border:1px solid var(--border); border-radius:var(--op-radius-sm, 10px);
+  background:var(--card); color:var(--text); cursor:pointer; font:inherit;
+  transition:border-color var(--op-dur,160ms) var(--op-ease,ease), background var(--op-dur,160ms) var(--op-ease,ease), transform var(--op-dur-fast,120ms) var(--op-ease,ease), box-shadow var(--op-dur,160ms) var(--op-ease,ease);
+}
+.spec-card:hover, .mode-card:hover { border-color:var(--accent); transform:translateY(-1px); }
+.spec-card:active, .mode-card:active { transform:scale(var(--op-press, .97)); }
+.spec-card.on, .mode-card.on {
+  border-color:var(--accent);
+  background:color-mix(in srgb, var(--accent) 10%, var(--card));
+  box-shadow:0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.spec-card .sc-mark, .mode-card .sc-ic { flex:0 0 auto; width:26px; height:26px; display:grid; place-items:center; color:var(--accent); font-size:17px; line-height:1; }
+.spec-card .sc-mark svg { width:24px; height:24px; display:block; }
+.spec-card .sc-tx, .mode-card .sc-tx { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.spec-card .sc-tx b, .mode-card .sc-tx b { font-size:12.5px; font-weight:650; }
+.spec-card .sc-tx small, .mode-card .sc-tx small { font-size:10.5px; color:var(--text3); line-height:1.35; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.spec-card .sc-dot, .mode-card .sc-dot {
+  position:absolute; top:8px; right:8px; width:8px; height:8px; border-radius:50%;
+  border:1px solid var(--border2); background:transparent; transition:background var(--op-dur-fast,120ms) var(--op-ease,ease), border-color var(--op-dur-fast,120ms) var(--op-ease,ease);
+}
+.spec-card.on .sc-dot, .mode-card.on .sc-dot { background:var(--accent); border-color:var(--accent); }
+.seg-current { margin-top:7px; font-size:11px; color:var(--text3); line-height:1.6; }
+.seg-current:empty { display:none; }
+
+/* ---- 需求3：界面规格换的是整套观感（顶栏形态 / 圆角 / 字重 / 高亮方式） ---- */
+/* 顶栏与媒体库标签里的 SVG 图标（规格图标包）统一尺寸。 */
+.tn-item .ic svg, .libtab .ic svg, .tn-popitem .ic svg, .tn-bell-ic svg { width:16px; height:16px; display:block; }
+.tn-bell-ic svg { width:17px; height:17px; }
+.tn-popitem .ic svg { width:15px; height:15px; }
+
+/* Apple：胶囊导航 + 毛玻璃 + 轻描边，选中是「填色胶囊」。 */
+html[data-opmode="apple"] .tn-item, html[data-opmode="apple"] .libtab { border-radius:999px; }
+html[data-opmode="apple"] .tn-item.active, html[data-opmode="apple"] .libtab[aria-current="true"] {
+  background:color-mix(in srgb, var(--accent) 16%, transparent);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 34%, transparent);
+}
+html[data-opmode="apple"] .card, html[data-opmode="apple"] .setblock { border-radius:var(--op-radius, 14px); }
+
+/* Emby：方角标签 + 底部指示条 + 实心选中（Material）。 */
+html[data-opmode="emby"] .tn-item, html[data-opmode="emby"] .libtab { border-radius:4px; position:relative; }
+html[data-opmode="emby"] .tn-item.active, html[data-opmode="emby"] .libtab[aria-current="true"] {
+  background:color-mix(in srgb, var(--accent) 14%, transparent);
+  color:var(--accent); font-weight:650;
+}
+html[data-opmode="emby"] .tn-item.active::after, html[data-opmode="emby"] .libtab[aria-current="true"]::after {
+  content:""; position:absolute; left:9px; right:9px; bottom:3px; height:2px; border-radius:2px; background:var(--accent);
+}
+html[data-opmode="emby"] .card, html[data-opmode="emby"] .setblock { border-radius:4px; }
+
+/* Plex：扁平硬朗 + 大写字距标签 + 琥珀高亮。 */
+html[data-opmode="plex"] .tn-item, html[data-opmode="plex"] .libtab { border-radius:2px; }
+html[data-opmode="plex"] .tn-item .nl, html[data-opmode="plex"] .libtab { text-transform:uppercase; letter-spacing:.07em; font-size:11.5px; font-weight:600; }
+html[data-opmode="plex"] .tn-item.active, html[data-opmode="plex"] .libtab[aria-current="true"] {
+  background:transparent; color:var(--op-accent-hard, #e5a00d); box-shadow:inset 0 -2px 0 0 var(--op-accent-hard, #e5a00d);
+}
+html[data-opmode="plex"] .card, html[data-opmode="plex"] .setblock { border-radius:3px; }
+html[data-opmode="plex"] .section-title .idx { border-radius:2px; }
+
+/* ---- 需求1：TV 操作模式下的鼠标 / 遥控 / 键盘规则 ----
+   ① 焦点环常显（遥控没有 hover，只有 focus；:focus 而不是 :focus-visible）；
+   ② 聚焦元素有 scroll-margin，滚进视口时不会被顶栏压住；
+   ③ hover 与 focus 用同一套视觉 —— 鼠标指着谁，遥控就从谁开始；
+   ④ 触屏/遥控设备上不保留 hover 抬升残留。 */
+html[data-uimode="tv"] { scroll-padding-block: 96px 48px; }
+html[data-uimode="tv"] :focus,
+html[data-uimode="tv"] :focus-visible {
+  outline:3px solid var(--accent);
+  outline-offset:3px;
+  border-radius:var(--op-radius-sm, 8px);
+}
+html[data-uimode="tv"] .btn:focus, html[data-uimode="tv"] .seg-btn:focus,
+html[data-uimode="tv"] .spec-card:focus, html[data-uimode="tv"] .mode-card:focus,
+html[data-uimode="tv"] .tn-item:focus, html[data-uimode="tv"] .libtab:focus {
+  outline:3px solid var(--accent);
+  outline-offset:2px;
+  box-shadow:0 0 0 4px color-mix(in srgb, var(--accent) 26%, transparent), 0 10px 26px rgba(0,0,0,.38);
+  transform:translateY(-2px) scale(1.03);
+  z-index:2;
+}
+html[data-uimode="tv"] .media-poster-card:focus, html[data-uimode="tv"] .book-card:focus,
+html[data-uimode="tv"] .movie-rec-card:focus, html[data-uimode="tv"] .audio-album-card:focus,
+html[data-uimode="tv"] .series-episode-card:focus, html[data-uimode="tv"] .ep-grid-card:focus {
+  outline:3px solid var(--accent);
+  outline-offset:3px;
+  transform:translateY(-4px) scale(1.045);
+  box-shadow:0 16px 34px rgba(0,0,0,.45);
+  z-index:2;
+}
+html[data-uimode="tv"] .tn-item:focus, html[data-uimode="tv"] .libtab:focus { transform:none; }
+html[data-uimode="tv"] * { scroll-margin-block:110px 60px; }
+/* 遥控器没有指针：hover 视觉只在真有指针时保留。 */
+@media (hover: none) {
+  html[data-uimode="tv"] .media-poster-card:hover, html[data-uimode="tv"] .book-card:hover,
+  html[data-uimode="tv"] .movie-rec-card:hover { transform:none; box-shadow:none; }
+}
+/* 键盘用户（非 TV 档）也保留一个清晰的焦点环，避免只有鼠标可用。 */
+html:not([data-uimode="tv"]) .spec-card:focus-visible, html:not([data-uimode="tv"]) .mode-card:focus-visible {
+  outline:2px solid var(--accent); outline-offset:2px;
+}

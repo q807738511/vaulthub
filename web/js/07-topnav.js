@@ -46,7 +46,7 @@ function renderTopLibTabs() {
     const group = homeGroupOfType(lib.type);
     /* v0.9.82：顶栏标签只保留库名（客户要求去掉后缀的媒体数量展示）。 */
     rows.push(`<button class="libtab" type="button" role="tab" aria-current="false"`
-      + ` data-view="${esc(group)}" data-lib-id="${esc(lib.id)}" data-nav-key="${esc(group + ":" + lib.id)}"`
+      + ` data-view="${esc(group)}" data-lib-id="${esc(lib.id)}" data-lib-kind="${esc(group)}" data-nav-key="${esc(group + ":" + lib.id)}"`
       + ` title="${esc(lib.name)}${lib.path ? " · " + esc(lib.path) : ""}"`
       + ` onclick="openHomeLibrary('${esc(group)}',${jsAttrArg(lib.id)})">`
       + `<span class="ic">${topNavIconForType(lib.type)}</span>${esc(lib.name)}`
@@ -55,7 +55,7 @@ function renderTopLibTabs() {
   if (typeof externalServices !== "undefined" && externalServices) {
     externalServices.forEach(svc => {
       rows.push(`<button class="libtab" type="button" role="tab" aria-current="false"`
-        + ` data-view="${esc(svc.group)}" data-lib-id="${esc(svc.id)}" data-nav-key="${esc(svc.group + ":" + svc.id)}"`
+        + ` data-view="${esc(svc.group)}" data-lib-id="${esc(svc.id)}" data-lib-kind="external" data-nav-key="${esc(svc.group + ":" + svc.id)}"`
         + ` title="${esc(svc.name)} · 外连服务"`
         + ` onclick="openExternalService(${jsAttrArg(svc.id)})">`
         + `<span class="ic">🔗</span>${esc(svc.name)}<span class="cnt">↗</span>`
@@ -64,6 +64,8 @@ function renderTopLibTabs() {
   }
   host.innerHTML = rows.length ? rows.join("") : `<div class="nav-empty">${esc(t("libNavEmpty"))}</div>`;
   syncTopLibTabs(window.vaultHubActiveNavKey || "");
+  /* v1.0.4（需求3）：标签是重建出来的，图标要按当前界面规格重新套一遍。 */
+  if (typeof applyOpModeIcons === "function") { try { applyOpModeIcons(); } catch (e) {} }
 }
 
 /* 高亮按 data-nav-key 精确匹配（同组媒体库靠它区分），并把选中的标签滚进可视区。 */
