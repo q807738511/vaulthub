@@ -77,8 +77,9 @@ type nfoUniqueID struct {
 	Value string `xml:",chardata"`
 }
 type nfoDocument struct {
-	Title        string        `xml:"title"`
-	ShowTitle    string        `xml:"showtitle"`
+	Title         string        `xml:"title"`
+	OriginalTitle string        `xml:"originaltitle"`
+	ShowTitle     string        `xml:"showtitle"`
 	Year         string        `xml:"year"`
 	Premiered    string        `xml:"premiered"`
 	Plot         string        `xml:"plot"`
@@ -131,6 +132,11 @@ func mediaAssetURL(libID, rel string) string {
 	return "/api/media/file?id=" + url.QueryEscape(libID) + "&path=" + url.QueryEscape(filepath.ToSlash(rel))
 }
 func firstExistingFile(dir string, names []string) string {
+	/* v1.0.3（需求2）：精确名找不到时按「大小写不敏感」再找一次。
+	   Linux 上 `Movie.NFO` / `Poster.JPG` 与候选名 `movie.nfo` / `poster.jpg`
+	   不相等 —— Windows 端工具（Emby/Kodi/手工整理）常写出大写扩展名，
+	   旧实现直接判定「没有 NFO / 没有海报」，用户看到的就是「本地文件识别不到」。 */
+	var entries []os.DirEntry
 	for _, name := range names {
 		name = strings.TrimSpace(name)
 		if name == "" || filepath.IsAbs(name) || strings.Contains(name, "..") {
@@ -139,6 +145,18 @@ func firstExistingFile(dir string, names []string) string {
 		p := filepath.Join(dir, filepath.FromSlash(name))
 		if st, e := os.Stat(p); e == nil && !st.IsDir() {
 			return p
+		}
+		if entries == nil {
+			entries, _ = os.ReadDir(dir)
+		}
+		for _, ent := range entries {
+			if ent.IsDir() || !strings.EqualFold(ent.Name(), filepath.Base(name)) {
+				continue
+			}
+			ci := filepath.Join(dir, ent.Name())
+			if st, e := os.Stat(ci); e == nil && !st.IsDir() {
+				return ci
+			}
 		}
 	}
 	return ""
@@ -346,7 +364,16 @@ func parseNFODocument(path string) (nfoDocument, bool) {
 		return doc, false
 	}
 	defer f.Close()
-	if e = xml.NewDecoder(io.LimitReader(f, 2<<20)).Decode(&doc); e != nil {
+	/* v1.0.3（需求2）：NFO 识别加固 —— 先整块读入（上限 2 MB）并剥掉 BOM / 转 UTF-16，
+	   再用 xml.Unmarshal。旧实现直接 xml.Decoder 流式解码：
+	     · 带 UTF-8 BOM 的文件首字符非法 → 解析失败（Windows 记事本/部分刮削器会写 BOM）；
+	     · UTF-16 文件（记事本「Unicode」另存）整份乱码 → 解析失败；
+	   两种都表现为「本地有 NFO，界面却是空的」。 */
+	raw, re := io.ReadAll(io.LimitReader(f, 2<<20))
+	if re != nil || len(raw) == 0 {
+		return doc, false
+	}
+	if e = xml.Unmarshal(nfoDecodeText(raw), &doc); e != nil {
 		return doc, false
 	}
 	return doc, true

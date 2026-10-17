@@ -2041,18 +2041,6 @@ func (a *App) cacheKey(path string) string {
 	a.mu.RUnlock()
 	return filepath.Join(dir, hex.EncodeToString(h[:])+".mp4")
 }
-func commandJSON(w http.ResponseWriter, r *http.Request, name string, args ...string) {
-	ctx, cancel := context.WithCancel(r.Context())
-	defer cancel()
-	cmd := exec.CommandContext(ctx, name, args...)
-	out, e := cmd.Output()
-	if e != nil {
-		errJSON(w, 500, name+" unavailable")
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(out)
-}
 
 // cpuSample is the last /proc/stat total/idle snapshot, used to compute the
 // busy percentage between two scrapes (the front-end polls every 5s).
@@ -2172,6 +2160,12 @@ func pickInterface(proc, forced string) (name string, rx, tx uint64) {
 }
 
 func systemMetrics(w http.ResponseWriter, r *http.Request) {
+	/* v1.0.3（审查 S-3）：主机负载/内存/磁盘/网卡信息属于部署内部信息，
+	   之前无需登录就能读（公网经反代暴露时会泄露宿主机状况）。 */
+	if !readAuth(r) {
+		errJSON(w, 401, "login required")
+		return
+	}
 	if v := strings.ToLower(os.Getenv("SYSTEM_MONITOR_ENABLED")); v == "0" || v == "false" {
 		writeJSON(w, 200, map[string]any{"enabled": false})
 		return
@@ -2947,6 +2941,13 @@ func embeddedSubtitleTracks(ctx context.Context, disc discInput, libID, relPath 
 }
 
 func (a *App) extractSubtitle(w http.ResponseWriter, r *http.Request) {
+	/* v1.0.3（审查 S-2）：本端点会跑 ffmpeg 抽字幕并返回文本内容，属于「媒体内容 +
+	   高开销」操作，之前漏了鉴权 —— 未登录即可对任意库内文件反复抽取（信息泄露 +
+	   资源耗尽）。与文件流/归档读取保持一致，统一要求登录会话。 */
+	if !readAuth(r) {
+		errJSON(w, 401, "login required")
+		return
+	}
 	l, ok := a.find(r.URL.Query().Get("id"))
 	if !ok {
 		errJSON(w, 404, "invalid media path")

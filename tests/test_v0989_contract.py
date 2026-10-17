@@ -43,6 +43,7 @@ def strip_comments(src):
 STORE_CODE = strip_comments(STORE)
 MANAGER = read("manager/main.go")
 NFO = read("media-go/nfo_write.go")
+MERGE = read("media-go/nfo_merge.go")
 COVER = read("media-go/cover_persist.go")
 MEDIA = read("web/js/02-media.js")
 MEDIA_CODE = strip_comments(MEDIA)
@@ -98,8 +99,14 @@ check("1i 逐项扫描状态标签含待确认", "待确认（识别字符占比
 # ============================================================ 2. NFO 本地化
 check("2a 路由注册 /api/media/nfo", 'mux.HandleFunc("/api/media/nfo", a.nfoHandler)' in read("media-go/main.go"))
 check("2b NFO 写入使用 Kodi/Emby 兼容 XML", "encoding/xml" in NFO and "xml.MarshalIndent" in NFO)
-check("2c 原子写（临时文件 + rename）", "os.CreateTemp" in NFO and "os.Rename" in NFO)
-check("2d 已存在且非本程序写的 NFO 默认保留", "nfoMarker" in NFO and "return false, true, nil" in NFO)
+# v1.0.3（需求2）：原子写抽到 nfoAtomicWrite（nfo_merge.go），语义不变。
+check("2c 原子写（临时文件 + rename）",
+      ("nfoAtomicWrite" in NFO and "os.CreateTemp" in MERGE and "os.Rename" in MERGE))
+# v1.0.3（需求2）：外置 NFO 不再「整份保留」，改为字段级合并写回：
+#   原有非空字段保留、缺失字段补齐、冲突项不覆盖；不可解析才原样保留。
+check("2d 外置 NFO 合并写回（保留原值 + 补缺失 + 冲突不覆盖）",
+      "nfoMarker" in NFO and "nfoMergeIntoExisting" in NFO
+      and "不可解析：保持原样" in NFO)
 check("2e 需要登录会话", "if !writeAuth(r)" in NFO)
 check("2f 目标目录必须落在库根内", "dirInsideLibrary" in NFO and "EvalSymlinks" in NFO)
 check("2g 文件名白名单只允许 .nfo", "nfoNameRe" in NFO and r"\.nfo$" in NFO)
@@ -132,15 +139,15 @@ check("3j 不做物理改名（无 rename 媒体文件调用）",
       "renameMediaFile" not in MEDIA and "/api/media/rename" not in MEDIA)
 
 # ============================================================ 版本与文档
-check("4a index.html 资源版本 ≥10 且为本版", HTML.count("?v=1.0.2") >= 10)
-check("4b ASSET_VERSION 0.9.90", 'window.VAULTHUB_ASSET_VERSION = "1.0.2";' in HTML)
-check("4c SCRIPT_VERSION 0.9.90", 'const VAULTHUB_SCRIPT_VERSION = "1.0.2";' in STATE)
+check("4a index.html 资源版本 ≥10 且为本版", HTML.count("?v=1.0.3") >= 10)
+check("4b ASSET_VERSION 0.9.90", 'window.VAULTHUB_ASSET_VERSION = "1.0.3";' in HTML)
+check("4c SCRIPT_VERSION 0.9.90", 'const VAULTHUB_SCRIPT_VERSION = "1.0.3";' in STATE)
 # v0.9.90：标语随版本推进 —— 校验版本前缀 + 侧栏/页脚/关于三处一致。
 # v0.9.92（上轮审查项）：标语整串一致，而不是只数版本前缀。
 _slogans_4d = re.findall(r"v\d+\.\d+\.\d+ · [^<\"]+", HTML)
 check("4d 标语三处整串一致",
       len(_slogans_4d) == 3 and len(set(_slogans_4d)) == 1, sorted(set(_slogans_4d)))
-check("4e 更新日志有 v0.9.90 章节", LOG.lstrip().startswith("# VaultHub 蜀鼠之家 v1.0.2"))
+check("4e 更新日志有 v0.9.90 章节", LOG.lstrip().startswith("# VaultHub 蜀鼠之家 v1.0.3"))
 check("4f 更新日志写明并发写根因", "fatal error: concurrent map read and map write" in LOG)
 check("4g 发布说明文件存在", (ROOT / ".github/RELEASE_NOTES_0.9.90.md").is_file())
 # v0.9.95（安全审查 M4）：README 里原本写着真实对外域名，已改为示例域名 —— 这是唯一允许的

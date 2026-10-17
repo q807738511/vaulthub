@@ -93,6 +93,54 @@ func safeTransport(proxyRaw string) (*http.Transport, error) {
 	return tr, nil
 }
 
+/* v1.0.3（审查 S-1）：出站目标必须是公网地址 —— 即使配置了代理也要校验。
+ *
+ * 旧实现把「拒绝私网目标」放在 safeTransport 的 DialContext 里：一旦配置了
+ * SCRAPER_PROXY（生产就是这种情况），DialContext 连的是代理，目标由代理解析，
+ * 这道防线**整条被绕过** —— POST /api/media/cover 传一个 http://127.0.0.1:9099/…
+ * 或 http://169.254.169.254/ 就能让服务端代取内网/云元数据（SSRF）。
+ *
+ * 这里在发请求之前先解析目标主机并逐个校验：任一是回环/私网/链路本地/未指定/组播
+ * 就拒绝；主机名本身是 localhost / *.local / *.internal / *.lan 的也直接拒绝。
+ */
+func ensurePublicTarget(ctx context.Context, u *url.URL) error {
+	if u == nil {
+		return fmt.Errorf("target url required")
+	}
+	host := strings.ToLower(strings.TrimSpace(u.Hostname()))
+	if host == "" {
+		return fmt.Errorf("target host required")
+	}
+	for _, bad := range []string{"localhost", "metadata.google.internal"} {
+		if host == bad || strings.HasSuffix(host, "."+bad) {
+			return fmt.Errorf("private target rejected")
+		}
+	}
+	for _, suffix := range []string{".local", ".internal", ".lan", ".home", ".localdomain"} {
+		if strings.HasSuffix(host, suffix) {
+			return fmt.Errorf("private target rejected")
+		}
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		if !publicIP(ip) {
+			return fmt.Errorf("private target rejected")
+		}
+		return nil
+	}
+	lookupCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	ips, err := net.DefaultResolver.LookupIPAddr(lookupCtx, host)
+	if err != nil || len(ips) == 0 {
+		return fmt.Errorf("target resolution failed")
+	}
+	for _, item := range ips {
+		if !publicIP(item.IP) {
+			return fmt.Errorf("private target rejected")
+		}
+	}
+	return nil
+}
+
 var outboundHTTPClient = func(proxyRaw string) (*http.Client, error) {
 	tr, err := safeTransport(proxyRaw)
 	if err != nil {

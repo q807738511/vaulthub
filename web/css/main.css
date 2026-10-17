@@ -1870,13 +1870,14 @@ html[data-uimode="pc"] .libtab, html[data-uimode="pc"] .btn { min-height:36px; }
 /* 只有一张图（没配 TMDB key / 无剧照）时，主图撑满左栏高度，避免简介很长时左栏空一截。 */
 .rec-info-art:not(.has-shots) > #recInfoPoster { flex:1 1 auto; height:100%; min-height:200px; }
 .rec-info-shot { width:100%; height:100%; min-height:86px; object-fit:cover; border-radius:8px; background:linear-gradient(145deg,#284b63,#1b2838); }
-/* v0.9.83：页面最下端的版本页脚（与「关于」里的版本参数同源同步）。 */
-.app-footer { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:26px 0 2px; padding:12px 2px 2px;
-  border-top:1px solid var(--border); color:var(--text3); font-size:12px; }
-.app-footer .af-name { font-weight:600; color:var(--text2); }
-.app-footer .af-note { margin-left:auto; font-size:11.5px; opacity:.85; }
-@media (max-width:640px) { .app-footer { flex-direction:column; align-items:flex-start; gap:4px; }
-  .app-footer .af-note { margin-left:0; } }
+/* v0.9.83：页面最下端的版本页脚（与「关于」里的版本参数同源同步）。
+   v1.0.3（需求1）：只展示「当前版本 + 版本功能提示」一行 —— 去掉品牌名与
+   「与关于页保持一致」的说明，margin 26→10px、padding 12→5px，页尾高度约降 40%。 */
+.app-footer { display:flex; align-items:center; justify-content:center; gap:8px; flex-wrap:wrap;
+  margin:10px 0 0; padding:5px 2px 3px; border-top:1px solid var(--border);
+  color:var(--text3); font-size:11.5px; line-height:1.35; }
+.app-footer .ver { font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+@media (max-width:640px) { .app-footer { font-size:11px; padding:4px 2px 2px; } }
 @media (max-width:640px){ .rec-info-grid{flex-direction:column;} .rec-info-grid img{max-width:100%;} .rec-info-art{flex:1 1 auto; max-width:100%;} .rec-info-modal{width:92vw;} .movie-rec-grid{grid-template-columns:1fr;} }
 
 /* ==================== v0.9.82 渲染性能 ====================

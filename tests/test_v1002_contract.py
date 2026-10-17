@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""v1.0.2 契约测试：8 项修正的静态契约、发布纪律、洗版自查。
+"""v1.0.3 契约测试：8 项修正的静态契约、发布纪律、洗版自查。
 
 只做静态契约断言；行为验证在 tests/v1002_behavior.js、media-go/v1002_douban_test.go
 与真实容器/浏览器验证里。
@@ -151,22 +151,22 @@ check("6c 内部滚动条禁止滚动穿透",
 
 print("\n== 7. 版本与发布纪律 ==")
 check("7a index.html 资源版本 ≥11 处且为本版",
-      len(re.findall(r"\?v=1\.0\.2", HTML)) >= 11 and "?v=1.0.1" not in HTML)
-check("7b 全部静态资源版本串只出现本版", set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"1.0.2"})
-check("7c ASSET / SCRIPT 版本 = 1.0.2",
-      'VAULTHUB_ASSET_VERSION = "1.0.2"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "1.0.2"' in STATE)
+      len(re.findall(r"\?v=1\.0\.3", HTML)) >= 11 and "?v=1.0.1" not in HTML)
+check("7b 全部静态资源版本串只出现本版", set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"1.0.3"})
+check("7c ASSET / SCRIPT 版本 = 1.0.3",
+      'VAULTHUB_ASSET_VERSION = "1.0.3"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "1.0.3"' in STATE)
 check("7d 三处标语整串一致",
-      len(re.findall(r"v1\.0\.2 · [^<\"]+", HTML)) == 3 and len(set(re.findall(r"v1\.0\.2 · [^<\"]+", HTML))) == 1,
-      sorted(set(re.findall(r"v1\.0\.2 · [^<\"]+", HTML))))
+      len(re.findall(r"v1\.0\.3 · [^<\"]+", HTML)) == 3 and len(set(re.findall(r"v1\.0\.3 · [^<\"]+", HTML))) == 1,
+      sorted(set(re.findall(r"v1\.0\.3 · [^<\"]+", HTML))))
 check("7e Update Log 顶部为本版且段落完整",
-      LOG.startswith("# VaultHub 蜀鼠之家 v1.0.2") and "操作模式" in LOG.split("\n# ")[0]
+      LOG.startswith("# VaultHub 蜀鼠之家 v1.0.3") and "操作模式" in LOG.split("\n# ")[0]
       and "豆瓣评分" in LOG.split("\n# ")[0])
 check("7f 发布说明存在且覆盖 8 项", len(NOTES) > 1500 and all(
       k in NOTES for k in ("季度展示回归", "演职人员全量修复", "视频推荐定位与播放修复", "推荐机制全量修复",
                            "豆瓣评分获取与展示", "操作模式", "多重垂直滚动条治理")))
 check("7g 安装/升级脚本与 subtitle-api 版本同步",
-      'VERSION="v1.0.2"' in rd("scripts/install.sh") and 'VERSION="v1.0.2"' in rd("scripts/upgrade.sh")
-      and "VaultHub-Subtitle/1.0.2" in rd("subtitle-api/main.go"))
+      'VERSION="v1.0.3"' in rd("scripts/install.sh") and 'VERSION="v1.0.3"' in rd("scripts/upgrade.sh")
+      and "VaultHub-Subtitle/1.0.3" in rd("subtitle-api/main.go"))
 check("7h 本轮只推 Gitea + Docker Hub（GitHub 按 20 版本节流）",
       "GitHub" in NOTES and "20" in NOTES)
 
@@ -183,5 +183,5 @@ for rel in ("media-go/douban.go", "media-go/v1002_douban_test.go", "web/js/02-me
     body = rd(rel)
     check(f"9 {rel} 无禁用字面量", not any(b in body for b in BANNED), [b for b in BANNED if b in body])
 
-print("\n===== v1.0.2 契约测试：", "全部通过 =====" if ok else "存在失败 =====")
+print("\n===== v1.0.3 契约测试：", "全部通过 =====" if ok else "存在失败 =====")
 raise SystemExit(0 if ok else 1)

@@ -18,7 +18,7 @@ let vaultHubSessionPingedAt = 0;
    历史故障：v0.8.3→v0.8.5 的前端修改在服务端已生效，但浏览器仍执行缓存里的
    旧 02-media.js，用户看到「没有更新」。现在入口页 no-store、静态资源带 ?v=，
    并在启动时做一次一致性自查，不一致就绕过缓存强制重载一次。 */
-const VAULTHUB_SCRIPT_VERSION = "1.0.2";
+const VAULTHUB_SCRIPT_VERSION = "1.0.3";
 function ensureFreshAssets() {
   /* expected 为空 = 浏览器执行的 index.html 早于 v0.8.6（旧版本入口页没有声明
      版本号），同样属于"页面是旧的"，也需要换 URL 重新取一次。 */
@@ -376,7 +376,6 @@ const I18N = {
     setLibCustomModuleHint: "自定义模块用于添加媒体库：选「通用网页」接入任意 Web 服务；选漫画 / 影视 / 音频则等价于新增一个对应大类的媒体库。",
     setLibCustomModuleOpen: "打开自定义模块",
     setLibCustomModuleTip: "模块的显示 / 隐藏与删除都在模块设置里管理。",
-    footerAboutHint: "版本与「系统设置 → 账户与登录 → 关于」中的版本参数保持一致",
     libSrcLocal: "本地媒体库", libSrcExternal: "外连服务",
     libPathHint: "路径必须是容器内已挂载且存在的绝对目录；库名称会直接作为顶栏标签与刮削标识。",
     extLibName: "服务名称", extLibLan: "内网地址", extLibProxy: "反代 / 外网域名（可选）",
@@ -660,7 +659,6 @@ const I18N = {
     setLibCustomModuleHint: "自訂模組用於新增媒體庫：選「通用網頁」接入任意 Web 服務；選漫畫 / 影視 / 音訊則等同於新增一個對應大類的媒體庫。",
     setLibCustomModuleOpen: "開啟自訂模組",
     setLibCustomModuleTip: "模組的顯示 / 隱藏與刪除都在模組設定裡管理。",
-    footerAboutHint: "版本與「系統設定 → 帳戶與登入 → 關於」中的版本參數保持一致",
     libSrcLocal: "本地媒體庫", libSrcExternal: "外連服務",
     libPathHint: "路徑必須是容器內已掛載且存在的絕對目錄；庫名稱會直接作為側邊欄與刮削識別。",
     extLibName: "服務名稱", extLibLan: "內網位址", extLibProxy: "反代 / 外網網域（可選）",
@@ -947,7 +945,6 @@ const I18N = {
     setLibCustomModuleHint: "Custom modules add libraries: pick Web page for any site, or comic / movie / audio to add a library in that category.",
     setLibCustomModuleOpen: "Open custom modules",
     setLibCustomModuleTip: "Show / hide and delete modules in the module settings.",
-    footerAboutHint: "Version is kept in sync with 系统设置 → 账户与登录 → 关于",
     libSrcLocal: "Local library", libSrcExternal: "External service",
     libPathHint: "The path must be an absolute directory mounted inside the container; the library name is used as the top-bar tab label and for scraping.",
     extLibName: "Service name", extLibLan: "LAN address", extLibProxy: "Reverse-proxy / public domain (optional)",
