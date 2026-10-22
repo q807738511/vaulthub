@@ -128,13 +128,13 @@ check("4s 原盘镜像（ISO）在卡片上单独标注", 'return n > 1 ? `原�
 check("4t ISO 与同目录 BDMV 并存时标注双形态", "原盘 · ISO + BDMV" in MEDIA)
 
 print("5. 版本与文档")
-check("5a 版本号已升至 0.9.90", 'VAULTHUB_ASSET_VERSION = "1.0.4"' in HTML and 'const VAULTHUB_SCRIPT_VERSION = "1.0.4"' in STATE)
+check("5a 版本号已升至 0.9.90", 'VAULTHUB_ASSET_VERSION = "1.0.5"' in HTML and 'const VAULTHUB_SCRIPT_VERSION = "1.0.5"' in STATE)
 # v0.9.92（上轮审查项）：整串一致，而不是只数版本前缀。
 _slogans_5b = re.findall(r"v\d+\.\d+\.\d+ · [^<\"]+", HTML)
 check("5b 关于 / 侧栏 / 页脚标语整串一致",
       len(_slogans_5b) == 3 and len(set(_slogans_5b)) == 1)
-check("5c 脚本引用带新版本号", 'web/js/03-quality.js?v=1.0.4' in HTML and 'web/js/02-media.js?v=1.0.4' in HTML)
-check("5d Update Log 顶部为 v0.9.90", LOG.startswith("# VaultHub 蜀鼠之家 v1.0.4"))
+check("5c 脚本引用带新版本号", 'web/js/03-quality.js?v=1.0.5' in HTML and 'web/js/02-media.js?v=1.0.5' in HTML)
+check("5d Update Log 顶部为 v0.9.90", LOG.startswith("# VaultHub 蜀鼠之家 v1.0.5"))
 check("5e Release Notes 存在", (ROOT / ".github/RELEASE_NOTES_0.9.90.md").exists())
 
 if FAILS:

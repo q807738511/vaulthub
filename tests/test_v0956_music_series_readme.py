@@ -103,10 +103,10 @@ check("T4 缩略图 + 集号角标", "series-episode-thumb" in JS and "series-ep
 check("T4 整卡点击播放", 'onclick="openLocalMedia(\'movie\'' in JS)
 check("T4 集卡片不再含「详情」按钮（v0.9.84 改网格直点播放）", 'onclick="event.stopPropagation();openEpisodeDetails(' not in JS and "openEpisodeDetails(" in JS)
 # v0.9.99：容器类名改为 series-episode-list series-episode-list-rest（首条 + 季度前缀留在外层）。
-# v1.0.4（需求1）：季度版式回归 0.9.89 —— 首条前缀行取消，全部集回到同一个网格容器。
-check("T4 容器 series-episode-list（v1.0.4 起全部分集同网格）",
+# v1.0.5（需求1）：季度版式回归 0.9.89 —— 首条前缀行取消，全部集回到同一个网格容器。
+check("T4 容器 series-episode-list（v1.0.5 起全部分集同网格）",
       'class="series-episode-list"' in JS and "series-episode-list-rest" not in JS)
-# v1.0.4（需求3）：元数据取路改用「真视频的第一集」，避免拿到 poster.jpg。
+# v1.0.5（需求3）：元数据取路改用「真视频的第一集」，避免拿到 poster.jpg。
 check("T4 剧集封面/取路传入",
       "seriesFirstVideoPath(show)" in JS or "const firstPath = show.files?.[0]?.path" in JS
       or "const episodeArt = show.poster || show.fanart || show.backdrop" in JS)
@@ -128,7 +128,7 @@ for fname, txt in [("README.md", README), ("Update Log.md", UPDATELOG)]:
 
 # ============ 版本号 ============
 check("版本 HTML >=2", HTML.count("v0.9.56") >= 2)
-check("版本 script 变量", 'VAULTHUB_SCRIPT_VERSION = "1.0.4"' in STATE)
+check("版本 script 变量", 'VAULTHUB_SCRIPT_VERSION = "1.0.5"' in STATE)
 check("版本 release notes 存在", (ROOT / ".github/RELEASE_NOTES_0.9.56.md").exists())
 
 if fails:

@@ -128,7 +128,7 @@ check("7h 逐项扫描里保存后自动重刮该条", "openLibraryItemScanFresh
 check("7i 有名称/年份的 Go 单测", (ROOT / "media-go/v0986_metadata_edit_test.go").exists())
 
 # ------------------------------------------------------------------ i18n 与版本
-# v1.0.4（需求10）：阈值说明文案已删除，只保留标签。
+# v1.0.5（需求10）：阈值说明文案已删除，只保留标签。
 for key in ["scrapeMinMatchLabel", "libScanAuto", "libScanItem", "libScanTitle", "libScanAll",
             "libScanRetryFailed", "editTitleLabel", "editYearLabel", "editScrapeHint"]:
     count = len(re.findall(rf"\b{key}:", STATE))

@@ -2413,3 +2413,137 @@ html[data-uimode="tv"] * { scroll-margin-block:110px 60px; }
 html:not([data-uimode="tv"]) .spec-card:focus-visible, html:not([data-uimode="tv"]) .mode-card:focus-visible {
   outline:2px solid var(--accent); outline-offset:2px;
 }
+
+/* ==================================================================================
+   v1.0.5 —— 操作模式三档「手感层」
+   ----------------------------------------------------------------------------------
+   v1.0.4 的 TV 档只改了字号和焦点环，页面密度仍是 PC 的：1920 宽的电视上
+   .media-poster-grid 会排到 10 列、每张卡 155px，遥控器要按十几次才能横穿一屏。
+   这一层把「模式」变成真实的布局差异：
+     · TV    ：列数少、卡片大、行高宽、顶栏高、焦点抬升、横向标签吸附、动效收敛；
+     · Phone ：单列/双列、48px 触达、底部安全区、去掉 hover 残留；
+     · PC    ：高密度、14px 间距、保留 hover 抬升。
+   规则都挂在 html[data-uimode=...] 上，切档即时生效，不需要刷新。
+   ================================================================================== */
+
+/* ---------- TV：远距离观看 + 遥控操作 ---------- */
+/* 调色板块（html[data-palette=...][data-mode=...]）把整套令牌又声明了一遍，
+   特异性 (0,2,1) 高于 (0,1,1) —— 顶栏高度必须用 :root 抬到同一级，否则 52px 一直赢。 */
+html[data-uimode="tv"]:root {
+  --topbar-h: 64px;
+}
+html[data-uimode="tv"] {
+  font-size: 18px;
+  --tv-gap: 26px;
+  --tv-radius: 16px;
+  scroll-padding-block: 104px 56px;
+}
+html[data-uimode="tv"] body,
+html[data-uimode="tv"] .main { font-size: 1.05em; line-height: 1.7; }
+html[data-uimode="tv"] .content { padding: 18px 34px 120px; }
+
+/* 顶栏：更高的可点击条，标签之间留出手指/遥控的间隔 */
+html[data-uimode="tv"] .topbar { height: var(--topbar-h); }
+html[data-uimode="tv"] .tn-item,
+html[data-uimode="tv"] .libtab {
+  height: 44px; padding: 0 16px; font-size: 15.5px; gap: 8px;
+}
+html[data-uimode="tv"] .libtab { scroll-snap-align: start; }
+html[data-uimode="tv"] .tn-icon-btn { width: 44px; height: 44px; }
+html[data-uimode="tv"] .tn-libs { scroll-snap-type: x proximity; }
+
+/* 栅格：同样 1920 宽，从 ~10 列降到 5-6 列，卡片本身变大 */
+html[data-uimode="tv"] .media-poster-grid { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--tv-gap); }
+html[data-uimode="tv"] .home-poster-grid { grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: var(--tv-gap) 22px; }
+html[data-uimode="tv"] .home-poster-grid.sq { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+html[data-uimode="tv"] .book-grid { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--tv-gap); }
+html[data-uimode="tv"] .audio-album-grid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 24px; }
+html[data-uimode="tv"] .audio-latest-grid { grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
+html[data-uimode="tv"] .series-show-grid { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: var(--tv-gap); }
+html[data-uimode="tv"] .series-episode-list { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 16px; }
+html[data-uimode="tv"] .movie-detail-strip { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+html[data-uimode="tv"] .movie-cast-strip { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 22px 18px; }
+
+/* 行式列表：行高 68px，右侧操作按钮 44px —— 遥控不用瞄准 */
+html[data-uimode="tv"] .media-file-row { min-height: 68px; padding: 12px 16px; font-size: 1.02em; gap: 14px; }
+html[data-uimode="tv"] .media-file-row .btn,
+html[data-uimode="tv"] .row-acts .btn { min-height: 44px; min-width: 44px; }
+html[data-uimode="tv"] .media-file-meta { font-size: 13px; }
+
+/* 卡片圆角与留白跟着放大，远看轮廓更清楚 */
+html[data-uimode="tv"] .media-poster-card,
+html[data-uimode="tv"] .book-card,
+html[data-uimode="tv"] .audio-album-card { border-radius: var(--tv-radius); }
+
+/* 焦点：4px 环 + 抬升。抬升用 transform，不触发布局重排。 */
+html[data-uimode="tv"] :focus { outline: none; }
+html[data-uimode="tv"] :focus-visible { outline: 4px solid var(--accent); outline-offset: 3px; }
+html[data-uimode="tv"] .media-poster-card,
+html[data-uimode="tv"] .book-card,
+html[data-uimode="tv"] .hp,
+html[data-uimode="tv"] .audio-album-card,
+html[data-uimode="tv"] .movie-rec-card { transition: transform .14s ease, box-shadow .14s ease, border-color .14s ease; }
+html[data-uimode="tv"] .media-poster-card:focus,
+html[data-uimode="tv"] .book-card:focus,
+html[data-uimode="tv"] .hp:focus,
+html[data-uimode="tv"] .audio-album-card:focus,
+html[data-uimode="tv"] .movie-rec-card:focus {
+  /* 入场动画（opAppleIn 等）带 fill:both，动画结束后仍会压住 transform ——
+     v1.0.4 的焦点抬升在 Apple 规格下其实是死的。聚焦时先摘掉动画再抬升。 */
+  animation: none;
+  transform: scale(1.045);
+  outline: 4px solid var(--accent);
+  outline-offset: 3px;
+  z-index: 6;
+  position: relative;
+  border-color: var(--accent);
+  box-shadow: 0 20px 46px color-mix(in srgb, var(--text) 26%, transparent),
+              0 0 0 4px var(--accent);
+}
+/* TV 档的 hover 不再抬升：遥控器不产生 hover，鼠标用户有焦点环就够了 */
+html[data-uimode="tv"] .media-poster-card:hover,
+html[data-uimode="tv"] .book-card:hover,
+html[data-uimode="tv"] .hp:hover .img { transform: none; box-shadow: none; }
+
+/* 只在 hover 时出现的角标（收藏心 / 缩放按钮）在 TV 档跟随焦点显示 */
+html[data-uimode="tv"] .book-card:focus .book-card-fav,
+html[data-uimode="tv"] .book-card:focus-within .book-card-fav,
+html[data-uimode="tv"] .media-poster-card:focus .movie-poster-settings { opacity: 1; transform: none; pointer-events: auto; }
+
+/* 动效收敛：TV 上 250ms 的入场动画会让「按一下等半天」 */
+html[data-uimode="tv"] .view { animation-duration: .16s; }
+html[data-uimode="tv"] .modal-mask { transition-duration: .14s; }
+
+/* ---------- Phone：拇指可达 + 触控目标 ---------- */
+html[data-uimode="phone"]:root { --topbar-h: 56px; }
+html[data-uimode="phone"] { font-size: 16px; }
+html[data-uimode="phone"] .content { padding: 10px 14px calc(96px + env(safe-area-inset-bottom, 0px)); }
+html[data-uimode="phone"] .tn-item,
+html[data-uimode="phone"] .libtab { height: 42px; padding: 0 13px; font-size: 14px; }
+html[data-uimode="phone"] .btn,
+html[data-uimode="phone"] .seg-btn,
+html[data-uimode="phone"] .tn-icon-btn { min-height: 48px; }
+html[data-uimode="phone"] .tn-icon-btn { width: 48px; height: 48px; }
+html[data-uimode="phone"] .media-poster-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (min-width: 620px) { html[data-uimode="phone"] .media-poster-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+html[data-uimode="phone"] .home-poster-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px 10px; }
+html[data-uimode="phone"] .book-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+html[data-uimode="phone"] .audio-album-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+html[data-uimode="phone"] .audio-latest-grid { grid-template-columns: 1fr; }
+html[data-uimode="phone"] .media-file-row { min-height: 56px; padding: 10px 12px; }
+html[data-uimode="phone"] .media-file-row .btn { min-height: 44px; }
+/* 触屏没有 hover：卡片按下时给即时反馈，避免「点了没反应」 */
+html[data-uimode="phone"] .media-poster-card:hover,
+html[data-uimode="phone"] .book-card:hover,
+html[data-uimode="phone"] .hp:hover .img { transform: none; box-shadow: none; }
+html[data-uimode="phone"] .media-poster-card:active,
+html[data-uimode="phone"] .book-card:active { transform: scale(.985); }
+html[data-uimode="phone"] .modal-mask .modal { border-radius: 16px 16px 0 0; }
+
+/* ---------- PC：鼠标优先，密度优先 ---------- */
+html[data-uimode="pc"] .media-poster-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
+html[data-uimode="pc"] .home-poster-grid { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 14px 12px; }
+html[data-uimode="pc"] .media-file-row { min-height: 44px; }
+html[data-uimode="pc"] .btn,
+html[data-uimode="pc"] .libtab,
+html[data-uimode="pc"] .tn-item { min-height: 34px; }

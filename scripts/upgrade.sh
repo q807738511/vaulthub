@@ -6,7 +6,7 @@ LEGACY_DIR="/srv/Docker/hermes/data/docker-webui-container"
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PROJECT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 FILES_DIR="$PROJECT_DIR"
-VERSION="v1.0.4"   # 随版本发布同步更新（安全审查 L6：此前长期停在 v0.6.4，会误导操作者）
+VERSION="v1.0.5"   # 随版本发布同步更新（安全审查 L6：此前长期停在 v0.6.4，会误导操作者）
 STAMP=$(date +%Y%m%d-%H%M%S)
 
 if [ ! -d "$FILES_DIR" ]; then
