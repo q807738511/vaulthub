@@ -144,7 +144,7 @@ check("5d 整库/单剧作用域与面板渲染（复用同一套面板）",
 check("5e 面板按钮各自携带库/剧（整库不串台）",
       "seriesPlexAction('compare',${jsAttrArg(lib.id)},${jsAttrArg(show.key)})" in P
       and "seriesPlexScrapeSeason(${Number(planSeason.season) || 0},${jsAttrArg(lib.id)},${jsAttrArg(show.key)})" in P)
-check("5f 旧实现已移除：详情页既无工具条也无迁移提示（v1.0.5 口径）",
+check("5f 旧实现已移除：详情页既无工具条也无迁移提示（v1.0.6 口径）",
       '<span class="season-inline-title">季度</span>' in M
       and '<section><h3 class="detail-section-h">季度</h3></section>' not in M
       and "seriesPlexToolbarHtml" not in M and "seriesPlexToolbarHtml" not in P
@@ -165,17 +165,17 @@ check("6c CSS 让开关贴到行尾（勾选框原生尺寸 + 行显式 flex，�
       and ".cfg-field label.toggle-row { display: flex; align-items: center; }" in CSS)
 
 print("\n== 7. 版本与文档 ==")
-check("7a 版本串 ?v=1.0.5（≥11 处）且无其它版本串",
-      len(re.findall(r"\?v=1\.0\.5", HTML)) >= 11
-      and set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"1.0.5"})
+check("7a 版本串 ?v=1.0.6（≥11 处）且无其它版本串",
+      len(re.findall(r"\?v=1\.0\.6", HTML)) >= 11
+      and set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"1.0.6"})
 check("7b ASSET_VERSION / SCRIPT_VERSION = 0.9.98",
-      'VAULTHUB_ASSET_VERSION = "1.0.5"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "1.0.5"' in S)
+      'VAULTHUB_ASSET_VERSION = "1.0.6"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "1.0.6"' in S)
 check("7c 新标语 ×3 且旧标语已清除",
-      HTML.count("v1.0.5 · 遥控零漂移 · 焦点无虚位 · 三档真手感") == 3
+      HTML.count("v1.0.6 · 三套规格主题 · 壁纸随内容 · 返回键归位") == 3
       and "v0.9.97 ·" not in HTML)
 check("7d install/upgrade 脚本版本同步",
-      'VERSION="v1.0.5"' in rd("scripts/install.sh") and 'VERSION="v1.0.5"' in rd("scripts/upgrade.sh"))
-check("7e Update Log 顶部为 v0.9.98 段且保留 v0.9.97", LOG.startswith("# VaultHub 蜀鼠之家 v1.0.5"))
+      'VERSION="v1.0.6"' in rd("scripts/install.sh") and 'VERSION="v1.0.6"' in rd("scripts/upgrade.sh"))
+check("7e Update Log 顶部为 v0.9.98 段且保留 v0.9.97", LOG.startswith("# VaultHub 蜀鼠之家 v1.0.6"))
 check("7f 发布说明覆盖本轮四项需求",
       all(k in NOTES for k in ("演职人员", "/api/media/disc/playlists", "多季剧集刮削（Plex 口径）", "自动测速"))
       and "多季诊断" in NOTES and "刮削配置" in NOTES)

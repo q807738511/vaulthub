@@ -1,61 +1,26 @@
-/* VaultHub v0.9.73 — 主题引擎（调色板 × 明暗 × 强调色）
-   方案来自会话 mtkzexy5e4e2te 的主题升级：主题从「一层颜色」变成三层叠加，
-   每层只覆盖一组 CSS 变量，组件代码一行不改：
+/* VaultHub v1.0.6 — 主题引擎（界面规格 × 明暗）
+   v0.9.73 的三层模型是「调色板 × 明暗 × 强调色」，v1.0.6 按客户口径收敛成两层：
 
-       主题 = 调色板(palette) × 明暗(mode) × 强调色(accent)
-               4 种            亮/暗/跟随系统      6 种（含「跟随主题」）
+       主题 = 界面规格(spec) × 明暗(mode)
+               Apple / Emby / Plex      暗 / 亮 / 跟随系统
 
-   实现在 web/css/main.css 的「v0.9.73 主题令牌」段：颜色之外，圆角/阴影/
-   标题字族/动效速度也进令牌，所以每套调色板有各自性格；明暗不再和调色板绑定。
-   本文件只做三件事：把用户选择落到 <html> 的 data-* 上、渲染面板里的真预览卡片、
-   跟随系统明暗实时切换。持久化写在 settings（dwu_settings）里，与旧版本兼容：
-   老字段 settings.theme 仍会同步成 dark|light，setTheme() 也保留为兼容入口。 */
+   调色板、强调色、自定义背景图片三档设置已整体移除 —— 它们和「界面规格」在
+   语义上重复（规格本来就该自带配色与观感），同时选会互相打架。现在每套规格
+   自带完整的**主题定义**（配色 / 圆角 / 动效 / 标题字族 / 壁纸 / 播放器皮肤 /
+   图标包），切换规格 = 换整套主题，不存在「规格是 Plex 但配色是青瓷」这种拼接。
 
-const THEME_PALETTES = [
-  {
-    id: "emerald", r: 10, dur: 160,
-    name: { "zh-CN": "青瓷", "zh-TW": "青瓷", en: "Emerald" },
-    desc: { "zh-CN": "利落克制 · 默认", "zh-TW": "俐落克制 · 預設", en: "Crisp & understated · default" },
-    light: { bg: "#F7F8FA", card: "#FFFFFF", card2: "#F1F3F5", text: "#12171D", accent: "#0B7C73", line: "#E5E8EB", coverA: "#2F6F6A", coverB: "#123C3A" },
-    dark: { bg: "#0B1413", card: "#101A19", card2: "#162321", text: "#E8F2F1", accent: "#2BC4B4", line: "#1E2D2B", coverA: "#2B6E68", coverB: "#0B2422" }
-  },
-  {
-    id: "plum", r: 12, dur: 180,
-    name: { "zh-CN": "午夜紫曜", "zh-TW": "午夜紫曜", en: "Plum" },
-    desc: { "zh-CN": "圆润 · 紫辉光", "zh-TW": "圓潤 · 紫輝光", en: "Rounded · violet glow" },
-    light: { bg: "#F7F5FF", card: "#FFFFFF", card2: "#F1EEFA", text: "#1E1830", accent: "#5B2FCB", line: "#E5E0F2", coverA: "#6E5A8C", coverB: "#2A2140" },
-    dark: { bg: "#0F0D16", card: "#171426", card2: "#1F1B31", text: "#EDE9FE", accent: "#8B5CF6", line: "#2A2440", coverA: "#6E5A8C", coverB: "#2A2140" }
-  },
-  {
-    id: "neon", r: 5, dur: 130,
-    name: { "zh-CN": "霓虹胶片", "zh-TW": "霓虹膠片", en: "Neon" },
-    desc: { "zh-CN": "锐角 · 影院动作最快", "zh-TW": "銳角 · 影院動作最快", en: "Sharp corners · fastest motion" },
-    light: { bg: "#F5F5F8", card: "#FFFFFF", card2: "#EEEEF3", text: "#16161C", accent: "#BE123C", line: "#E2E2E9", coverA: "#8C2440", coverB: "#1A0A12" },
-    dark: { bg: "#0B0B0F", card: "#141419", card2: "#1C1C24", text: "#F5F5F7", accent: "#FF4D6D", line: "#242430", coverA: "#8C2440", coverB: "#1A0A12" }
-  },
-  {
-    id: "clay", r: 14, dur: 220,
-    name: { "zh-CN": "暖陶", "zh-TW": "暖陶", en: "Clay" },
-    desc: { "zh-CN": "纸感 · 标题衬线", "zh-TW": "紙感 · 標題襯線", en: "Paper-like · serif headings" },
-    light: { bg: "#FAF6F1", card: "#FFFDFB", card2: "#F3EDE5", text: "#2C2620", accent: "#8F3F14", line: "#E8DFD3", coverA: "#A9714A", coverB: "#5C3A22" },
-    dark: { bg: "#17130F", card: "#1F1A15", card2: "#271F18", text: "#F3E9DC", accent: "#E08A4E", line: "#332A21", coverA: "#A9714A", coverB: "#5C3A22" }
-  }
-];
+   三份《界面规格之 … 影音播放器界面元素详解》的要素落点（docs/specs/*.md）：
+     Apple —— Liquid Glass 半透明材质、Aerial 航拍壁纸、SF Symbols 细描边图标、
+              同心圆角、层叠式迷你播放器、播放时控件让位内容；
+     Emby  —— 品牌绿锁定、图片槽位（Primary/Backdrop/Logo/Thumb/Disc）、
+              启用背景图后海报拼贴、Spotlight 大图、OSD 中央大播放键、海报角标；
+     Plex  —— chevron 符号、#E5A00D 金、UltraBlur 取色壁纸（从海报四角算色）、
+              跳过片头/片尾按钮、进度条缩略图、暗色骨架。
 
-/* 强调色：只覆盖 {--accent, --accent-ink, --accent-dim, --accent-ring, --accent-glow}
-   一组变量（值写在 CSS 里，这里只提供面板色块与文案，避免两处维护同一组颜色）。 */
-const THEME_ACCENTS = [
-  { id: "theme", css: "sw-theme" },
-  { id: "teal", css: "", color: "#0F9E92", label: { "zh-CN": "青绿", "zh-TW": "青綠", en: "Teal" } },
-  { id: "indigo", css: "", color: "#4338CA", label: { "zh-CN": "靛蓝", "zh-TW": "靛藍", en: "Indigo" } },
-  { id: "rose", css: "", color: "#BE123C", label: { "zh-CN": "玫红", "zh-TW": "玫紅", en: "Rose" } },
-  { id: "amber", css: "", color: "#92400E", label: { "zh-CN": "琥珀", "zh-TW": "琥珀", en: "Amber" } },
-  { id: "violet", css: "", color: "#6D28D9", label: { "zh-CN": "紫罗兰", "zh-TW": "紫羅蘭", en: "Violet" } }
-];
-const THEME_MODES = ["dark", "light", "auto"];
+   本文件只做四件事：把选择落到 <html> 的 data-* 上、渲染面板、驱动壁纸层、
+   跟随系统明暗。持久化仍在 settings（dwu_settings）里。 */
 
 /* ==================== v1.0.4 操作模式（自动 / Phone / TV / PC） ====================
-   v0.9.76 起这一档叫「界面规格」，v1.0.4 按客户口径改名「操作模式」：
    它换的是**交互** —— 布局密度、鼠标/遥控/键盘规则、焦点表现。
      auto  —— 按视口宽度 + 指针类型 + UA 自动识别；
      phone —— 更大点击目标、收起次要列、单列为主；
@@ -117,14 +82,15 @@ function setUIMode(mode, opts) {
   }
   toast("🧭 " + t("opModeSaved") + "：" + themeLabel(UI_MODE_LABEL[settings.uiMode]) + (settings.uiMode === "auto" ? "（" + themeLabel(UI_MODE_LABEL[applied]) + "）" : ""));
 }
-/* ==================== v1.0.4 界面规格（Apple / Emby / Plex） ====================
-   v1.0.2 起这套档位叫「操作模式」，v1.0.4 按客户口径改名「界面规格」：
-   它换的是**长相** —— 图标包 + 动效节奏 + 圆角阴影 + 顶栏/标签的形态。
-   另一档「操作模式」（自动 / Phone / TV / PC，见上面的 UI_MODES）换的是**交互** ——
-   布局密度、鼠标/遥控/键盘规则、焦点表现。两档互相独立，可以任意组合。
-   落点：<html data-opmode>（历史属性名保留，避免破坏既有 CSS 与测试）
-        + <html data-spec>（同值，语义更清楚的新属性）
-        + OP_ICON_PACK（顶栏/菜单/播放器图标按规格替换）。
+
+/* ==================== v1.0.6 界面规格（Apple / Emby / Plex） ====================
+   v1.0.2 起这套档位叫「操作模式」，v1.0.4 改名「界面规格」：它换的是**长相**。
+   v1.0.6 起它同时是**唯一的主题轴** —— 每套规格带一整套主题定义：
+     tokens    配色 / 圆角 / 阴影 / 标题字族 / 动效节奏（落 <html data-spec data-mode>）
+     wallpaper 壁纸：Apple=Aerial 航拍层，Emby=海报拼贴，Plex=UltraBlur 取色
+     player    播放器皮肤：Apple=层叠玻璃迷你条，Emby=OSD 中央大播放键，Plex=琥珀进度 + 跳片头
+     icons     图标包（OP_ICON_PACK，顶栏与播放器共用）
+     doc       对应的《界面元素详解》文档（docs/specs/*.md，面板里可打开）
    说明：图标是按各客户端的视觉语言手写的，不使用对方私有素材，避免授权问题。 */
 const OP_MODES = ["apple", "emby", "plex"];
 const OP_MODE_LABEL = {
@@ -134,9 +100,9 @@ const OP_MODE_LABEL = {
 };
 /* 规格卡上的副标题：一句话说清这一档换了什么（不是说明段落，是选中依据）。 */
 const OP_MODE_TAG = {
-  apple: { "zh-CN": "毛玻璃 · 弹性动效", "zh-TW": "毛玻璃 · 彈性動效", en: "Frosted · springy" },
-  emby: { "zh-CN": "Material · 水波", "zh-TW": "Material · 水波", en: "Material · ripple" },
-  plex: { "zh-CN": "扁平 · 琥珀高亮", "zh-TW": "扁平 · 琥珀高亮", en: "Flat · amber" }
+  apple: { "zh-CN": "液态玻璃 · 航拍壁纸", "zh-TW": "液態玻璃 · 航拍壁紙", en: "Liquid Glass · Aerial" },
+  emby: { "zh-CN": "品牌绿 · 海报拼贴", "zh-TW": "品牌綠 · 海報拼貼", en: "Brand green · Collage" },
+  plex: { "zh-CN": "琥珀金 · 取色背景", "zh-TW": "琥珀金 · 取色背景", en: "Amber · UltraBlur" }
 };
 /* 规格自带的品牌标记（抽象几何，不用对方 logo 素材）。 */
 const OP_MODE_MARK = {
@@ -145,8 +111,125 @@ const OP_MODE_MARK = {
   plex: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h5.4l6.2 8-6.2 8H4l6.2-8Z" fill="currentColor"/><path d="M13.2 4H18l2.6 4-2.6 4h-4.8l2.6-4Z" fill="currentColor" opacity=".55"/></svg>'
 };
 
+/* ---------- 每套规格的主题定义 ----------
+   令牌名与 CSS 一一对应（web/css/main.css 的「v1.0.6 规格主题令牌」段）。
+   圆角三档遵循各自的规范：Apple 同心大圆角、Emby Material 8/4/12、
+   Plex 扁平 6/3/10；动效节奏也进令牌，所以切规格连手感一起换。 */
+const SPEC_THEMES = {
+  apple: {
+    doc: "/docs/specs/apple.md",
+    wallpaper: "aerial",
+    player: "glass",
+    tokens: {
+      dark: {
+        bg: "#0A0A0C", bg2: "rgba(28,28,30,.72)", card: "#141416", card2: "#1C1C1F",
+        border: "rgba(255,255,255,.10)", border2: "rgba(255,255,255,.20)", track: "rgba(255,255,255,.12)",
+        text: "#F5F5F7", text2: "#B9B9C0", text3: "#86868B",
+        accent: "#0A84FF", accentInk: "#FFFFFF",
+        accentDim: "rgba(10,132,255,.16)", accentRing: "rgba(10,132,255,.38)", accentGlow: "rgba(10,132,255,.45)",
+        radius: "16px", radiusSm: "10px", radiusLg: "22px",
+        shadow: "0 1px 2px rgba(0,0,0,.55)",
+        shadowLg: "0 2px 6px rgba(0,0,0,.45), 0 24px 60px rgba(0,0,0,.60)",
+        fontHead: 'inherit', dur: "240ms", ease: "cubic-bezier(.32,.72,0,1)"
+      },
+      light: {
+        bg: "#F2F2F7", bg2: "rgba(255,255,255,.76)", card: "#FFFFFF", card2: "#F2F2F7",
+        border: "rgba(0,0,0,.10)", border2: "rgba(0,0,0,.18)", track: "rgba(0,0,0,.10)",
+        text: "#1D1D1F", text2: "#4A4A4F", text3: "#6E6E73",
+        accent: "#007AFF", accentInk: "#FFFFFF",
+        accentDim: "rgba(0,122,255,.12)", accentRing: "rgba(0,122,255,.30)", accentGlow: "rgba(0,122,255,.32)",
+        radius: "16px", radiusSm: "10px", radiusLg: "22px",
+        shadow: "0 1px 2px rgba(16,24,40,.06)",
+        shadowLg: "0 2px 6px rgba(16,24,40,.07), 0 18px 44px rgba(16,24,40,.10)",
+        fontHead: 'inherit', dur: "240ms", ease: "cubic-bezier(.32,.72,0,1)"
+      }
+    }
+  },
+  emby: {
+    doc: "/docs/specs/emby.md",
+    wallpaper: "collage",
+    player: "osd",
+    tokens: {
+      dark: {
+        bg: "#0F1418", bg2: "#161C21", card: "#171E24", card2: "#1E262D",
+        border: "rgba(255,255,255,.08)", border2: "rgba(255,255,255,.16)", track: "rgba(255,255,255,.10)",
+        text: "#E6EDF3", text2: "#A9B6C0", text3: "#7C8B96",
+        /* 品牌绿是 Emby 的商标色：主题可换，这抹绿不动。 */
+        accent: "#52B54B", accentInk: "#04140A",
+        accentDim: "rgba(82,181,75,.16)", accentRing: "rgba(82,181,75,.34)", accentGlow: "rgba(82,181,75,.40)",
+        radius: "8px", radiusSm: "4px", radiusLg: "12px",
+        shadow: "0 1px 2px rgba(0,0,0,.45)",
+        shadowLg: "0 1px 2px rgba(0,0,0,.45), 0 14px 36px rgba(0,0,0,.50)",
+        fontHead: 'inherit', dur: "150ms", ease: "cubic-bezier(.4,0,.2,1)"
+      },
+      light: {
+        bg: "#F3F5F7", bg2: "#FFFFFF", card: "#FFFFFF", card2: "#EDF1F4",
+        border: "rgba(16,24,32,.10)", border2: "rgba(16,24,32,.20)", track: "rgba(16,24,32,.10)",
+        text: "#1B242B", text2: "#46525B", text3: "#6B7883",
+        accent: "#3E9E3A", accentInk: "#FFFFFF",
+        accentDim: "rgba(62,158,58,.12)", accentRing: "rgba(62,158,58,.30)", accentGlow: "rgba(62,158,58,.32)",
+        radius: "8px", radiusSm: "4px", radiusLg: "12px",
+        shadow: "0 1px 2px rgba(16,24,32,.06)",
+        shadowLg: "0 1px 2px rgba(16,24,32,.06), 0 10px 26px rgba(16,24,32,.09)",
+        fontHead: 'inherit', dur: "150ms", ease: "cubic-bezier(.4,0,.2,1)"
+      }
+    }
+  },
+  plex: {
+    doc: "/docs/specs/plex.md",
+    wallpaper: "ultrablur",
+    player: "plex",
+    tokens: {
+      dark: {
+        bg: "#0B0B0C", bg2: "#171719", card: "#1A1A1C", card2: "#232326",
+        border: "rgba(255,255,255,.09)", border2: "rgba(255,255,255,.18)", track: "rgba(255,255,255,.12)",
+        text: "#F2F2F2", text2: "#B9B9BD", text3: "#8A8A90",
+        accent: "#E5A00D", accentInk: "#1A1200",
+        accentDim: "rgba(229,160,13,.16)", accentRing: "rgba(229,160,13,.34)", accentGlow: "rgba(229,160,13,.42)",
+        radius: "6px", radiusSm: "3px", radiusLg: "10px",
+        shadow: "0 1px 2px rgba(0,0,0,.50)",
+        shadowLg: "0 2px 6px rgba(0,0,0,.55), 0 22px 48px rgba(0,0,0,.65)",
+        fontHead: 'inherit', dur: "140ms", ease: "cubic-bezier(.2,0,0,1)"
+      },
+      light: {
+        bg: "#F5F5F6", bg2: "#FFFFFF", card: "#FFFFFF", card2: "#EFEFF1",
+        border: "rgba(20,20,22,.10)", border2: "rgba(20,20,22,.20)", track: "rgba(20,20,22,.10)",
+        text: "#141416", text2: "#45454A", text3: "#6C6C72",
+        accent: "#B87A00", accentInk: "#FFFFFF",
+        accentDim: "rgba(184,122,0,.12)", accentRing: "rgba(184,122,0,.28)", accentGlow: "rgba(184,122,0,.30)",
+        radius: "6px", radiusSm: "3px", radiusLg: "10px",
+        shadow: "0 1px 2px rgba(20,20,22,.07)",
+        shadowLg: "0 2px 6px rgba(20,20,22,.10), 0 16px 34px rgba(20,20,22,.14)",
+        fontHead: 'inherit', dur: "140ms", ease: "cubic-bezier(.2,0,0,1)"
+      }
+    }
+  }
+};
+/* 面板里的「这套规格带什么」：四行元素清单，来自三份详解文档的对应章节。 */
+const SPEC_HIGHLIGHTS = {
+  apple: [
+    { "zh-CN": "Liquid Glass 半透明材质（顶栏/面板/播放器）", "zh-TW": "Liquid Glass 半透明材質（頂欄/面板/播放器）", en: "Liquid Glass materials" },
+    { "zh-CN": "Aerial 航拍壁纸 · 缓慢漂移", "zh-TW": "Aerial 航拍壁紙 · 緩慢漂移", en: "Aerial wallpaper, slow drift" },
+    { "zh-CN": "SF Symbols 细描边图标 · 同心圆角", "zh-TW": "SF Symbols 細描邊圖示 · 同心圓角", en: "SF Symbols icons, concentric radii" },
+    { "zh-CN": "层叠式迷你播放器 · 控件让位内容", "zh-TW": "層疊式迷你播放器 · 控件讓位內容", en: "Layered mini player" }
+  ],
+  emby: [
+    { "zh-CN": "品牌绿锁定（不随主题变化）", "zh-TW": "品牌綠鎖定（不隨主題變化）", en: "Locked brand green" },
+    { "zh-CN": "海报拼贴背景（启用背景图才出现）", "zh-TW": "海報拼貼背景（啟用背景圖才出現）", en: "Poster-collage backdrop" },
+    { "zh-CN": "图片槽位 Primary/Backdrop/Logo/Thumb/Disc", "zh-TW": "圖片槽位 Primary/Backdrop/Logo/Thumb/Disc", en: "Image slots" },
+    { "zh-CN": "OSD 中央大播放键 · 海报角标", "zh-TW": "OSD 中央大播放鍵 · 海報角標", en: "Center OSD button, poster badges" }
+  ],
+  plex: [
+    { "zh-CN": "chevron 符号 · #E5A00D 琥珀金", "zh-TW": "chevron 符號 · #E5A00D 琥珀金", en: "Chevron + amber #E5A00D" },
+    { "zh-CN": "UltraBlur 取色壁纸（从海报四角算色）", "zh-TW": "UltraBlur 取色壁紙（從海報四角算色）", en: "UltraBlur colour extraction" },
+    { "zh-CN": "跳过片头/片尾 · 进度条缩略图", "zh-TW": "跳過片頭/片尾 · 進度條縮圖", en: "Skip intro/credits, thumbnails" },
+    { "zh-CN": "暗色骨架 · 海报 1:1.5", "zh-TW": "暗色骨架 · 海報 1:1.5", en: "Dark skeleton, 1:1.5 posters" }
+  ]
+};
+
 /* 三套图标包：同一批语义图标，按规格各自的描边/填充语言重画。
-   只覆盖「看得见差别」的那些；其余沿用站内默认图标。 */
+   v1.0.6 起把**播放器**用到的图标也补齐（快退快进/播放列表/字幕/关闭/全屏/
+   收起/原盘），否则切规格只有顶栏变、播放器还是默认图标。 */
 const OP_ICON_PACK = {
   apple: {
     home: '<path d="M4.4 11.4 12 5l7.6 6.4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.6 10.3v8.3a1.1 1.1 0 0 0 1.1 1.1h2.8v-4.4h3v4.4h2.8a1.1 1.1 0 0 0 1.1-1.1v-8.3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>',
@@ -169,7 +252,20 @@ const OP_ICON_PACK = {
     book: '<path d="M5 5.2h5.4A2.6 2.6 0 0 1 13 7.8v11.4a2.2 2.2 0 0 0-2.2-2.2H5Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M19 5.2h-5.4A2.6 2.6 0 0 0 11 7.8v11.4a2.2 2.2 0 0 1 2.2-2.2H19Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>',
     external: '<path d="M13.4 5.4h5.2v5.2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="m18.2 5.8-7.4 7.4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M17.6 14v4.4a1.4 1.4 0 0 1-1.4 1.4H6.6a1.4 1.4 0 0 1-1.4-1.4V8.8a1.4 1.4 0 0 1 1.4-1.4h4.2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>',
     folder: '<path d="M4 8.2A2.2 2.2 0 0 1 6.2 6h3.4l1.8 2.2h6.4A2.2 2.2 0 0 1 20 10.4v6.4A2.2 2.2 0 0 1 17.8 19H6.2A2.2 2.2 0 0 1 4 16.8Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>',
-    more: '<circle cx="6" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="18" cy="12" r="1.7" fill="currentColor" stroke="none"/>'
+    more: '<circle cx="6" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="18" cy="12" r="1.7" fill="currentColor" stroke="none"/>',
+    /* 播放器补充图标：SF Symbols 语言 —— 细描边、圆端、圆角连接 */
+    back10: '<path d="M4.4 9.6a8 8 0 1 1 1.9 8.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M4.2 5.2v4.6h4.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><text x="12" y="16" text-anchor="middle" font-size="6.4" fill="currentColor" stroke="none" font-family="system-ui,sans-serif">10</text>',
+    fwd10: '<path d="M19.6 9.6a8 8 0 1 0-1.9 8.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M19.8 5.2v4.6h-4.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><text x="12" y="16" text-anchor="middle" font-size="6.4" fill="currentColor" stroke="none" font-family="system-ui,sans-serif">10</text>',
+    playlist: '<path d="M4 7h10M4 12h10M4 17h6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M18.4 10.4v6.4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="16.6" cy="18" r="1.9" fill="none" stroke="currentColor" stroke-width="1.6"/>',
+    subtitles: '<rect x="3.4" y="5.4" width="17.2" height="13.2" rx="3" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M7 11.4h4.4M7 15h7.6M14.2 11.4H17" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
+    close: '<path d="m6.6 6.6 10.8 10.8M17.4 6.6 6.6 17.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
+    fullscreen: '<path d="M4.6 9.4V4.6h4.8M19.4 9.4V4.6h-4.8M4.6 14.6v4.8h4.8M19.4 14.6v4.8h-4.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>',
+    collapse: '<path d="M9.4 4.6v4.8H4.6M14.6 4.6v4.8h4.8M9.4 19.4v-4.8H4.6M14.6 19.4v-4.8h4.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>',
+    restore: '<path d="M4.6 9.4h4.8V4.6M19.4 9.4h-4.8V4.6M4.6 14.6h4.8v4.8M19.4 14.6h-4.8v4.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>',
+    disc: '<circle cx="12" cy="12" r="8.6" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="2.4" fill="none" stroke="currentColor" stroke-width="1.6"/>',
+    info: '<circle cx="12" cy="12" r="8.6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 10.8v5.4M12 7.9v.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
+    details: '<rect x="3.6" y="4.6" width="16.8" height="14.8" rx="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M7 9h6M7 12.4h10M7 15.8h7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
+    copy: '<rect x="8.4" y="8.4" width="11.2" height="11.2" rx="2.6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M15.6 5.4H6.4a1 1 0 0 0-1 1v9.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>'
   },
   emby: {
     home: '<path d="M12 3.4 21 11v9.2a1 1 0 0 1-1 1h-5.4v-6h-5.2v6H4a1 1 0 0 1-1-1V11Z" fill="currentColor" stroke="none"/>',
@@ -192,7 +288,20 @@ const OP_ICON_PACK = {
     book: '<path d="M11 6.2C9.8 5.2 8 4.6 5.4 4.6v13c2.6 0 4.4.6 5.6 1.6Zm2 0v13c1.2-1 3-1.6 5.6-1.6v-13c-2.6 0-4.4.6-5.6 1.6Z" fill="currentColor" stroke="none"/>',
     external: '<path d="M14 4h6v6h-2.4V8.1l-7 7-1.7-1.7 7-7H14Zm-2 2v2H6.6v9.4H16V12h2v5.4a1.6 1.6 0 0 1-1.6 1.6H6.6A1.6 1.6 0 0 1 5 17.4V7.6A1.6 1.6 0 0 1 6.6 6Z" fill="currentColor" stroke="none"/>',
     folder: '<path d="M3.4 6.6A1.8 1.8 0 0 1 5.2 4.8h4l2 2.2h7.6a1.8 1.8 0 0 1 1.8 1.8v9.4a1.8 1.8 0 0 1-1.8 1.8H5.2a1.8 1.8 0 0 1-1.8-1.8Z" fill="currentColor" stroke="none"/>',
-    more: '<circle cx="5.4" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="18.6" cy="12" r="2" fill="currentColor" stroke="none"/>'
+    more: '<circle cx="5.4" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="18.6" cy="12" r="2" fill="currentColor" stroke="none"/>',
+    /* 播放器补充图标：Material 语言 —— 实心、几何、无描边 */
+    back10: '<path d="M12 5.4a7.4 7.4 0 1 1-7.1 9.5h2.5A5 5 0 1 0 12 7.8v2.6L7.6 6.4 12 2.4Z" fill="currentColor" stroke="none"/>',
+    fwd10: '<path d="M12 5.4a7.4 7.4 0 1 0 7.1 9.5h-2.5A5 5 0 1 1 12 7.8v2.6l4.4-4-4.4-4Z" fill="currentColor" stroke="none"/>',
+    playlist: '<path d="M4 6.2h10.4v2.2H4Zm0 4.6h10.4v2.2H4Zm0 4.6h6.8v2.2H4Zm11.2-1.2h2.2v4.2h-2.2Zm-3.6 3.4a2.6 2.6 0 1 1 5.2 0 2.6 2.6 0 0 1-5.2 0Z" fill="currentColor" stroke="none"/>',
+    subtitles: '<path d="M3.2 5.2h17.6v13.6H3.2Zm2.2 2.2v9.2h13.2V7.4Zm1.8 2h4.6v2H7.2Zm6 0h3.6v2h-3.6Zm-6 3.4h3.6v2H7.2Zm5 0h4.6v2h-4.6Z" fill="currentColor" stroke="none"/>',
+    close: '<path d="m6.4 5 5.6 5.6L17.6 5 19 6.4 13.4 12 19 17.6 17.6 19 12 13.4 6.4 19 5 17.6 10.6 12 5 6.4Z" fill="currentColor" stroke="none"/>',
+    fullscreen: '<path d="M4 4h6.4v2.4H6.4V10H4Zm9.6 0H20v6.4h-2.4V6.4h-4Zm4 9.6H20V20h-6.4v-2.4h4ZM4 13.6h2.4v4h4V20H4Z" fill="currentColor" stroke="none"/>',
+    collapse: '<path d="M9.6 4v5.6H4V7.2h3.2V4Zm4.8 0h2.4v3.2H20v2.4h-5.6Zm-10.4 10H7.2v3.2h2.4V20H4Zm11.2 3.2h2.4V14H20v5.6h-4.8Z" fill="currentColor" stroke="none"/>',
+    restore: '<path d="M4 9.6V4h5.6v2.4H7.2L11 10.2 9.8 11.4 6.4 8v1.6Zm16 0h-2.4V8l-3.4 3.4L13 10.2l3.8-3.8h-2.4V4H20ZM9.8 12.6 11 13.8 7.2 17.6h2.4V20H4v-5.6h2.4v1.6Z" fill="currentColor" stroke="none"/>',
+    disc: '<path d="M12 3.2a8.8 8.8 0 1 0 0 17.6 8.8 8.8 0 0 0 0-17.6Zm0 2.4a6.4 6.4 0 1 1 0 12.8 6.4 6.4 0 0 1 0-12.8Zm0 3.6a2.8 2.8 0 1 0 0 5.6 2.8 2.8 0 0 0 0-5.6Z" fill="currentColor" stroke="none"/>',
+    info: '<path d="M12 3.2a8.8 8.8 0 1 0 0 17.6 8.8 8.8 0 0 0 0-17.6Zm1.2 13.2h-2.4v-5.6h2.4Zm0-7.2h-2.4V6.8h2.4Z" fill="currentColor" stroke="none"/>',
+    details: '<path d="M3.2 4.4h17.6v15.2H3.2Zm2.4 2.4v2h2.4v-2Zm4.4 0v2h8v-2Zm-4.4 3.6v2h2.4v-2Zm4.4 0v2h8v-2Zm-4.4 3.6v2h2.4v-2Zm4.4 0v2h5.6v-2Z" fill="currentColor" stroke="none"/>',
+    copy: '<path d="M8 3.6h9.6v2.4H9.6v9.6H8Zm3.2 3.2H20v13.6h-8.8Zm2.4 2.4v8.8h4V9.2Z" fill="currentColor" stroke="none"/>'
   },
   plex: {
     home: '<path d="M4 10.6 12 4l8 6.6V20h-5.6v-5.8H9.6V20H4Z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/>',
@@ -215,7 +324,20 @@ const OP_ICON_PACK = {
     book: '<path d="M5 5h5.6A2.4 2.4 0 0 1 13 7.4v11.8a2.2 2.2 0 0 0-2.2-2.2H5Zm14 0h-5.6A2.4 2.4 0 0 0 11 7.4v11.8a2.2 2.2 0 0 1 2.2-2.2H19Z" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linejoin="round"/>',
     external: '<path d="M13.6 5.2h5.2v5.2" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square"/><path d="m18.4 5.6-7.6 7.6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square"/><path d="M17.4 13.8v4.4a1.6 1.6 0 0 1-1.6 1.6H6.4a1.6 1.6 0 0 1-1.6-1.6V8.8a1.6 1.6 0 0 1 1.6-1.6h4.4" fill="none" stroke="currentColor" stroke-width="2.2"/>',
     folder: '<path d="M3.8 7A2 2 0 0 1 5.8 5h3.8l2 2.2h6.6A2 2 0 0 1 20.2 9v8a2 2 0 0 1-2 2H5.8a2 2 0 0 1-2-2Z" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linejoin="round"/>',
-    more: '<circle cx="5.6" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="18.4" cy="12" r="2" fill="currentColor" stroke="none"/>'
+    more: '<circle cx="5.6" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="18.4" cy="12" r="2" fill="currentColor" stroke="none"/>',
+    /* 播放器补充图标：Plex 语言 —— 粗描边、方头、chevron 味 */
+    back10: '<path d="M4.4 9.6a8 8 0 1 1 1.9 8.6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square"/><path d="M4 5v4.8h4.8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square"/>',
+    fwd10: '<path d="M19.6 9.6a8 8 0 1 0-1.9 8.6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square"/><path d="M20 5v4.8h-4.8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square"/>',
+    playlist: '<path d="M3.6 7h10.8M3.6 12h10.8M3.6 17h7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square"/><path d="M18.4 10.6v6.2" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square"/><circle cx="16.6" cy="18" r="2" fill="none" stroke="currentColor" stroke-width="2"/>',
+    subtitles: '<rect x="3.4" y="5.4" width="17.2" height="13.2" rx="1.2" fill="none" stroke="currentColor" stroke-width="2.1"/><path d="M6.8 11.2h4.6M6.8 15h7.4M13.4 11.2h3.8" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="square"/>',
+    close: '<path d="m6.6 6.6 10.8 10.8M17.4 6.6 6.6 17.4" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="square"/>',
+    fullscreen: '<path d="M4.4 9.4V4.4h5M19.6 9.4V4.4h-5M4.4 14.6v5h5M19.6 14.6v5h-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square"/>',
+    collapse: '<path d="M9.4 4.4v5h-5M14.6 4.4v5h5M9.4 19.6v-5h-5M14.6 19.6v-5h5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square"/>',
+    restore: '<path d="M4.4 9.4h5v-5M19.6 9.4h-5v-5M4.4 14.6h5v5M19.6 14.6h-5v5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square"/>',
+    disc: '<circle cx="12" cy="12" r="8.4" fill="none" stroke="currentColor" stroke-width="2.1"/><circle cx="12" cy="12" r="2.2" fill="none" stroke="currentColor" stroke-width="2.1"/>',
+    info: '<circle cx="12" cy="12" r="8.4" fill="none" stroke="currentColor" stroke-width="2.1"/><path d="M12 10.6v5.6M12 7.8v.1" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="square"/>',
+    details: '<rect x="3.4" y="4.6" width="17.2" height="14.8" rx="1.2" fill="none" stroke="currentColor" stroke-width="2.1"/><path d="M6.8 9h6M6.8 12.4h10.4M6.8 15.8h7" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="square"/>',
+    copy: '<rect x="8.4" y="8.4" width="11.2" height="11.2" rx="1.2" fill="none" stroke="currentColor" stroke-width="2.1"/><path d="M15.6 5.4H6.4a1 1 0 0 0-1 1v9.2" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="square"/>'
   }
 };
 function currentOpMode() { return OP_MODES.includes(settings.opMode) ? settings.opMode : "apple"; }
@@ -252,34 +374,36 @@ function applyOpModeIcons() {
     if (next && ic.innerHTML !== next) ic.innerHTML = next;
   });
 }
+function specThemeDef(id) { return SPEC_THEMES[String(id)] || SPEC_THEMES.apple; }
 function applyOpMode() {
   const mode = currentOpMode();
   const root = document.documentElement;
   root.setAttribute("data-opmode", mode);
   /* 新属性名与旧属性同值：语义上 data-spec 才是「界面规格」。 */
   root.setAttribute("data-spec", mode);
+  root.setAttribute("data-spec-player", specThemeDef(mode).player);
   applyOpModeIcons();
   return mode;
 }
-/* 规格切换：图标、动效、圆角、顶栏形态一起变，并立刻同步选中态与「当前」说明。 */
+/* 规格切换：配色、壁纸、播放器皮肤、图标、动效一起换，并立刻同步选中态与「当前」说明。 */
 function setOpMode(mode) {
   settings.opMode = OP_MODES.includes(String(mode)) ? String(mode) : "apple";
   saveSettings();
   const applied = applyOpMode();
+  try { applySpecWallpaper(true); } catch (e) {}
   try { syncThemeControls(); } catch (e) {}
   try { themeTransitionPulse(); } catch (e) {}
-  toast("🎛 " + t("uiSpecSaved") + "：" + themeLabel(OP_MODE_LABEL[applied]));
+  toast("🎛 " + t("uiSpecSaved") + "：" + themeLabel(OP_MODE_LABEL[applied]) + " · " + themeLabel({ "zh-CN": "主题/壁纸/播放器已同步", "zh-TW": "主題/壁紙/播放器已同步", en: "theme, wallpaper, player synced" }));
 }
 const THEME_MODE_LABEL = {
   dark: { "zh-CN": "暗色", "zh-TW": "暗色", en: "Dark" },
   light: { "zh-CN": "亮色", "zh-TW": "亮色", en: "Light" },
   auto: { "zh-CN": "跟随系统", "zh-TW": "跟隨系統", en: "System" }
 };
+const THEME_MODES = ["dark", "light", "auto"];
 
 function themeLangKey() { return curLang === "en" ? "en" : curLang === "zh-TW" ? "zh-TW" : "zh-CN"; }
 function themeLabel(table) { return table[themeLangKey()] || table["zh-CN"]; }
-function themePaletteDef(id) { return THEME_PALETTES.find(p => p.id === String(id)) || THEME_PALETTES[0]; }
-function themeAccentDef(id) { return THEME_ACCENTS.find(a => a.id === String(id)) || THEME_ACCENTS[0]; }
 function systemPrefersDark() {
   try { return !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches); }
   catch (e) { return true; }
@@ -290,30 +414,162 @@ function resolvedThemeMode() {
   if (settings.mode === "auto") return systemPrefersDark() ? "dark" : "light";
   return "dark";
 }
-function themePreviewStyle(def, mode) {
-  const t = def[mode === "light" ? "light" : "dark"];
-  return `--t-bg:${t.bg};--t-card:${t.card};--t-card2:${t.card2};--t-text:${t.text};--t-accent:${t.accent};--t-line:${t.line};--t-r:${def.r}px;--t-cover-a:${t.coverA};--t-cover-b:${t.coverB}`;
+
+/* ==================== 壁纸层 ====================
+   三套规格的壁纸做法完全不同，所以不是一张可替换的图，而是三种「算出来的」背景：
+     aerial    Apple 航拍：多层径向渐变 + 48s 缓慢漂移，暗亮各一套配色；
+     collage   Emby：把当前媒体库的海报铺成一张拼贴，重度模糊后压暗（对应「启用背景图」）；
+     ultrablur Plex：从海报四角取色，生成一整张氛围底图（UltraBlur 的客户端实现）。
+   关掉壁纸时只留 --bg 底色，一切仍可读。 */
+let vhWallCollageKey = "";
+let vhUbCache = {};
+function wallpaperOn() { return settings.wallpaper !== false; }
+function setSpecWallpaper(on) {
+  settings.wallpaper = !!on;
+  saveSettings();
+  applySpecWallpaper(true);
+  toast(settings.wallpaper ? "🖼 " + t("wallpaperOn") : "🚫 " + t("wallpaperOff"));
 }
-/* 应用主题：把三层选择落到 <html>，并让旧的世界观（body[data-theme] / 阅读器主题类）继续成立。 */
+/* Emby 拼贴：从当前 DOM 里取海报（不额外请求接口，避免与列表加载抢带宽）。 */
+function vhCollageSources(limit) {
+  const out = [];
+  const seen = {};
+  document.querySelectorAll(".media-poster-art img, .hp-art img, .audio-album-cover img, .book-card-cover img, .series-show-art img, .media-poster-card img").forEach(img => {
+    const src = img.getAttribute("src") || "";
+    if (!src || seen[src] || out.length >= limit) return;
+    seen[src] = 1;
+    out.push(src);
+  });
+  return out;
+}
+function vhRenderCollage() {
+  const layer = document.getElementById("vhWallCollage");
+  if (!layer) return;
+  const srcs = vhCollageSources(12);
+  const key = srcs.join("|");
+  if (key === vhWallCollageKey) return;
+  vhWallCollageKey = key;
+  layer.innerHTML = srcs.map(src => `<img src="${esc(src)}" alt="" aria-hidden="true" loading="lazy" decoding="async">`).join("");
+  layer.dataset.count = String(srcs.length);
+}
+/* Plex UltraBlur：把海报缩到 8×8 取四角平均色，再交给 CSS 做四角渐变。
+   同源图片可以直接读像素；跨源（外链海报）读不到就保留上一组色，不报错。 */
+function vhUltraBlurFromImg(img) {
+  const src = img && (img.currentSrc || img.getAttribute("src") || "");
+  if (!src) return false;
+  if (vhUbCache[src]) { vhApplyUb(vhUbCache[src]); return true; }
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = 8; canvas.height = 8;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return false;
+    ctx.drawImage(img, 0, 0, 8, 8);
+    const data = ctx.getImageData(0, 0, 8, 8).data;
+    const pick = (x, y) => {
+      const i = (y * 8 + x) * 4;
+      return [data[i], data[i + 1], data[i + 2]];
+    };
+    const avg = (pts) => {
+      let r = 0, g = 0, b = 0;
+      pts.forEach(([x, y]) => { const c = pick(x, y); r += c[0]; g += c[1]; b += c[2]; });
+      const n = pts.length || 1;
+      return [Math.round(r / n), Math.round(g / n), Math.round(b / n)];
+    };
+    const corners = {
+      tl: avg([[0, 0], [1, 0], [0, 1], [1, 1]]),
+      tr: avg([[7, 0], [6, 0], [7, 1], [6, 1]]),
+      br: avg([[7, 7], [6, 7], [7, 6], [6, 6]]),
+      bl: avg([[0, 7], [1, 7], [0, 6], [1, 6]])
+    };
+    const css = {
+      tl: `rgb(${corners.tl.join(",")})`,
+      tr: `rgb(${corners.tr.join(",")})`,
+      br: `rgb(${corners.br.join(",")})`,
+      bl: `rgb(${corners.bl.join(",")})`
+    };
+    vhUbCache[src] = css;
+    vhApplyUb(css);
+    return true;
+  } catch (e) { return false; }
+}
+function vhApplyUb(css) {
+  const root = document.documentElement;
+  root.style.setProperty("--ub-tl", css.tl);
+  root.style.setProperty("--ub-tr", css.tr);
+  root.style.setProperty("--ub-br", css.br);
+  root.style.setProperty("--ub-bl", css.bl);
+  root.setAttribute("data-ub", "on");
+}
+/* 焦点/点击海报时更新取色：Plex 的「背景跟着内容走」。 */
+function vhWatchArtwork() {
+  if (vhWatchArtwork._bound) return;
+  vhWatchArtwork._bound = true;
+  const onArt = (ev) => {
+    if (currentOpMode() !== "plex" || !wallpaperOn()) return;
+    const card = ev.target && ev.target.closest ? ev.target.closest("article, .hp, .book-card, .audio-album-card") : null;
+    if (!card) return;
+    const img = card.querySelector("img");
+    if (img && img.complete) vhUltraBlurFromImg(img);
+  };
+  document.addEventListener("pointerover", onArt, true);
+  document.addEventListener("focusin", onArt, true);
+  document.addEventListener("click", onArt, true);
+}
+function applySpecWallpaper(force) {
+  const root = document.documentElement;
+  const spec = currentOpMode();
+  const def = specThemeDef(spec);
+  const on = wallpaperOn();
+  root.setAttribute("data-wallpaper", on ? def.wallpaper : "off");
+  const layer = document.getElementById("vhWall");
+  if (layer) layer.dataset.kind = on ? def.wallpaper : "off";
+  if (!on) return;
+  if (def.wallpaper === "collage") {
+    vhRenderCollage();
+    /* 首屏列表是异步来的：先渲染一次，再在 1.2s/3.5s 补两次，之后靠列表点击刷新。 */
+    if (force !== false) {
+      clearTimeout(applySpecWallpaper._t1); clearTimeout(applySpecWallpaper._t2);
+      applySpecWallpaper._t1 = setTimeout(vhRenderCollage, 1200);
+      applySpecWallpaper._t2 = setTimeout(vhRenderCollage, 3500);
+    }
+  }
+  if (def.wallpaper === "ultrablur") {
+    vhWatchArtwork();
+    const first = document.querySelector(".media-poster-art img, .hp-art img, .audio-album-cover img");
+    if (first && first.complete) vhUltraBlurFromImg(first);
+    else if (first) first.addEventListener("load", () => vhUltraBlurFromImg(first), { once: true });
+  }
+}
+/* 列表切换后刷新壁纸：委托点击顶栏标签与媒体库卡片，不额外轮询。 */
+document.addEventListener("click", (ev) => {
+  const t = ev.target;
+  if (!t || !t.closest) return;
+  if (t.closest("#topLibTabs .libtab, .libtab, .media-poster-card, .book-card, .audio-album-card, .hp")) {
+    setTimeout(() => { try { applySpecWallpaper(false); } catch (e) {} }, 900);
+  }
+});
+
+/* 应用主题：把两层选择落到 <html>，并让旧的世界观（body[data-theme] / 阅读器主题类）继续成立。 */
 function applyTheme(options = {}) {
   const mode = resolvedThemeMode();
-  const palette = themePaletteDef(settings.palette).id;
-  const accent = themeAccentDef(settings.accent).id;
+  const spec = currentOpMode();
   const root = document.documentElement;
-  root.dataset.palette = palette;
+  root.dataset.spec = spec;
   root.dataset.mode = mode;
-  root.dataset.accent = accent;
+  /* 旧属性 data-palette / data-accent 已随调色板与强调色一起移除；
+     这里显式清掉，避免旧 localStorage 或手工改过的 DOM 让旧 CSS 复活。 */
+  root.removeAttribute("data-palette");
+  root.removeAttribute("data-accent");
   if (settings.reduceMotion) root.dataset.motion = "reduce"; else delete root.dataset.motion;
-  /* body[data-theme] 保持 dark|light：老 CSS 里 body[data-theme="light"] 的覆盖规则要继续生效。
-     自定义背景只是背景层，不再伪装成第三种主题（旧版自定义背景一律按暗色走，亮色下会难读）。 */
+  /* body[data-theme] 保持 dark|light：老 CSS 里 body[data-theme="light"] 的覆盖规则要继续生效。 */
   document.body.dataset.theme = mode;
-  document.body.classList.toggle("custom-bg", !!settings.customBg);
-  if (settings.customBg) applyBgImage();
+  document.body.classList.remove("custom-bg");
   /* 阅读器（iframe/整页覆盖层）不在 <html> 变量链上，需要显式同步主题类。 */
   document.querySelectorAll(".media-reader-overlay").forEach(el => {
     el.classList.remove("reader-theme-dark", "reader-theme-light", "reader-theme-custom");
     el.classList.add(readerThemeClass());
   });
+  applySpecWallpaper(false);
   syncThemeControls();
   try { applyOpModeIcons(); } catch (e) {}
   if (options.animate) themeTransitionPulse();
@@ -333,38 +589,15 @@ function setThemeMode(mode) {
   applyTheme({ animate: true });
   toast("🎨 " + t("themeModeSaved") + "：" + themeLabel(THEME_MODE_LABEL[settings.mode]) + (settings.mode === "auto" ? "（" + themeLabel(THEME_MODE_LABEL[resolvedThemeMode()]) + "）" : ""));
 }
-function setThemePalette(id) {
-  settings.palette = themePaletteDef(id).id;
-  saveSettings();
-  applyTheme({ animate: true });
-  toast("🎨 " + t("themePaletteSaved") + "：" + themeLabel(themePaletteDef(settings.palette).name));
-}
-function setThemeAccent(id) {
-  settings.accent = themeAccentDef(id).id;
-  saveSettings();
-  applyTheme({ animate: true });
-  const def = themeAccentDef(settings.accent);
-  toast("🎨 " + t("themeAccentSaved") + "：" + (def.id === "theme" ? t("accentTheme") : themeLabel(def.label)));
-}
 function setThemeReduceMotion(on) {
   settings.reduceMotion = !!on;
   saveSettings();
   applyTheme();
 }
-/* 自定义背景图片开关（v0.9.73：变成独立的背景层开关，不再挤占「主题」三档）。 */
-function setCustomBg(on) {
-  settings.customBg = !!on;
-  settings.theme = resolvedThemeMode();
-  saveSettings();
-  applyTheme();
-  toast(settings.customBg ? "🖼 " + t("bgEnabled") : "🗑 " + t("bgDisabled"));
-}
-/* 兼容旧入口：setTheme('dark'|'light'|'custom')。旧书签/旧版本 localStorage 仍会调用它。 */
+/* 兼容旧入口：setTheme('dark'|'light')。旧书签/旧版本 localStorage 仍会调用它。
+   v1.0.6：'custom' 档（自定义背景）已移除，按暗色处理。 */
 function setTheme(th) {
-  const value = String(th || "");
-  if (value === "custom") { setCustomBg(true); return; }
-  settings.customBg = false;
-  setThemeMode(value === "light" ? "light" : "dark");
+  setThemeMode(String(th) === "light" ? "light" : "dark");
 }
 /* 系统明暗跟随：auto 档下系统切换要实时生效（会话方案里的「跟随系统 + 监听实时变化」）。 */
 (function watchSystemTheme() {
@@ -376,22 +609,10 @@ function setTheme(th) {
   } catch (e) { /* 环境不支持时静默降级为手动明暗 */ }
 })();
 
-/* ---------- 面板渲染：主题卡片是「用该主题自己的令牌渲染的小界面」，不是色块 ---------- */
+/* ---------- 面板渲染 ---------- */
 function renderThemePanel() {
-  const grid = document.getElementById("themePaletteGrid");
-  if (grid) {
-    grid.innerHTML = THEME_PALETTES.map(def => `
-      <div class="themecard" role="button" tabindex="0" data-theme-card="${def.id}" onclick="setThemePalette('${def.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();setThemePalette('${def.id}')}">
-        <span class="tp" data-theme-preview="${def.id}" style="${themePreviewStyle(def, resolvedThemeMode())}">
-          <span class="tp-top"><i></i><i></i></span>
-          <span class="tp-body"><span class="tp-thumb"></span><span class="tp-lines"><b>${esc(themeLabel(def.name))}</b><i></i><i></i></span></span>
-        </span>
-        <span class="tc-name">${esc(themeLabel(def.name))}<span class="tc-check">✓</span></span>
-        <span class="tc-desc">${esc(themeLabel(def.desc))} · ${def.r}px · ${def.dur}ms</span>
-      </div>`).join("");
-  }
-  /* v1.0.4（需求3/4）：界面规格 = 带品牌标记的卡片；操作模式 = 带设备图标的卡片。
-     两张卡都同时给出「换成什么」与「当前生效」，点一下立刻能看到变化。 */
+  /* v1.0.6：调色板卡片与强调色色块整体移除，规格卡成为唯一的主题入口；
+     每张卡同时给出「这套规格带什么」（四行元素清单，来自对应详解文档）。 */
   const opSeg = document.getElementById("opModeSeg");
   if (opSeg) {
     opSeg.innerHTML = OP_MODES.map(m => `<button type="button" class="spec-card" role="radio" data-op-opt="${m}"
@@ -410,32 +631,36 @@ function renderThemePanel() {
         <span class="sc-dot" aria-hidden="true"></span>
       </button>`).join("");
   }
-  const swatches = document.getElementById("themeAccentSwatches");
-  if (swatches) {
-    swatches.innerHTML = THEME_ACCENTS.map(a => {
-      const label = a.id === "theme" ? t("accentTheme") : themeLabel(a.label);
-      const style = a.id === "theme" ? "" : ` style="--sw:${a.color}"`;
-      return `<button type="button" class="swatch ${a.css}" data-theme-accent="${a.id}"${style} title="${esc(label)}" aria-label="${esc(label)}" onclick="setThemeAccent('${a.id}')"></button>`;
-    }).join("");
-  }
   const seg = document.getElementById("themeModeSeg");
   if (seg) {
     seg.innerHTML = THEME_MODES.map(mode => `<button type="button" data-mode-opt="${mode}" data-i18n-mode="${mode}" onclick="setThemeMode('${mode}')">${esc(themeLabel(THEME_MODE_LABEL[mode]))}</button>`).join("");
   }
   const motion = document.getElementById("themeReduceMotion");
   if (motion) motion.checked = !!settings.reduceMotion;
-  const bgToggle = document.getElementById("themeCustomBgToggle");
-  if (bgToggle) bgToggle.checked = !!settings.customBg;
+  const wall = document.getElementById("themeWallpaperToggle");
+  if (wall) wall.checked = wallpaperOn();
   syncThemeControls();
 }
+/* 规格详解：把 docs/specs/*.md 的要素清单摊在弹窗里（不加载外部图片，纯文本）。 */
+function openSpecDoc(mode) {
+  const id = OP_MODES.includes(String(mode)) ? String(mode) : currentOpMode();
+  const def = specThemeDef(id);
+  const box = document.getElementById("specDocBody");
+  const title = document.getElementById("specDocTitle");
+  if (!box || !title) return;
+  title.textContent = themeLabel(OP_MODE_LABEL[id]) + " · " + t("specDocTitle");
+  const rows = (SPEC_HIGHLIGHTS[id] || []).map((h, i) => `<li><b>${i + 1}.</b> ${esc(themeLabel(h))}</li>`).join("");
+  box.innerHTML = `<p class="spec-doc-lead">${esc(t("specDocLead"))}</p>
+    <ul class="spec-doc-list">${rows}</ul>
+    <p class="spec-doc-meta">${esc(t("specDocMeta"))}<a href="${esc(def.doc)}" target="_blank" rel="noopener"><code>${esc(def.doc)}</code></a></p>
+    <div class="spec-doc-actions">
+      <button class="btn btn-primary" type="button" onclick="setOpMode('${id}');closeModal('specDocModal')">${esc(t("specDocApply"))}</button>
+      <button class="btn" type="button" onclick="closeModal('specDocModal')">${esc(t("specDocClose"))}</button>
+    </div>`;
+  openModal("specDocModal");
+}
 function syncThemeControls() {
-  const palette = themePaletteDef(settings.palette).id, accent = themeAccentDef(settings.accent).id, mode = settings.mode || "dark";
-  document.querySelectorAll("[data-theme-card]").forEach(el => el.classList.toggle("on", el.dataset.themeCard === palette));
-  /* 预览卡片跟着「亮/暗」实时换色：选亮色时要看到亮色版缩略界面。 */
-  document.querySelectorAll("[data-theme-preview]").forEach(el => {
-    el.setAttribute("style", themePreviewStyle(themePaletteDef(el.dataset.themePreview), resolvedThemeMode()));
-  });
-  document.querySelectorAll("[data-theme-accent]").forEach(el => el.classList.toggle("on", el.dataset.themeAccent === accent));
+  const mode = settings.mode || "dark";
   document.querySelectorAll("#themeModeSeg [data-mode-opt]").forEach(el => el.classList.toggle("on", el.dataset.modeOpt === mode));
   document.querySelectorAll("#uiModeSeg [data-ui-opt]").forEach(el => {
     const on = el.dataset.uiOpt === uiModeChoice();
@@ -449,11 +674,14 @@ function syncThemeControls() {
     el.setAttribute("aria-checked", on ? "true" : "false");
     el.setAttribute("tabindex", on ? "0" : "-1");
   });
+  const wall = document.getElementById("themeWallpaperToggle");
+  if (wall) wall.checked = wallpaperOn();
   /* 当前生效说明：自动档要同时显示「自动」与真正落地的档位。 */
   const specNow = document.getElementById("opModeCurrent");
   if (specNow) {
     const def = OP_MODE_LABEL[currentOpMode()], tag = OP_MODE_TAG[currentOpMode()];
-    specNow.textContent = t("uiSpecNow") + "：" + themeLabel(def) + " · " + themeLabel(tag);
+    specNow.textContent = t("uiSpecNow") + "：" + themeLabel(def) + " · " + themeLabel(tag) +
+      " · " + themeLabel(THEME_MODE_LABEL[resolvedThemeMode()]);
   }
   const modeNow = document.getElementById("uiModeCurrent");
   if (modeNow) {
@@ -462,6 +690,12 @@ function syncThemeControls() {
       (choice === "auto" ? " → " + themeLabel(UI_MODE_LABEL[applied]) : "") +
       (choice === "tv" ? " · " + t("opModeTvRules") : "");
   }
+  /* 规格清单直接铺在面板里，不用点开弹窗也能看到这套规格带什么。 */
+  const hl = document.getElementById("opModeHighlights");
+  if (hl) {
+    const rows = (SPEC_HIGHLIGHTS[currentOpMode()] || []).map(h => `<li>${esc(themeLabel(h))}</li>`).join("");
+    hl.innerHTML = `<ul>${rows}</ul><button class="btn btn-sm" type="button" onclick="openSpecDoc('${currentOpMode()}')">${esc(t("specDocOpen"))}</button>`;
+  }
 }
 function initTheme() {
   renderThemePanel();
@@ -469,4 +703,5 @@ function initTheme() {
   applyUIMode();
   /* v1.0.2（需求6/7）：操作模式要在首帧就落到 <html>，避免先按默认模式画一遍。 */
   applyOpMode();
+  applySpecWallpaper(true);
 }

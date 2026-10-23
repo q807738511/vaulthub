@@ -25,15 +25,14 @@ loadHiddenModules();
 /* v0.9.56：先探测鉴权模式 —— 开放模式自动登录（无登录遮罩），密码模式沿用登录探测。 */
 initVaultHubAuth();
 
-/* v0.9.73：主题初始化收敛到 06-theme.js 的 initTheme() —— 它负责把
-   调色板/明暗/强调色落到 <html>、渲染外观面板里的真预览卡片、同步阅读器主题类。
+/* v0.9.73：主题初始化收敛到 06-theme.js 的 initTheme() —— v1.0.6 起它负责把
+   界面规格/明暗落到 <html>、铺规格壁纸、渲染外观面板、同步阅读器主题类。
    必须用 typeof 守卫：升级瞬间可能命中「新 04-boot.js + 旧 06-theme.js（缓存里还没有）」，
    裸调用会 ReferenceError 让整个前端白屏。 */
 if (typeof initTheme === "function") initTheme();
 else {
   document.body.dataset.theme = settings.theme === "light" ? "light" : "dark";
-  document.body.classList.toggle("custom-bg", settings.theme === "custom");
-  applyBgImage();
+  document.body.classList.remove("custom-bg");
 }
 
 /* v0.9.74：顶栏导航（媒体库标签 / 全局搜索 / 头像菜单）初始化；v0.9.93 起为唯一布局。

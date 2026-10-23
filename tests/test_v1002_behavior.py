@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""v1.0.5 行为测试包装器：跑 tests/v1002_behavior.js（Node VM 桩，真实执行 02-media.js / 06-theme.js）。
+"""v1.0.6 行为测试包装器：跑 tests/v1002_behavior.js（Node VM 桩，真实执行 02-media.js / 06-theme.js）。
 
 覆盖：
   A. 季度版式回归（需求1）：季名独立行、全部分集同网格、无首集大图、加粗「季度」只在最上层
@@ -18,7 +18,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 if shutil.which("node") is None:
-    print("SKIP: 本机没有 node，跳过 v1.0.5 行为测试")
+    print("SKIP: 本机没有 node，跳过 v1.0.6 行为测试")
     sys.exit(0)
 
 env = dict(os.environ)

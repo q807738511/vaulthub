@@ -4,10 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VaultHub 蜀鼠之家</title>
-<link rel="stylesheet" href="/web/css/main.css?v=1.0.5">
+<link rel="stylesheet" href="/web/css/main.css?v=1.0.6">
 <script>
 /* 资源版本号：index.html 用它给所有静态资源打查询串。 */
-window.VAULTHUB_ASSET_VERSION = "1.0.5";
+window.VAULTHUB_ASSET_VERSION = "1.0.6";
 </script>
 <script>
 /* v0.9.73 主题防闪：调色板/明暗/强调色必须在首帧渲染前落到 <html> 上，
@@ -19,15 +19,12 @@ window.VAULTHUB_ASSET_VERSION = "1.0.5";
     /* 白名单：localStorage 里可能是旧版本或外部写入的值（例如旧版 theme:"custom"、
        手工改过的 palette），未识别时必须回落到默认，否则首帧会套用一个 CSS 里
        根本不存在的 data-palette，亮色用户会看到一帧暗色（防闪反而失效）。 */
-    var PALETTES = ["emerald", "plum", "neon", "clay"];
-    var ACCENTS = ["theme", "teal", "indigo", "rose", "amber", "violet"];
+    /* v1.0.6：调色板 / 强调色已移除，首帧只需要「明暗 + 界面规格 + 壁纸开关」。 */
     var mode = s.mode === "light" ? "light"
       : s.mode === "auto" ? (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
       : (s.theme === "light" ? "light" : "dark");
     var root = document.documentElement;
-    root.dataset.palette = PALETTES.indexOf(s.palette) >= 0 ? s.palette : "emerald";
     root.dataset.mode = mode;
-    root.dataset.accent = ACCENTS.indexOf(s.accent) >= 0 ? s.accent : "theme";
     if (s.reduceMotion) root.dataset.motion = "reduce";
     /* v1.0.4（需求5）：操作模式（自动/Phone/TV/PC）与界面规格（Apple/Emby/Plex）
        必须在首帧前落到 <html>。旧版只在 06-theme.js 里应用，刷新时会先按默认档
@@ -57,18 +54,23 @@ window.VAULTHUB_ASSET_VERSION = "1.0.5";
     root.dataset.opmode = spec;
     root.dataset.spec = spec;
     root.dataset.uimodeChoice = uiMode;
-    if (s.customBg || s.theme === "custom") {
-      document.addEventListener("DOMContentLoaded", function () {
-        document.body.classList.add("custom-bg");
-        var img = localStorage.getItem("dwu_bgimg");
-        if (img) document.body.style.setProperty("--bgImg", "url(" + img + ")");
-      });
-    }
+    /* v1.0.6：自定义背景已移除（改由规格壁纸层接管），旧字段一律忽略。
+       壁纸种类跟着规格走：Apple=Aerial / Emby=海报拼贴 / Plex=UltraBlur。 */
+    var WALLPAPER = { apple: "aerial", emby: "collage", plex: "ultrablur" };
+    root.dataset.wallpaper = s.wallpaper === false ? "off" : (WALLPAPER[spec] || "aerial");
   } catch (e) {}
 })();
 </script>
 </head>
 <body data-theme="dark">
+
+<!-- v1.0.6 规格壁纸层：三种做法共用一层，data-wallpaper 决定画什么。
+     z-index:-1 落在 <html> 背景色之上、内容之下；pointer-events:none 不影响交互。 -->
+<div class="vh-wall" id="vhWall" data-kind="off" aria-hidden="true">
+  <div class="vh-wall-grain"></div>
+  <div class="vh-wall-collage" id="vhWallCollage"></div>
+  <div class="vh-wall-ub"></div>
+</div>
 
 <!-- ===== 登录遮罩 =====
      v0.9.56：初始即隐藏（hidden），开放模式全程永不显示登录窗口；
@@ -87,7 +89,7 @@ window.VAULTHUB_ASSET_VERSION = "1.0.5";
     <button class="btn btn-primary" style="width:100%;margin-top:12px;" onclick="vaultHubLogin()">🔐 登录</button>
     <div class="auth-error" id="authError"></div>
     <!-- v0.9.93：登录页也显示版本标语（原第三处在侧栏页脚，侧栏已移除）。 -->
-    <div class="login-ver"><span id="loginVerLabel" class="ver">v1.0.5 · 遥控零漂移 · 焦点无虚位 · 三档真手感</span></div>
+    <div class="login-ver"><span id="loginVerLabel" class="ver">v1.0.6 · 三套规格主题 · 壁纸随内容 · 返回键归位</span></div>
   </div>
 </div>
 
@@ -625,34 +627,36 @@ window.VAULTHUB_ASSET_VERSION = "1.0.5";
           <div class="mode-seg" id="uiModeSeg" role="radiogroup" aria-label="操作模式"></div>
           <div class="seg-current" id="uiModeCurrent"></div>
         </div>
+        <!-- v1.0.6（需求1）：调色板 / 强调色 / 自定义背景三档设置整体移除 ——
+             它们与「界面规格」语义重复（规格自带配色与观感），同时选会互相打架。
+             现在规格卡就是唯一的主题入口，卡片下方直接列出这套规格带走的
+             主题定义（配色 / 壁纸 / 播放器皮肤 / 图标包）与文档章节。 -->
         <div class="theme-block">
-          <span class="theme-lbl" data-i18n="themePaletteLbl">调色板</span>
-          <div class="theme-grid" id="themePaletteGrid"></div>
-        </div>
-        <div class="theme-block">
-          <span class="theme-lbl" data-i18n="themeAccentLbl">强调色</span>
-          <div class="swatches" id="themeAccentSwatches"></div>
-        </div>
-        <div class="theme-block">
+          <span class="theme-lbl" data-i18n="themeWallpaperLbl">规格壁纸</span>
+          <label class="toggle-row">
+            <input type="checkbox" id="themeWallpaperToggle" onchange="setSpecWallpaper(this.checked)">
+            <span data-i18n="themeWallpaperLbl">规格壁纸</span>
+            <small data-i18n="themeWallpaperSub">随界面规格切换：Aerial 航拍 / 海报拼贴 / UltraBlur 取色</small>
+          </label>
           <label class="toggle-row">
             <input type="checkbox" id="themeReduceMotion" onchange="setThemeReduceMotion(this.checked)">
             <span data-i18n="themeReduceMotion">减弱动效</span>
             <small data-i18n="themeReduceMotionSub">适合对动画敏感或老设备：过渡与动画时长压到 1ms</small>
           </label>
-          <label class="toggle-row">
-            <input type="checkbox" id="themeCustomBgToggle" onchange="setCustomBg(this.checked)">
-            <span data-i18n="themeCustomBg">使用自定义背景图片</span>
-            <small data-i18n="themeCustomBgSub">独立于调色板/明暗的背景层，图片只存在本浏览器</small>
-          </label>
         </div>
-        <div id="customBgWrap">
-          <div class="cfg-field">
-            <label data-i18n="bgUpload">上传背景图片</label>
-            <input id="bgFile" type="file" accept="image/*" onchange="uploadBg(this)">
-          </div>
-          <button class="btn btn-danger" onclick="clearBg()" style="margin-bottom:8px;">🗑 <span data-i18n="bgClear">清除自定义背景</span></button>
+        <div class="theme-block">
+          <span class="theme-lbl" data-i18n="specDocOpen">查看这套规格的元素清单</span>
+          <div class="spec-highlights" id="opModeHighlights"></div>
         </div>
 
+      </div>
+
+      <!-- v1.0.6：规格详解弹窗（docs/specs/*.md 的要素清单） -->
+      <div class="modal-mask" id="specDocModal">
+        <div class="modal spec-doc-modal">
+          <h3><span id="specDocTitle">界面元素详解</span><button class="close" onclick="closeModal('specDocModal')">✕</button></h3>
+          <div id="specDocBody"></div>
+        </div>
       </div>
 
       <!-- 刮削与硬件面板 -->
@@ -795,7 +799,7 @@ window.VAULTHUB_ASSET_VERSION = "1.0.5";
          v1.0.4（需求1）：页尾只保留「当前版本 + 版本功能提示」一行，去掉品牌名与
          「与关于页保持一致」的说明文字，并压缩上下留白降低页尾高度。 -->
     <footer class="app-footer" id="appFooter">
-      <span id="appFooterVer" class="ver">v1.0.5 · 遥控零漂移 · 焦点无虚位 · 三档真手感</span>
+      <span id="appFooterVer" class="ver">v1.0.6 · 三套规格主题 · 壁纸随内容 · 返回键归位</span>
     </footer>
 
   </div>
@@ -915,7 +919,7 @@ window.VAULTHUB_ASSET_VERSION = "1.0.5";
   <div class="modal">
     <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
     <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
-    <div class="about-row" data-about-ver="1"><span data-i18n="aboutVer">版本</span><b>v1.0.5 · 遥控零漂移 · 焦点无虚位 · 三档真手感</b></div>
+    <div class="about-row" data-about-ver="1"><span data-i18n="aboutVer">版本</span><b>v1.0.6 · 三套规格主题 · 壁纸随内容 · 返回键归位</b></div>
     <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>Go (media/manager/subtitle) · Caddy · FFmpeg · SQLite · HTML/CSS/JS</b></div>
     <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>VaultHub 内置系统监控</b></div>
     <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>
@@ -1131,20 +1135,20 @@ window.VAULTHUB_ASSET_VERSION = "1.0.5";
 
 <div class="toast" id="toast"></div>
 
-<script src="/web/js/01-state.js?v=1.0.5"></script>
-<script src="/web/js/03-quality.js?v=1.0.5"></script>
-<script src="/web/js/02-media.js?v=1.0.5"></script>
+<script src="/web/js/01-state.js?v=1.0.6"></script>
+<script src="/web/js/03-quality.js?v=1.0.6"></script>
+<script src="/web/js/02-media.js?v=1.0.6"></script>
 <!-- v0.9.97：Plex 口径的多季剧集刮削（多季诊断 / 缺失集比对 / 重匹配）。
      依赖 02-media.js 的 parseSeriesEpisode 与剧集数据，必须排在它之后。 -->
-<script src="/web/js/03-series-plex.js?v=1.0.5"></script>
-<script src="/web/js/03-features.js?v=1.0.5"></script>
-<script src="/web/js/05-home.js?v=1.0.5"></script>
-<script src="/web/js/06-theme.js?v=1.0.5"></script>
-<script src="/web/js/07-topnav.js?v=1.0.5"></script>
-<script src="/web/js/03-audio-zoom.js?v=1.0.5"></script>
+<script src="/web/js/03-series-plex.js?v=1.0.6"></script>
+<script src="/web/js/03-features.js?v=1.0.6"></script>
+<script src="/web/js/05-home.js?v=1.0.6"></script>
+<script src="/web/js/06-theme.js?v=1.0.6"></script>
+<script src="/web/js/07-topnav.js?v=1.0.6"></script>
+<script src="/web/js/03-audio-zoom.js?v=1.0.6"></script>
 <!-- v1.0.4（需求1）：TV / 遥控 / 键盘焦点层。必须在业务脚本之后加载：
      它只接管方向键、焦点记忆与焦点保护，不复制任何业务逻辑。 -->
-<script src="/web/js/08-focus.js?v=1.0.5"></script>
-<script src="/web/js/04-boot.js?v=1.0.5"></script>
+<script src="/web/js/08-focus.js?v=1.0.6"></script>
+<script src="/web/js/04-boot.js?v=1.0.6"></script>
 </body>
 </html>

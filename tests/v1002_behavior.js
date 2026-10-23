@@ -1,4 +1,4 @@
-/* v1.0.5 行为测试（Node VM 桩，真实执行 web/js/02-media.js 与 06-theme.js）：
+/* v1.0.6 行为测试（Node VM 桩，真实执行 web/js/02-media.js 与 06-theme.js）：
  *
  *   A. 季度版式回归（需求1）：季名回到独立季名行、全部剧集在同一网格、
  *      不再有首集大图（is-season-top 消失）、加粗「季度」只在最上层
@@ -253,6 +253,6 @@ function opModeSection() {
 (async () => {
   await doubanSection();
   opModeSection();
-  console.log(`\n===== v1.0.5 行为测试：通过 ${passed} / 失败 ${failed} =====`);
+  console.log(`\n===== v1.0.6 行为测试：通过 ${passed} / 失败 ${failed} =====`);
   process.exit(failed ? 1 : 0);
 })();

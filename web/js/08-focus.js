@@ -351,6 +351,28 @@
     if (document.body.classList.contains("player-immersive") && typeof closeVideoPlayer === "function") {
       try { closeVideoPlayer(); return true; } catch (e) {}
     }
+    /* v1.0.6（需求7）：媒体详情页 / 阅读器 / 播放器最小化态也是「一层」。
+       此前返回键只认 .modal-mask 与设置页，详情页只能手动点左上角返回按钮 ——
+       遥控器上这等于「没有返回键」。层级顺序：播放器 → 分集详情 → 详情/阅读器。 */
+    var overlay = document.querySelector(".media-reader-overlay");
+    if (overlay) {
+      var host = overlay.closest("[id^='local-media-viewer-']");
+      var group = host ? host.id.replace("local-media-viewer-", "") : "movie";
+      var videoBody = overlay.querySelector(".media-video-body");
+      if (videoBody && typeof closeVideoPlayer === "function") {
+        try { closeVideoPlayer(videoBody.querySelector("[data-video-play]") || videoBody); return true; } catch (e) {}
+      }
+      try {
+        if (typeof seriesEpisodeReturn !== "undefined" && seriesEpisodeReturn && typeof closeEpisodeDetail === "function") {
+          closeEpisodeDetail();
+          return true;
+        }
+      } catch (e) {}
+      if (typeof closeLocalViewer === "function") {
+        closeLocalViewer(group);
+        return true;
+      }
+    }
     var settings = document.getElementById("view-settings");
     if (settings && settings.classList.contains("active") && typeof closeSettingsPage === "function") {
       closeSettingsPage();

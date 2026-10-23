@@ -18,7 +18,7 @@ let vaultHubSessionPingedAt = 0;
    历史故障：v0.8.3→v0.8.5 的前端修改在服务端已生效，但浏览器仍执行缓存里的
    旧 02-media.js，用户看到「没有更新」。现在入口页 no-store、静态资源带 ?v=，
    并在启动时做一次一致性自查，不一致就绕过缓存强制重载一次。 */
-const VAULTHUB_SCRIPT_VERSION = "1.0.5";
+const VAULTHUB_SCRIPT_VERSION = "1.0.6";
 function ensureFreshAssets() {
   /* expected 为空 = 浏览器执行的 index.html 早于 v0.8.6（旧版本入口页没有声明
      版本号），同样属于"页面是旧的"，也需要换 URL 重新取一次。 */
@@ -540,13 +540,15 @@ const I18N = {
     colName: "名称", colImage: "镜像", colStatus: "状态", colPorts: "端口", colHealth: "健康",
     settingsTitle: "系统设置", langLbl: "界面语言",
     themeLbl: "外观主题", themeDark: "暗色", themeLight: "亮色", themeCustom: "自定义背景（上传图片）",
-    themeModeLbl: "明暗", themePaletteLbl: "调色板", themeAccentLbl: "强调色",
-    accentTheme: "跟随主题",
-    themeModeSaved: "显示模式已切换", themePaletteSaved: "调色板已切换", themeAccentSaved: "强调色已切换",
+    themeModeLbl: "明暗",
+    themeModeSaved: "显示模式已切换",
+    themeWallpaperLbl: "规格壁纸", themeWallpaperSub: "随界面规格切换：Aerial 航拍 / 海报拼贴 / UltraBlur 取色",
+    wallpaperOn: "已开启规格壁纸", wallpaperOff: "已关闭规格壁纸",
+    specDocTitle: "界面元素详解", specDocOpen: "查看这套规格的元素清单",
+    specDocLead: "这套界面规格带走的主题定义（配色、壁纸、播放器皮肤、图标包）与对应文档章节：",
+    specDocMeta: "完整文档随镜像发布：", specDocApply: "应用这套规格", specDocClose: "关闭",
     themeReduceMotion: "减弱动效", themeReduceMotionSub: "对动画敏感或老设备：过渡与动画压到 1ms",
-    themeCustomBg: "使用自定义背景图片", themeCustomBgSub: "独立背景层，图片只存在本浏览器",
-    bgEnabled: "已启用自定义背景", bgDisabled: "已关闭自定义背景",
-    bgUpload: "上传背景图片", bgClear: "清除自定义背景",
+
     monitoringLbl: "NAS 监控（内置读取）", monitoringHint: "监控参数由 Compose 环境变量和只读挂载配置。",
     nasOnline: "内置监控 · 每 5s 刷新", nasOffline: "内置监控不可用",
     diskSourceReal: "内置监控 · statvfs", diskSourceOffline: "内置监控不可用",
@@ -743,13 +745,15 @@ const I18N = {
     colName: "名稱", colImage: "映像", colStatus: "狀態", colPorts: "連接埠", colHealth: "健康",
     settingsTitle: "系統設定", langLbl: "介面語言",
     themeLbl: "外觀主題", themeDark: "暗色", themeLight: "亮色", themeCustom: "自訂背景（上傳圖片）",
-    themeModeLbl: "明暗", themePaletteLbl: "調色板", themeAccentLbl: "強調色",
-    accentTheme: "跟隨主題",
-    themeModeSaved: "顯示模式已切換", themePaletteSaved: "調色板已切換", themeAccentSaved: "強調色已切換",
+    themeModeLbl: "明暗",
+    themeModeSaved: "顯示模式已切換",
+    themeWallpaperLbl: "規格壁紙", themeWallpaperSub: "隨介面規格切換：Aerial 航拍 / 海報拼貼 / UltraBlur 取色",
+    wallpaperOn: "已開啟規格壁紙", wallpaperOff: "已關閉規格壁紙",
+    specDocTitle: "介面元素詳解", specDocOpen: "檢視這套規格的元素清單",
+    specDocLead: "這套介面規格帶走的主題定義（配色、壁紙、播放器面板、圖示包）與對應文件章節：",
+    specDocMeta: "完整文件隨映像檔發布：", specDocApply: "套用這套規格", specDocClose: "關閉",
     themeReduceMotion: "減弱動效", themeReduceMotionSub: "對動畫敏感或舊機器：過渡與動畫壓到 1ms",
-    themeCustomBg: "使用自訂背景圖片", themeCustomBgSub: "獨立背景層，圖片只存在本瀏覽器",
-    bgEnabled: "已啟用自訂背景", bgDisabled: "已關閉自訂背景",
-    bgUpload: "上傳背景圖片", bgClear: "清除自訂背景",
+
     monitoringLbl: "NAS 監控（內建讀取）", monitoringHint: "監控參數由 Compose 環境變數和唯讀掛載設定。",
     nasOnline: "內建監控 · 每 5s 重新整理", nasOffline: "內建監控不可用",
     diskSourceReal: "內建監控 · statvfs", diskSourceOffline: "內建監控不可用",
@@ -1023,13 +1027,15 @@ const I18N = {
     colName: "Name", colImage: "Image", colStatus: "Status", colPorts: "Ports", colHealth: "Health",
     settingsTitle: "Settings", langLbl: "Language",
     themeLbl: "Appearance", themeDark: "Dark", themeLight: "Light", themeCustom: "Custom background (upload)",
-    themeModeLbl: "Light / dark", themePaletteLbl: "Palette", themeAccentLbl: "Accent",
-    accentTheme: "Follow palette",
-    themeModeSaved: "Display mode", themePaletteSaved: "Palette", themeAccentSaved: "Accent",
+    themeModeLbl: "Light / dark",
+    themeModeSaved: "Display mode",
+    themeWallpaperLbl: "Spec wallpaper", themeWallpaperSub: "Follows the interface spec: Aerial / poster collage / UltraBlur",
+    wallpaperOn: "Spec wallpaper on", wallpaperOff: "Spec wallpaper off",
+    specDocTitle: "interface elements", specDocOpen: "What this spec includes",
+    specDocLead: "Theme definition carried by this spec (colours, wallpaper, player skin, icon pack) and the matching doc section:",
+    specDocMeta: "Full doc ships with the image: ", specDocApply: "Use this spec", specDocClose: "Close",
     themeReduceMotion: "Reduce motion", themeReduceMotionSub: "For motion-sensitive or older devices: 1ms transitions",
-    themeCustomBg: "Custom background image", themeCustomBgSub: "Independent layer, stored in this browser only",
-    bgEnabled: "Custom background on", bgDisabled: "Custom background off",
-    bgUpload: "Upload background image", bgClear: "Clear custom background",
+
     monitoringLbl: "NAS Monitor (built in)", monitoringHint: "Configure monitoring with Compose environment variables and read-only mounts.",
     nasOnline: "Built-in monitor · refresh 5s", nasOffline: "Built-in monitor unavailable",
     diskSourceReal: "Built-in monitor · statvfs", diskSourceOffline: "Built-in monitor unavailable",
@@ -1202,16 +1208,14 @@ function applyI18n() {
 /* ================= 状态持久化 ================= */
 const LS_SETTINGS = "dwu_settings";
 const LS_BOARDS = "dwu_boards";
-const LS_BG = "dwu_bgimg";
 
 let settings = {
   theme: "dark",          /* 兼容字段：始终同步成 dark|light（阅读器与旧 CSS 仍在读它） */
   mode: "dark",           /* 明暗层：dark | light | auto（auto = 跟随系统） */
-  palette: "emerald",     /* 调色板层：emerald | plum | neon | clay */
-  accent: "theme",        /* 强调色层：theme（跟随调色板）| teal | indigo | rose | amber | violet */
-  customBg: false,        /* 背景图层：是否启用自定义背景图片 */
-  uiMode: "auto",         /* v0.9.76 界面规格：auto(按设备识别) | phone | tv | pc */
-  opMode: "apple",        /* v1.0.2 操作模式：apple | emby | plex（动效 + 圆角阴影 + 图标风格） */       /* v0.9.74 布局层：topnav（媒体库平铺顶栏，默认）| sidebar（v0.9.73 的侧栏） */
+  uiMode: "auto",         /* v0.9.76 操作模式：auto(按设备识别) | phone | tv | pc */
+  opMode: "apple",        /* v1.0.2 界面规格：apple | emby | plex（v1.0.6 起同时是主题轴：
+                             配色 / 壁纸 / 播放器皮肤 / 图标包都跟它走） */
+  wallpaper: true,        /* v1.0.6 规格壁纸开关（Aerial / 海报拼贴 / UltraBlur 取色） */
   reduceMotion: false,    /* 动效：减弱过渡与动画 */
   hardwareAcceleration: "auto",
   /* v0.9.91 解/转码风向标：auto = 服务端按需转/解码；off = 禁用服务端转/解码，
@@ -1252,16 +1256,16 @@ function loadSettings() {
        「custom」= 自定义背景（当年一律按暗色渲染），迁到 明暗层 + 背景层两个字段。 */
     if (["dark", "light", "auto"].includes(s.mode)) settings.mode = s.mode;
     else settings.mode = s.theme === "light" ? "light" : "dark";
-    if (["emerald", "plum", "neon", "clay"].includes(s.palette)) settings.palette = s.palette;
-    if (["theme", "teal", "indigo", "rose", "amber", "violet"].includes(s.accent)) settings.accent = s.accent;
+    /* v1.0.6：调色板 / 强调色 / 自定义背景三档设置已移除（与「界面规格」语义重复）。
+       旧 localStorage 里的 palette / accent / customBg / theme:"custom" 直接忽略，
+       不再迁移成任何状态 —— 迁移只会让「我明明删了它还在」重新出现。 */
     /* v1.0.4（需求5）：localStorage 里没有（配额满没写进去 / 被清过）时读 cookie 镜像。 */
     const cookieMode = vhReadCookie("vh_mode"), cookieSpec = vhReadCookie("vh_spec");
     if (UI_MODES.includes(s.uiMode)) settings.uiMode = s.uiMode;
     else if (UI_MODES.includes(cookieMode)) settings.uiMode = cookieMode;
     if (OP_MODES.includes(s.opMode)) settings.opMode = s.opMode;
     else if (OP_MODES.includes(cookieSpec)) settings.opMode = cookieSpec;
-    if (s.theme === "custom") settings.customBg = true;
-    if (typeof s.customBg === "boolean") settings.customBg = s.customBg;
+    if (typeof s.wallpaper === "boolean") settings.wallpaper = s.wallpaper;
     settings.reduceMotion = !!s.reduceMotion;
     if (["auto","cpu","vaapi","qsv","cuda"].includes(s.hardwareAcceleration)) settings.hardwareAcceleration = s.hardwareAcceleration;
     if (["auto","off"].includes(s.serverTranscode)) settings.serverTranscode = s.serverTranscode;
@@ -1303,7 +1307,7 @@ function saveSettings() {
       const evictable = VAULTHUB_EVICTABLE_PATTERNS;
       const keys = Object.keys(localStorage);
       for (const key of keys) {
-        if (key === LS_SETTINGS || key === LS_BOARDS || key === LS_BG) continue;
+        if (key === LS_SETTINGS || key === LS_BOARDS) continue;
         if (evictable.some(rx => rx.test(key))) { try { localStorage.removeItem(key); } catch (e2) {} }
       }
       localStorage.setItem(LS_SETTINGS, raw);
@@ -1454,42 +1458,26 @@ function saveHiddenModules() {
 }
 
 /* ================= 主题 =================
-   v0.9.73：主题定义整体搬到 web/js/06-theme.js（调色板 × 明暗 × 强调色 三层叠加，
-   方案见该文件顶部注释）。这里只保留与「背景图层」相关的部分：
-   背景是独立一层，不再伪装成第三种主题（旧版选「自定义背景」会把正文强行按暗色渲染）。 */
-function applyBgImage() {
-  const img = localStorage.getItem(LS_BG);
-  if (img && settings.customBg) document.body.style.setProperty("--bgImg", `url(${img})`);
-  else document.body.style.removeProperty("--bgImg");
-}
-function uploadBg(input) {
-  const f = input.files && input.files[0];
-  if (!f) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    try {
-      localStorage.setItem(LS_BG, e.target.result);
-      /* v0.9.73：上传即视为要启用背景层（旧版必须先选中「自定义」主题才生效）。 */
-      if (!settings.customBg) { settings.customBg = true; saveSettings(); }
-      applyBgImage();
-      document.body.classList.add("custom-bg");
-      if (typeof syncThemeControls === "function") syncThemeControls();
-      toast("✅ " + (curLang === "en" ? "Background saved" : "背景已保存"));
-    } catch (err) {
-      toast("⚠️ " + (curLang === "en" ? "Image too large for localStorage" : "图片过大，无法保存到 localStorage"));
-    }
-  };
-  reader.readAsDataURL(f);
-}
-function clearBg() {
-  localStorage.removeItem(LS_BG);
-  settings.customBg = false;
-  saveSettings();
-  document.body.classList.remove("custom-bg");
-  applyBgImage();
-  if (typeof syncThemeControls === "function") syncThemeControls();
-  toast("🗑 " + (curLang === "en" ? "Background cleared" : "背景已清除"));
-}
+   v0.9.73 的「调色板 × 明暗 × 强调色」三层模型在 v1.0.6 收敛为
+   「界面规格 × 明暗」两层，定义整体在 web/js/06-theme.js。
+   调色板、强调色与自定义背景图片三档设置已移除：
+     · 调色板/强调色与「界面规格」语义重复，同时选会互相打架；
+     · 自定义背景由规格自带的壁纸层取代（Aerial / 海报拼贴 / UltraBlur 取色），
+       壁纸是「算出来的」而不是用户上传的一张图，因此也不占用 localStorage 配额。
+   旧版本写在 localStorage 里的 dwu_bgimg（base64 图片，动辄几 MB）在这里主动清掉，
+   否则它会一直占着配额，把设置本身挤成写不进去。 */
+(function dropLegacyCustomBg() {
+  try {
+    if (localStorage.getItem("dwu_bgimg") !== null) localStorage.removeItem("dwu_bgimg");
+    const raw = localStorage.getItem(LS_SETTINGS);
+    if (!raw) return;
+    const s = JSON.parse(raw);
+    if (!s || typeof s !== "object") return;
+    let dirty = false;
+    ["palette", "accent", "customBg"].forEach(k => { if (k in s) { delete s[k]; dirty = true; } });
+    if (dirty) localStorage.setItem(LS_SETTINGS, JSON.stringify(s));
+  } catch (e) {}
+})();
 
 function saveHardwareAcceleration() {
   const value = document.getElementById("hardwareAcceleration")?.value;

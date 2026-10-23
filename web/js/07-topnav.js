@@ -151,10 +151,12 @@ function fillTopUserMenu() {
     metaEl.textContent = version ? "v" + version : "";
   }
   if (themeK && typeof settings !== "undefined" && settings) {
-    const palette = typeof themePaletteDef === "function" ? themePaletteDef(settings.palette) : null;
+    /* v1.0.6：调色板与强调色已移除，头像菜单这一行改成「界面规格 · 明暗」。 */
+    const specName = typeof OP_MODE_LABEL === "object" && typeof currentOpMode === "function"
+      ? (OP_MODE_LABEL[currentOpMode()] && (OP_MODE_LABEL[currentOpMode()]["zh-CN"] || OP_MODE_LABEL[currentOpMode()].en))
+      : "";
     const modeLabel = settings.mode === "auto" ? "跟随系统" : settings.mode === "light" ? "亮色" : "暗色";
-    const accent = typeof themeAccentDef === "function" ? themeAccentDef(settings.accent) : null;
-    themeK.textContent = "当前：" + ((palette && palette.zh) || "青瓷") + " · " + modeLabel + (accent && accent.id !== "theme" ? " · " + accent.zh : "");
+    themeK.textContent = "当前：" + (specName || "Apple") + " · " + modeLabel + (settings.wallpaper === false ? " · 壁纸关" : "");
   }
 }
 function toggleTopUserMenu(event) {

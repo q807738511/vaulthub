@@ -135,10 +135,10 @@ check("c6 Release JSON 转义优先用 node", 'if command -v node >/dev/null 2>&
 print("== 版本 / 文档 ==")
 # 与版本号无关：所有 ?v= 都必须是本版，且恰好 10 处（下一版不会因此改测试）。
 check("v1 资源缓存键全部为本版且无历史残留",
-      set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"1.0.5"} and len(re.findall(r"\?v=1\.0\.5", HTML)) >= 10,
+      set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"1.0.6"} and len(re.findall(r"\?v=1\.0\.6", HTML)) >= 10,
       sorted(set(re.findall(r"\?v=([0-9.]+)", HTML))))
-check("v2 资源版本常量", 'window.VAULTHUB_ASSET_VERSION = "1.0.5";' in HTML and 'const VAULTHUB_SCRIPT_VERSION = "1.0.5";' in S)
-SLOGAN = "v1.0.5 · 遥控零漂移 · 焦点无虚位 · 三档真手感"
+check("v2 资源版本常量", 'window.VAULTHUB_ASSET_VERSION = "1.0.6";' in HTML and 'const VAULTHUB_SCRIPT_VERSION = "1.0.6";' in S)
+SLOGAN = "v1.0.6 · 三套规格主题 · 壁纸随内容 · 返回键归位"
 check("v3 标语三处整串一致", HTML.count(SLOGAN) == 3)
 import re as _re
 _CUR = _re.search(r'VAULTHUB_ASSET_VERSION = "([0-9.]+)"', HTML).group(1)

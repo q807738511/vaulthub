@@ -6977,6 +6977,13 @@ function syncVideoChromeState(root, video) {
   if (!root || !video) return;
   const button = root.querySelector("[data-video-play]");
   if (button) { button.innerHTML = videoPlayPauseIcon(video.paused); button.title = video.paused ? t("vpPlay") : t("vpPause"); }
+  /* v1.0.6：中央大播放键与底栏播放键同源同步 —— 两处显示相反图标就是 bug。 */
+  const center = root.querySelector("[data-video-center-play]");
+  if (center) {
+    center.innerHTML = videoPlayPauseIcon(video.paused);
+    center.title = video.paused ? t("vpPlay") : t("vpPause");
+    center.classList.toggle("is-playing", !video.paused);
+  }
   syncVideoVolumeUI(root, video);
 }
 function openVideoDetailsFromPlayer(el) {
@@ -7844,6 +7851,9 @@ async function openLocalMedia(group, libId, path) {
   if (["mp3","flac","m4a","ogg","wav"].includes(ext)) body = `<div class="media-viewer-body"><audio controls autoplay preload="metadata" src="${esc(url)}"></audio></div>`;
   else if (MEDIA_FORMATS.movie.includes(ext)) body = `<div class="media-viewer-body media-video-body" data-video-controls-visible="true" data-video-engine="native" data-video-chrome-collapsed="false" data-video-quality="${typeof qualityVideoPreset === "function" ? qualityVideoPreset() : "auto"}">
 <video data-movie-player playsinline preload="metadata" onloadedmetadata="this.muted=false;this.volume=1" onvolumechange="this.dataset.volume=String(this.volume)"></video>
+<!-- v1.0.6（需求3/6）：Emby 规格的 OSD 中央大播放键（只在 data-spec=emby 时显示，
+     其余规格 CSS 里 display:none）。播放中淡出，暂停时浮现，点画面任意处同样可切换。 -->
+<button class="vc-center-play is-playing" type="button" data-video-center-play title="${esc(t("vpPlayPause"))}" aria-label="${esc(t("vpPlayPause"))}" onclick="videoTogglePlay(this)">${videoIcon("play")}</button>
 <div class="video-chrome" data-video-chrome>
 <div class="vc-top">
 <button class="vc-icon vc-collapse" type="button" title="${esc(t("vpMinimize"))}" aria-label="${esc(t("vpMinimize"))}" onclick="minimizeVideoPlayer(this)">${videoIcon("collapse")}</button>
