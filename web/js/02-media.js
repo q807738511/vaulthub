@@ -7023,10 +7023,11 @@ function reportVideoPlaybackSession(root, video, state) {
 function stopVideoPlaybackSession(root) {
   mediaKeepAliveStop("video");
   const id=root?.dataset.playbackSession; if(!id)return;
+  const vp=root?.querySelector('video'); if(vp) saveVideoPlaybackState(vp, true);
   fetch(`/api/media/playback/sessions/${encodeURIComponent(id)}/stop`,{method:'POST',credentials:'same-origin',keepalive:true}).catch(()=>{}); root.dataset.playbackSession='';
 }
 function bindVideoStatus(root, video) {
-  [["loadstart","正在连接"],["waiting","正在缓冲"],["playing","正在播放"],["pause","已暂停"],["ended","播放完成"],["stalled","网络等待"],["error","播放错误"]].forEach(([ev,label])=>video.addEventListener(ev,()=>{updateVideoStatus(root,video,label);if(['pause','ended'].includes(ev))reportVideoPlaybackSession(root,video,ev);}));
+  [["loadstart","正在连接"],["waiting","正在缓冲"],["playing","正在播放"],["pause","已暂停"],["ended","播放完成"],["stalled","网络等待"],["error","播放错误"]].forEach(([ev,label])=>video.addEventListener(ev,()=>{updateVideoStatus(root,video,label);if(['pause','ended'].includes(ev)){reportVideoPlaybackSession(root,video,ev);saveVideoPlaybackState(video,true);}}));
   /* v0.9.61：视频实际开始播放时启用会话保活；暂停仍保留播放上下文，只有结束、
      报错或关闭播放器才停止。具名 source 让切流时重复 play 保持幂等。 */
   video.addEventListener("playing", () => mediaKeepAliveStart("video"));
@@ -7095,14 +7096,43 @@ function bindDockedRestoreHover(root, video) {
 }
 function formatVideoTime(value) { return formatMediaTime(value); }
 function videoPlaybackKey(lib, path) { return `vaulthub_video_${lib.id}_${path}`; }
-function saveVideoPlaybackState(video) {
+function saveVideoPlaybackState(video, force) {
   const root=video?.closest('.media-video-body'); const libId=root?.dataset.library, mediaPath=root?.dataset.path;
   if (!root || !libId || !mediaPath || !Number.isFinite(video.currentTime)) return;
   try { localStorage.setItem(`vaulthub_video_${libId}_${mediaPath}`, JSON.stringify({time:video.currentTime, updatedAt:Date.now()})); } catch(e) {}
+  /* v1.0.7：进度同时落服务端（/api/media/playback/progress），跨设备「继续观看」才有数据源。
+     timeupdate 每 250ms 触发一次，节流 15s；暂停/结束/关闭播放器走 force。 */
+  if (!force && Date.now() - (root.__progressPutAt || 0) < 15000) return;
+  root.__progressPutAt = Date.now();
+  const pos = Math.round((video.currentTime || 0) * 1000);
+  if (!(pos > 0)) return;
+  const body = { position_ms: pos };
+  const durMs = Math.round((video.duration || 0) * 1000);
+  if (durMs > 0) body.duration_ms = durMs;
+  fetch(`/api/media/playback/progress?id=${encodeURIComponent(libId)}&path=${encodeURIComponent(mediaPath)}`, {
+    method: "PUT", credentials: "same-origin", keepalive: true,
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
+  }).catch(() => {});
 }
 function restoreVideoPlaybackState(video) {
   const root=video?.closest('.media-video-body'); if(!root) return;
-  try { const saved=JSON.parse(localStorage.getItem(`vaulthub_video_${root.dataset.library}_${root.dataset.path}`)||'null'); if(saved && Number.isFinite(saved.time) && saved.time>2 && saved.time<video.duration-2) video.currentTime=saved.time; } catch(e) {}
+  let resumed=false;
+  try { const saved=JSON.parse(localStorage.getItem(`vaulthub_video_${root.dataset.library}_${root.dataset.path}`)||'null'); if(saved && Number.isFinite(saved.time) && saved.time>2 && saved.time<video.duration-2){ video.currentTime=saved.time; resumed=true; } } catch(e) {}
+  /* v1.0.7：本机没有记录（换设备/清缓存）时向服务端要一次，取「继续观看」断点。
+     完成态（completed）不再续播；断点太靠尾（<15s 余量）也不续。 */
+  if (resumed) return;
+  const libId=root.dataset.library, mediaPath=root.dataset.path;
+  if (!libId || !mediaPath) return;
+  fetch(`/api/media/playback/progress?id=${encodeURIComponent(libId)}`, { cache: "no-store", credentials: "same-origin" })
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+      const entry = data?.items?.[mediaPath];
+      if (!entry || entry.completed) return;
+      const pos = (entry.position_ms || 0) / 1000;
+      const dur = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : (entry.duration_ms || 0) / 1000;
+      if (pos > 5 && (!dur || pos < dur - 15)) video.currentTime = pos;
+    })
+    .catch(() => {});
 }
 function updateVideoTimeline(video) {
   const root=video?.closest('.media-video-body'); if(!root) return;

@@ -1,3 +1,25 @@
+# VaultHub 蜀鼠之家 v1.0.7
+
+> 契约冻结版。4 项：把 APP 依赖的 HTTP 面固化为可回归的契约（三件套入库 + L1 静态测试）；
+> 收紧 5 个匿名可读端点；新增播放进度持久化端点，让「继续观看」跨设备可用。
+
+- **契约三件套入库（docs/api/）**：`openapi.yaml`（71 条路径 / 29 个 schema，P0 字段级）、
+  `ROUTE_INVENTORY.md`（架构与鉴权链路 + 路由总表 + 别名 canonical 表）、
+  `CONTRACT_TESTS.md`（L1 静态 / L2 运行时矩阵与 SEC 清单）。入库前勘误三处与 v1.0.6
+  现状不符的描述：subtitle-api 已由 `sessionOK()` 探针鉴权（不再「零校验」）、
+  L1 样例 `2*time.Minute` 实际源码是 `-2 * time.Minute`、cover 维持公开属显式决策。
+- **五个匿名端点收紧**：`GET /api/media/libraries`（含磁盘路径）、`index/status`（库名与
+  文件规模）、`probe`（任意库内文件 ffprobe）、`hardware`、`scrapers`（运行配置快照）
+  全部补 `readAuth`，未登录一律 401。前端配套：启动时不打这些接口，登录成功后由
+  `bootAfterLogin()` 补拉，首页 5 秒轮询加登录门槛 —— 不改这三处，收紧后首页会是空白。
+- **播放进度持久化（继续观看）**：新增 `GET/PUT/DELETE /api/media/playback/progress`，
+  复用 `reading_progress` 的存储模式（单 JSON 文件、`configMu` 串行化、tmp+rename 原子落盘、
+  `safeFile` 包含性校验）。服务端钳制 `position ≤ duration`、`≥95%` 自动完成态、删除幂等。
+  网页播放器每 15 秒写一次、暂停/结束/关闭强制写；本机没有本地记录时从服务端取断点续播。
+- **契约测试 L1**：`tests/test_v1007_contract.py` 把上述冻结面写成静态断言（文档入库与勘误、
+  五端点鉴权位置、进度端点语义、前端门槛、错误文案、别名 canonical、跨服务 loopback 契约），
+  字段改名 / 路由漂移 / 鉴权回退都会在这里显式失败。
+
 # VaultHub 蜀鼠之家 v1.0.6
 
 > 主题重构版。7 项：移除调色板/强调色/自定义背景三档设置；三套界面规格各自带走

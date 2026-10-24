@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""v1.0.6 契约测试：页尾精简、NFO 合并写回、全量审查修复点、版本纪律。
+"""v1.0.7 契约测试：页尾精简、NFO 合并写回、全量审查修复点、版本纪律。
 
 静态契约；NFO 合并的真实行为由 media-go/v1003_nfo_merge_test.go 与
 media-go/v1003_audit_test.go 覆盖，页尾高度/结构由容器内浏览器实测覆盖。
@@ -38,7 +38,7 @@ LOG = rd("Update Log.md")
 NOTES = rd(".github/RELEASE_NOTES_1.0.3.md")
 AUDIT = rd(".github/AUDIT-1.0.3.md")
 
-SLOGAN = "v1.0.6 · 三套规格主题 · 壁纸随内容 · 返回键归位"
+SLOGAN = "v1.0.7 · 契约冻结 · 端点收紧 · 继续观看"
 
 print("== 1. 需求1：页尾只留「当前版本 + 版本功能提示」==")
 FOOTER = HTML[HTML.index('class="app-footer" id="appFooter"'):]
@@ -92,20 +92,20 @@ check("3h 审查回归测试存在",
       and (ROOT / "media-go/v1003_nfo_merge_test.go").exists())
 
 print("\n== 4. 版本与发布纪律 ==")
-check("4a 资源版本 ≥11 处且为本版", len(re.findall(r"\?v=1\.0\.6", HTML)) >= 11)
-check("4b 全部静态资源版本串只出现本版", set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"1.0.6"})
+check("4a 资源版本 ≥11 处且为本版", len(re.findall(r"\?v=1\.0\.7", HTML)) >= 11)
+check("4b 全部静态资源版本串只出现本版", set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"1.0.7"})
 check("4c ASSET / SCRIPT 版本一致",
-      'VAULTHUB_ASSET_VERSION = "1.0.6"' in HTML
-      and 'VAULTHUB_SCRIPT_VERSION = "1.0.6"' in STATE)
-check("4d 三处标语整串一致", len(re.findall(r"v1\.0\.6 · [^<\"]+", HTML)) == 3
-      and len(set(re.findall(r"v1\.0\.6 · [^<\"]+", HTML))) == 1)
+      'VAULTHUB_ASSET_VERSION = "1.0.7"' in HTML
+      and 'VAULTHUB_SCRIPT_VERSION = "1.0.7"' in STATE)
+check("4d 三处标语整串一致", len(re.findall(r"v1\.0\.7 · [^<\"]+", HTML)) == 3
+      and len(set(re.findall(r"v1\.0\.7 · [^<\"]+", HTML))) == 1)
 check("4e 安装/升级脚本版本同步",
-      'VERSION="v1.0.6"' in rd("scripts/install.sh") and 'VERSION="v1.0.6"' in rd("scripts/upgrade.sh"))
-# v1.0.6：日志顶部已换成当前版本，改成「v1.0.3 段落仍完整」。
+      'VERSION="v1.0.7"' in rd("scripts/install.sh") and 'VERSION="v1.0.7"' in rd("scripts/upgrade.sh"))
+# v1.0.7：日志顶部已换成当前版本，改成「v1.0.3 段落仍完整」。
 _v103 = LOG.split("# VaultHub 蜀鼠之家 v1.0.3")[1].split("\n# VaultHub")[0] if "# VaultHub 蜀鼠之家 v1.0.3" in LOG else ""
 check("4f Update Log 保留完整的 v1.0.3 段落",
       bool(_v103) and all(k in _v103 for k in ("页尾精简", "NFO 识别修复", "全量审查"))
-      and LOG.startswith("# VaultHub 蜀鼠之家 v1.0.6"))
+      and LOG.startswith("# VaultHub 蜀鼠之家 v1.0.7"))
 check("4g 发布说明存在且覆盖三项 + 审查结论",
       len(NOTES) > 1200 and all(k in NOTES for k in ("页尾精简", "NFO", "审查")))
 
@@ -117,8 +117,8 @@ for p in ("media-go/nfo_merge.go", "media-go/nfo_write.go", "media-go/network.go
     check("5 无禁用字面量: " + p, not BAD.search(rd(p)))
 
 if FAILS:
-    print(f"\n===== v1.0.6 契约测试：{len(FAILS)} 项失败 =====")
+    print(f"\n===== v1.0.7 契约测试：{len(FAILS)} 项失败 =====")
     for f in FAILS:
         print("  -", f)
     raise SystemExit(1)
-print("\n===== v1.0.6 契约测试：全部通过 =====")
+print("\n===== v1.0.7 契约测试：全部通过 =====")

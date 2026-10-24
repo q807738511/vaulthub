@@ -45,7 +45,9 @@ document.getElementById("mpUrl").value = settings.mp.mpUrl || "";
 document.getElementById("mpUser").value = settings.mp.username || "";
 document.getElementById("mpPass").value = settings.mp.password || "";
 
-refreshHardwareStatus();
+/* v1.0.7：硬件/库列表等接口已收紧为需会话，未登录时跳过启动拉取，
+   登录成功后由 handleVaultHubAuthResult 触发补拉（见 01-state.js）。 */
+if (typeof vaultHubAuthenticated === "function" && vaultHubAuthenticated()) refreshHardwareStatus();
 refreshSessionStatus(false);
 /* 登录状态监测：每分钟核对一次服务端会话，写操作前还会再确认一次 */
 setInterval(() => refreshSessionStatus(false), 60000);
@@ -73,7 +75,9 @@ if (typeof runDailySpeedTest === "function") {
   });
 } else if (typeof ensureWeakNetworkProbe === "function") ensureWeakNetworkProbe();
 /* 首页四栏（服务器监控 / 正在进行 / 最近入库）在媒体库拉取完成后渲染 */
-refreshMediaLibraries(false).then(() => {
+refreshMediaLibraries(false).catch(() => {}).then(() => {
+  /* v1.0.7：未登录时 refreshMediaLibraries 会 401，首页先以空库渲染；
+     登录成功后 bootAfterLogin() 会重新拉取并刷新首页四栏。 */
   initHome();
   /* v1.0.4（需求7）：媒体库列表就绪后再恢复上次的页面，刷新不会被踢回首页。 */
   if (typeof restoreVaultHubRoute === "function") {
@@ -97,4 +101,18 @@ refreshMediaLibraries(false).then(() => {
     obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style"] });
   } catch (e) { /* 老浏览器没有 MutationObserver：退化为只在启动时算一次 */ }
 })();
+}
+
+
+/* v1.0.7：登录成功后的补拉链路（硬件徽章 + 媒体库 + 首页状态轮询）。
+   由 01-state.js 的 handleVaultHubAuthResult(logged=true) 调用；
+   幂等：重复调用只是多一次拉取，不会叠加轮询定时器（initHome 的轮询有签名去重）。 */
+async function bootAfterLogin() {
+  try {
+    if (typeof refreshHardwareStatus === "function") refreshHardwareStatus();
+    await refreshMediaLibraries(false);
+    if (typeof loadHomeIndexStatus === "function") await loadHomeIndexStatus();
+    if (typeof loadHomeScrapeStatus === "function") await loadHomeScrapeStatus();
+    if (typeof renderHomeLibTable === "function") renderHomeLibTable();
+  } catch (e) { /* 静默：登录后的补拉失败不阻塞界面 */ }
 }

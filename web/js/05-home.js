@@ -586,6 +586,8 @@ function initHome() {
   setInterval(() => { if(!document.hidden) renderNowPlaying(); }, 5000);
   setInterval(async () => {
     if(document.hidden) return;
+    /* v1.0.7：index/status 与 scrapers 已收紧为需会话，未登录不打这两个接口。 */
+    if(typeof vaultHubAuthenticated==="function" && !vaultHubAuthenticated()) return;
     await Promise.all([loadHomeIndexStatus(),loadHomeScrapeStatus()]);
     const signature=JSON.stringify([homeIndexStatus,homeScrapeStatus]);
     if(signature===lastHomeStatus) return;

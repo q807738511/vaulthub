@@ -18,7 +18,7 @@ let vaultHubSessionPingedAt = 0;
    历史故障：v0.8.3→v0.8.5 的前端修改在服务端已生效，但浏览器仍执行缓存里的
    旧 02-media.js，用户看到「没有更新」。现在入口页 no-store、静态资源带 ?v=，
    并在启动时做一次一致性自查，不一致就绕过缓存强制重载一次。 */
-const VAULTHUB_SCRIPT_VERSION = "1.0.6";
+const VAULTHUB_SCRIPT_VERSION = "1.0.7";
 function ensureFreshAssets() {
   /* expected 为空 = 浏览器执行的 index.html 早于 v0.8.6（旧版本入口页没有声明
      版本号），同样属于"页面是旧的"，也需要换 URL 重新取一次。 */
@@ -105,7 +105,7 @@ function mediaKeepAliveStop(source) {
 }
 /* 已登录时给遮罩加上 .hidden（CSS 里 .auth-mask.hidden{display:none}），
    未登录时移除，遮住页面要求登录。 */
-function handleVaultHubAuthResult(logged) { vaultHubAuthenticated=!!logged; document.getElementById('authMask')?.classList.toggle('hidden',!!logged); if(logged) markVaultHubActivity(); else clearTimeout(vaultHubIdleTimer); return !!logged; }
+function handleVaultHubAuthResult(logged) { vaultHubAuthenticated=!!logged; document.getElementById('authMask')?.classList.toggle('hidden',!!logged); if(logged){ markVaultHubActivity(); /* v1.0.7：登录成功后补拉收紧端点的数据（硬件/库列表/首页状态）。 */ if(typeof bootAfterLogin==="function") bootAfterLogin(); } else clearTimeout(vaultHubIdleTimer); return !!logged; }
 
 async function vaultHubLogin() {
   const username=document.getElementById('vaultHubUsername').value.trim();

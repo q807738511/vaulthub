@@ -62,6 +62,8 @@ COPY web /srv/web
 # v1.0.6：三份《界面规格之 … 影音播放器界面元素详解》随镜像发布，
 # 外观面板里的「查看元素清单」可直接打开原文（/docs/specs/<spec>.md）。
 COPY docs/specs /srv/docs/specs
+# v1.0.7：APP 契约三件套（/docs/api/openapi.yaml 等）。
+COPY docs/api /srv/docs/api
 
 # v0.9.50：以下默认值与 vaulthub.env 模板逐键对齐。env 文件变为可选覆盖层，
 # 缺失/过期时容器仍按这些内置默认值运行；需要覆盖时再放本地 vaulthub.env/.env。

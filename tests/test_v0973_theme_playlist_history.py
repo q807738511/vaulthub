@@ -28,7 +28,7 @@ GO_READING = (ROOT / "media-go/reading_progress.go").read_text(encoding="utf-8")
 UPDATELOG = (ROOT / "Update Log.md").read_text(encoding="utf-8")
 NOTES = (ROOT / ".github/RELEASE_NOTES_0.9.90.md")
 
-VERSION = "1.0.6"
+VERSION = "1.0.7"
 checks = []
 
 
@@ -112,8 +112,8 @@ check("T3 服务端释放幂等（removed=false）",
       '"removed": false' in GO_READING and '"removed": true' in GO_READING)
 
 
-# ---------------- 需求 4：主题系统（v1.0.6 起 = 界面规格 × 明暗） ----------------
-# v0.9.73 的三层模型（调色板 × 明暗 × 强调色）在 v1.0.6 收敛成两层：调色板、强调色、
+# ---------------- 需求 4：主题系统（v1.0.7 起 = 界面规格 × 明暗） ----------------
+# v0.9.73 的三层模型（调色板 × 明暗 × 强调色）在 v1.0.7 收敛成两层：调色板、强调色、
 # 自定义背景三档设置按客户口径整体移除，每套界面规格自带完整主题定义。
 check("T4 主题引擎独立成文件", "const SPEC_THEMES = {" in THEME and "web/js/06-theme.js" in HTML)
 check("T4 三套规格各有主题定义",
@@ -202,7 +202,7 @@ check("T4 Apple 液态玻璃材质挂到顶栏/弹窗/播放器",
       'html[data-spec="apple"] .topbar' in CSS and "backdrop-filter: blur(var(--glass-blur))" in CSS)
 check("T4 Plex 琥珀进度条", 'html[data-spec="plex"] .video-played-range' in CSS)
 
-# i18n：三语言齐备（v1.0.6 新增规格壁纸与规格详解文案）
+# i18n：三语言齐备（v1.0.7 新增规格壁纸与规格详解文案）
 for key in ["themeModeLbl", "themeModeSaved", "themeReduceMotion",
             "themeWallpaperLbl", "themeWallpaperSub", "wallpaperOn", "wallpaperOff",
             "specDocTitle", "specDocOpen", "specDocLead", "specDocApply"]:
@@ -213,7 +213,7 @@ for key in ["themeModeLbl", "themeModeSaved", "themeReduceMotion",
 # ---------------- 版本与发布资料 ----------------
 check("V 入口页资源版本 0.9.90", f'window.VAULTHUB_ASSET_VERSION = "{VERSION}";' in HTML)
 check("V 脚本自校验版本 0.9.90", f'const VAULTHUB_SCRIPT_VERSION = "{VERSION}";' in STATE)
-check("V 所有静态资源带 ?v=1.0.6", HTML.count(f"?v={VERSION}") >= 8, f"命中 {HTML.count(f'?v={VERSION}')}")
+check("V 所有静态资源带 ?v=1.0.7", HTML.count(f"?v={VERSION}") >= 8, f"命中 {HTML.count(f'?v={VERSION}')}")
 check("V 主题脚本被入口页引用", f'/web/js/06-theme.js?v={VERSION}' in HTML)
 # 同一版本内角标文案随本版主功能追加而调整（v0.9.83 收尾加入顶栏导航与书刊页）。
 check("V 侧栏与关于弹窗角标已升版", HTML.count(f"v{VERSION}") >= 1)

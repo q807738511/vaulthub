@@ -1,0 +1,2416 @@
+openapi: 3.0.3
+info:
+  title: VaultHub API
+  version: 1.0.0-draft
+  description: |
+    VaultHub 对外 HTTP 接口契约草稿（v1 冻结基线）。
+
+    依据 main 分支 2026-10-24 快照整理，覆盖 Caddy :8088 网关之后的全部 /api/* 路径。
+    分层说明：
+      - P0（APP MVP 依赖）：认证、媒体库/文件、播放决策/会话、阅读进度、漫画/PDF/EPUB、封面、字幕、音频流 —— 给出字段级 schema。
+      - P1/P2（管理面/刮削面）：给出方法、参数与关键响应说明，详细字段见 docs/api/ROUTE_INVENTORY.md。
+    鉴权：除标注 security 为公开的端点外，均需 Cookie `vh_session`（POST /api/login 获得）。
+    服务本身不区分读写会话（v0.9.56 起读写同强度），描述中的「会话读/写」仅为语义标注。
+servers:
+  - url: 'http://{host}:{port}'
+    description: VaultHub 单容器入口（Caddy 网关）
+    variables:
+      host:
+        default: '127.0.0.1'
+      port:
+        default: '8088'
+tags:
+  - name: auth
+    description: 登录与会话（manager 服务）
+  - name: system
+    description: 系统状态与监控
+  - name: libraries
+    description: 媒体库配置与索引
+  - name: files
+    description: 文件列表与原文件直出
+  - name: playback
+    description: 播放决策、会话与转码流（APP 核心）
+  - name: audio
+    description: 音频流与音频元数据
+  - name: reading
+    description: 阅读进度、漫画/PDF/EPUB（APP 核心）
+  - name: subtitles
+    description: 字幕搜索/提取/代理/下载
+  - name: metadata
+    description: 本地元数据与手工覆盖
+  - name: scraping
+    description: 刮削器、TMDB/豆瓣/TVDB 代理（管理面）
+  - name: admin
+    description: Caddy/Docker 管理（不进 APP）
+security:
+  - cookieAuth: []
+paths:
+  /healthz:
+    get:
+      tags: [system]
+      summary: 存活探测（Caddy 直接应答，不进后端）
+      security: []
+      responses:
+        '200':
+          description: 纯文本 ok
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: ok
+  /api/health:
+    get:
+      tags: [system]
+      summary: manager 存活探测（公开）
+      security: []
+      responses:
+        '200':
+          description: 服务健康
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  service: { type: string, example: go-manager }
+                  time: { type: string, description: RFC3339 UTC }
+  /api/login:
+    post:
+      tags: [auth]
+      summary: 登录，成功后设置 vh_session Cookie（APP 第一版可直接持有该 Cookie）
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: '登录成功（Set-Cookie: vh_session；HttpOnly；SameSite=Lax；MaxAge=TTL）'
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+              description: 'vh_session=<48位hex>; Path=/; HttpOnly; SameSite=Lax'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoginResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401':
+          description: 凭据错误（或一次性初始密码已被消费）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+        '405': { $ref: '#/components/responses/MethodNotAllowed' }
+        '429':
+          description: 该客户端 IP 登录失败锁定中（5 次失败锁 5 分钟）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+  /api/logout:
+    post:
+      tags: [auth]
+      summary: 注销当前会话（公开；带有效 Cookie 时吊销之）
+      security: []
+      responses:
+        '200':
+          description: 已注销（下发过期 Cookie）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkEnvelope' }
+  /api/auth/mode:
+    get:
+      tags: [auth]
+      summary: 认证模式探测（公开；注意会返回用户名）
+      security: []
+      responses:
+        '200':
+          description: 当前认证模式
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthModeResponse' }
+        '405': { $ref: '#/components/responses/MethodNotAllowed' }
+  /api/account:
+    post:
+      tags: [auth]
+      summary: 修改用户名/密码/认证模式（must-change 受限会话可用；成功后吊销其他会话）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AccountRequest' }
+      responses:
+        '200':
+          description: 已保存
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  mode: { type: string, enum: [password, open] }
+                  username: { type: string }
+                  message: { type: string }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: 旧密码不正确
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+        '405': { $ref: '#/components/responses/MethodNotAllowed' }
+  /api/session/check:
+    get:
+      tags: [auth]
+      summary: 跨服务会话验证（仅 loopback；media-go 回环调用，只认状态码 200）
+      description: 内部契约。非回环直连返回 403 loopback only；无有效会话 401；must-change 受限会话 403。
+      security: []
+      responses:
+        '200':
+          description: 会话有效（同时触发滑动续期）
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  idle_timeout_seconds: { type: integer }
+                  session_days: { type: integer, enum: [30, 60] }
+                  mode: { type: string, description: 仅 open 模式出现 }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: 非回环来源，或 must-change 受限会话
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+  /api/system/runtime:
+    get:
+      tags: [system]
+      summary: manager 进程与子进程守护状态（受限会话可用）
+      responses:
+        '200':
+          description: 运行时信息
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  pid: { type: integer }
+                  go: { type: string }
+                  children: { type: integer }
+                  child_restarts:
+                    type: object
+                    additionalProperties: { type: integer }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/system/metrics:
+    get:
+      tags: [system]
+      summary: 内置系统监控（CPU/内存/网络/磁盘/温度）
+      responses:
+        '200':
+          description: 监控快照（字段结构见 ROUTE_INVENTORY；enabled=false 时仅返回该字段）
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/admin/docker/scan:
+    get:
+      tags: [admin]
+      summary: Docker 容器扫描（host 仅允许 127.0.0.1/localhost/NAS_IP）
+      parameters:
+        - name: host
+          in: query
+          required: false
+          schema: { type: string, default: '127.0.0.1' }
+      responses:
+        '200':
+          description: Docker Engine /containers/json 原始数组透传
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  containers: { type: array, items: {} }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/MustChange' }
+  /api/admin/caddyfile:
+    get:
+      tags: [admin]
+      summary: 读取当前 Caddyfile
+      responses:
+        '200':
+          description: Caddyfile 全文
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  caddyfile: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/MustChange' }
+    post:
+      tags: [admin]
+      summary: 校验并热加载 Caddyfile（内容必须包含 :8088；失败自动回滚）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [caddyfile]
+              properties:
+                caddyfile: { type: string }
+      responses:
+        '200':
+          description: 已加载
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkEnvelope' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/MustChange' }
+  /api/admin/caddy/config:
+    get:
+      tags: [admin]
+      summary: 同 /api/admin/caddyfile（别名）
+      responses:
+        '200':
+          description: 同 /api/admin/caddyfile
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [admin]
+      summary: 同 /api/admin/caddyfile POST（别名）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                caddyfile: { type: string }
+      responses:
+        '200':
+          description: 已加载
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkEnvelope' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/media/libraries:
+    get:
+      tags: [libraries]
+      summary: 媒体库列表（v1.0.7 起需会话；返回含磁盘路径）
+      responses:
+        '200':
+          description: 全部媒体库
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  libraries:
+                    type: array
+                    items: { $ref: '#/components/schemas/Library' }
+    post:
+      tags: [libraries]
+      summary: 新增媒体库并触发后台索引
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Library' }
+      responses:
+        '200':
+          description: 幂等命中（已存在同 ID 同数据）
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  existing: { type: boolean }
+                  status: { type: string, example: indexing }
+        '201':
+          description: 已创建并开始索引
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  status: { type: string, example: indexing }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [libraries]
+      summary: 删除媒体库配置
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 已删除
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/media/files:
+    get:
+      tags: [files]
+      summary: 库内文件分页列表（SQLite 索引；支持 ETag/304；首次访问未索引库自动触发扫描）
+      parameters:
+        - $ref: '#/components/parameters/LibraryId'
+        - name: offset
+          in: query
+          required: false
+          schema: { type: integer, default: 0, minimum: 0 }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, default: 100, maximum: 5000 }
+        - name: sort
+          in: query
+          required: false
+          schema: { type: string, enum: [path, mtime], default: path }
+        - name: q
+          in: query
+          required: false
+          schema: { type: string, description: 路径子串过滤（忽略大小写） }
+      responses:
+        '200':
+          description: 文件列表（扫描中返回 status=indexing）
+          headers:
+            ETag:
+              schema: { type: string }
+              description: 索引指纹；If-None-Match 匹配时返回 304
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FilesResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503':
+          description: 索引数据库不可用
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+  /api/media/file:
+    get:
+      tags: [files]
+      summary: 原文件字节直出（直连播放/阅读器分块读取入口；支持 Range/206/HEAD/条件请求）
+      parameters:
+        - $ref: '#/components/parameters/LibraryId'
+        - $ref: '#/components/parameters/MediaPath'
+      responses:
+        '200':
+          description: 原始文件流
+          headers:
+            Accept-Ranges: { schema: { type: string, example: bytes } }
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '206':
+          description: Range 命中，部分内容
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/media/file/{id}/{path}:
+    get:
+      tags: [files]
+      summary: 旧版路径式文件直出（兼容层；行为同 /api/media/file）
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+          description: 媒体库 ID
+        - name: path
+          in: path
+          required: true
+          schema: { type: string }
+          description: 库内相对路径（可含多级子目录）
+      responses:
+        '200':
+          description: 原始文件流（同 /api/media/file）
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/media/cover:
+    get:
+      tags: [reading]
+      summary: 封面/海报图片（公开端点（有意决策：服务分享场景，缩略需猜中库 ID + sidecar 路径）；支持缩略、ETag/304）
+      description: 'URL 契约：/api/media/cover?id=<libID>&path=<sidecar 相对路径>&v=<mtime秒>[&w=]'
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/LibraryId'
+        - name: path
+          in: query
+          required: true
+          schema: { type: string }
+          description: sidecar 图片文件自身的相对路径（如 dir/Name.cover.jpg）
+        - name: w
+          in: query
+          required: false
+          schema: { type: integer }
+          description: 缩略图目标宽度；>0 时返回 JPEG 缩略（带 ETag/304 与 immutable 长缓存）
+      responses:
+        '200':
+          description: 图片二进制
+          content:
+            image/*:
+              schema: { type: string, format: binary }
+        '304': { description: 缩略图 If-None-Match 命中 }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [reading]
+      summary: 下载远程图片并写为本地 sidecar（管理操作）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, path, url]
+              properties:
+                id: { type: string }
+                path: { type: string }
+                url: { type: string, description: http/https 公网图片直链（≤4096 字符） }
+                role:
+                  type: string
+                  enum: [cover, poster, fanart, backdrop, logo]
+                  default: cover
+      responses:
+        '200':
+          description: 已保存，返回可展示的 /api/media/cover URL
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/media/compat:
+    get:
+      tags: [playback]
+      summary: 服务端转码兼容流（plan 返回 mode≠direct 时使用）
+      description: >-
+        响应头 X-VaultHub-Compat 区分两种形态：live=实时 fragmented MP4（不支持 Range/拖动）；
+        cache=完整转码产物落盘（支持 Range/206 与拖动）。sub_track 设置后强制 full_transcode（图形字幕烧录）。
+      parameters:
+        - $ref: '#/components/parameters/LibraryId'
+        - $ref: '#/components/parameters/MediaPath'
+        - name: mode
+          in: query
+          required: false
+          schema: { type: string, enum: [remux, audio_transcode, full_transcode] }
+          description: 非法值静默回退 audio_transcode
+        - name: hw
+          in: query
+          required: false
+          schema: { type: string, enum: [auto, cpu, vaapi, qsv, cuda] }
+        - name: height
+          in: query
+          required: false
+          schema: { type: integer, minimum: 144, maximum: 4320 }
+        - name: audio_track
+          in: query
+          required: false
+          schema: { type: string }
+          description: 音轨序号
+        - name: sub_track
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0, maximum: 255 }
+          description: 图形字幕烧录轨号（设置后强制 full_transcode）
+        - name: task
+          in: query
+          required: false
+          schema: { type: string }
+          description: 任务登记 ID（供 /api/media/tasks/cancel 取消）
+        - name: disc_playlist
+          in: query
+          required: false
+          schema: { type: integer }
+      responses:
+        '200':
+          description: MP4 流（live 为 chunked fMP4；cache 支持 Range）
+          headers:
+            X-VaultHub-Compat: { schema: { type: string, enum: [live, cache] } }
+            Accept-Ranges: { schema: { type: string } }
+          content:
+            video/mp4:
+              schema: { type: string, format: binary }
+        '206':
+          description: cache 形态下的 Range 命中
+          content:
+            video/mp4:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/media/probe:
+    get:
+      tags: [playback]
+      summary: ffprobe 媒体探测（v1.0.7 起需会话）
+      parameters:
+        - $ref: '#/components/parameters/LibraryId'
+        - $ref: '#/components/parameters/MediaPath'
+        - name: disc_playlist
+          in: query
+          required: false
+          schema: { type: integer }
+      responses:
+        '200':
+          description: 探测结果（ffprobe 失败也返回 200，字段为空并带 compat_recommended=true）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProbeResponse' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/media/weak/probe:
+    get:
+      tags: [playback]
+      summary: 下行网速探测（返回不可压缩随机字节流，APP 测速用）
+      parameters:
+        - name: kb
+          in: query
+          required: false
+          schema: { type: integer, default: 256, minimum: 8, maximum: 2048 }
+          description: 返回 kb*1024 字节
+      responses:
+        '200':
+          description: 确定性伪随机字节流
+          headers:
+            X-Vaulthub-Probe-Bytes: { schema: { type: integer } }
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/media/network/speed:
+    get:
+      tags: [scraping]
+      summary: 刮削网络可达性测速（白名单域名）
+      parameters:
+        - name: host
+          in: query
+          required: false
+          schema: { type: string }
+          description: 白名单内的域名（不传则测全部）
+      responses:
+        '200':
+          description: 各目标直连/代理可达性
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [scraping]
+      summary: 同 GET（兼容前端写法）
+      parameters:
+        - name: host
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: 同 GET
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/media/hardware:
+    get:
+      tags: [playback]
+      summary: 转码硬件能力探测（v1.0.7 起需会话）
+      parameters:
+        - name: hw
+          in: query
+          required: false
+          schema: { type: string, enum: [auto, cpu, vaapi, qsv, cuda] }
+      responses:
+        '200':
+          description: 硬件探测结果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HardwareInfo' }
+  /api/media/playback/plan:
+    post:
+      tags: [playback]
+      summary: 播放决策（客户端能力上报 → 直连/remux/音频转码/全转码 + 播放 URL）
+      description: APP 的核心端点。客户端上报 codec/容器能力与实测带宽，服务端返回四层决策与可直接使用的 URL。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PlaybackPlanRequest' }
+      responses:
+        '200':
+          description: 播放计划
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlaybackPlan' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: server_transcode=off 且媒体为原盘镜像（蓝光/DVD ISO），无法本地直接播放
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+        '422':
+          description: ffprobe 探测失败（15 秒内）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+  /api/media/playback/sessions:
+    post:
+      tags: [playback]
+      summary: 创建播放会话（转码任务的生命周期容器；纯内存，2 分钟无心跳回收）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [library_id, path]
+              properties:
+                library_id: { type: string }
+                path: { type: string }
+                mode: { type: string }
+      responses:
+        '200':
+          description: 会话已创建（id 为服务端生成的 32 位 hex；state 强制 playing）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlaybackSession' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429':
+          description: 活跃会话数已达上限（64）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+  /api/media/playback/sessions/{id}/{action}:
+    post:
+      tags: [playback]
+      summary: 播放会话心跳/进度上报与停止
+      description: 'action 合法值：progress（心跳兼进度上报，<2 分钟一次）与 stop（结束并取消后台预转码）。'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+          description: 会话 ID（32 位 hex）
+        - name: action
+          in: path
+          required: true
+          schema: { type: string, enum: [progress, stop] }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProgressRequest' }
+      responses:
+        '200':
+          description: 'progress 返回更新后的完整会话；stop 返回 {ok, precache_cancelled}'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/PlaybackSession'
+                  - type: object
+                    properties:
+                      ok: { type: boolean }
+                      precache_cancelled: { type: integer }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: 会话不存在（含 2 分钟超时被回收）或 action 非法
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+  /api/media/streams:
+    get:
+      tags: [playback]
+      summary: 音轨/字幕轨列表（填充播放器的轨道选择）
+      parameters:
+        - $ref: '#/components/parameters/LibraryId'
+        - $ref: '#/components/parameters/MediaPath'
+        - name: disc_playlist
+          in: query
+          required: false
+          schema: { type: integer }
+      responses:
+        '200':
+          description: 轨道列表（ffprobe 失败返回空数组仍 200）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StreamsResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/media/tasks/cancel:
+    post:
+      tags: [playback]
+      summary: 取消转码任务（compat 带 task 参数登记的任务）
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema: { type: string }
+          description: 任务 ID
+      responses:
+        '200':
+          description: '取消结果（任务不存在时 cancelled=false）'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  cancelled: { type: boolean }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/media/settings:
+    get:
+      tags: [scraping]
+      summary: 运行配置快照（密钥仅返回掩码）
+      responses:
+        '200':
+          description: 配置快照（字段见 ROUTE_INVENTORY 2.2）
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    put:
+      tags: [scraping]
+      summary: 保存运行配置
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: 保存后的快照
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [scraping]
+      summary: 同 PUT（兼容写法）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: 保存后的快照
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/media/index/rebuild:
+    post:
+      tags: [libraries]
+      summary: 触发索引重建（异步，返回 202）
+      parameters:
+        - name: id
+          in: query
+          required: false
+          schema: { type: string }
+          description: 库 ID；空则全部库
+      responses:
+        '202':
+          description: 已调度
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  status: { type: string, example: scheduled }
+                  libraries: { type: array, items: { type: string } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/media/index/cancel:
+    post:
+      tags: [libraries]
+      summary: 取消索引扫描
+      parameters:
+        - name: id
+          in: query
+          required: false
+          schema: { type: string }
+          description: 库 ID；空则取消全部
+      responses:
+        '200':
+          description: 已取消（返回实际取消的库列表）
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  cancelled: { type: array, items: { type: string } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/media/index/status:
+    get:
+      tags: [libraries]
+      summary: 各库索引/扫描状态（v1.0.7 起需会话）
+      responses:
+        '200':
+          description: 状态总览（字段见 ROUTE_INVENTORY 2.2）
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '503':
+          description: 索引数据库不可用
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+  /api/media/audio/stream:
+    get:
+      tags: [audio]
+      summary: 音频 MP3 转码流（bitrate 白名单七档；支持 Range；缓存命中走磁盘）
+      parameters:
+        - $ref: '#/components/parameters/LibraryId'
+        - $ref: '#/components/parameters/MediaPath'
+        - name: bitrate
+          in: query
+          required: true
+          schema: { type: string, enum: ['64', '96', '128', '160', '192', '256', '320'] }
+          description: 也接受 96k/96kbps 等写法
+        - name: fresh
+          in: query
+          required: false
+          schema: { type: string }
+          description: 任意非空值跳过缓存强制重转码
+      responses:
+        '200':
+          description: MP3 流
+          headers:
+            X-Vaulthub-Audio-Bitrate: { schema: { type: string } }
+            X-Vaulthub-Audio-Cache: { schema: { type: string, enum: [hit, miss] } }
+          content:
+            audio/mpeg:
+              schema: { type: string, format: binary }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503':
+          description: '全局转码闸门拥塞（带 Retry-After: 3，APP 应回落 /api/media/file 原文件直出）'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+  /api/media/audio/cache:
+    get:
+      tags: [audio]
+      summary: 读取音频元数据缓存（仅返回磁盘新鲜条目）
+      parameters:
+        - $ref: '#/components/parameters/LibraryId'
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, default: 5000, minimum: 1, maximum: 50000 }
+      responses:
+        '200':
+          description: 缓存条目映射（键为文件相对路径；字段见 ROUTE_INVENTORY 2.4）
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [audio]
+      summary: 写入音频元数据缓存条目
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: '已存储 {ok, path, stored}'
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [audio]
+      summary: 同 PUT（兼容写法）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: 已存储
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    delete:
+      tags: [audio]
+      summary: 删除音频元数据缓存（按文件或整库）
+      parameters:
+        - $ref: '#/components/parameters/LibraryId'
+        - name: path
+          in: query
+          required: false
+          schema: { type: string }
+        - name: all
+          in: query
+          required: false
+          schema: { type: string, enum: ['1'] }
+          description: all=1 清整库（与 path 二选一）
+      responses:
+        '200':
+          description: 已删除
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkEnvelope' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/media/audio/cache/stats:
+    get:
+      tags: [audio]
+      summary: 音频缓存统计
+      responses:
+        '200':
+          description: 统计信息
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  available: { type: boolean }
+                  entries: { type: integer }
+                  with_lyrics: { type: integer }
+                  lyrics_bytes: { type: integer, format: int64 }
+                  netease: { type: boolean }
+                  lyrics_sources: { type: array, items: { type: string } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/media/audio/lyrics:
+    get:
+      tags: [audio]
+      summary: 歌词查询（本地 sidecar/内嵌标签 → LRCLIB → lyrics.ovh → 网易云）
+      parameters:
+        - $ref: '#/components/parameters/LibraryId'
+        - $ref: '#/components/parameters/MediaPath'
+        - name: title
+          in: query
+          required: false
+          schema: { type: string }
+        - name: artist
+          in: query
+          required: false
+          schema: { type: string }
+        - name: force
+          in: query
+          required: false
+          schema: { type: string, enum: ['1'] }
+          description: 跳过本地直接联网
+        - name: save
+          in: query
+          required: false
+          schema: { type: string, enum: ['1'] }
+          description: 命中后写 .lrc sidecar
+      responses:
+        '200':
+          description: '查询结果（未命中 found=false 也返回 200）'
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/media/audio/lyrics/batch:
+    post:
+      tags: [audio]
+      summary: 批量歌词刮削（≤50 条；全局串行，忙时 429）
+      parameters:
+        - $ref: '#/components/parameters/LibraryId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  maxItems: 50
+                  items:
+                    type: object
+                    properties:
+                      path: { type: string }
+                      title: { type: string }
+                      artist: { type: string }
+                save: { type: boolean }
+      responses:
+        '200':
+          description: 批量结果
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooMany' }
+  /api/media/audio/scrape/status:
+    get:
+      tags: [audio]
+      summary: 音频库刮削进度
+      parameters:
+        - $ref: '#/components/parameters/LibraryId'
+      responses:
+        '200':
+          description: 进度统计（非音频库返回 tracked=false）
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/media/audio/metadata:
+    get:
+      tags: [audio]
+      summary: 在线音频元数据候选（iTunes 主源 + MusicBrainz 兜底，不落盘）
+      parameters:
+        - name: title
+          in: query
+          required: true
+          schema: { type: string, maxLength: 200 }
+        - name: artist
+          in: query
+          required: false
+          schema: { type: string, maxLength: 200 }
+        - name: country
+          in: query
+          required: false
+          schema: { type: string, enum: [AUTO, TW, JP, US, HK] }
+        - name: source
+          in: query
+          required: false
+          schema: { type: string, enum: [auto, iTunes, MusicBrainz] }
+      responses:
+        '200':
+          description: 匹配结果
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  title: { type: string }
+                  artist: { type: string }
+                  album: { type: string }
+                  cover: { type: string }
+                  provider: { type: string }
+                  recording_id: { type: string }
+                  release_id: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/media/audio/metadata/commit:
+    post:
+      tags: [audio]
+      summary: 提交音频元数据（sidecar .vaulthub.json + SQLite 双写）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: '提交结果 {ok, stored, persisted, sidecar, ...}'
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [audio]
+      summary: 同 POST（兼容写法）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: 同 POST
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/media/audio/artist:
+    get:
+      tags: [audio]
+      summary: 艺人规范化信息与头像
+      parameters:
+        - name: name
+          in: query
+          required: true
+          schema: { type: string, maxLength: 200 }
+      responses:
+        '200':
+          description: 艺人信息
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name: { type: string }
+                  cover: { type: string }
+                  provider: { type: string }
+                  type: { type: string }
+                  collaborators: { type: array, items: { type: string } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/media/archive/zip:
+    get:
+      tags: [reading]
+      summary: ZIP/CBZ 条目列表（canonical；/api/media/archive、/api/media/zip、/api/media/archive/zip/register 为别名）
+      parameters:
+        - $ref: '#/components/parameters/LibraryId'
+        - $ref: '#/components/parameters/MediaPath'
+        - name: entry
+          in: query
+          required: false
+          schema: { type: string }
+          description: 传入时直接返回该条目图片（raw 名或展示名均可）
+      responses:
+        '200':
+          description: 无 entry 时返回条目列表（自然排序、仅图片）；有 entry 时返回图片二进制
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ArchiveListResponse' }
+            image/*:
+              schema: { type: string, format: binary }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/media/archive:
+    get:
+      tags: [reading]
+      summary: 同 /api/media/archive/zip（别名）
+      parameters:
+        - $ref: '#/components/parameters/LibraryId'
+        - $ref: '#/components/parameters/MediaPath'
+      responses:
+        '200':
+          description: 同 /api/media/archive/zip
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ArchiveListResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/media/zip:
+    get:
+      tags: [reading]
+      summary: 同 /api/media/archive/zip（别名）
+      parameters:
+        - $ref: '#/components/parameters/LibraryId'
+        - $ref: '#/components/parameters/MediaPath'
+      responses:
+        '200':
+          description: 同 /api/media/archive/zip
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ArchiveListResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/media/archive/zip/register:
+    get:
+      tags: [reading]
+      summary: 同 /api/media/archive/zip（别名，条目列表 url 字段指向此路径）
+      parameters:
+        - $ref: '#/components/parameters/LibraryId'
+        - $ref: '#/components/parameters/MediaPath'
+        - name: entry
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: 同 /api/media/archive/zip
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ArchiveListResponse' }
+            image/*:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/media/archive/zip/page:
+    get:
+      tags: [reading]
+      summary: 漫画单页图片（w>0 时服务端 JPEG 转码 + ETag/304；失败回落原图直出）
+      parameters:
+        - $ref: '#/components/parameters/LibraryId'
+        - $ref: '#/components/parameters/MediaPath'
+        - name: entry
+          in: query
+          required: true
+          schema: { type: string }
+          description: ZIP 条目名（raw 名）
+        - name: w
+          in: query
+          required: false
+          schema: { type: integer }
+          description: '0=原图直出；1-4096=JPEG 转码宽度（<64 拒绝）'
+        - name: q
+          in: query
+          required: false
+          schema: { type: integer, default: 82, minimum: 1, maximum: 100 }
+          description: JPEG 质量
+      responses:
+        '200':
+          description: 页图二进制
+          headers:
+            X-Vaulthub-Page-Cache: { schema: { type: string, enum: [hit, miss, off] } }
+          content:
+            image/*:
+              schema: { type: string, format: binary }
+        '304': { description: ETag 命中 }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/media/archive/zip/cover:
+    get:
+      tags: [reading]
+      summary: 漫画封面缩略图（归档自然排序第一张）
+      parameters:
+        - $ref: '#/components/parameters/LibraryId'
+        - $ref: '#/components/parameters/MediaPath'
+        - name: w
+          in: query
+          required: false
+          schema: { type: integer, default: 320, minimum: 64, maximum: 1024 }
+        - name: q
+          in: query
+          required: false
+          schema: { type: integer, default: 82 }
+      responses:
+        '200':
+          description: JPEG 封面
+          content:
+            image/jpeg:
+              schema: { type: string, format: binary }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/media/pdf/info:
+    get:
+      tags: [reading]
+      summary: PDF 页数信息（poppler）
+      parameters:
+        - $ref: '#/components/parameters/LibraryId'
+        - $ref: '#/components/parameters/MediaPath'
+      responses:
+        '200':
+          description: PDF 信息（page_base 供前端拼 &page=N）
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pages: { type: integer }
+                  encrypted: { type: boolean }
+                  page_base: { type: string }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '503': { $ref: '#/components/responses/ServerUnavailable' }
+  /api/media/pdf/page:
+    get:
+      tags: [reading]
+      summary: PDF 页图（page 从 1 起，越界 404）
+      parameters:
+        - $ref: '#/components/parameters/LibraryId'
+        - $ref: '#/components/parameters/MediaPath'
+        - name: page
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1, maximum: 20000 }
+        - name: w
+          in: query
+          required: false
+          schema: { type: integer, default: 1600, maximum: 4096 }
+        - name: q
+          in: query
+          required: false
+          schema: { type: integer, default: 82 }
+      responses:
+        '200':
+          description: JPEG 页图（ETag/304）
+          content:
+            image/jpeg:
+              schema: { type: string, format: binary }
+        '304': { description: ETag 命中 }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/media/pdf/cover:
+    get:
+      tags: [reading]
+      summary: PDF 封面（第 1 页 320 宽缩略，参数缺省自动补齐）
+      parameters:
+        - $ref: '#/components/parameters/LibraryId'
+        - $ref: '#/components/parameters/MediaPath'
+      responses:
+        '200':
+          description: JPEG 封面
+          content:
+            image/jpeg:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/media/document/epub:
+    get:
+      tags: [reading]
+      summary: EPUB 章节纯文本解析（零外部依赖，自带大小上限与截断标记）
+      parameters:
+        - $ref: '#/components/parameters/LibraryId'
+        - $ref: '#/components/parameters/MediaPath'
+      responses:
+        '200':
+          description: 章节文本
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EpubResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/media/reading/progress:
+    get:
+      tags: [reading]
+      summary: 读取整库阅读进度（服务端持久化，跨设备共享）
+      parameters:
+        - $ref: '#/components/parameters/LibraryId'
+      responses:
+        '200':
+          description: 进度映射（键为文件相对路径）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReadingProgressResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [reading]
+      summary: 写入单条阅读进度（服务端钳制 progress 0-100）
+      parameters:
+        - $ref: '#/components/parameters/LibraryId'
+        - $ref: '#/components/parameters/MediaPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReadingProgressWrite' }
+      responses:
+        '200':
+          description: 写入的条目（updated_at 由服务端填写）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReadingProgressEntry' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [reading]
+      summary: 同 PUT（兼容写法）
+      parameters:
+        - $ref: '#/components/parameters/LibraryId'
+        - $ref: '#/components/parameters/MediaPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReadingProgressWrite' }
+      responses:
+        '200':
+          description: 同 PUT
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReadingProgressEntry' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    delete:
+      tags: [reading]
+      summary: 删除单条阅读进度（幂等）
+      parameters:
+        - $ref: '#/components/parameters/LibraryId'
+        - $ref: '#/components/parameters/MediaPath'
+      responses:
+        '200':
+          description: '删除结果（条目不存在时 removed=false 也 200）'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  id: { type: string }
+                  path: { type: string }
+                  removed: { type: boolean }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/media/playback/progress:
+    get:
+      tags: [playback]
+      summary: 读取整库播放进度（v1.0.7 新增；服务端持久化，跨设备「继续观看」数据源）
+      parameters:
+        - $ref: '#/components/parameters/LibraryId'
+      responses:
+        '200':
+          description: 进度映射（键为文件相对路径）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlaybackProgressResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [playback]
+      summary: 写入单条播放进度（服务端钳制 position 0-duration）
+      parameters:
+        - $ref: '#/components/parameters/LibraryId'
+        - $ref: '#/components/parameters/MediaPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PlaybackProgressWrite' }
+      responses:
+        '200':
+          description: 写入的条目（updated_at 由服务端填写）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlaybackProgressEntry' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [playback]
+      summary: 删除单条播放进度（幂等）
+      parameters:
+        - $ref: '#/components/parameters/LibraryId'
+        - $ref: '#/components/parameters/MediaPath'
+      responses:
+        '200':
+          description: 删除结果（条目不存在时 removed=false 也 200）
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  id: { type: string }
+                  path: { type: string }
+                  removed: { type: boolean }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/media/subtitles/search:
+    get:
+      tags: [subtitles]
+      summary: 聚合字幕搜索（生产环境由 subtitle-api 提供服务；media-go 的同名注册被 Caddy 遮蔽）
+      description: 聚合内嵌轨（经 media-go，受会话约束）、本地 sidecar、shooter/zimuku/subhd 在线源。注意 subtitle-api 自身不校验会话。
+      parameters:
+        - $ref: '#/components/parameters/LibraryId'
+        - $ref: '#/components/parameters/MediaPath'
+        - name: disc_playlist
+          in: query
+          required: false
+          schema: { type: integer }
+          description: 前端会传，subtitle-api 当前忽略不转发
+      responses:
+        '200':
+          description: 字幕候选列表
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SubtitleSearchResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/media/subtitles/download:
+    get:
+      tags: [subtitles]
+      summary: 字幕下载代理（subtitle-api；url 必须为 https；≤8MiB；不落盘）
+      description: v1.0.6 起经 sessionOK() 探针鉴权，未登录返回 401（携带调用方 Cookie 回环探测 media API）。
+      parameters:
+        - name: url
+          in: query
+          required: true
+          schema: { type: string, format: uri }
+        - name: format
+          in: query
+          required: false
+          schema: { type: string, enum: [vtt] }
+          description: vtt 时 Content-Type 为 text/vtt
+      responses:
+        '200':
+          description: 上游字幕内容原样转发
+          content:
+            text/plain:
+              schema: { type: string }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '502':
+          description: 上游不可达/非 2xx/超时
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+  /api/media/subtitles/extract:
+    get:
+      tags: [subtitles]
+      summary: 抽取内嵌字幕轨为 WebVTT（每次请求实时跑 ffmpeg）
+      parameters:
+        - $ref: '#/components/parameters/LibraryId'
+        - $ref: '#/components/parameters/MediaPath'
+        - name: track
+          in: query
+          required: false
+          schema: { type: integer, default: 0, minimum: 0 }
+          description: 字幕轨序号（0 起）
+      responses:
+        '200':
+          description: WebVTT 文本
+          content:
+            'text/vtt; charset=utf-8':
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/media/subtitles/proxy:
+    get:
+      tags: [subtitles]
+      summary: 外挂字幕文件转 WebVTT（.srt/.ass/.ssa/.sub）
+      parameters:
+        - $ref: '#/components/parameters/LibraryId'
+        - name: path
+          in: query
+          required: true
+          schema: { type: string }
+          description: 字幕文件自身的库内相对路径
+      responses:
+        '200':
+          description: WebVTT 文本
+          content:
+            'text/vtt; charset=utf-8':
+              schema: { type: string }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413':
+          description: 转换输出超过 8MiB
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+  /api/media/disc/playlists:
+    get:
+      tags: [playback]
+      summary: 原盘（蓝光/DVD）播放列表/标题列表
+      parameters:
+        - $ref: '#/components/parameters/LibraryId'
+        - $ref: '#/components/parameters/MediaPath'
+      responses:
+        '200':
+          description: 播放列表（非原盘返回 kind=none）
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  kind: { type: string, enum: [bluray, dvd, none] }
+                  selected: { type: integer }
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        index: { type: integer }
+                        kind: { type: string }
+                        ref: { type: integer }
+                        label: { type: string }
+                        seconds: { type: number }
+                        duration_text: { type: string }
+                        main: { type: boolean }
+                        selected: { type: boolean }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/media/scrapers:
+    get:
+      tags: [scraping]
+      summary: 刮削器能力探测（v1.0.7 起需会话；返回运行配置快照）
+      responses:
+        '200':
+          description: 能力快照
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+  /api/media/scrape-cache:
+    get:
+      tags: [scraping]
+      summary: 读取刮削结果缓存
+      parameters:
+        - $ref: '#/components/parameters/LibraryId'
+        - name: since
+          in: query
+          required: false
+          schema: { type: integer, format: int64 }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: 缓存条目
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [scraping]
+      summary: 写入刮削结果缓存
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: 写入统计
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    delete:
+      tags: [scraping]
+      summary: 清空刮削缓存
+      parameters:
+        - name: id
+          in: query
+          required: false
+          schema: { type: string }
+        - name: all
+          in: query
+          required: false
+          schema: { type: string, enum: ['0', '1'] }
+      responses:
+        '200':
+          description: 已清空
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/media/nfo:
+    get:
+      tags: [scraping]
+      summary: 读取 NFO 与本地元数据摘要
+      parameters:
+        - $ref: '#/components/parameters/LibraryId'
+        - $ref: '#/components/parameters/MediaPath'
+      responses:
+        '200':
+          description: NFO 摘要
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [scraping]
+      summary: 写 Kodi/Emby 兼容 NFO（默认不覆盖用户手写文件）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: 写入结果（written/kept/skipped/merged/conflicts）
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/media/series/plan:
+    get:
+      tags: [scraping]
+      summary: 剧集命名/分季整理判定（Plex 风格）
+      parameters:
+        - name: lib
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 整理方案（嵌套结构见 ROUTE_INVENTORY 2.7）
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/media/series/missing:
+    get:
+      tags: [scraping]
+      summary: 本地集号与官方集数比对
+      parameters:
+        - name: lib
+          in: query
+          required: true
+          schema: { type: string }
+        - name: key
+          in: query
+          required: false
+          schema: { type: string }
+        - name: dir
+          in: query
+          required: false
+          schema: { type: string }
+        - name: title
+          in: query
+          required: false
+          schema: { type: string }
+        - name: tmdb
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: 缺集清单
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/media/tmdb:
+    get:
+      tags: [scraping]
+      summary: TMDB 代理（搜索/详情/季；服务端代理避免暴露 API Key）
+      parameters:
+        - name: type
+          in: query
+          required: false
+          schema: { type: string, enum: [movie, series, tv] }
+          default: movie
+        - name: id
+          in: query
+          required: false
+          schema: { type: string }
+          description: TMDB 数字 ID（详情模式）
+        - name: season
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0, maximum: 99 }
+        - name: query
+          in: query
+          required: false
+          schema: { type: string }
+        - name: lang
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: TMDB 原样 JSON 透传
+          content:
+            application/json:
+              schema: {}
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '502':
+          description: 上游失败
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+  /api/media/douban:
+    get:
+      tags: [scraping]
+      summary: 豆瓣评分代理（未命中返回 200 + match=false）
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema: { type: string }
+        - name: year
+          in: query
+          required: false
+          schema: { type: string }
+        - name: type
+          in: query
+          required: false
+          schema: { type: string, enum: [series, movie] }
+      responses:
+        '200':
+          description: 匹配结果
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/media/douban/batch:
+    post:
+      tags: [scraping]
+      summary: 批量豆瓣评分（≤24 条）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                items:
+                  type: array
+                  maxItems: 24
+                  items:
+                    type: object
+                    properties:
+                      title: { type: string }
+                      year: { type: string }
+                      type: { type: string }
+      responses:
+        '200':
+          description: 批量结果
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/media/tvdb:
+    get:
+      tags: [scraping]
+      summary: TVDB 剧集搜索代理
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 200 }
+      responses:
+        '200':
+          description: 搜索结果
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items: { type: object, additionalProperties: true }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/media/cast/avatar:
+    get:
+      tags: [scraping]
+      summary: 演员头像（TMDB person 路径代理，或库内 .actors/ 本地头像）
+      parameters:
+        - name: person
+          in: query
+          required: false
+          schema: { type: string }
+          description: TMDB profile 路径（远程模式）
+        - $ref: '#/components/parameters/LibraryId'
+        - $ref: '#/components/parameters/MediaPath'
+      responses:
+        '200':
+          description: 头像图片
+          content:
+            image/*:
+              schema: { type: string, format: binary }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/media/metadata:
+    get:
+      tags: [metadata]
+      summary: 单文件本地元数据（NFO + sidecar + override 合并，APP 详情页数据源）
+      parameters:
+        - $ref: '#/components/parameters/LibraryId'
+        - $ref: '#/components/parameters/MediaPath'
+      responses:
+        '200':
+          description: 元数据（title/genres/cast/poster/subtitles/watched 等，字段见 ROUTE_INVENTORY 2.7）
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/media/metadata/batch:
+    post:
+      tags: [metadata]
+      summary: 批量本地元数据（≤500 条；APP 列表页海报墙数据源）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, paths]
+              properties:
+                id: { type: string }
+                paths:
+                  type: array
+                  maxItems: 500
+                  items: { type: string }
+      responses:
+        '200':
+          description: '路径 → 元数据 映射'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: object
+                    additionalProperties: { type: object, additionalProperties: true }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/media/metadata/override:
+    put:
+      tags: [metadata]
+      summary: 保存手工覆盖（用户评分/标签/已看状态的多端同步载体）
+      parameters:
+        - $ref: '#/components/parameters/LibraryId'
+        - $ref: '#/components/parameters/MediaPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string, maxLength: 120 }
+                year: { type: string, description: 4 位数字 1800-2200 }
+                user_rating: { type: number, minimum: 0, maximum: 10 }
+                poster: { type: string }
+                logo: { type: string }
+                fanart: { type: string }
+                backdrop: { type: string }
+                tags: { type: array, maxItems: 20, items: { type: string } }
+                watched: { type: boolean }
+      responses:
+        '200':
+          description: 清洗后的 override 本体
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/media/metadata/artwork:
+    get:
+      tags: [metadata]
+      summary: 媒体目录图片候选（手工选图用）
+      parameters:
+        - $ref: '#/components/parameters/LibraryId'
+        - $ref: '#/components/parameters/MediaPath'
+      responses:
+        '200':
+          description: 候选图片列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name: { type: string }
+                        url: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+components:
+  parameters:
+    LibraryId:
+      name: id
+      in: query
+      required: true
+      schema: { type: string }
+      description: 媒体库 ID
+    MediaPath:
+      name: path
+      in: query
+      required: true
+      schema: { type: string }
+      description: 库内相对路径（正斜杠分隔）
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: vh_session
+      description: POST /api/login 获得；30/60 天滑动续期；manager 持有并持久化
+  responses:
+    BadRequest:
+      description: 请求参数/JSON 非法
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    Unauthorized:
+      description: 未登录或会话失效
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ErrorEnvelope'
+              - type: object
+                properties:
+                  error: { type: string, enum: [login required] }
+    Forbidden:
+      description: 无权访问
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    MustChange:
+      description: must-change 受限会话被拦截
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    NotFound:
+      description: 库/文件/会话不存在
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    MethodNotAllowed:
+      description: 方法不允许
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    Conflict:
+      description: 冲突（ID 已存在/正在删除等）
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    TooMany:
+      description: 并发/频率超限
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    Unprocessable:
+      description: 语义错误（探测失败/无可读内容等）
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    ServerError:
+      description: 服务端错误
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    ServerUnavailable:
+      description: 组件不可用（poppler 缺失/数据库不可用等）
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+  schemas:
+    ErrorEnvelope:
+      type: object
+      required: [ok, error]
+      properties:
+        ok: { type: boolean, enum: [false] }
+        error: { type: string }
+    OkEnvelope:
+      type: object
+      properties:
+        ok: { type: boolean, enum: [true] }
+    LoginRequest:
+      type: object
+      properties:
+        username: { type: string, description: open 模式下忽略 }
+        password: { type: string }
+        keep_days:
+          type: integer
+          description: '保持登录天数：>=60 归 60，其余归 30'
+    LoginResponse:
+      type: object
+      properties:
+        ok: { type: boolean }
+        idle_timeout_seconds: { type: integer, example: 2592000 }
+        session_days: { type: integer, enum: [30, 60] }
+        must_change: { type: boolean }
+    AuthModeResponse:
+      type: object
+      properties:
+        ok: { type: boolean }
+        mode: { type: string, enum: [password, open] }
+        username: { type: string }
+        has_password: { type: boolean }
+        must_change: { type: boolean }
+        session_default_days: { type: integer, example: 30 }
+        session_long_days: { type: integer, example: 60 }
+    AccountRequest:
+      type: object
+      properties:
+        old_password: { type: string, description: 有密码凭据且非受限会话时必填 }
+        username: { type: string }
+        password:
+          type: string
+          description: '新密码规则：≥8 位、字母+数字、不在弱口令黑名单、不含用户名'
+        mode: { type: string, enum: ['', password, open] }
+    Library:
+      type: object
+      required: [id, name, type, path]
+      properties:
+        id:
+          type: string
+          maxLength: 63
+          pattern: '^[a-zA-Z0-9\-_.]+$'
+        name: { type: string, minLength: 1 }
+        type: { type: string, enum: [audio, musicvideo, comic, book, movie, series] }
+        path: { type: string, description: 已存在的绝对目录 }
+        paths: { type: array, items: { type: string } }
+    FileEntry:
+      type: object
+      properties:
+        path: { type: string }
+        size: { type: integer, format: int64 }
+        mtime: { type: integer, format: int64 }
+    FilesResponse:
+      type: object
+      properties:
+        status: { type: string, enum: [ready, indexing] }
+        total: { type: integer }
+        offset: { type: integer }
+        limit: { type: integer }
+        has_more: { type: boolean }
+        files: { type: array, items: { $ref: '#/components/schemas/FileEntry' } }
+        version: { type: string, description: 索引指纹（扫描中不下发） }
+        query: { type: string }
+        scanning: { type: boolean }
+    PlaybackClient:
+      type: object
+      description: 客户端解码/封装能力上报（原生 APP 可扩展 av1/dts/truehd 等字段，服务端未知字段按 false）
+      properties:
+        mp4: { type: boolean }
+        mse: { type: boolean }
+        h264: { type: boolean }
+        hevc: { type: boolean }
+        vp9: { type: boolean }
+        aac: { type: boolean }
+        opus: { type: boolean }
+    PlaybackPlanRequest:
+      type: object
+      required: [library_id, path]
+      properties:
+        library_id: { type: string }
+        path: { type: string }
+        quality:
+          type: string
+          enum: ['', auto, original, 1080p, 720p, 480p]
+          description: 大小写不敏感；显式画质在源高超限或未知时强制 full_transcode
+        hardware: { type: string, enum: [auto, cpu, vaapi, qsv, cuda] }
+        server_transcode:
+          type: string
+          description: 'off = 禁用服务端转码（客户端本地解码）；原盘镜像会返回 409'
+        network_bps:
+          type: integer
+          format: int64
+          description: 'auto 档限高：<2Mbps→480p <6Mbps→720p <16Mbps→1080p ≥16Mbps 不限'
+        client: { $ref: '#/components/schemas/PlaybackClient' }
+    PlaybackMedia:
+      type: object
+      properties:
+        container: { type: string }
+        video_codec: { type: string }
+        audio_codec: { type: string }
+        width: { type: integer }
+        height: { type: integer }
+        bit_rate: { type: string }
+        duration: { type: string }
+    PlaybackPlan:
+      type: object
+      properties:
+        layer: { type: string, enum: [direct_play, smart_stream] }
+        mode: { type: string, enum: [direct, remux, audio_transcode, full_transcode] }
+        reason: { type: string, description: 中文可读决策原因 }
+        url: { type: string, description: 可直接使用的播放 URL }
+        video_action: { type: string, enum: [copy, h264] }
+        audio_action: { type: string, enum: [copy, aac] }
+        hardware: { type: string, enum: [cpu, vaapi, qsv, cuda, client] }
+        max_height: { type: integer, description: 0/缺省 = 不限 }
+        disc: { type: string, enum: [bluray, dvd] }
+        media: { $ref: '#/components/schemas/PlaybackMedia' }
+        warn: { type: string }
+    PlaybackSession:
+      type: object
+      properties:
+        id: { type: string, description: 服务端生成的 32 位 hex }
+        library_id: { type: string }
+        path: { type: string }
+        mode: { type: string }
+        state: { type: string, example: playing }
+        position_ms: { type: integer, format: int64 }
+        duration_ms: { type: integer, format: int64 }
+        updated_at: { type: integer, format: int64, description: Unix 毫秒 }
+    ProgressRequest:
+      type: object
+      properties:
+        position_ms: { type: integer, format: int64 }
+        duration_ms: { type: integer, format: int64 }
+        state: { type: string }
+    HardwareInfo:
+      type: object
+      properties:
+        configured: { type: string }
+        selected: { type: string, enum: [cpu, vaapi, qsv, cuda] }
+        available:
+          type: object
+          properties:
+            cpu: { type: boolean }
+            vaapi: { type: boolean }
+            qsv: { type: boolean }
+            cuda: { type: boolean }
+        vaapi_device: { type: string }
+        nvidia_device: { type: boolean }
+        encoders: { type: array, items: { type: string } }
+        ffmpeg: { type: boolean }
+        cores: { type: integer }
+        software_only: { type: boolean }
+        weak_cpu: { type: boolean }
+    ProbeResponse:
+      type: object
+      description: ffprobe 失败时也返回 200（字段为空 + compat_recommended=true）
+      properties:
+        audio_codec: { type: string }
+        video_codec: { type: string }
+        width: { type: integer }
+        height: { type: integer }
+        format_name: { type: string }
+        container: { type: string }
+        bit_rate: { type: string }
+        duration: { type: string }
+        container_likely_supported: { type: boolean }
+        audio_likely_supported: { type: boolean }
+        compat_recommended: { type: boolean }
+        disc_input: { type: string, enum: [plain, bluray, dvd] }
+        disc: { type: boolean }
+    ArchiveEntry:
+      type: object
+      properties:
+        name: { type: string, description: 解码展示名 }
+        raw: { type: string, description: ZIP 原始条目名（翻页时传这个） }
+        size: { type: integer, format: int64 }
+        url: { type: string, description: 单页图片 URL }
+    ArchiveListResponse:
+      type: object
+      properties:
+        entries: { type: array, items: { $ref: '#/components/schemas/ArchiveEntry' } }
+        total: { type: integer }
+    EpubResponse:
+      type: object
+      properties:
+        title: { type: string }
+        chapters:
+          type: array
+          items:
+            type: object
+            properties:
+              title: { type: string }
+              text: { type: string }
+        count: { type: integer }
+        bytes: { type: integer }
+        truncated: { type: boolean }
+    ReadingProgressEntry:
+      type: object
+      properties:
+        progress: { type: number, minimum: 0, maximum: 100 }
+        page: { type: integer, minimum: 0, maximum: 100000 }
+        total: { type: integer, minimum: 0, maximum: 100000 }
+        updated_at: { type: integer, format: int64, description: Unix 秒 }
+    ReadingProgressWrite:
+      type: object
+      required: [progress]
+      properties:
+        progress: { type: number, minimum: 0, maximum: 100 }
+        page: { type: integer, minimum: 0, maximum: 100000 }
+        total: { type: integer, minimum: 0, maximum: 100000 }
+    ReadingProgressResponse:
+      type: object
+      properties:
+        id: { type: string }
+        items:
+          type: object
+          additionalProperties: { $ref: '#/components/schemas/ReadingProgressEntry' }
+    PlaybackProgressEntry:
+      type: object
+      properties:
+        position_ms: { type: integer, format: int64, description: 已播位置（毫秒） }
+        duration_ms: { type: integer, format: int64, description: 总时长（毫秒，0=未知） }
+        completed: { type: boolean, description: 是否看完（position≥95% 或显式标记） }
+        updated_at: { type: integer, format: int64, description: Unix 秒 }
+    PlaybackProgressWrite:
+      type: object
+      required: [position_ms]
+      properties:
+        position_ms: { type: integer, format: int64, minimum: 0 }
+        duration_ms: { type: integer, format: int64, minimum: 0 }
+        completed: { type: boolean }
+    PlaybackProgressResponse:
+      type: object
+      properties:
+        id: { type: string }
+        items:
+          type: object
+          additionalProperties: { $ref: '#/components/schemas/PlaybackProgressEntry' }
+    SubtitleSearchResponse:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/SubtitleItem' } }
+        count: { type: integer }
+        providers: { type: array, items: { type: string } }
+    SubtitleItem:
+      type: object
+      properties:
+        label: { type: string }
+        url: { type: string, description: 内嵌文本轨指向 extract；本地指向 proxy；在线源指向 download }
+        provider: { type: string }
+        language: { type: string }
+        format: { type: string }
+        kind: { type: string, enum: [text, bitmap] }
+        text: { type: boolean }
+        burn_in: { type: boolean }
+        burn_track: { type: integer, description: 图形字幕烧录轨号（喂给 compat 的 sub_track） }
+        index: { type: integer, description: 字幕轨序号（0 起） }
+    StreamsResponse:
+      type: object
+      properties:
+        audio_tracks:
+          type: array
+          items:
+            type: object
+            properties:
+              index: { type: integer }
+              stream_index: { type: integer }
+              label: { type: string }
+        subtitle_tracks:
+          type: array
+          items:
+            type: object
+            properties:
+              index: { type: integer }
+              label: { type: string }
+              codec: { type: string }
+              language: { type: string }
+              kind: { type: string, enum: [text, bitmap] }
+              text: { type: boolean }
+              burn_in: { type: boolean }
+              stream_index: { type: integer }
+              url: { type: string, description: 仅文本轨，WebVTT 提取地址 }
+              burn_track: { type: integer, description: 仅图形轨 }

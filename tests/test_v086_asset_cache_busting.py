@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.0.6"
+VERSION = "1.0.7"
 
 failures = []
 
@@ -70,7 +70,7 @@ expected_order = [
     # 05-home 的库列表与 06-theme 的专题文案，因此排在它们之后。
     "/web/js/07-topnav.js",
     "/web/js/03-audio-zoom.js",
-    # v1.0.6（需求1）：TV/遥控焦点层。只接管方向键与焦点保护，必须在业务脚本之后、
+    # v1.0.7（需求1）：TV/遥控焦点层。只接管方向键与焦点保护，必须在业务脚本之后、
     # 04-boot.js 之前加载（启动时要能找到 window.vhFocus）。
     "/web/js/08-focus.js",
     "/web/js/04-boot.js",

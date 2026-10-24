@@ -1104,6 +1104,11 @@ func equalStringSlice(a, b []string) bool {
 
 func (a *App) libraries(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "GET" {
+		/* v1.0.7 契约收紧：库列表含磁盘路径，不再匿名可读（此前是 ROUTE_INVENTORY §4.1 指出的枚举面）。 */
+		if !readAuth(r) {
+			errJSON(w, 401, "login required")
+			return
+		}
 		a.mu.RLock()
 		v := append([]Library(nil), a.libs...)
 		a.mu.RUnlock()
@@ -1582,6 +1587,11 @@ func (a *App) indexCancel(w http.ResponseWriter, r *http.Request) {
 // indexStatus handles GET /api/media/index/status, reporting per-library scan
 // progress straight from SQLite without touching the filesystem.
 func (a *App) indexStatus(w http.ResponseWriter, r *http.Request) {
+	/* v1.0.7 契约收紧：索引状态暴露库名与文件规模，不再匿名可读。 */
+	if !readAuth(r) {
+		errJSON(w, 401, "login required")
+		return
+	}
 	if a.db == nil {
 		errJSON(w, 503, "index database unavailable")
 		return
@@ -3100,17 +3110,35 @@ func main() {
 	/* v0.9.98：原盘（BDMV / ISO）播放菜单 —— 播放器「媒体菜单」的数据源。 */
 	mux.HandleFunc("/api/media/disc/playlists", a.discPlaylistHandler)
 	mux.HandleFunc("/api/media/scrapers", func(w http.ResponseWriter, r *http.Request) {
+		/* v1.0.7 契约收紧：运行配置快照（含代理/密钥掩码等）不再匿名可读。 */
+		if !readAuth(r) {
+			errJSON(w, 401, "login required")
+			return
+		}
 		out := a.runtimeConfigSnapshot(false)
 		out["default"], out["types"] = out["scraper_mode"], []string{"movie", "series"}
 		writeJSON(w, 200, out)
 	})
 	mux.HandleFunc("/api/media/hardware", func(w http.ResponseWriter, r *http.Request) {
+		/* v1.0.7 契约收紧：硬件能力快照属于基础设施信息，不再匿名可读。 */
+		if !readAuth(r) {
+			errJSON(w, 401, "login required")
+			return
+		}
 		writeJSON(w, 200, detectHardware(r.Context(), r.URL.Query().Get("hw")))
 	})
-	mux.HandleFunc("/api/media/probe", func(w http.ResponseWriter, r *http.Request) { probe(w, r, a) })
+	mux.HandleFunc("/api/media/probe", func(w http.ResponseWriter, r *http.Request) {
+		/* v1.0.7 契约收紧：ffprobe 可枚举任意库内文件元数据，不再匿名可用。 */
+		if !readAuth(r) {
+			errJSON(w, 401, "login required")
+			return
+		}
+		probe(w, r, a)
+	})
 	mux.HandleFunc("/api/media/playback/plan", a.playbackPlan)
 	mux.HandleFunc("/api/media/playback/sessions", a.playbackSessionsHandler)
 	mux.HandleFunc("/api/media/playback/sessions/", a.playbackSessionAction)
+	mux.HandleFunc("/api/media/playback/progress", a.playbackProgress)
 	mux.HandleFunc("/api/media/streams", func(w http.ResponseWriter, r *http.Request) { streams(w, r, a) })
 	mux.HandleFunc("/api/media/tasks/cancel", func(w http.ResponseWriter, r *http.Request) { cancelTask(w, r, a) })
 	mux.HandleFunc("/api/media/subtitles/search", a.subtitle)
