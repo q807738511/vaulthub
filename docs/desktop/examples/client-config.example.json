@@ -1,0 +1,47 @@
+{
+  "$comment": "VaultHub 桌面客户端配置样例。真实地址与账号由项目负责人下发，不进仓库。",
+  "server": {
+    "baseUrl": "http://<vault-hub-host>:8088",
+    "connectTimeoutMs": 8000,
+    "requestTimeoutMs": 30000,
+    "allowInsecureTls": false
+  },
+  "auth": {
+    "cookieName": "vh_session",
+    "keepDays": 30,
+    "sessionStore": "keychain",
+    "reauthOn401": true
+  },
+  "libraryDefaults": {
+    "pageSize": 200,
+    "coverWidthGrid": 320,
+    "coverWidthDetail": 640
+  },
+  "playback": {
+    "quality": "auto",
+    "hardware": "auto",
+    "serverTranscode": "auto",
+    "heartbeatMs": 45000,
+    "progressPutMs": 20000,
+    "seekStrategy": "wait-for-cache",
+    "subtitleDefault": "off"
+  },
+  "clientCapabilities": {
+    "mp4": true,
+    "mse": true,
+    "h264": true,
+    "hevc": false,
+    "vp9": false,
+    "aac": true,
+    "opus": false
+  },
+  "audio": {
+    "bitrate": "320k",
+    "fallbackBitrate": "128k"
+  },
+  "ui": {
+    "theme": "system",
+    "language": "zh-CN",
+    "virtualScroll": true
+  }
+}
