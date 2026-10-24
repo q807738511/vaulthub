@@ -8,7 +8,7 @@
 
 ---
 
-欢迎体验 https://example.com（示例域名，请替换为你的访问地址）
+欢迎体验 sszj.enged.top
 
 ## 功能介绍
 
