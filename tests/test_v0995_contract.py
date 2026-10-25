@@ -110,7 +110,7 @@ check("3a 发布链：参考站硬编码信标已移除（VH_BEACON_URL 置空�
       "webhook.site" not in GITEE_WF and 'export VH_BEACON_URL=""' in GITEE_WF)
 # v0.9.97：本仓洗版测试（test_v0950_player_skins）会扫所有跟踪文本里的真实域名/IP/卷路径，
 # 断言里要引用就拼串，别写字面量（v0.9.95 的这行漏了，被本版回归抓到）。
-# v1.0.11：README 里「欢迎体验 …」那一行是人工维护的公开产品入口，不算部署泄漏；
+# v1.0.12：README 里「欢迎体验 …」那一行是人工维护的公开产品入口，不算部署泄漏；
 # 其余位置仍不允许出现真实域名（与 v0.9.50 洗版测试的豁免保持一致）。
 _readme_wo_entry = "\n".join(l for l in README.splitlines() if "欢迎体验" not in l)
 check("3b README 不再泄漏真实对外域名", ("enged" + ".top") not in _readme_wo_entry and "sszj" not in _readme_wo_entry)
@@ -132,19 +132,19 @@ check("3h 一次性初始密码不再打进容器日志（安全审查 M5）",
       and "clearInitialPasswordFile()" in MANAGER)
 check("3i 初始密码文件路径可覆盖（测试不碰真实 /data）", 'os.Getenv("INITIAL_PASSWORD_FILE")' in INITPW)
 check("3j install/upgrade 的版本常量不再停在 v0.6.4（安全审查 L6）",
-      'VERSION="v1.0.11"' in INSTALL and 'VERSION="v1.0.11"' in UPGRADE
+      'VERSION="v1.0.12"' in INSTALL and 'VERSION="v1.0.12"' in UPGRADE
       and 'VERSION="v0.6.4"' not in INSTALL and 'VERSION="v0.6.4"' not in UPGRADE)
 check("3k 新增 Go 回归测试覆盖密码文件（0600 + 消费后删除）",
       os.path.exists(os.path.join(ROOT, "manager/v0995_initial_password_test.go"))
       and "TestV0995InitialPasswordFileMode" in rd("manager/v0995_initial_password_test.go"))
 
 print("== 4. 版本与文档 ==")
-check("4a index.html 资源版本本版（≥10 处）", len(re.findall(r"\?v=1\.0\.11", HTML)) >= 10
-      and set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"1.0.11"})
+check("4a index.html 资源版本本版（≥10 处）", len(re.findall(r"\?v=1\.0\.12", HTML)) >= 10
+      and set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"1.0.12"})
 check("4b ASSET_VERSION / SCRIPT_VERSION = 0.9.97",
-      'window.VAULTHUB_ASSET_VERSION = "1.0.11"' in HTML
-      and 'const VAULTHUB_SCRIPT_VERSION = "1.0.11";' in S)
-SLOGAN = "v1.0.11 · NFO 补全 · 音乐随点随开 · 大库不卡"
+      'window.VAULTHUB_ASSET_VERSION = "1.0.12"' in HTML
+      and 'const VAULTHUB_SCRIPT_VERSION = "1.0.12";' in S)
+SLOGAN = "v1.0.12 · NFO 补全 · 音乐随点随开 · 大库不卡"
 check("4c 标语三处整串一致", HTML.count(SLOGAN) == 3 and "v0.9.94 ·" not in HTML)
 check("4d 发布说明文件存在且够长（0.9.97 那份）", len(NOTES) >= 500 and "0.9.97" in NOTES)
 check("4e 发布说明写明本轮两项（Plex 口径解析 / 缺失集比对）",
@@ -152,7 +152,7 @@ check("4e 发布说明写明本轮两项（Plex 口径解析 / 缺失集比对�
 check("4e2 v0.9.95 的发布说明仍在（历史版本可追溯）",
       len(rd(".github/RELEASE_NOTES_0.9.95.md")) >= 500)
 check("4f Update Log 顶部为本版且段落完整",
-      LOG.lstrip().startswith("# VaultHub 蜀鼠之家 v1.0.11")
+      LOG.lstrip().startswith("# VaultHub 蜀鼠之家 v1.0.12")
       and "## 1. 播放视频时顶栏自动让位（修复遮挡）" in LOG.split("# VaultHub 蜀鼠之家 v0.9.95")[0])
 check("4g 公开文档无真实域名/内网 IP/宿主容量细节",
       not re.search(r"enged\.top|sszj|192\.168\.|/vol[1-4]/|\b[0-9.]+ ?(GiB|TiB)\b",

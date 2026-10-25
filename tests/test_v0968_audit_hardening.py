@@ -63,11 +63,11 @@ checks = {
     "背景 URL 清洗": "bg.style.backgroundImage = `url('${cssUrlValue(imageUrl)}')`" in MEDIA,
 
     # 版本与发布物
-    "HTML版本": 'VAULTHUB_ASSET_VERSION = "1.0.11"' in HTML and HTML.count("?v=1.0.11") >= 7,
-    "脚本版本": 'VAULTHUB_SCRIPT_VERSION = "1.0.11"' in STATE,
-    "UI角标": "v1.0.11" in HTML,
+    "HTML版本": 'VAULTHUB_ASSET_VERSION = "1.0.12"' in HTML and HTML.count("?v=1.0.12") >= 7,
+    "脚本版本": 'VAULTHUB_SCRIPT_VERSION = "1.0.12"' in STATE,
+    "UI角标": "v1.0.12" in HTML,
     "发布说明": "VaultHub 蜀鼠之家 v0.9.69" in NOTES and "非阻塞" in NOTES,
-    "更新日志段": "# VaultHub 蜀鼠之家 v1.0.11" in LOG,
+    "更新日志段": "# VaultHub 蜀鼠之家 v1.0.12" in LOG,
     # 历史说明只增不改（v0.9.67 的说明文件必须仍以它自己的标题开头）
     "历史说明未改": NOTES_0967.startswith("# VaultHub 蜀鼠之家 v0.9.67"),
 }

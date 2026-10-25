@@ -60,7 +60,7 @@ const requests = [];
 async function fetch(url, opts) {
   const u = String(url);
   requests.push(u);
-  /* v1.0.11（需求3）：书刊架改走 POST /api/media/shelf（服务端分页）。
+  /* v1.0.12（需求3）：书刊架改走 POST /api/media/shelf（服务端分页）。
      这个桩按服务端语义实现：页签筛选（喜欢/已完成用上行路径）、分页、计数。 */
   if (u.startsWith("/api/media/shelf")) {
     const body = JSON.parse(String((opts && opts.body) || (options && options.body) || "{}"));

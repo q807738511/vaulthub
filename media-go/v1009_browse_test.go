@@ -215,3 +215,21 @@ func TestV1009BookComicExts(t *testing.T) {
 		t.Fatalf("音频库扩展名错误")
 	}
 }
+
+func TestV1009DiscSegmentsSkipped(t *testing.T) {
+	// 原盘备份的分片不能当独立影片刮削（否则库里会多出成百上千个 00000.nfo）。
+	for _, p := range []string{
+		"12.Strong.2018/BDMV/STREAM/00000.m2ts",
+		"Movie/BDMV/PLAYLIST/00001.mpls",
+		"DVD/VIDEO_TS/VTS_01_1.VOB",
+	} {
+		if !isDiscSegmentPath(p) {
+			t.Fatalf("%q 应判定为原盘分片", p)
+		}
+	}
+	for _, p := range []string{"Movies/A.mkv", "Show/Season 01/S01E01.mkv"} {
+		if isDiscSegmentPath(p) {
+			t.Fatalf("%q 不应判定为原盘分片", p)
+		}
+	}
+}

@@ -90,7 +90,7 @@ const requests = [];
 async function fetch(url, opts) {
   const u = String(url);
   requests.push(u);
-  /* v1.0.11（需求3）：书刊架改走 POST /api/media/shelf（服务端分页）。
+  /* v1.0.12（需求3）：书刊架改走 POST /api/media/shelf（服务端分页）。
      这个桩按服务端语义实现：页签筛选（喜欢/已完成用上行路径）、分页、计数。 */
   if (u.startsWith("/api/media/shelf")) {
     const body = JSON.parse(String((opts && opts.body) || (options && options.body) || "{}"));
@@ -192,7 +192,7 @@ const chk = (name, cond, extra) => {
 
   await api.loadLocalFiles("comic", lib, 0);
   const html = () => target.innerHTML;
-  /* v1.0.11（需求3）：书刊页头整块移除 —— 库名与统计属于配置信息。 */
+  /* v1.0.12（需求3）：书刊页头整块移除 —— 库名与统计属于配置信息。 */
   chk("页头已移除（不再显示库名）", !html().includes("<h1>漫画</h1>"));
   /* v0.9.86（客户要求）：漫画 / 电子书的副标题不再展示媒体库映射的空间位置，
      页头只保留「本视图 / 全库 / 本页」这些阅读相关信息。 */
@@ -202,7 +202,7 @@ const chk = (name, cond, extra) => {
   chk("标签带计数", html().includes("书架 25") && html().includes("喜欢 0") && html().includes("历史阅读 20"));
   chk("默认书架视图（扫描文件统一进书架）", api.getTab() === "shelf");
   chk("默认完整展开（不截断）", countCards() === 25, "实际 " + countCards());
-  /* v1.0.11（需求3）：「已展开全部 25 本」计数行移除，只剩完整展开本身。 */
+  /* v1.0.12（需求3）：「已展开全部 25 本」计数行移除，只剩完整展开本身。 */
   chk("默认不显示分页器与计数行", !html().includes('aria-current="page"') && !html().includes("已展开全部"));
   chk("书架视图不含已读书", !html().includes("book-01.cbz"));
   chk("封面带喜欢按钮", html().includes('class="book-card-fav '));

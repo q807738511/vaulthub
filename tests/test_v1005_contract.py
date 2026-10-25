@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""v1.0.11 契约测试 —— 三项修正的落点检查。
+"""v1.0.12 契约测试 —— 三项修正的落点检查。
 
 覆盖：
   1. 虚无焦点：可见性四道闸（pointer-events / 定位祖先透明 / 自身透明 / 命中测试）
@@ -8,7 +8,7 @@
   4. 顶栏浮层可遥控（打开进第一项 / 返回键关闭并还原焦点）
   5. 三档真实手感（TV / Phone / PC 的栅格、行高、触达、动效）
   6. 焦点抬升与入场动画的冲突已修（animation:none）
-  7. 版本纪律（1.0.11 全站同步 + Update Log + Release Notes）
+  7. 版本纪律（1.0.12 全站同步 + Update Log + Release Notes）
   8. 禁用字面量（不得出现内网地址 / 主机路径）
 """
 import re
@@ -112,21 +112,21 @@ check("6b CSS 里写明根因，避免以后又被加回来",
       "fill:both" in CSS and "焦点抬升在 Apple 规格下其实是死的" in CSS)
 
 print("7. 版本纪律")
-check("7a index.html 资源串 12 处 1.0.11", HTML.count("?v=1.0.11") == 12)
-check("7b 首帧资源版本常量", 'window.VAULTHUB_ASSET_VERSION = "1.0.11";' in HTML)
-check("7c 脚本版本常量", 'const VAULTHUB_SCRIPT_VERSION = "1.0.11";' in STATE)
+check("7a index.html 资源串 12 处 1.0.12", HTML.count("?v=1.0.12") == 12)
+check("7b 首帧资源版本常量", 'window.VAULTHUB_ASSET_VERSION = "1.0.12";' in HTML)
+check("7c 脚本版本常量", 'const VAULTHUB_SCRIPT_VERSION = "1.0.12";' in STATE)
 check("7d 安装/升级脚本版本",
-      'VERSION="v1.0.11"' in (ROOT / "scripts/install.sh").read_text(encoding="utf-8")
-      and 'VERSION="v1.0.11"' in (ROOT / "scripts/upgrade.sh").read_text(encoding="utf-8"))
-check("7e 字幕服务 UA", '"VaultHub-Subtitle/1.0.11"' in (ROOT / "subtitle-api/main.go").read_text(encoding="utf-8"))
-SLOGAN = "v1.0.11 · NFO 补全 · 音乐随点随开 · 大库不卡"
+      'VERSION="v1.0.12"' in (ROOT / "scripts/install.sh").read_text(encoding="utf-8")
+      and 'VERSION="v1.0.12"' in (ROOT / "scripts/upgrade.sh").read_text(encoding="utf-8"))
+check("7e 字幕服务 UA", '"VaultHub-Subtitle/1.0.12"' in (ROOT / "subtitle-api/main.go").read_text(encoding="utf-8"))
+SLOGAN = "v1.0.12 · NFO 补全 · 音乐随点随开 · 大库不卡"
 check("7f 标语三处一致", HTML.count(SLOGAN) == 3, f"实际 {HTML.count(SLOGAN)} 处")
-check("7g Update Log 顶部是 v1.0.11", LOG.splitlines()[0] == "# VaultHub 蜀鼠之家 v1.0.11")
+check("7g Update Log 顶部是 v1.0.12", LOG.splitlines()[0] == "# VaultHub 蜀鼠之家 v1.0.12")
 check("7h Release Notes 存在且覆盖三项",
       (ROOT / ".github/RELEASE_NOTES_1.0.5.md").exists()
       and "虚无焦点" in (ROOT / ".github/RELEASE_NOTES_1.0.5.md").read_text(encoding="utf-8"))
-check("7i 历史版本段落仍在（v1.0.11 段完整）",
-      "# VaultHub 蜀鼠之家 v1.0.11" in LOG and "术语归位（需求2）" in LOG)
+check("7i 历史版本段落仍在（v1.0.12 段完整）",
+      "# VaultHub 蜀鼠之家 v1.0.12" in LOG and "术语归位（需求2）" in LOG)
 
 print("8. 禁用字面量")
 BANNED = re.compile(r"enged\.top|192\.168\.|/vol[1-4]")
@@ -142,7 +142,7 @@ for path in list(ROOT.rglob("*.py")) + list(ROOT.rglob("*.js")) + list(ROOT.rglo
 check("8a 源码内无内网地址 / 主机路径", not offenders, str(offenders[:3]))
 
 print()
-print(f"================ v1.0.11 契约：{count - len(fails)}/{count} PASS ================")
+print(f"================ v1.0.12 契约：{count - len(fails)}/{count} PASS ================")
 if fails:
     print("FAILED:", ", ".join(fails))
     sys.exit(1)

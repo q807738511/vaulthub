@@ -98,18 +98,18 @@ check("3k 其它 offsetParent 用法未被误伤（分页宿主仍用 display �
       "host.offsetParent !== null" in M)
 
 print("\n== 4. 版本与文档 ==")
-check("4a 版本串 ?v=1.0.11（≥10 处）且无其它版本串",
-      len(re.findall(r"\?v=1\.0\.11", HTML)) >= 10
-      and set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"1.0.11"})
+check("4a 版本串 ?v=1.0.12（≥10 处）且无其它版本串",
+      len(re.findall(r"\?v=1\.0\.12", HTML)) >= 10
+      and set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"1.0.12"})
 check("4b ASSET_VERSION / SCRIPT_VERSION = 0.9.97",
-      'VAULTHUB_ASSET_VERSION = "1.0.11"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "1.0.11"' in S)
+      'VAULTHUB_ASSET_VERSION = "1.0.12"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "1.0.12"' in S)
 check("4c 当前标语 ×3 且历史标语已清除",
-      HTML.count("v1.0.11 · NFO 补全 · 音乐随点随开 · 大库不卡") == 3
+      HTML.count("v1.0.12 · NFO 补全 · 音乐随点随开 · 大库不卡") == 3
       and "v0.9.97 · 播放时顶栏自动让位" not in HTML and "v0.9.97 · 迷你播放器按需出现" not in HTML
       and "v0.9.98 · 原盘播放菜单与演职人员补全" not in HTML)
 check("4d 发布说明存在且覆盖本轮需求",
       "Plex" in NOTES and "缺失集" in NOTES and "方括号" in NOTES)
-check("4e Update Log 含 v0.9.97 段落", "v1.0.11" in LOG and "## 1. 播放视频时顶栏自动让位" in LOG)
+check("4e Update Log 含 v0.9.97 段落", "v1.0.12" in LOG and "## 1. 播放视频时顶栏自动让位" in LOG)
 
 print("\n== 5. 洗版自查（本仓禁止真实域名 / 内网 IP / 卷路径字面量）==")
 for name, text in (("测试文件自身", rd("tests/test_v0996_contract.py")),):

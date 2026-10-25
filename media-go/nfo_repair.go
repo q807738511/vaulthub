@@ -315,6 +315,12 @@ func (a *App) nfoRepairTargets(lib Library, limit int) ([]string, error) {
 		if !plexIsMediaExt(filepath.Ext(p)) || isMediaSidecarImage(filepath.Base(p)) {
 			continue
 		}
+		/* v1.0.12：原盘备份（BDMV/STREAM/00000.m2ts、VIDEO_TS/VTS_01_1.VOB）里的每个
+		   分片不是独立条目 —— 逐片刮削会在媒体库里生成成百上千个垃圾 NFO，
+		   而且名字全是 "00000"。整盘交给 /api/media/disc/playlists 处理。 */
+		if isDiscSegmentPath(p) {
+			continue
+		}
 		out = append(out, p)
 		if len(out) >= limit {
 			break
@@ -484,6 +490,17 @@ func (a *App) nfoRepairOneItem(ctx context.Context, lib Library, mediaPath strin
 	}
 	item.State = "missing"
 	return item
+}
+
+// isDiscSegmentPath 判定原盘备份内的分片（这些不是独立影片）。
+func isDiscSegmentPath(rel string) bool {
+	u := strings.ToUpper("/" + strings.TrimPrefix(filepath.ToSlash(rel), "/"))
+	for _, marker := range []string{"/BDMV/STREAM/", "/BDMV/PLAYLIST/", "/VIDEO_TS/", "/CERTIFICATE/"} {
+		if strings.Contains(u, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // nfoRepairTargetsFor 返回该媒体应写的 NFO 绝对路径（<文件名>.nfo，剧集补 tvshow.nfo）。

@@ -259,7 +259,7 @@ func sessionOK(r *http.Request) bool {
 	if ck := r.Header.Get("Cookie"); ck != "" {
 		req.Header.Set("Cookie", ck)
 	}
-	req.Header.Set("User-Agent", "VaultHub-Subtitle/1.0.11")
+	req.Header.Set("User-Agent", "VaultHub-Subtitle/1.0.12")
 	res, e := client.Do(req)
 	if e != nil {
 		log.Printf("subtitle: auth probe unavailable (%v) — allowing request", e)
@@ -340,7 +340,7 @@ func embeddedFromMediaAPI(r *http.Request, id, rawPath string) []Subtitle {
 	if ck := r.Header.Get("Cookie"); ck != "" {
 		req.Header.Set("Cookie", ck)
 	}
-	req.Header.Set("User-Agent", "VaultHub-Subtitle/1.0.11")
+	req.Header.Set("User-Agent", "VaultHub-Subtitle/1.0.12")
 	res, e := client.Do(req)
 	if e != nil {
 		log.Printf("subtitle: media api unavailable (%v)", e)

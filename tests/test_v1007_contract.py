@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""v1.0.11 契约测试（L1 静态层）：冻结 P0 对外面 + 端点收紧 + 播放进度持久化。
+"""v1.0.12 契约测试（L1 静态层）：冻结 P0 对外面 + 端点收紧 + 播放进度持久化。
 
 覆盖八组：
   1. 契约文档：docs/api/ 三件套入库，且勘误项已改（subtitle 鉴权、2*time.Minute、cover 决策）；
@@ -10,7 +10,7 @@
   4. 前端配套：未登录跳过启动拉取、登录后补拉、首页轮询门槛、播放器写/读服务端进度；
   5. 契约字符串与别名：错误文案不变、archive/caddyfile 别名 canonical 标注；
   6. 跨服务隐式契约：media-go 只认 /api/session/check 的 200；
-  7. 版本纪律：1.0.11 全链路一致（bump 后本文件跟随当前版本）；
+  7. 版本纪律：1.0.12 全链路一致（bump 后本文件跟随当前版本）；
   8. 禁用字面量：内网地址 / 容器卷路径不得进源码。
 """
 import re
@@ -28,7 +28,7 @@ GOPROGTEST = (ROOT / "media-go/v1007_playback_progress_test.go").read_text(encod
 OPENAPI = (ROOT / "docs/api/openapi.yaml").read_text(encoding="utf-8")
 INVENTORY = (ROOT / "docs/api/ROUTE_INVENTORY.md").read_text(encoding="utf-8")
 CTESTS = (ROOT / "docs/api/CONTRACT_TESTS.md").read_text(encoding="utf-8")
-VERSION = "1.0.11"
+VERSION = "1.0.12"
 
 checks = []
 
@@ -54,7 +54,7 @@ check("1e cover 公开为显式决策",
       "有意决策" in OPENAPI and "分享" in OPENAPI)
 
 # ---------------- 2. 五端点收紧 ----------------
-# 注：注释里的版本号是历史标注（收紧发生在 v1.0.11），断言只认「契约收紧」这个标记本身。
+# 注：注释里的版本号是历史标注（收紧发生在 v1.0.12），断言只认「契约收紧」这个标记本身。
 check("2a libraries GET 需会话",
       'if r.Method == "GET" {\n\t\t/* v' in GOMAIN and "契约收紧" in GOMAIN.split('func (a *App) libraries(')[1][:400]
       and "readAuth(r)" in GOMAIN.split('func (a *App) libraries(')[1][:400])
@@ -128,12 +128,12 @@ check("6a media-go 回环校验 session/check",
       "/api/session/check" in GOMAIN and "http.StatusOK" in GOMAIN)
 
 # ---------------- 7. 版本纪律 ----------------
-check("7a index.html 资源查询串全部 1.0.11",
-      HTML.count("?v=1.0.11") >= 12 and "?v=1.0.6" not in HTML)
+check("7a index.html 资源查询串全部 1.0.12",
+      HTML.count("?v=1.0.12") >= 12 and "?v=1.0.6" not in HTML)
 check("7b 资源版本常量", f'VAULTHUB_ASSET_VERSION = "{VERSION}"' in HTML or f"VAULTHUB_ASSET_VERSION='{VERSION}'" in HTML
       or f'VAULTHUB_ASSET_VERSION = \'{VERSION}\'' in HTML or f'"{VERSION}"' in HTML.split("VAULTHUB_ASSET_VERSION")[1][:40])
 check("7c 脚本版本常量", f'VAULTHUB_SCRIPT_VERSION = "{VERSION}"' in STATE)
-check("7d 页尾标语含当前版本", "v1.0.11 ·" in HTML and ("刮削落盘" in HTML or "大库不卡" in HTML))
+check("7d 页尾标语含当前版本", "v1.0.12 ·" in HTML and ("刮削落盘" in HTML or "大库不卡" in HTML))
 
 # ---------------- 8. 禁用字面量 ----------------
 FORBIDDEN = [r"enged\.top", r"192\.168\.", r"/vol[1-4]"]
@@ -150,5 +150,5 @@ for name, ok, detail in checks:
     print(("PASS: " if ok else "FAIL: ") + name + (f"  [{detail}]" if detail and not ok else ""))
 print(f"\nSUMMARY {len(checks) - len(failed)}/{len(checks)} PASS")
 if failed:
-    raise SystemExit("FAIL: v1.0.11 契约测试未通过")
-print("PASS: v1.0.11 契约（文档入库 / 端点收紧 / 播放进度持久化 / 前端配套）全部满足")
+    raise SystemExit("FAIL: v1.0.12 契约测试未通过")
+print("PASS: v1.0.12 契约（文档入库 / 端点收紧 / 播放进度持久化 / 前端配套）全部满足")

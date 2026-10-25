@@ -69,7 +69,7 @@ check("2i 容量明细仍按卷逐项展示一次", 'id="diskCard"' in HTML and 
 # ----------------------------------------------------- 3. 漫画/电子书副标题
 check("3a 书刊页头不再渲染映射路径",
       '${lib.path ? `<span>路径 <code>' not in MEDIA)
-# v1.0.11（需求3）：书刊页头整块移除（库名 / 大类 / 本视图·全库·本页 / 扫描时间）。
+# v1.0.12（需求3）：书刊页头整块移除（库名 / 大类 / 本视图·全库·本页 / 扫描时间）。
 check("3b 页头统计已移除",
       "本视图 <b>${Number(total) || 0}</b>" not in MEDIA and "全库 <b>${Number((counts && counts.all) || 0)}</b>" not in MEDIA)
 
@@ -108,7 +108,7 @@ check("5g 新增色度回归测试", (ROOT / "media-go/v0986_cover_chroma_test.g
 check("6a 音乐渲染不再输出上一页/下一页按钮",
       "← 上一页" not in MEDIA.split("function renderAudioLibraryContent(")[1][:1200])
 check("6b 音乐渲染不再有每页数量选择器", 'id="audioPageSize"' not in MEDIA)
-check("6c 音乐库不再输出整库展开提示（v1.0.11 需求3）", "音乐库不再分页" not in MEDIA and "已展开全部 ${" not in MEDIA)
+check("6c 音乐库不再输出整库展开提示（v1.0.12 需求3）", "音乐库不再分页" not in MEDIA and "已展开全部 ${" not in MEDIA)
 check("6d 音乐库一次性补齐整库索引",
       'if (group === "audio" && data.has_more && !fromSession)' in MEDIA)
 check("6e 音乐库纳入会话级整库索引缓存",
@@ -129,7 +129,7 @@ check("7h 逐项扫描里保存后自动重刮该条", "openLibraryItemScanFresh
 check("7i 有名称/年份的 Go 单测", (ROOT / "media-go/v0986_metadata_edit_test.go").exists())
 
 # ------------------------------------------------------------------ i18n 与版本
-# v1.0.11（需求10）：阈值说明文案已删除，只保留标签。
+# v1.0.12（需求10）：阈值说明文案已删除，只保留标签。
 for key in ["scrapeMinMatchLabel", "libScanAuto", "libScanItem", "libScanTitle", "libScanAll",
             "libScanRetryFailed", "editTitleLabel", "editYearLabel", "editScrapeHint"]:
     count = len(re.findall(rf"\b{key}:", STATE))

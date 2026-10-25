@@ -1,3 +1,14 @@
+# VaultHub 蜀鼠之家 v1.0.12
+
+> NFO 补全的边界修正。生产体检（200 条抽样）发现：原盘备份里的
+> `BDMV/STREAM/00000.m2ts`、`VIDEO_TS/VTS_01_1.VOB` 被当成独立影片逐片刮削，
+> 会在库里生成成百上千个标题都是「00000」的垃圾 NFO。本版跳过原盘分片
+> （整盘播放仍走 `/api/media/disc/playlists`）。
+
+- **跳过原盘分片**：`/BDMV/STREAM/`、`/BDMV/PLAYLIST/`、`/VIDEO_TS/`、`/CERTIFICATE/`
+  下的文件不参与 NFO 体检与补全。
+- 其余与 v1.0.11 相同。
+
 # VaultHub 蜀鼠之家 v1.0.11
 
 > v1.0.10 的收尾修正。生产实测发现：切换/首次进入媒体库时，异步渲染结果可能被写进
