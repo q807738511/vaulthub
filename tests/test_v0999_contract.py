@@ -40,16 +40,16 @@ NOTES = rd(".github/RELEASE_NOTES_1.0.0.md")
 NOTES_V0999 = rd(".github/RELEASE_NOTES_0.9.99.md")
 
 # ---------------------------------------------------------------- 1 版本
-check("1 版本串 ?v=1.0.8 且 ≥11 处（新增脚本后仍全站同版）",
-      len(re.findall(r"\?v=1\.0\.8", HTML)) >= 11 and "?v=0.9.98" not in HTML,
-      len(re.findall(r"\?v=1\.0\.8", HTML)))
+check("1 版本串 ?v=1.0.9 且 ≥11 处（新增脚本后仍全站同版）",
+      len(re.findall(r"\?v=1\.0\.9", HTML)) >= 11 and "?v=0.9.98" not in HTML,
+      len(re.findall(r"\?v=1\.0\.9", HTML)))
 check("1 资源版本常量一致",
-      'window.VAULTHUB_ASSET_VERSION = "1.0.8";' in HTML
-      and 'const VAULTHUB_SCRIPT_VERSION = "1.0.8";' in STATE)
+      'window.VAULTHUB_ASSET_VERSION = "1.0.9";' in HTML
+      and 'const VAULTHUB_SCRIPT_VERSION = "1.0.9";' in STATE)
 check("1 安装/升级脚本同版",
-      'VERSION="v1.0.8"' in rd("scripts/install.sh") and 'VERSION="v1.0.8"' in rd("scripts/upgrade.sh"))
+      'VERSION="v1.0.9"' in rd("scripts/install.sh") and 'VERSION="v1.0.9"' in rd("scripts/upgrade.sh"))
 check("1 标语 ×3 且历史标语已清除",
-      HTML.count("v1.0.8 · 转码可拖动 · 音乐按歌手 · 刮削落盘") == 3
+      HTML.count("v1.0.9 · NFO 补全 · 音乐随点随开 · 大库不卡") == 3
       and "v0.9.98 · 原盘播放菜单与演职人员补全" not in HTML)
 
 # ---------------------------------------------------------------- 2 文档
@@ -58,7 +58,7 @@ check("2 发布说明覆盖四项需求",
       all(k in NOTES_V0999 for k in ["演职人员", "图形字幕", "缩小", "前缀"]))
 check("2 发布说明写明发布策略（GitHub 频率 + windows-desktop）",
       "GitHub" in NOTES_V0999 and "20 个版本" in NOTES_V0999 and "windows-desktop" in NOTES_V0999)
-check("2 Update Log 顶部为本版（仓库格式：# VaultHub 蜀鼠之家 vX 置顶）", LOG.startswith("# VaultHub 蜀鼠之家 v1.0.8"))
+check("2 Update Log 顶部为本版（仓库格式：# VaultHub 蜀鼠之家 vX 置顶）", LOG.startswith("# VaultHub 蜀鼠之家 v1.0.9"))
 
 # ---------------------------------------------------------------- 3 Go：图形字幕
 check("3a 新增字幕类型判定（图形字幕含 PGS/DVD/DVB/XSUB）",
@@ -117,7 +117,7 @@ check("3j 媒体 API 的字幕搜索返回内嵌轨 + 本地文件两类结果",
 check("4a 剧集库 NFO 逐级上溯到剧名根目录",
       "for _, showDir := range seriesShowDirs(lib, dir) {" in LM
       and '[]string{"tvshow.nfo", "movie.nfo"}' in LM)
-# v1.0.8（需求2）：头像解析抽成 nfoCastEntries(nfoDir)：show 级 NFO 的
+# v1.0.9（需求2）：头像解析抽成 nfoCastEntries(nfoDir)：show 级 NFO 的
 # `.actors/x.jpg` 仍按「NFO 所在目录」解析，剧集库补齐 tvshow.nfo 时同样走它。
 check("4b show 级 NFO 的相对头像按 NFO 目录解析",
       "localCastAvatar(lib, nfoDir, strings.TrimSpace(a.Thumb))" in LM
@@ -166,7 +166,7 @@ check("6f 播放器字幕面板列出全部轨道 + 关闭项（旧实现的单�
       and "// Embedded (in-container) text subtitle tracks extracted to WebVTT." not in MEDIA)
 
 # ---------------------------------------------------------------- 7 前端：季度前缀
-# v1.0.8（需求1）：回归 0.9.89 版式 —— 季名回到独立 h3 季名行，取消首条目前缀行。
+# v1.0.9（需求1）：回归 0.9.89 版式 —— 季名回到独立 h3 季名行，取消首条目前缀行。
 check("7a 季名回到独立季名行（首条目前缀已移除）",
       "series-season-head" in MEDIA and "series-season-prefix" not in MEDIA
       and '<span class="season-inline-title">季度</span>' in MEDIA)

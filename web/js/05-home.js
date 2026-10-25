@@ -544,7 +544,7 @@ function renderHomeLibTable() {
       <td>${homeLibStatePill(st)}</td>
       <td>${homeScrapePill(lib)}</td>
       <td><div class="row-acts">
-        ${(lib.type === "movie" || lib.type === "series") ? `<button class="icon-btn" title="${esc(t("libScanAuto"))}" onclick="autoScanLibrary('${esc(lib.id)}')">⚡</button><button class="icon-btn" title="${esc(t("libScanItem"))}" onclick="openLibraryItemScan('${esc(lib.id)}')">▤</button>` : ""}
+        ${(lib.type === "movie" || lib.type === "series") ? `<button class="icon-btn" title="${esc(t("libScanAuto"))}" onclick="autoScanLibrary('${esc(lib.id)}')">⚡</button><button class="icon-btn" title="${esc(t("libScanItem"))}" onclick="openLibraryItemScan('${esc(lib.id)}')">▤</button><button class="icon-btn" title="NFO 体检与补全" onclick="openNfoRepair('${esc(lib.id)}')">🩺</button>` : ""}
         <button class="icon-btn" title="${esc(t("libPathEdit"))}" onclick="openLibraryPathEditor('${esc(lib.id)}')">✎</button>
         <button class="icon-btn" title="${esc(t("actRescan"))}" onclick="rebuildOneLibrary('${esc(lib.id)}')">🔄</button>
         <button class="icon-btn" title="${esc(t("actOpenLib"))}" onclick="openHomeLibrary('${esc(group)}','${esc(lib.id)}')">↗</button>

@@ -229,7 +229,9 @@ assert reader.index("文本读取失败") < reader.index("scrollViewerIntoView(v
 
 # ---------------------------------------------------------------- audio favourites/player intact
 assert 'id="audioFavoriteButton"' in index, "the player keeps its favourite button"
-assert 'onclick="setAudioView(\'favorites\')"' in media, "the 喜欢 tab must remain"
+# v1.0.9（需求2）：喜欢页签/入口卡移除，改为播放器按钮进入「我的喜欢」。
+assert "openAudioFavoritesView()" in index and "function openAudioFavoritesView()" in media, \
+    "favourites stay reachable from the player"
 assert '.audio-player { position:fixed' in css and 'transform:translateX(-50%)' in css, \
     "the music player stays centred"
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""v1.0.8 契约测试：8 项修正的静态契约、发布纪律、洗版自查。
+"""v1.0.9 契约测试：8 项修正的静态契约、发布纪律、洗版自查。
 
 只做静态契约断言；行为验证在 tests/v1002_behavior.js、media-go/v1002_douban_test.go
 与真实容器/浏览器验证里。
@@ -115,7 +115,7 @@ print("\n== 5. 需求6/7：操作模式（Apple / Emby / Plex）==")
 check("5a 外观主题面板：操作模式 + 界面规格两个独立档位",
       'id="opModeSeg"' in HTML and 'id="uiModeSeg"' in HTML
       and "操作模式" in HTML and "界面规格" in HTML and "UI 模式" not in HTML)
-# v1.0.8（需求2/3）：这档改名「界面规格」，说明段落换成卡片副标题 OP_MODE_TAG，
+# v1.0.9（需求2/3）：这档改名「界面规格」，说明段落换成卡片副标题 OP_MODE_TAG，
 # 并新增品牌标记 OP_MODE_MARK（规格切换要连图标与观感一起换）。
 check("5b 三档界面规格与标签齐备",
       'const OP_MODES = ["apple", "emby", "plex"];' in THEME
@@ -130,7 +130,7 @@ check("5d 落点与开关函数齐备",
 check("5e 设置项与三语文案齐备",
       'opMode: "apple",' in STATE and "if (OP_MODES.includes(s.opMode)) settings.opMode = s.opMode;" in STATE
       and STATE.count("opModeSaved:") == 3)
-# v1.0.8（需求3/4）：选中态改由 syncThemeControls 统一同步（卡片形态 + aria-checked），
+# v1.0.9（需求3/4）：选中态改由 syncThemeControls 统一同步（卡片形态 + aria-checked），
 # setOpMode 切换后必须调用它，否则高亮会停在上一档。
 check("5f2 切换界面规格后同步选中态（高亮不停在上一档）",
       "function setOpMode(" in THEME and "syncThemeControls();" in THEME
@@ -157,26 +157,26 @@ check("6c 内部滚动条禁止滚动穿透",
 
 print("\n== 7. 版本与发布纪律 ==")
 check("7a index.html 资源版本 ≥11 处且为本版",
-      len(re.findall(r"\?v=1\.0\.8", HTML)) >= 11 and "?v=1.0.1" not in HTML)
-check("7b 全部静态资源版本串只出现本版", set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"1.0.8"})
-check("7c ASSET / SCRIPT 版本 = 1.0.8",
-      'VAULTHUB_ASSET_VERSION = "1.0.8"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "1.0.8"' in STATE)
+      len(re.findall(r"\?v=1\.0\.9", HTML)) >= 11 and "?v=1.0.1" not in HTML)
+check("7b 全部静态资源版本串只出现本版", set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"1.0.9"})
+check("7c ASSET / SCRIPT 版本 = 1.0.9",
+      'VAULTHUB_ASSET_VERSION = "1.0.9"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "1.0.9"' in STATE)
 check("7d 三处标语整串一致",
-      len(re.findall(r"v1\.0\.8 · [^<\"]+", HTML)) == 3 and len(set(re.findall(r"v1\.0\.8 · [^<\"]+", HTML))) == 1,
-      sorted(set(re.findall(r"v1\.0\.8 · [^<\"]+", HTML))))
-# v1.0.8：本文件是 v1.0.2 的历史契约，日志顶部已换成当前版本 ——
+      len(re.findall(r"v1\.0\.9 · [^<\"]+", HTML)) == 3 and len(set(re.findall(r"v1\.0\.9 · [^<\"]+", HTML))) == 1,
+      sorted(set(re.findall(r"v1\.0\.9 · [^<\"]+", HTML))))
+# v1.0.9：本文件是 v1.0.2 的历史契约，日志顶部已换成当前版本 ——
 # 断言改成「v1.0.2 段落仍然完整」，历史记录不因升版而丢失。
 # 注：v1.0.2 当年是以「> 修正版。8 项修正」的续块写在 v1.0.3 段之前的，
 # 没有独立的一级标题，所以这里只校验历史要点仍在、且顶部已换成当前版本。
 check("7e Update Log 保留 v1.0.2 历史要点",
       "豆瓣评分获取与展示" in LOG and "Apple / Emby / Plex 三档操作模式" in LOG
-      and LOG.startswith("# VaultHub 蜀鼠之家 v1.0.8"))
+      and LOG.startswith("# VaultHub 蜀鼠之家 v1.0.9"))
 check("7f 发布说明存在且覆盖 8 项", len(NOTES) > 1500 and all(
       k in NOTES for k in ("季度展示回归", "演职人员全量修复", "视频推荐定位与播放修复", "推荐机制全量修复",
                            "豆瓣评分获取与展示", "操作模式", "多重垂直滚动条治理")))
 check("7g 安装/升级脚本与 subtitle-api 版本同步",
-      'VERSION="v1.0.8"' in rd("scripts/install.sh") and 'VERSION="v1.0.8"' in rd("scripts/upgrade.sh")
-      and "VaultHub-Subtitle/1.0.8" in rd("subtitle-api/main.go"))
+      'VERSION="v1.0.9"' in rd("scripts/install.sh") and 'VERSION="v1.0.9"' in rd("scripts/upgrade.sh")
+      and "VaultHub-Subtitle/1.0.9" in rd("subtitle-api/main.go"))
 check("7h 本轮只推 Gitea + Docker Hub（GitHub 按 20 版本节流）",
       "GitHub" in NOTES and "20" in NOTES)
 
@@ -193,5 +193,5 @@ for rel in ("media-go/douban.go", "media-go/v1002_douban_test.go", "web/js/02-me
     body = rd(rel)
     check(f"9 {rel} 无禁用字面量", not any(b in body for b in BANNED), [b for b in BANNED if b in body])
 
-print("\n===== v1.0.8 契约测试：", "全部通过 =====" if ok else "存在失败 =====")
+print("\n===== v1.0.9 契约测试：", "全部通过 =====" if ok else "存在失败 =====")
 raise SystemExit(0 if ok else 1)

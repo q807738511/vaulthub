@@ -223,7 +223,8 @@ func (a *App) coverSave(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, 400, "invalid cover url")
 		return
 	}
-	req.Header.Set("User-Agent", "VaultHub/0.9.56 cover-scraper (https://github.com/q807738511/vaulthub)")
+	/* v1.0.9：图片站对非浏览器 UA 直接 418/403（实测豆瓣图床），改用共享的浏览器 UA。 */
+	req.Header.Set("User-Agent", artworkUserAgent)
 	res, err := client.Do(req)
 	if err != nil {
 		errJSON(w, 502, "cover download failed: "+err.Error())

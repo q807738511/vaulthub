@@ -2770,3 +2770,50 @@ html[data-spec="plex"] .vc-play { border-radius: 50%; background: rgba(229,160,1
   font-size: 46px; line-height: 1; color: rgba(255, 255, 255, .94);
 }
 .audio-entry-card { cursor: pointer; }
+
+/* ==========================================================================
+   v1.0.9（需求1/2/3）：大库分页 · 播放器收藏入口 · NFO 补全面板
+   ========================================================================== */
+
+/* 音乐库 / 书刊库服务端分页：页码条居中、与桌面壳一致（不引入新的滚动容器）。 */
+.audio-browse-pager { margin: 18px auto 4px; justify-content: center; flex-wrap: wrap; gap: 6px; }
+.audio-browse-pager .pg.info {
+  display: inline-flex; align-items: center; min-width: 64px; justify-content: center;
+  padding: 0 10px; border: 1px solid var(--line); border-radius: 999px;
+  font-variant-numeric: tabular-nums; opacity: .85;
+}
+.audio-browse-pager .pg:disabled { opacity: .4; cursor: not-allowed; }
+
+/* 加载态：分页请求很短，但大库首屏仍要给一个明确的“在读”反馈。 */
+.media-loading {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 180px; color: var(--muted, #98a2b3); font-size: 14px; letter-spacing: .02em;
+}
+
+/* 播放器新增的「我的喜欢 / 我的歌单 / 加入歌单」按钮：沿用 v1.0.8 的双描边，
+   保证与播放器背景对比度接近时按钮边界依然可见。 */
+.audio-player-controls #audioFavoritesButton,
+.audio-player-controls #audioPlaylistsButton,
+.audio-player-controls #audioAddPlaylistButton {
+  border: 1px solid rgba(255, 255, 255, .62);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .62), inset 0 1px 0 rgba(255, 255, 255, .12);
+}
+[data-mode="light"] .audio-player-controls #audioFavoritesButton,
+[data-mode="light"] .audio-player-controls #audioPlaylistsButton,
+[data-mode="light"] .audio-player-controls #audioAddPlaylistButton {
+  border-color: rgba(15, 23, 42, .55);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .75), inset 0 1px 0 rgba(255, 255, 255, .6);
+}
+
+/* NFO 体检 / 补全面板 */
+.modal.modal-wide { width: min(880px, 94vw); max-height: 86vh; display: flex; flex-direction: column; }
+.modal.modal-wide .modal-body { overflow: auto; }
+.nfo-repair-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 14px; }
+.nfo-repair-progress { margin-bottom: 12px; }
+.nfo-bar { height: 8px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.nfo-bar > span { display: block; height: 100%; background: var(--accent); transition: width .3s ease; }
+.nfo-stats { margin-top: 8px; font-size: 13px; color: var(--muted, #98a2b3); font-variant-numeric: tabular-nums; }
+.nfo-repair-list { max-height: 42vh; overflow: auto; }
+.nfo-list { margin: 0; padding-left: 22px; display: grid; gap: 6px; font-size: 13px; }
+.nfo-list b { font-weight: 600; }
+.nfo-list .muted, .nfo-repair-progress .muted { color: var(--muted, #98a2b3); }

@@ -60,7 +60,7 @@ check("A6 品牌与信息区仍在（旧契约不破）",
       'id="accountWrap"' in HEADER and 'id="topScanStat"' in HEADER
       and HEADER.index('id="accountWrap"') < HEADER.index('class="tb-info"'))
 check("A7 独立脚本 07-topnav.js 已挂载且在主题引擎之后",
-      "/web/js/07-topnav.js?v=1.0.8" in HTML
+      "/web/js/07-topnav.js?v=1.0.9" in HTML
       and HTML.index("06-theme.js") < HTML.index("07-topnav.js") < HTML.index("03-audio-zoom.js"))
 check("A8 顶栏渲染器读真实媒体库并保序渲染",
       "function renderTopLibTabs()" in TOPNAV and "localMediaLibraries" in TOPNAV
@@ -126,7 +126,7 @@ check("B1 三个书架标签（书架/喜欢/历史阅读）—— v0.9.84 未�
       all(f'id: "{i}"' in MEDIA for i in ["shelf", "like", "completed"])
       and 'label: "书架"' in MEDIA and 'label: "🕘 历史阅读"' in MEDIA and 'label: "喜欢"' in MEDIA
       and '{ id: "all", label: "全部" }' not in MEDIA)
-# v1.0.8（需求3）：书刊页头（库名 / 大类 / 本视图·全库·本页 / 扫描时间）整块移除，
+# v1.0.9（需求3）：书刊页头（库名 / 大类 / 本视图·全库·本页 / 扫描时间）整块移除，
 # 页面只留书架本体与工具栏。
 check("B2 页头已移除（需求3）",
       'class="pn-head"' not in MEDIA and "<h1>${esc(lib.name)}</h1>" not in MEDIA
@@ -201,10 +201,10 @@ check("D1 发布说明存在且包含本版修正（发布说明随版本推进�
       ("184,693" in NOTES or "18.4 万" in NOTES or "37 万" in NOTES)
       and "获取信息" in NOTES and "转码" in NOTES
       and "show_title" in NOTES and "语言" in NOTES)
-check("D2 Update Log 有对应条目", "持续登录" in LOG and "通知喇叭" in LOG and "硬盘和网络" in LOG and "v1.0.8" in LOG)
+check("D2 Update Log 有对应条目", "持续登录" in LOG and "通知喇叭" in LOG and "硬盘和网络" in LOG and "v1.0.9" in LOG)
 check("D3 版本号为 0.9.90",
-      'VAULTHUB_ASSET_VERSION = "1.0.8"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "1.0.8"' in STATE
-      and "?v=1.0.8" in HTML and "?v=0.9.78" not in HTML)
+      'VAULTHUB_ASSET_VERSION = "1.0.9"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "1.0.9"' in STATE
+      and "?v=1.0.9" in HTML and "?v=0.9.78" not in HTML)
 
 fails = [(n, d) for n, ok, d in checks if not ok]
 for n, ok, d in checks:

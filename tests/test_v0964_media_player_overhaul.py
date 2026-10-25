@@ -69,8 +69,8 @@ checks = {
     "还原清理新状态": 'overlay.classList.remove("video-minimized", "video-controller-docked")' in MEDIA,
 
     # 版本与发布资料
-    "HTML版本": 'VAULTHUB_ASSET_VERSION = "1.0.8"' in HTML and HTML.count("?v=1.0.8") >= 7,
-    "脚本版本": 'VAULTHUB_SCRIPT_VERSION = "1.0.8"' in STATE,
+    "HTML版本": 'VAULTHUB_ASSET_VERSION = "1.0.9"' in HTML and HTML.count("?v=1.0.9") >= 7,
+    "脚本版本": 'VAULTHUB_SCRIPT_VERSION = "1.0.9"' in STATE,
     "发布说明": NOTES.exists(),
 }
 

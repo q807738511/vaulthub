@@ -485,10 +485,18 @@ function setBookPageSize(size) {
 /* 翻页纯本地：不重新请求，也不重算统计，避免老版本「翻页即跳段」的问题。 */
 function gotoBookShelfPage(page) {
   const prefs = bookShelfPrefs();
-  if (!prefs.paged) return;
+  /* v1.0.9：远端分页不依赖本地「分页浏览」偏好 —— 大库必须能翻页，
+     否则默认「完整展开」设置会让页码按钮点了没反应。 */
+  if (!prefs.paged && !bookRemoteState.libId) return;
   const size = bookPageSizeValue(prefs);
+  const remoteSize = bookRemoteState.payload && bookRemoteState.payload.size ? Number(bookRemoteState.payload.size) : size;
   bookShelfPage = Math.max(0, Number(page) || 0);
-  bookShelfOffset = bookShelfPage * size;
+  bookShelfOffset = bookShelfPage * remoteSize;
+  /* v1.0.9（需求3）：远端分页模式下翻页要重新向服务端要这一页。 */
+  if (bookRemoteState.libId) {
+    const lib = findMediaLibrary(localMediaSelection.comic);
+    if (lib) { bookShelfRemoteLoad(lib, bookShelfOffset); return; }
+  }
   renderBookShelfPage();
 }
 /* v0.9.90 修复：把「渲染窗口」抽成公共切片。
@@ -512,6 +520,14 @@ function renderBookShelfPage() {
   const host = document.getElementById("local-media-content-comic");
   const lib = findMediaLibrary(localMediaSelection.comic);
   if (!host || !lib) return;
+  /* v1.0.9：远端分页模式下，密度 / 视图设置只重绘当前页（数据已在本地那一页里）。 */
+  if (bookRemoteState.libId && bookRemoteState.payload) {
+    host.innerHTML = bookShelfPageHtml(lib, bookRemoteState.payload.files || [], bookRemoteState.payload.counts, bookRemoteState.payload.total)
+      + bookRemoteState.externalMore;
+    if (typeof scrapeVisibleBookCovers === "function") scrapeVisibleBookCovers(host);
+    closeBookViewSettings();
+    return;
+  }
   const prefs = bookShelfPrefs();
   const visible = Array.isArray(bookShelfVisibleCache) ? bookShelfVisibleCache : [];
   const size = bookPageSizeValue(prefs);
@@ -525,6 +541,8 @@ function renderBookShelfPage() {
   closeBookViewSettings();
 }
 function bookPagerHtml(total, shown, unit) {
+  /* v1.0.9：远端分页由服务端给页码，这里不再按本地数组长度算页数。 */
+  if (bookRemoteState.libId && bookRemoteState.payload) return bookRemotePagerHtml();
   const prefs = bookShelfPrefs();
   const size = bookPageSizeValue(prefs);
   const count = Number(total) || 0;
@@ -612,7 +630,7 @@ function toggleAudioFavorite(libId, path) {
   if (index >= 0) values.splice(index, 1); else values.push(key);
   vaultStoreSet(audioFavoritesCache, values);
   updateAudioFavoriteButton();
-  const lib = findMediaLibrary(localMediaSelection.audio); if (lib) loadLocalFiles("audio", lib, audioCursor);
+  audioRefreshCurrentView();
 }
 function toggleActiveAudioFavorite() { if (activeAudio) toggleAudioFavorite(activeAudio.libId, activeAudio.path); }
 function updateAudioFavoriteButton() {
@@ -727,10 +745,9 @@ async function loadPlaylistTracks(lib, name, autoPlay) {
   if (!set.size) { toast("⚠️ 该歌单还没有歌曲"); return; }
   const host = document.getElementById("local-media-content-audio");
   if (!host) return;
-  const all = await fetchAllLibraryFiles(lib.id, { has_more: true }, 0);
-  const files = all
-    .filter(file => supportedLocalMediaFile("audio", lib, String(file.path)) && set.has(audioFavoriteKey(lib.id, String(file.path))))
-    .sort((a, b) => String(a.path).localeCompare(String(b.path), "zh-CN"));
+  /* v1.0.9：歌单只存路径，按路径向服务端批量取索引条目，不再拉整库。 */
+  const paths = [...set].map(k => { const i = k.indexOf("\n"); return i >= 0 ? k.slice(i + 1) : ""; }).filter(Boolean);
+  const files = (await fetchFilesByPaths(lib, paths)).sort((a, b) => String(a.path).localeCompare(String(b.path), "zh-CN"));
   if (!files.length) { toast("⚠️ 歌单歌曲不在当前媒体库中"); return; }
   audioPlaylistFilter = setName;
   audioArtistFilter = "";
@@ -3602,7 +3619,7 @@ function setAudioView(view) {
      其余非 tracks 视图清空分组筛选。 */
   if (view !== "tracks" && view !== "artistAlbums") { audioTrackTitle = ""; audioArtistFilter = ""; audioPlaylistFilter = ""; audioGroupLock = null; }
   const lib = findMediaLibrary(localMediaSelection.audio);
-  if (lib) loadLocalFiles("audio", lib, 0);
+  if (lib) audioRefreshCurrentView();
 }
 let mediaLibraryConfigGroup = "comic";
 function mediaTypesForGroup(group) { return group === "comic" ? ["comic","book"] : group === "movie" ? ["movie","series"] : ["audio","musicvideo"]; }
@@ -4283,8 +4300,15 @@ function loadLocalFiles(group, lib, offset = 0) {
 async function loadLocalFilesInner(group, lib, offset = 0, token = 0) {
   const target = document.getElementById("local-media-content-" + group);
   if (!target) return;
+
   /* v0.9.92：切库即释放其它库的重型缓存（整库索引 / 书架列表 / 阅读状态索引）。 */
   if (lib && lib.id) releaseMediaHeavyCaches(lib.id);
+  /* v1.0.9（需求3）：音乐库与书刊库改走服务端分页 / 聚合。
+     旧实现把整库索引拉到浏览器再本地排序分组 —— 生产库 17.9 万首音乐是
+     174 次请求 / 36 MB / 一次渲染 5828 张卡，18.4 万本书是 231 次 / 52.6 MB，
+     页面直接假死。现在每屏只取几十条。 */
+  if (group === "audio" && typeof loadAudioServerView === "function") return loadAudioServerView(lib, offset);
+  if (group === "comic" && typeof bookShelfRemoteLoad === "function" && await bookShelfPrefersRemote(lib)) return bookShelfRemoteLoad(lib, offset);
   try {
     /* v0.9.70：已读/未读筛选必须基于完整索引。
        旧实现给已读视图发送 limit=100000，服务端会按安全上限截断，导致已读书籍
@@ -4781,19 +4805,21 @@ function markAudioScrapeMiss(path, fallback, status, errorCode) {
    与手动适配单曲同一存储），provider 记为 manual 后自动刮削不再覆盖。
    注意：分组曲目要按整库拉取（fetchAllLibraryFiles），只用当前页会漏改后面几页。 */
 async function audioGroupFilesAll(kind, key) {
-  const target = String(key), lib = findMediaLibrary(localMediaSelection.audio);
-  let pool = audioFiles || [];
-  if (lib) {
-    try {
-      const all = await fetchAllLibraryFiles(lib.id, { has_more: true }, 0);
-      const audioOnly = all.filter(file => supportedLocalMediaFile("audio", lib, String(file.path)));
-      if (audioOnly.length) pool = audioOnly;
-    } catch (e) { /* 整库拉取失败：退回当前页，至少不阻塞编辑 */ }
+  /* v1.0.9（需求3）：编辑歌手/专辑时也走服务端分组查询 ——
+     旧实现在这里同样拉整库索引（17.9 万条），点一次「编辑歌手」就卡一次。 */
+  const lib = findMediaLibrary(localMediaSelection.audio);
+  if (!lib) return [];
+  const target = String(key);
+  try {
+    const data = await audioBrowseFetch(lib, "tracks", {
+      artist: kind === "artist" ? target : (audioArtistFilter || ""),
+      album: kind === "artist" ? "" : target,
+      size: 5000
+    });
+    return (data.files || []).map(t => ({ path: t.path, size: t.size, mtime: t.mtime }));
+  } catch (e) {
+    return [];
   }
-  return pool.filter(file => {
-    const meta = audioMetadataFor(String(file.path));
-    return kind === "artist" ? meta.artist === target : meta.album === target;
-  });
 }
 async function openAudioGroupEdit(kind, key) {
   const isArtist = kind === "artist";
@@ -4871,13 +4897,10 @@ function renderAudioArtists(lib, files) {
      未刮削/失败时回落渐变首字。
      v0.9.57：新增「▶ 播放」—— 直接播放该歌手全部歌曲（队列即歌手）。
      v0.9.66：同专辑卡片，移除重复的 ✎ 编辑按钮。 */
-  /* v1.0.8（需求4）：页签移除后，喜欢与歌单以入口卡的形式留在歌手网格最前面，
-     不占页头、也不影响「默认就是歌手列表」这一层级。 */
-  const favCount = audioFavoriteRows().length;
-  const playlistCount = readAudioPlaylists().length;
-  const entries = `<article class="audio-album-card audio-entry-card" onclick="setAudioView('favorites')"><div class="audio-album-cover audio-entry-cover" style="background:${coverGradient("喜欢")}">♥</div><div class="audio-album-info"><strong>喜欢</strong><small>${favCount} 首</small></div></article>`
-    + `<article class="audio-album-card audio-entry-card" onclick="setAudioView('playlists')"><div class="audio-album-cover audio-entry-cover" style="background:${coverGradient("歌单")}">♫</div><div class="audio-album-info"><strong>歌单</strong><small>${playlistCount} 个</small></div></article>`;
-  return `<div class="audio-album-grid audio-artist-grid">${entries}${[...groups.entries()].map(([artist, songs]) => { const artistMeta = audioArtistInfoFor(artist); const cover = artistMeta && artistMeta.cover ? `<img class="audio-artist-avatar" src="${esc(coverThumbUrl(artistMeta.cover, 320))}" alt="${esc(artist)}" loading="lazy" onerror="this.parentElement.classList.add('audio-artist-avatar-fallback');this.remove()">` : ""; return `<article class="audio-album-card audio-artist-card" onclick="openAudioArtist('${esc(lib.id)}',${jsAttrArg(artist)})"><div class="audio-album-cover audio-artist-cover" style="${cover ? "" : `background:${coverGradient(artist)}`}">${cover || esc(artist)}</div><div class="audio-album-info"><strong>${esc(artist)}</strong><small>${songs.length} 首歌曲${artistMeta && artistMeta.collaborators && artistMeta.collaborators.length > 1 ? " · 合作演唱" : ""}</small><div class="media-actions"><button class="btn" title="直接播放该歌手全部歌曲" onclick="event.stopPropagation();playAudioGroup('${esc(lib.id)}','artist',${esc(JSON.stringify(artist))})">▶ 播放</button><button class="btn" title="喜欢歌手" onclick="event.stopPropagation();toggleAudioFavorite(${jsAttrArg(lib.id)},${jsAttrArg(songs[0].path)})">${isAudioFavorite(lib.id, songs[0].path) ? "♥" : "♡"}</button></div></article>`; }).join("")}</div>`;
+  /* v1.0.9（需求2）：歌手网格前的「喜欢 / 歌单」入口卡移除 ——
+     这两个功能收进底部播放器（♥ 收藏当前曲目 / ♫ 加入歌单 / 两个列表入口），
+     媒体库首页只呈现歌手本身。 */
+  return `<div class="audio-album-grid audio-artist-grid">${[...groups.entries()].map(([artist, songs]) => { const artistMeta = audioArtistInfoFor(artist); const cover = artistMeta && artistMeta.cover ? `<img class="audio-artist-avatar" src="${esc(coverThumbUrl(artistMeta.cover, 320))}" alt="${esc(artist)}" loading="lazy" onerror="this.parentElement.classList.add('audio-artist-avatar-fallback');this.remove()">` : ""; return `<article class="audio-album-card audio-artist-card" onclick="openAudioArtist('${esc(lib.id)}',${jsAttrArg(artist)})"><div class="audio-album-cover audio-artist-cover" style="${cover ? "" : `background:${coverGradient(artist)}`}">${cover || esc(artist)}</div><div class="audio-album-info"><strong>${esc(artist)}</strong><small>${songs.length} 首歌曲${artistMeta && artistMeta.collaborators && artistMeta.collaborators.length > 1 ? " · 合作演唱" : ""}</small><div class="media-actions"><button class="btn" title="直接播放该歌手全部歌曲" onclick="event.stopPropagation();playAudioGroup('${esc(lib.id)}','artist',${esc(JSON.stringify(artist))})">▶ 播放</button><button class="btn" title="喜欢歌手" onclick="event.stopPropagation();toggleAudioFavorite(${jsAttrArg(lib.id)},${jsAttrArg(songs[0].path)})">${isAudioFavorite(lib.id, songs[0].path) ? "♥" : "♡"}</button></div></article>`; }).join("")}</div>`;
 }
 let audioArtistFilter = "";
 
@@ -4897,10 +4920,8 @@ async function openAudioArtist(libId, artist) {
   audioView = "artistAlbums";
   audioGroupLock = { kind: "artist", key: name };
   try {
-    const files = await audioGroupFiles(lib.id, "artist", name);
-    audioFiles = files;
-    audioCursor = 0;
-    renderAudioLibraryContent(host, lib, files);
+    const data = await audioBrowseFetch(lib, "albums", { artist: name, size: 200 });
+    host.innerHTML = `<section class="content-collection">${renderAudioArtistAlbumsServer(lib, data, name)}</section>`;
   } catch (e) {
     toast("⚠️ 拉取该歌手的专辑失败");
   }
@@ -4937,11 +4958,14 @@ function renderAudioArtistAlbums(lib, files, artist) {
 async function audioGroupFiles(libId, kind, key) {
   const lib = findMediaLibrary(libId);
   if (!lib) return [];
-  const all = await fetchAllLibraryFiles(lib.id, { has_more: true }, 0);
-  return all
-    .filter(file => supportedLocalMediaFile("audio", lib, String(file.path)))
-    .filter(file => { const meta = audioMetadataFor(String(file.path)); return kind === "artist" ? meta.artist === key : meta.album === key; })
-    .sort((a, b) => String(a.path).localeCompare(String(b.path), "zh-CN"));
+  /* v1.0.9（需求3）：旧实现每次点歌手/专辑都重新拉一遍整库索引（17.9 万条），
+     一次点击就是几十 MB。现在按分组向服务端要曲目，返回几十到几百条。 */
+  const data = await audioBrowseFetch(lib, "tracks", {
+    artist: kind === "artist" ? String(key) : (audioArtistFilter && audioArtistFilter !== String(key) ? audioArtistFilter : ""),
+    album: kind === "artist" ? "" : String(key),
+    size: 5000
+  });
+  return (data.files || []).map(t => ({ path: t.path, size: t.size, mtime: t.mtime }));
 }
 /* v0.9.57：分组播放队列锁 —— playAudioGroup / openAudioTracks 设置，
    刮削完成/分页等异步 loadLocalFiles 不再覆盖 audioFiles（保持「队列=专辑/歌手」），
@@ -4977,9 +5001,9 @@ async function openAudioTracks(libId, kind, key) {
     audioCursor = 0;
     audioGroupLock = { kind, key: String(key) };
     if (!files.length) { audioTrackTitle = ""; audioArtistFilter = ""; audioView = audioTracksBack; audioGroupLock = null; }
-    renderAudioLibraryContent(host, lib, files);
+    host.innerHTML = `<section class="content-collection">${renderAudioTrackList(lib, files)}</section>`;
   } catch (e) {
-    loadLocalFiles("audio", lib, 0); // 拉取失败回退分页视图
+    loadAudioServerView(lib, 0); // 拉取失败回退歌手视图
   }
 }
 let audioTracksBack = "albums"; // 曲目列表「← 返回」目标：albums | artists | playlists
@@ -6149,12 +6173,8 @@ async function scrapeLyricsForOpenEditor() {
 async function scrapeAllAudioLyrics() {
   const lib = findMediaLibrary(localMediaSelection.audio);
   if (!lib) { toast("⚠️ 请先选择音乐库"); return; }
-  let pool = audioFiles || [];
-  try {
-    const all = await fetchAllLibraryFiles(lib.id, { has_more: true }, 0);
-    const audioOnly = all.filter(file => supportedLocalMediaFile("audio", lib, String(file.path)));
-    if (audioOnly.length) pool = audioOnly;
-  } catch (e) { /* 整库拉取失败就用当前页 */ }
+  /* v1.0.9：批量歌词只针对当前视图（服务端分页后本地不再持有整库索引）。 */
+  const pool = audioFiles && audioFiles.length ? audioFiles : [];
   const targets = pool.filter(file => !String((audioMetadataFor(String(file.path)) || {}).lyrics || "").trim()).slice(0, 50);
   if (!targets.length) { toast("✅ 当前曲目都已有歌词"); return; }
   toast(`🎵 正在刮削 ${targets.length} 首曲目的歌词…`);
@@ -8159,4 +8179,372 @@ async function openLocalMedia(group, libId, path) {
   viewer.innerHTML = viewerShell(group, lib, path, body, url, { player: isVideoPlayer });
   if (isVideoPlayer) initMovieCompatPlayer(viewer, lib, path);
   scrollViewerIntoView(viewer);
+}
+
+/* =====================================================================
+   v1.0.9（需求2 / 需求3）：音乐库服务端聚合 · 书刊大库服务端分页
+   ---------------------------------------------------------------------
+   现场数据（生产库）：
+     · 音乐库 178,964 条：打开一次 = 174 次 /api/media/files + 36 MB + 5828 张卡；
+     · 电子书库 184,693 条：冷启打开 = 231 次请求 + 52.6 MB；
+     · 点一次歌手又会重拉一遍整库（audioGroupFiles）。
+   现在：歌手 / 专辑 / 曲目各取一页（几十条、几 KB），书刊按页取，
+   喜欢 / 已完成这类「只在本地」的状态以路径数组上行参与筛选。
+   ===================================================================== */
+
+const AUDIO_BROWSE_PAGE_SIZE = 60;
+const BOOK_REMOTE_PAGE_MIN = 20;
+const bookRemoteState = { libId: "", payload: null, externalMore: "" };
+let audioBrowseBusy = false;
+let audioBrowseLast = { level: "artists", page: 0, total: 0, artist: "", album: "" };
+
+async function audioBrowseFetch(lib, level, opts) {
+  const o = opts || {};
+  const params = new URLSearchParams();
+  params.set("id", String(lib.id));
+  params.set("level", level);
+  params.set("page", String(Math.max(0, Number(o.page) || 0)));
+  params.set("size", String(Math.max(1, Number(o.size) || AUDIO_BROWSE_PAGE_SIZE)));
+  if (o.artist) params.set("artist", String(o.artist));
+  if (o.album) params.set("album", String(o.album));
+  if (o.q) params.set("q", String(o.q));
+  const res = await fetch("/api/media/audio/browse?" + params.toString(), { cache: "no-store", credentials: "same-origin" });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  return res.json();
+}
+
+/* 按路径批量取索引条目（歌单 / 喜欢 / 播放队列用）。 */
+async function fetchFilesByPaths(lib, paths) {
+  const list = (paths || []).filter(Boolean);
+  if (!lib || !list.length) return [];
+  const res = await fetch("/api/media/lookup", {
+    method: "POST",
+    headers: sessionWriteHeaders(true),
+    credentials: "same-origin",
+    body: JSON.stringify({ id: String(lib.id), paths: list })
+  });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  const data = await res.json();
+  return (data.files || []).map(f => ({ path: String(f.path), size: Number(f.size) || 0, mtime: Number(f.mtime) || 0 }));
+}
+
+function audioBrowsePagerHtml(level) {
+  const st = audioBrowseLast;
+  if (!st || !st.total || st.level !== level) return "";
+  const size = level === "tracks" ? 500 : AUDIO_BROWSE_PAGE_SIZE;
+  const pages = Math.max(1, Math.ceil(st.total / size));
+  const cur = Math.min(pages, Math.max(1, (Number(st.page) || 0) + 1));
+  return `<nav class="pager audio-browse-pager" aria-label="分页">`
+    + `<button class="pg nav" type="button" ${cur <= 1 ? "disabled" : ""} onclick="audioBrowseGo(${cur - 2})">‹ 上一页</button>`
+    + `<span class="pg info">${cur} / ${pages}</span>`
+    + `<button class="pg nav" type="button" ${cur >= pages ? "disabled" : ""} onclick="audioBrowseGo(${cur})">下一页 ›</button></nav>`;
+}
+
+function audioBrowseGo(page) {
+  const lib = findMediaLibrary(localMediaSelection.audio);
+  if (!lib) return;
+  loadAudioServerView(lib, 0, { page: Math.max(0, Number(page) || 0) });
+}
+
+/* 当前音乐视图就地刷新（喜欢/取消喜欢、刮削完成后用，不重新请求整库）。 */
+function audioRefreshCurrentView() {
+  const lib = findMediaLibrary(localMediaSelection.audio);
+  if (lib) loadAudioServerView(lib, 0);
+}
+
+function renderAudioArtistsServer(lib, data) {
+  const rows = data.artists || [];
+  if (!rows.length) return `<div class="empty-tip">这个音乐库里还没有识别到歌手。</div>`;
+  const cards = rows.map(a => {
+    const meta = audioArtistInfoFor(a.name);
+    const cover = meta && meta.cover
+      ? `<img class="audio-artist-avatar" src="${esc(coverThumbUrl(meta.cover, 320))}" alt="${esc(a.name)}" loading="lazy" onerror="this.parentElement.classList.add('audio-artist-avatar-fallback');this.remove()">`
+      : "";
+    return `<article class="audio-album-card audio-artist-card" onclick="openAudioArtist('${esc(lib.id)}',${jsAttrArg(a.name)})">`
+      + `<div class="audio-album-cover audio-artist-cover" style="${cover ? "" : "background:" + coverGradient(a.name)}">${cover || esc(a.name)}</div>`
+      + `<div class="audio-album-info"><strong>${esc(a.name)}</strong><small>${a.albums} 张专辑 · ${a.tracks} 首</small>`
+      + `<div class="media-actions"><button class="btn" title="直接播放该歌手全部歌曲" onclick="event.stopPropagation();playAudioGroup('${esc(lib.id)}','artist',${jsAttrArg(a.name)})">▶ 播放</button></div></div></article>`;
+  }).join("");
+  return `<div class="audio-album-grid audio-artist-grid">${cards}</div>` + audioBrowsePagerHtml("artists");
+}
+
+function renderAudioArtistAlbumsServer(lib, data, artist) {
+  const name = String(artist || data.artist || "");
+  const albums = data.albums || [];
+  const head = `<div class="audio-track-head">`
+    + `<button class="btn audio-play-all" title="播放该歌手全部歌曲" onclick="playAudioGroup('${esc(lib.id)}','artist',${jsAttrArg(name)})">▶ 播放歌手全部</button>`
+    + `<button class="btn" title="编辑歌手名称与头像" onclick="openAudioGroupEdit('artist',${jsAttrArg(name)})">✎ 编辑歌手</button>`
+    + `<button class="btn" onclick="audioTrackTitle='';audioArtistFilter='';audioGroupLock=null;setAudioView('artists')">← 返回</button>`
+    + `<strong>${esc(name)}</strong><span class="media-file-meta">${albums.length} 张专辑</span></div>`;
+  const cards = albums.map(al => {
+    const meta = audioMetadataFor(String((al.dir || al.name) + "/"));
+    void meta;
+    return `<article class="audio-album-card" onclick="openAudioTracks('${esc(lib.id)}','album',${jsAttrArg(al.name)})">`
+      + `<div class="audio-album-cover" style="background:${coverGradient(al.name)}">${esc(al.name)}</div>`
+      + `<div class="audio-album-info"><strong>${esc(al.name)}</strong><small>${esc(al.artist || name)} · ${al.tracks} 首</small>`
+      + `<div class="media-actions"><button class="btn" title="直接播放该专辑全部歌曲" onclick="event.stopPropagation();playAudioGroup('${esc(lib.id)}','album',${jsAttrArg(al.name)})">▶ 播放</button>`
+      + `<button class="btn" title="编辑专辑" onclick="event.stopPropagation();openAudioGroupEdit('album',${jsAttrArg(al.name)})">✎</button></div></div></article>`;
+  }).join("");
+  return head + (cards ? `<div class="audio-album-grid">${cards}</div>` : '<div class="empty-tip">该歌手暂无专辑信息</div>');
+}
+
+/* 音乐库主视图：按当前层级向服务端取一页数据并渲染。 */
+async function loadAudioServerView(lib, offset, opts) {
+  const o = opts || {};
+  const host = document.getElementById("local-media-content-audio");
+  if (!host || !lib) return;
+  if (audioBrowseBusy && !o.force) return;
+  audioBrowseBusy = true;
+  const view = audioView || "artists";
+  try {
+    if (view === "favorites") {
+      audioFiles = [];
+      audioBrowseLast = { level: "favorites", page: 0, total: 0, artist: "", album: "" };
+      host.innerHTML = `<section class="content-collection">${renderAudioFavorites(lib)}</section>`;
+      return;
+    }
+    if (view === "playlists") {
+      audioFiles = [];
+      audioBrowseLast = { level: "playlists", page: 0, total: 0, artist: "", album: "" };
+      host.innerHTML = `<section class="content-collection">${renderAudioPlaylists(lib)}</section>`;
+      return;
+    }
+    if (view === "tracks") {
+      if (audioPlaylistFilter) {
+        const set = audioPlaylistSongSet(audioPlaylistFilter);
+        const paths = [...set].map(k => { const i = k.indexOf("\n"); return i >= 0 ? k.slice(i + 1) : ""; }).filter(Boolean);
+        const files = (await fetchFilesByPaths(lib, paths)).sort((a, b) => String(a.path).localeCompare(String(b.path), "zh-CN"));
+        audioFiles = files;
+        audioCursor = 0;
+        host.innerHTML = `<section class="content-collection">${renderAudioTrackList(lib, files)}</section>`;
+        return;
+      }
+      const back = audioTracksBack;
+      const artist = back === "artists" ? audioTrackTitle : (audioArtistFilter || "");
+      const album = back === "artists" ? "" : audioTrackTitle;
+      const data = await audioBrowseFetch(lib, "tracks", { artist, album, page: o.page || 0, size: 500 });
+      audioBrowseLast = { level: "tracks", page: Number(data.page) || 0, total: Number(data.total) || 0, artist, album };
+      audioFiles = (data.files || []).map(t => ({ path: t.path, size: t.size, mtime: t.mtime }));
+      audioCursor = 0;
+      host.innerHTML = `<section class="content-collection">${renderAudioTrackList(lib, audioFiles)}</section>`;
+      return;
+    }
+    if (view === "artistAlbums") {
+      const data = await audioBrowseFetch(lib, "albums", { artist: audioArtistFilter, page: o.page || 0, size: 200 });
+      audioBrowseLast = { level: "albums", page: Number(data.page) || 0, total: Number(data.total) || 0, artist: audioArtistFilter, album: "" };
+      host.innerHTML = `<section class="content-collection">${renderAudioArtistAlbumsServer(lib, data, audioArtistFilter)}</section>`;
+      return;
+    }
+    // artists（含历史 albums 视图：统一按歌手展示）
+    const data = await audioBrowseFetch(lib, "artists", { page: o.page || 0, size: AUDIO_BROWSE_PAGE_SIZE });
+    audioBrowseLast = { level: "artists", page: Number(data.page) || 0, total: Number(data.total) || 0, artist: "", album: "" };
+    host.innerHTML = `<section class="content-collection">${renderAudioArtistsServer(lib, data)}</section>`;
+  } catch (e) {
+    host.innerHTML = `<div class="media-error">读取音乐库失败：${esc(e.message || e)}</div>`;
+  } finally {
+    audioBrowseBusy = false;
+  }
+}
+
+/* 播放器上的两个入口：我的喜欢 / 我的歌单。 */
+function openAudioFavoritesView() {
+  const lib = findMediaLibrary(localMediaSelection.audio) || (localMediaLibraries || []).find(l => l.type === "audio");
+  if (!lib) { toast("⚠️ 还没有音乐库"); return; }
+  localMediaSelection.audio = String(lib.id);
+  audioTrackTitle = ""; audioArtistFilter = ""; audioPlaylistFilter = ""; audioGroupLock = null;
+  audioView = "favorites";
+  if (typeof switchView === "function") switchView("audio");
+  loadAudioServerView(lib, 0, { force: true });
+}
+function openAudioPlaylistsView() {
+  const lib = findMediaLibrary(localMediaSelection.audio) || (localMediaLibraries || []).find(l => l.type === "audio");
+  if (!lib) { toast("⚠️ 还没有音乐库"); return; }
+  localMediaSelection.audio = String(lib.id);
+  audioTrackTitle = ""; audioArtistFilter = ""; audioPlaylistFilter = ""; audioGroupLock = null;
+  audioView = "playlists";
+  if (typeof switchView === "function") switchView("audio");
+  loadAudioServerView(lib, 0, { force: true });
+}
+/* 播放器：把当前曲目加入歌单（等同曲目行的 ♫）。 */
+function audioPlayerAddToPlaylist() {
+  if (!activeAudio) { toast("还没有播放中的歌曲"); return; }
+  openAudioPlaylistPicker(activeAudio.libId, activeAudio.path);
+}
+
+/* ---------------- 书刊库服务端分页 ---------------- */
+
+function bookFavPaths(libId) {
+  const prefix = String(libId) + "::";
+  return Object.keys(readBookFavorites())
+    .filter(k => k.indexOf(prefix) === 0)
+    .map(k => k.slice(prefix.length));
+}
+function bookCompletedPaths(libId) {
+  const idx = readingStateIndexFor(libId);
+  const out = [];
+  Object.keys(idx).forEach(p => {
+    if (Number((idx[p] || {}).progress || 0) >= COMPLETED_PROGRESS) out.push(p);
+  });
+  return out;
+}
+
+function bookRemotePagerHtml() {
+  const st = bookRemoteState.payload || {};
+  const pages = Math.max(1, Number(st.pages) || 1);
+  const cur = Math.min(pages, Math.max(1, (Number(st.page) || 0) + 1));
+  const prev = `<button class="pg nav" type="button" ${cur <= 1 ? "disabled" : ""} onclick="gotoBookShelfPage(${cur - 2})">‹ 上一页</button>`;
+  const next = `<button class="pg nav" type="button" ${cur >= pages ? "disabled" : ""} onclick="gotoBookShelfPage(${cur})">下一页 ›</button>`;
+  const nums = [];
+  [1, cur - 1, cur, cur + 1, pages].forEach(n => { if (n >= 1 && n <= pages && nums.indexOf(n) < 0) nums.push(n); });
+  nums.sort((a, b) => a - b);
+  let seq = "", prevN = 0;
+  nums.forEach(n => {
+    if (prevN && n - prevN > 1) seq += `<span class="gap">…</span>`;
+    seq += `<button class="pg" type="button" aria-current="${n === cur ? "page" : "false"}" onclick="gotoBookShelfPage(${n - 1})">${n}</button>`;
+    prevN = n;
+  });
+  return `<nav class="pager" aria-label="分页">${prev}${seq}${next}</nav>`;
+}
+
+/* 小库继续走「整库可见」的老路径（45 本书没必要一页 20 本地翻），
+   只有大库才用服务端分页 —— 阈值按总条数判断，用 size=1 的探测请求拿到 total，
+   结果按库缓存 60 秒，避免每次进库都多打一次。 */
+const BOOK_REMOTE_THRESHOLD = 400;
+const bookRemoteProbeCache = {};
+async function bookShelfPrefersRemote(lib) {
+  if (!lib || !lib.id) return false;
+  const key = String(lib.id);
+  const cached = bookRemoteProbeCache[key];
+  if (cached && Date.now() - Number(cached.at || 0) < 60000) return cached.remote;
+  try {
+    const res = await fetch("/api/media/shelf", {
+      method: "POST",
+      headers: sessionWriteHeaders(true),
+      credentials: "same-origin",
+      body: JSON.stringify({ id: key, group: "comic", tab: "all", size: 1, page: 0 })
+    });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    const remote = Number(data.total) > BOOK_REMOTE_THRESHOLD || data.status === "indexing";
+    bookRemoteProbeCache[key] = { at: Date.now(), remote };
+    return remote;
+  } catch (e) {
+    // 探测失败（旧服务端 / 网络抖动）时用老路径，宁可不优化也不要空白页。
+    bookRemoteProbeCache[key] = { at: Date.now(), remote: false };
+    return false;
+  }
+}
+
+async function bookShelfRemoteLoad(lib, offset) {
+  const host = document.getElementById("local-media-content-comic");
+  if (!host || !lib) return;
+  const prefs = bookShelfPrefs();
+  const size = Math.max(BOOK_REMOTE_PAGE_MIN, Number(prefs.pageSize) || Number(mediaPageSize) || 20);
+  const page = Math.max(0, Math.floor(Number(offset) / size));
+  const body = { id: String(lib.id), group: "comic", tab: bookShelfTab, sort: prefs.sort, page, size };
+  if (bookShelfTab === "like") body.like = bookFavPaths(lib.id);
+  if (bookShelfTab !== "like") body.completed = bookCompletedPaths(lib.id);
+  host.innerHTML = `<div class="media-loading">正在读取书架…</div>`;
+  try {
+    const res = await fetch("/api/media/shelf", {
+      method: "POST",
+      headers: sessionWriteHeaders(true),
+      credentials: "same-origin",
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    bookRemoteState.libId = String(lib.id);
+    bookRemoteState.payload = data;
+    bookRemoteState.externalMore = "";
+    bookShelfPage = Number(data.page) || 0;
+    bookShelfOffset = bookShelfPage * size;
+    bookShelfVisibleCache = data.files || [];
+    if (data.counts) bookShelfCountsCache[lib.id] = data.counts;
+    host.innerHTML = bookShelfPageHtml(lib, data.files || [], data.counts, data.total);
+    if (typeof scrapeVisibleBookCovers === "function") scrapeVisibleBookCovers(host);
+  } catch (e) {
+    bookRemoteState.libId = "";
+    bookRemoteState.payload = null;
+    host.innerHTML = `<div class="media-error">读取书架失败：${esc(e.message || e)}</div>`;
+  }
+}
+
+function bookRemoteReset() { bookRemoteState.libId = ""; bookRemoteState.payload = null; bookRemoteState.externalMore = ""; }
+
+/* ---------------- NFO 体检与补全（需求1） ---------------- */
+
+let nfoRepairLibId = "";
+let nfoRepairTimer = null;
+
+function openNfoRepair(libId) {
+  nfoRepairLibId = String(libId || "");
+  const prog = document.getElementById("nfoRepairProgress");
+  const list = document.getElementById("nfoRepairList");
+  if (prog) prog.innerHTML = "";
+  if (list) list.innerHTML = "";
+  openModal("nfoRepairModal");
+  pollNfoRepair();
+}
+
+async function nfoRepairCall(path, body, method) {
+  const res = await fetch(path, {
+    method: method || "POST",
+    headers: sessionWriteHeaders(method !== "GET"),
+    credentials: "same-origin",
+    body: method === "GET" || !body ? undefined : JSON.stringify(body)
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || ("HTTP " + res.status));
+  return data;
+}
+
+async function startNfoRepair(dryRun) {
+  if (!nfoRepairLibId) return;
+  try {
+    await nfoRepairCall("/api/media/nfo/repair", { id: nfoRepairLibId, limit: 500, dry_run: !!dryRun });
+    toast(dryRun ? "🩺 正在体检 NFO…" : "🩺 已开始补全 NFO…");
+    pollNfoRepair();
+  } catch (e) {
+    toast("⚠️ 启动失败：" + (e.message || e));
+  }
+}
+
+async function cancelNfoRepair() {
+  if (!nfoRepairLibId) return;
+  try { await nfoRepairCall("/api/media/nfo/repair/cancel?id=" + encodeURIComponent(nfoRepairLibId), null); }
+  catch (e) { toast("⚠️ 取消失败：" + (e.message || e)); }
+  pollNfoRepair();
+}
+
+function renderNfoRepair(data) {
+  const prog = document.getElementById("nfoRepairProgress");
+  const list = document.getElementById("nfoRepairList");
+  if (!prog) return;
+  if (!data || data.state === "idle") { prog.innerHTML = '<span class="muted">尚无任务记录。</span>'; return; }
+  const pct = Number(data.progress) || 0;
+  prog.innerHTML = `<div class="nfo-bar"><span style="width:${pct}%"></span></div>`
+    + `<div class="nfo-stats">${data.dry_run ? "体检" : "补全"} · ${data.state} · ${Number(data.scanned) || 0}/${Number(data.total) || 0}`
+    + ` · 正常 ${Number(data.ok_count) || 0} · 补全 ${Number(data.repaired) || 0} · 仍缺 ${Number(data.missing) || 0} · 失败 ${Number(data.failed) || 0} · 图片 ${Number(data.artwork) || 0}</div>`
+    + (data.message ? `<div class="muted">${esc(data.message)}</div>` : "");
+  if (!list) return;
+  const rows = (data.sample || []).slice(0, 60).map(it => {
+    const miss = (it.missing || []).join(" / ");
+    return `<li><b>${esc((it.title || it.path || "").slice(0, 80))}</b> <span class="muted">${esc(it.state)}${miss ? " · 缺 " + esc(miss) : ""}${it.provider ? " · " + esc(it.provider) : ""}</span>`;
+  }).join("");
+  list.innerHTML = rows ? `<ol class="nfo-list">${rows}</ol>` : "";
+}
+
+async function pollNfoRepair() {
+  if (!nfoRepairLibId) return;
+  if (nfoRepairTimer) { clearTimeout(nfoRepairTimer); nfoRepairTimer = null; }
+  try {
+    const data = await nfoRepairCall("/api/media/nfo/repair/status?id=" + encodeURIComponent(nfoRepairLibId), null, "GET");
+    renderNfoRepair(data);
+    if (data && data.state === "running") nfoRepairTimer = setTimeout(pollNfoRepair, 2000);
+    else if (data && data.state === "done" && Number(data.repaired) > 0) toast("✅ NFO 补全完成：" + data.repaired + " 条");
+  } catch (e) {
+    const prog = document.getElementById("nfoRepairProgress");
+    if (prog) prog.innerHTML = `<span class="muted">读取状态失败：${esc(e.message || e)}</span>`;
+  }
 }

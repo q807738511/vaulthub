@@ -87,9 +87,37 @@ const FILES = [];
 for (let i = 1; i <= 45; i++) FILES.push({ path: "/MH/book-" + String(i).padStart(2, "0") + ".cbz", size: 1024 * i, mtime: 1700000000 + i });
 const READ = new Set(FILES.slice(0, 20).map(f => f.path));
 const requests = [];
-async function fetch(url) {
+async function fetch(url, opts) {
   const u = String(url);
   requests.push(u);
+  /* v1.0.9（需求3）：书刊架改走 POST /api/media/shelf（服务端分页）。
+     这个桩按服务端语义实现：页签筛选（喜欢/已完成用上行路径）、分页、计数。 */
+  if (u.startsWith("/api/media/shelf")) {
+    const body = JSON.parse(String((opts && opts.body) || (options && options.body) || "{}"));
+    const like = new Set(body.like || []);
+    const done = new Set(body.completed || []);
+    let pool = FILES.slice();
+    if (body.tab === "like") pool = pool.filter(f => like.has(f.path));
+    else if (body.tab === "completed") pool = pool.filter(f => done.has(f.path));
+    else if (body.tab === "shelf") pool = pool.filter(f => !done.has(f.path));
+    const size = Math.max(1, Number(body.size) || 20);
+    const page = Math.max(0, Number(body.page) || 0);
+    const slice = pool.slice(page * size, page * size + size);
+    const counts = {
+      all: FILES.length,
+      like: FILES.filter(f => like.has(f.path)).length,
+      completed: FILES.filter(f => done.has(f.path)).length,
+      shelf: FILES.filter(f => !done.has(f.path)).length
+    };
+    return {
+      ok: true, status: 200,
+      json: async () => ({
+        ok: true, status: "ready", tab: body.tab || "shelf", total: pool.length,
+        page: page, size: size, pages: Math.max(1, Math.ceil(pool.length / size)),
+        has_more: (page + 1) * size < pool.length, files: slice, counts: counts
+      })
+    };
+  }
   if (u.startsWith("/api/media/files")) {
     const q = new URL("http://x" + u);
     const offset = Number(q.searchParams.get("offset") || 0);
@@ -164,7 +192,7 @@ const chk = (name, cond, extra) => {
 
   await api.loadLocalFiles("comic", lib, 0);
   const html = () => target.innerHTML;
-  /* v1.0.8（需求3）：书刊页头整块移除 —— 库名与统计属于配置信息。 */
+  /* v1.0.9（需求3）：书刊页头整块移除 —— 库名与统计属于配置信息。 */
   chk("页头已移除（不再显示库名）", !html().includes("<h1>漫画</h1>"));
   /* v0.9.86（客户要求）：漫画 / 电子书的副标题不再展示媒体库映射的空间位置，
      页头只保留「本视图 / 全库 / 本页」这些阅读相关信息。 */
@@ -174,7 +202,7 @@ const chk = (name, cond, extra) => {
   chk("标签带计数", html().includes("书架 25") && html().includes("喜欢 0") && html().includes("历史阅读 20"));
   chk("默认书架视图（扫描文件统一进书架）", api.getTab() === "shelf");
   chk("默认完整展开（不截断）", countCards() === 25, "实际 " + countCards());
-  /* v1.0.8（需求3）：「已展开全部 25 本」计数行移除，只剩完整展开本身。 */
+  /* v1.0.9（需求3）：「已展开全部 25 本」计数行移除，只剩完整展开本身。 */
   chk("默认不显示分页器与计数行", !html().includes('aria-current="page"') && !html().includes("已展开全部"));
   chk("书架视图不含已读书", !html().includes("book-01.cbz"));
   chk("封面带喜欢按钮", html().includes('class="book-card-fav '));
@@ -219,7 +247,7 @@ const chk = (name, cond, extra) => {
   await wait();
   chk("第 2 页剩余 5 本", countCards() === 5, "实际 " + countCards());
   chk("第 2 页高亮页码 2", html().includes(">2</button>") && html().includes('aria-current="page"'));
-  chk("翻页不再请求服务端", requests.filter(u => u.includes("/api/media/files")).length === before);
+  chk("翻页只打 shelf（不再拉整库索引）", requests.filter(u => u.includes("/api/media/files")).length === before);
   api.gotoBookShelfPage(0);
   await wait();
   chk("回到第 1 页", api.getPage() === 0 && countCards() === 20);

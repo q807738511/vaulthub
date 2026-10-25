@@ -57,9 +57,37 @@ const FILES = [];
 for (let i = 1; i <= 45; i++) FILES.push({ path: "/MH/book-" + String(i).padStart(2, "0") + ".cbz", size: 1024 * i });
 const READ = new Set(FILES.slice(0, 20).map(f => f.path));
 const requests = [];
-async function fetch(url) {
+async function fetch(url, opts) {
   const u = String(url);
   requests.push(u);
+  /* v1.0.9（需求3）：书刊架改走 POST /api/media/shelf（服务端分页）。
+     这个桩按服务端语义实现：页签筛选（喜欢/已完成用上行路径）、分页、计数。 */
+  if (u.startsWith("/api/media/shelf")) {
+    const body = JSON.parse(String((opts && opts.body) || (options && options.body) || "{}"));
+    const like = new Set(body.like || []);
+    const done = new Set(body.completed || []);
+    let pool = FILES.slice();
+    if (body.tab === "like") pool = pool.filter(f => like.has(f.path));
+    else if (body.tab === "completed") pool = pool.filter(f => done.has(f.path));
+    else if (body.tab === "shelf") pool = pool.filter(f => !done.has(f.path));
+    const size = Math.max(1, Number(body.size) || 20);
+    const page = Math.max(0, Number(body.page) || 0);
+    const slice = pool.slice(page * size, page * size + size);
+    const counts = {
+      all: FILES.length,
+      like: FILES.filter(f => like.has(f.path)).length,
+      completed: FILES.filter(f => done.has(f.path)).length,
+      shelf: FILES.filter(f => !done.has(f.path)).length
+    };
+    return {
+      ok: true, status: 200,
+      json: async () => ({
+        ok: true, status: "ready", tab: body.tab || "shelf", total: pool.length,
+        page: page, size: size, pages: Math.max(1, Math.ceil(pool.length / size)),
+        has_more: (page + 1) * size < pool.length, files: slice, counts: counts
+      })
+    };
+  }
   if (u.startsWith("/api/media/files")) {
     const q = new URL("http://x" + u);
     const offset = Number(q.searchParams.get("offset") || 0);
@@ -154,7 +182,7 @@ const chk = (name, cond, extra) => {
      （远程访问时这正是「操作迟缓」的主要来源）。 */
   requests.length = 0;
   await api.loadLocalFiles("comic", lib, 0);
-  chk("切换视图复用会话索引（0 次索引请求）", requests.filter(u => u.includes("/api/media/files")).length === 0,
+  chk("切换视图不再重拉整库索引", requests.filter(u => u.includes("/api/media/files")).length === 0,
     requests.filter(u => u.includes("/api/media/files")).join(" "));
   /* 复查补充（P3-5 N2）：>500 本的库必须也能完整展开 —— 旧实现用单页 limit=500
      或超大 limit，都会漏掉第 501 本之后的书籍；这里用 1200 本真实校验数量与去重。 */

@@ -74,6 +74,34 @@ async function fetch(url, options) {
   const method = (options && options.method) || "GET";
   CALLS.push(method + " " + u);
   const q = new URL("http://x" + u);
+  /* v1.0.9（需求3）：书刊架改走 POST /api/media/shelf（服务端分页）。
+     这个桩按服务端语义实现：页签筛选（喜欢/已完成用上行路径）、分页、计数。 */
+  if (u.startsWith("/api/media/shelf")) {
+    const body = JSON.parse(String((opts && opts.body) || (options && options.body) || "{}"));
+    const like = new Set(body.like || []);
+    const done = new Set(body.completed || []);
+    let pool = FILES.slice();
+    if (body.tab === "like") pool = pool.filter(f => like.has(f.path));
+    else if (body.tab === "completed") pool = pool.filter(f => done.has(f.path));
+    else if (body.tab === "shelf") pool = pool.filter(f => !done.has(f.path));
+    const size = Math.max(1, Number(body.size) || 20);
+    const page = Math.max(0, Number(body.page) || 0);
+    const slice = pool.slice(page * size, page * size + size);
+    const counts = {
+      all: FILES.length,
+      like: FILES.filter(f => like.has(f.path)).length,
+      completed: FILES.filter(f => done.has(f.path)).length,
+      shelf: FILES.filter(f => !done.has(f.path)).length
+    };
+    return {
+      ok: true, status: 200,
+      json: async () => ({
+        ok: true, status: "ready", tab: body.tab || "shelf", total: pool.length,
+        page: page, size: size, pages: Math.max(1, Math.ceil(pool.length / size)),
+        has_more: (page + 1) * size < pool.length, files: slice, counts: counts
+      })
+    };
+  }
   if (u.startsWith("/api/media/files")) {
     const offset = Number(q.searchParams.get("offset") || 0);
     const limit = Number(q.searchParams.get("limit") || 20);

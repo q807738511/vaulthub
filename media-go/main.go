@@ -3104,6 +3104,16 @@ func main() {
 	mux.HandleFunc("/api/media/scrape-cache", a.scrapeCacheHandler)
 	// v0.9.89：NFO 元数据本地化（刮削结果写回媒体目录，下次直接读本地，不再重复联网）。
 	mux.HandleFunc("/api/media/nfo", a.nfoHandler)
+	/* v1.0.9（需求1）：NFO 体检与补全 —— 服务端逐条检查本地 NFO 是否缺失/无信息，
+	   缺失就刮削（TMDB → 豆瓣）并把 NFO 与海报写回媒体同目录。 */
+	mux.HandleFunc("/api/media/nfo/repair", a.nfoRepairHandler)
+	mux.HandleFunc("/api/media/nfo/repair/status", a.nfoRepairStatus)
+	mux.HandleFunc("/api/media/nfo/repair/cancel", a.nfoRepairCancel)
+	mux.HandleFunc("/api/media/nfo/repair/one", a.nfoRepairOne)
+	/* v1.0.9（需求3）：大库服务端分页 / 音乐三级聚合 —— 前端不再下载整库索引。 */
+	mux.HandleFunc("/api/media/shelf", a.shelfBrowse)
+	mux.HandleFunc("/api/media/lookup", a.lookupPaths)
+	mux.HandleFunc("/api/media/audio/browse", a.audioBrowse)
 	/* v0.9.97：Plex 口径的多季剧集方案（命名体检 / 季集结构）与缺失集比对。 */
 	mux.HandleFunc("/api/media/series/plan", a.seriesPlan)
 	mux.HandleFunc("/api/media/series/missing", a.seriesMissing)

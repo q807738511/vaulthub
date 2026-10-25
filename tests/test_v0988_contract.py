@@ -72,7 +72,7 @@ check("2i 设置页提供阈值输入框（默认 70，可被 env 覆盖）",
       and 'data-env="SCRAPE_MIN_MATCH"' in HTML)
 check("2j 阈值三语文案齐备",
       STATE.count("scrapeMinMatchLabel:") >= 3
-      # v1.0.8（需求10）：阈值说明段落已删除
+      # v1.0.9（需求10）：阈值说明段落已删除
       and STATE.count("scrapeMinMatchHint:") == 0)
 check("2k 服务端持久化阈值（RuntimeConfig + 快照 + 校验 + 即时生效）",
       'ScrapeMinMatch' in MAIN_GO and '"scrape_min_match":    a.scrapeMinMatch' in MAIN_GO
@@ -165,15 +165,15 @@ check("4m Go 侧原盘单测存在（候选链 / 缓存 / 提示）",
 
 # ============================================================ 5. 版本与文档
 check("5a 版本号已升至 0.9.90",
-      'VAULTHUB_ASSET_VERSION = "1.0.8"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "1.0.8"' in STATE)
+      'VAULTHUB_ASSET_VERSION = "1.0.9"' in HTML and 'VAULTHUB_SCRIPT_VERSION = "1.0.9"' in STATE)
 # v0.9.92（上轮审查项）：整串一致。
 _slogans_5b = re.findall(r"v\d+\.\d+\.\d+ · [^<\"]+", HTML)
 check("5b 关于 / 侧栏 / 页脚标语整串一致",
       len(_slogans_5b) >= 2 and len(set(_slogans_5b)) == 1, sorted(set(_slogans_5b)))
 check("5c 脚本引用带新版本号",
-      "?v=1.0.8" in HTML and HTML.count("?v=1.0.8") >= 5)
+      "?v=1.0.9" in HTML and HTML.count("?v=1.0.9") >= 5)
 check("5d Update Log 顶部为 v0.9.90",
-      (ROOT / "Update Log.md").read_text(encoding="utf-8").startswith("# VaultHub 蜀鼠之家 v1.0.8"))
+      (ROOT / "Update Log.md").read_text(encoding="utf-8").startswith("# VaultHub 蜀鼠之家 v1.0.9"))
 check("5e Release Notes 存在",
       (ROOT / ".github/RELEASE_NOTES_0.9.90.md").exists())
 check("5f README 未被改动（发布说明只进 Update Log）",
