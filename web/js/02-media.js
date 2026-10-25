@@ -8416,12 +8416,21 @@ async function bookShelfPrefersRemote(lib) {
   const key = String(lib.id);
   const cached = bookRemoteProbeCache[key];
   if (cached && Date.now() - Number(cached.at || 0) < 60000) return cached.remote;
+  /* 索引里已经有总条数时直接判定，少打一次探测请求（也避免探测与登录时序打架）。 */
+  try {
+    const st = (typeof homeIndexStatus !== "undefined" && homeIndexStatus) ? homeIndexStatus[key] : null;
+    const known = Number(st && st.total);
+    if (known > BOOK_REMOTE_THRESHOLD) {
+      bookRemoteProbeCache[key] = { at: Date.now(), remote: true };
+      return true;
+    }
+  } catch (e) { /* 忽略：走探测 */ }
   try {
     const res = await fetch("/api/media/shelf", {
       method: "POST",
       headers: sessionWriteHeaders(true),
       credentials: "same-origin",
-      body: JSON.stringify({ id: key, group: "comic", tab: "all", size: 1, page: 0 })
+      body: JSON.stringify({ id: key, group: String(lib.type || "comic"), tab: "all", size: 1, page: 0 })
     });
     if (!res.ok) throw new Error("HTTP " + res.status);
     const data = await res.json();
@@ -8441,7 +8450,7 @@ async function bookShelfRemoteLoad(lib, offset) {
   const prefs = bookShelfPrefs();
   const size = Math.max(BOOK_REMOTE_PAGE_MIN, Number(prefs.pageSize) || Number(mediaPageSize) || 20);
   const page = Math.max(0, Math.floor(Number(offset) / size));
-  const body = { id: String(lib.id), group: "comic", tab: bookShelfTab, sort: prefs.sort, page, size };
+  const body = { id: String(lib.id), group: String(lib.type || "comic"), tab: bookShelfTab, sort: prefs.sort, page, size };
   if (bookShelfTab === "like") body.like = bookFavPaths(lib.id);
   if (bookShelfTab !== "like") body.completed = bookCompletedPaths(lib.id);
   host.innerHTML = `<div class="media-loading">正在读取书架…</div>`;

@@ -58,7 +58,7 @@ for marker in required:
 
 assert 'loadLocalFiles("audio"' in html
 assert 'group === "audio" ? audioPageSize' not in html, "音频分页游标已废弃（v0.9.86 整库展开）"
-# v1.0.9（需求3）：音乐库的「已展开全部 N 首 · 音乐库不再分页」统计行整行移除，
+# v1.0.10（需求3）：音乐库的「已展开全部 N 首 · 音乐库不再分页」统计行整行移除，
 # 分页与计数都不再出现在页面上，这里改为断言「确实没有计数行」。
 assert '音乐库不再分页' not in html and '已展开全部 ${' not in html, "音乐库不应再出现分页/计数提示"
 assert 'audioPageSize" onchange' not in html, "每页数量选择器应已移除"

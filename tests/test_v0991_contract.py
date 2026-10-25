@@ -121,19 +121,19 @@ check("4d 缓存用量暴露给设置页",
 check("4e 前端只保留当前库的重型缓存（切库即释放）",
       "function releaseMediaHeavyCaches(" in MEDIA
       and "function readingStateIndexRelease(" in MEDIA
-      # v1.0.9（需求8）：loadLocalFiles 变成去重外壳，实现体是 loadLocalFilesInner；
+      # v1.0.10（需求8）：loadLocalFiles 变成去重外壳，实现体是 loadLocalFilesInner；
       # 进入库时先释放其它库重缓存的行为必须原样保留。
       and re.search(r"async function loadLocalFilesInner\(group, lib, offset = 0, token = 0\) \{[\s\S]{0,400}releaseMediaHeavyCaches\(lib\.id\)", MEDIA) is not None)
 
 # ============ 5) 版本与文档 ============
-check("5a 资源版本号已升至本版（≥10 处）", HTML.count("?v=1.0.9") >= 10)
+check("5a 资源版本号已升至本版（≥10 处）", HTML.count("?v=1.0.10") >= 10)
 check("5b ASSET_VERSION / SCRIPT_VERSION = 0.9.91",
-      'window.VAULTHUB_ASSET_VERSION = "1.0.9";' in HTML
-      and 'const VAULTHUB_SCRIPT_VERSION = "1.0.9";' in STATE)
+      'window.VAULTHUB_ASSET_VERSION = "1.0.10";' in HTML
+      and 'const VAULTHUB_SCRIPT_VERSION = "1.0.10";' in STATE)
 slogans = re.findall(r"v\d+\.\d+\.\d+ · [^<\"]+", HTML)
 check("5c 三处标语完全一致（审查项：断言强度，不只是前缀）",
       len(slogans) == 3 and len(set(slogans)) == 1, sorted(set(slogans)))
-check("5d 更新日志顶部为 v0.9.97", LOG.lstrip().startswith("# VaultHub 蜀鼠之家 v1.0.9"))
+check("5d 更新日志顶部为 v0.9.97", LOG.lstrip().startswith("# VaultHub 蜀鼠之家 v1.0.10"))
 check("5e 发布说明存在且覆盖四项反馈",
       (ROOT / ".github/RELEASE_NOTES_0.9.91.md").is_file()
       and "解/转码风向标" in NOTES and "下滑自动翻页" in NOTES

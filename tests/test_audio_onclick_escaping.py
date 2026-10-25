@@ -14,7 +14,7 @@ assert "playAudioFile('${esc(lib.id)}','${esc(songs[0].path)}')" not in html, "a
 assert "openAudioMetadata('${esc(file.path)}')" not in html, "manual metadata handler still uses HTML escaping as JS escaping"
 assert 'onclick="playAudioFile(${jsAttrArg(lib.id)},${jsAttrArg(file.path)})"' in html or 'onclick="playAudioFile(${jsAttrArg(lib.id)},${jsAttrArg(path)})"' in html, "file view play handler does not use HTML-attribute-safe JS literals"
 assert 'openAudioTracks(\'${esc(lib.id)}\',\'album\',${esc(JSON.stringify(album))})' in html, "album card track handler is not HTML-attribute-safe"
-# v1.0.9（需求5）：歌手卡片改为进入「该歌手的专辑」层（openAudioArtist），
+# v1.0.10（需求5）：歌手卡片改为进入「该歌手的专辑」层（openAudioArtist），
 # 专辑名仍走 JSON 转义；两种入口都必须保持 HTML 属性安全。
 assert 'openAudioArtist(\'${esc(lib.id)}\',${jsAttrArg(artist)})' in html, "artist card handler is not HTML-attribute-safe"
 # v0.9.56：曲目行整行可点击播放，行内编辑按钮带 stopPropagation 前缀

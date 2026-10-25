@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""v1.0.9 契约测试：NFO 体检补全 · 音乐库去入口卡 · 大库服务端分页/聚合。
+"""v1.0.10 契约测试：NFO 体检补全 · 音乐库去入口卡 · 大库服务端分页/聚合。
 
 纯静态契约（不联网、不起容器），钉住：
   1. 服务端三个新接口与它们的鉴权、边界与响应字段；
   2. NFO 补全「只填不改」的写入语义与海报命名；
   3. 前端不再拉整库索引（无 fetchAllLibraryFiles 残留调用点）；
   4. 音乐库首页没有喜欢/歌单入口卡，播放器有四个收藏相关按钮；
-  5. 版本纪律 1.0.9 全链路一致 + 源码不含内网字面量。
+  5. 版本纪律 1.0.10 全链路一致 + 源码不含内网字面量。
 """
 import io
 import json
@@ -118,13 +118,13 @@ check("轮询状态", "/api/media/nfo/repair/status" in media)
 check("进度条样式", ".nfo-bar" in css)
 
 print("== 7. 版本纪律 ==")
-check("index.html ?v=1.0.9 ×12", index.count("?v=1.0.9") >= 12)
-check("ASSET 版本 1.0.9", 'window.VAULTHUB_ASSET_VERSION = "1.0.9"' in index)
+check("index.html ?v=1.0.10 ×12", index.count("?v=1.0.10") >= 12)
+check("ASSET 版本 1.0.10", 'window.VAULTHUB_ASSET_VERSION = "1.0.10"' in index)
 state = read("web/js/01-state.js")
-check("SCRIPT 版本 1.0.9", 'VAULTHUB_SCRIPT_VERSION = "1.0.9"' in state)
-check("标语含本版关键词", "v1.0.9" in index and "NFO 补全" in index)
-check("Update Log 首行为 1.0.9", read("Update Log.md").splitlines()[0].strip() == "# VaultHub 蜀鼠之家 v1.0.9")
-check("RELEASE_NOTES 1.0.9 存在", os.path.exists(os.path.join(ROOT, ".github", "RELEASE_NOTES_1.0.9.md")))
+check("SCRIPT 版本 1.0.10", 'VAULTHUB_SCRIPT_VERSION = "1.0.10"' in state)
+check("标语含本版关键词", "v1.0.10" in index and "NFO 补全" in index)
+check("Update Log 首行为 1.0.10", read("Update Log.md").splitlines()[0].strip() == "# VaultHub 蜀鼠之家 v1.0.10")
+check("RELEASE_NOTES 1.0.10 存在", os.path.exists(os.path.join(ROOT, ".github", "RELEASE_NOTES_1.0.9.md")))
 
 print("== 8. 源码禁用字面量 ==")
 for pat in [r"enged\.top", r"192\.168\.", r"/vol[1-4]"]:

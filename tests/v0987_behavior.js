@@ -202,7 +202,7 @@ chk("E3 读取后原文生效（详情页语言立即跟随）", run(media3, "tm
 /* ================= F. i18n 三语齐备（真实词典，非桩） ================= */
 ["zh-CN", "zh-TW", "en"].forEach(lang => {
   const d = I18N_DICTS[lang];
-  /* v1.0.9（需求10）：地区说明文案已删除，只要求标签与四个选项齐备。 */
+  /* v1.0.10（需求10）：地区说明文案已删除，只要求标签与四个选项齐备。 */
   chk(`F1 ${lang} 刮削地区文案齐备（标签/四选项）`,
     !!(d.scrapeRegionLabel && d.scrapeRegionAuto && d.scrapeRegionCn && d.scrapeRegionJp && d.scrapeRegionUs));
   chk(`F2 ${lang} 队列通知文案带 {{ok}}/{{total}} 占位符`,

@@ -84,7 +84,7 @@ assert ".movie-detail-hero.poster-art::before, .movie-detail-hero.backdrop-art::
 
 # v0.9.30：影视库必须一次加载全部媒体文件
 assert "if (group === \"movie\" && data.has_more && !fromSession)" in JS
-# v1.0.9（需求3）：影视库底部的「已加载全部 N / N 项」计数已移除，只保留导航。
+# v1.0.10（需求3）：影视库底部的「已加载全部 N / N 项」计数已移除，只保留导航。
 assert "已加载全部 ${files.length} / ${total} 项" not in JS
 # 剧集缓存只存详情页真正读的字段，避免 localStorage 配额溢出后静默丢失
 assert "function seriesShowCacheShape(show)" in JS

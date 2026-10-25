@@ -54,20 +54,33 @@ func extSet(list ...string) map[string]bool {
 	return out
 }
 
+// bookComicExts 是书刊视图的扩展名并集 —— 前端 supportedLocalMediaFile("comic")
+// 就是 book ∪ comic，服务端必须一致，否则「电子书库里 .txt + .cover.jpg 混排」
+// 这类库会被判成只有几个 zip 文件（生产实测 184,693 条被算成 2 条）。
+var bookComicExts = func() map[string]bool {
+	out := map[string]bool{}
+	for _, k := range []string{"book", "comic"} {
+		for e := range browseExts[k] {
+			out[e] = true
+		}
+	}
+	return out
+}()
+
 // browseGroupFor 把库类型映射到扩展名分组。音乐 MV 库按视频口径。
 func browseGroupFor(lib Library, want string) map[string]bool {
 	switch want {
-	case "book", "comic", "audio", "movie", "series":
+	case "book", "comic":
+		return bookComicExts
+	case "audio", "movie", "series":
 		if want == "audio" && lib.Type == "musicvideo" {
 			return browseExts["movie"]
 		}
 		return browseExts[want]
 	}
 	switch lib.Type {
-	case "book":
-		return browseExts["book"]
-	case "comic":
-		return browseExts["comic"]
+	case "book", "comic":
+		return bookComicExts
 	case "audio":
 		return browseExts["audio"]
 	case "series":

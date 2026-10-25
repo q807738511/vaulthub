@@ -32,10 +32,10 @@ check("T1 旧侧栏横滑实现已删除",
       and "initSidebarNavOverflowWatch();" not in BOOT)
 
 # ============ T2 音乐专辑/歌手点击逻辑 ============
-# v1.0.9（需求3）：openAudioTracks 不再拉整库，改向服务端要该分组的曲目。
+# v1.0.10（需求3）：openAudioTracks 不再拉整库，改向服务端要该分组的曲目。
 check("T2 openAudioTracks 整单拉取", "async function openAudioTracks(libId, kind, key)" in JS
       and 'const files = await audioGroupFiles(lib.id, kind, String(key));' in JS)
-check("T2 按 kind 过滤（v1.0.9 改为服务端按 artist/album 查询）",
+check("T2 按 kind 过滤（v1.0.10 改为服务端按 artist/album 查询）",
       'artist: kind === "artist" ? String(key)' in JS and 'album: kind === "artist" ? "" : String(key)' in JS)
 check("T2 曲目行整行播放", "audio-row-click" in JS and 'onclick="playAudioFile(' in JS)
 check("T2 行内按钮 stopPropagation", JS.count("event.stopPropagation()") >= 6)
@@ -74,7 +74,7 @@ check("T3 圆形头像 CSS", ".audio-artist-cover img.audio-artist-avatar" in CS
 check("T3b 编辑弹窗", 'id="audioGroupEditModal"' in HTML and 'id="audioGroupEditName"' in HTML and 'id="audioGroupEditCover"' in HTML)
 check("T3b 保存按钮", 'onclick="saveAudioGroupEdit()"' in HTML)
 check("T3b 打开编辑函数", "async function openAudioGroupEdit(kind, key)" in JS)
-# v1.0.9（需求3）：编辑歌手/专辑也走服务端分组查询，不再拉整库索引。
+# v1.0.10（需求3）：编辑歌手/专辑也走服务端分组查询，不再拉整库索引。
 check("T3b 分组拉取走服务端", "async function audioGroupFilesAll(kind, key)" in JS
       and "audioBrowseFetch(lib, \"tracks\"" in JS)
 check("T3b 批量写入 manual", "async function saveAudioGroupEdit()" in JS and 'provider: "manual"' in JS)
@@ -84,8 +84,8 @@ check("T3b 歌手卡片编辑按钮跳转歌曲列表", 'openAudioGroupEdit(' in
       or "openAudioTracks('${esc(lib.id)}','artist'" in JS)
 
 # ============ T3c 喜欢栏目 + 播放器喜欢按钮（v0.9.56） ============
-# v1.0.9（需求4）：右上角页签整条移除，喜欢改为歌手网格前的入口卡，功能不变。
-# v1.0.9（需求2）：歌手网格前的喜欢/歌单入口卡移除，入口收进播放器。
+# v1.0.10（需求4）：右上角页签整条移除，喜欢改为歌手网格前的入口卡，功能不变。
+# v1.0.10（需求2）：歌手网格前的喜欢/歌单入口卡移除，入口收进播放器。
 check("T3c 喜欢入口（播放器）", 'id="audioFavoritesButton"' in HTML and "openAudioFavoritesView()" in JS)
 check("T3c 喜欢视图渲染", "function renderAudioFavorites(lib)" in JS and "function audioFavoriteRows()" in JS)
 check("T3c 曲目行喜欢按钮", 'title="喜欢"' in JS and "toggleAudioFavorite(" in JS)
@@ -109,10 +109,10 @@ check("T4 缩略图 + 集号角标", "series-episode-thumb" in JS and "series-ep
 check("T4 整卡点击播放", 'onclick="openLocalMedia(\'movie\'' in JS)
 check("T4 集卡片不再含「详情」按钮（v0.9.84 改网格直点播放）", 'onclick="event.stopPropagation();openEpisodeDetails(' not in JS and "openEpisodeDetails(" in JS)
 # v0.9.99：容器类名改为 series-episode-list series-episode-list-rest（首条 + 季度前缀留在外层）。
-# v1.0.9（需求1）：季度版式回归 0.9.89 —— 首条前缀行取消，全部集回到同一个网格容器。
-check("T4 容器 series-episode-list（v1.0.9 起全部分集同网格）",
+# v1.0.10（需求1）：季度版式回归 0.9.89 —— 首条前缀行取消，全部集回到同一个网格容器。
+check("T4 容器 series-episode-list（v1.0.10 起全部分集同网格）",
       'class="series-episode-list"' in JS and "series-episode-list-rest" not in JS)
-# v1.0.9（需求3）：元数据取路改用「真视频的第一集」，避免拿到 poster.jpg。
+# v1.0.10（需求3）：元数据取路改用「真视频的第一集」，避免拿到 poster.jpg。
 check("T4 剧集封面/取路传入",
       "seriesFirstVideoPath(show)" in JS or "const firstPath = show.files?.[0]?.path" in JS
       or "const episodeArt = show.poster || show.fanart || show.backdrop" in JS)
@@ -130,14 +130,14 @@ check("T5 主页无更新日志流水", "## 功能介绍" in README and "v0.9.55
 for fname, txt in [("README.md", README), ("Update Log.md", UPDATELOG)]:
     if fname == "README.md":
         txt = re.sub(r"欢迎体验https://[^\s]+", "", txt)
-    # v1.0.9：README 里人工维护的公开体验地址（「欢迎体验 …」）不算部署配置泄漏。
+    # v1.0.10：README 里人工维护的公开体验地址（「欢迎体验 …」）不算部署配置泄漏。
     if fname == "README.md":
         txt = "\n".join(l for l in txt.splitlines() if "欢迎体验" not in l)
     check(f"T5 {fname} 无真实部署地址", not re.search(r"enged\.top|192\.168\.|/vol[1-4]", txt), fname)
 
 # ============ 版本号 ============
 check("版本 HTML >=2", HTML.count("v0.9.56") >= 2)
-check("版本 script 变量", 'VAULTHUB_SCRIPT_VERSION = "1.0.9"' in STATE)
+check("版本 script 变量", 'VAULTHUB_SCRIPT_VERSION = "1.0.10"' in STATE)
 check("版本 release notes 存在", (ROOT / ".github/RELEASE_NOTES_0.9.56.md").exists())
 
 if fails:

@@ -197,3 +197,21 @@ func TestV1009ArtworkSidecarName(t *testing.T) {
 		t.Fatalf("背景图命名 = %q", got)
 	}
 }
+
+func TestV1009BookComicExts(t *testing.T) {
+	// 书刊视图必须是 book ∪ comic：生产电子书库是 .txt + .cover.jpg 混排，
+	// 只按 comic 集合过滤会把 18.4 万条算成 2 条（实测事故）。
+	lib := Library{ID: "b1", Type: "book"}
+	exts := browseGroupFor(lib, "comic")
+	for _, want := range []string{"txt", "epub", "cbz", "jpg"} {
+		if !exts[want] {
+			t.Fatalf("书刊扩展名并集缺少 %s", want)
+		}
+	}
+	if got := browseGroupFor(Library{Type: "musicvideo"}, "audio"); !got["mkv"] {
+		t.Fatalf("MV 库应按视频口径")
+	}
+	if got := browseGroupFor(Library{Type: "audio"}, ""); !got["mp3"] || got["txt"] {
+		t.Fatalf("音频库扩展名错误")
+	}
+}
