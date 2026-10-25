@@ -13,7 +13,9 @@ NOTES = ROOT / ".github/RELEASE_NOTES_0.9.69.md"
 
 checks = {
     # 1. 专辑 / 歌手海报标签上的编辑按钮移除，编辑入口合并到曲目列表
-    "卡片移除专辑编辑按钮": 'title="编辑专辑"' not in MEDIA,
+    # v1.0.8（需求5）：专辑编辑按钮回到「某歌手的专辑」卡片上（二级页），
+    # 一级歌手网格仍不带编辑按钮。
+    "专辑编辑按钮只在歌手专辑页": 'title="编辑专辑"' in MEDIA and 'title="编辑歌手"' not in MEDIA,
     "卡片移除歌手编辑按钮": 'title="编辑歌手"' not in MEDIA,
     "曲目列表保留专辑编辑入口": "openAudioGroupEdit(" in MEDIA
         and MEDIA.count("openAudioGroupEdit(") >= 2,
@@ -43,8 +45,8 @@ checks = {
     "磨砂模糊半径降低": "blur(14px) saturate(1.1) brightness(.66)" in CSS,
 
     # 版本与发布资料
-    "HTML版本": 'VAULTHUB_ASSET_VERSION = "1.0.7"' in HTML and HTML.count("?v=1.0.7") >= 7,
-    "脚本版本": 'VAULTHUB_SCRIPT_VERSION = "1.0.7"' in STATE,
+    "HTML版本": 'VAULTHUB_ASSET_VERSION = "1.0.8"' in HTML and HTML.count("?v=1.0.8") >= 7,
+    "脚本版本": 'VAULTHUB_SCRIPT_VERSION = "1.0.8"' in STATE,
     "发布说明": NOTES.exists(),
 }
 

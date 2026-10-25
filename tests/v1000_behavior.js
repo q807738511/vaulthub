@@ -134,7 +134,7 @@ function fakeNode(opts) {
 
     chk("A5 迁移提示行已从源码删除（渲染与样式都不再引用）",
       MEDIA_SRC.indexOf("多季诊断与多季全量刮削已移到") < 0 && MEDIA_SRC.indexOf("series-plex-moved") < 0);
-    /* v1.0.7（需求1）：「季度」二字改为季名行内的加粗 span。 */
+    /* v1.0.8（需求1）：「季度」二字改为季名行内的加粗 span。 */
     const INLINE = '<span class="season-inline-title">季度</span>';
     chk("A6 独立成行的「季度」标题区块已从源码移除",
       MEDIA_SRC.indexOf('<section><h3 class="detail-section-h">季度</h3></section>') < 0);

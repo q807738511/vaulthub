@@ -10,7 +10,7 @@
   4. 前端配套：未登录跳过启动拉取、登录后补拉、首页轮询门槛、播放器写/读服务端进度；
   5. 契约字符串与别名：错误文案不变、archive/caddyfile 别名 canonical 标注；
   6. 跨服务隐式契约：media-go 只认 /api/session/check 的 200；
-  7. 版本纪律：1.0.7 全链路一致；
+  7. 版本纪律：1.0.8 全链路一致（bump 后本文件跟随当前版本）；
   8. 禁用字面量：内网地址 / 容器卷路径不得进源码。
 """
 import re
@@ -28,7 +28,7 @@ GOPROGTEST = (ROOT / "media-go/v1007_playback_progress_test.go").read_text(encod
 OPENAPI = (ROOT / "docs/api/openapi.yaml").read_text(encoding="utf-8")
 INVENTORY = (ROOT / "docs/api/ROUTE_INVENTORY.md").read_text(encoding="utf-8")
 CTESTS = (ROOT / "docs/api/CONTRACT_TESTS.md").read_text(encoding="utf-8")
-VERSION = "1.0.7"
+VERSION = "1.0.8"
 
 checks = []
 
@@ -54,17 +54,22 @@ check("1e cover 公开为显式决策",
       "有意决策" in OPENAPI and "分享" in OPENAPI)
 
 # ---------------- 2. 五端点收紧 ----------------
+# 注：注释里的版本号是历史标注（收紧发生在 v1.0.7），断言只认「契约收紧」这个标记本身。
 check("2a libraries GET 需会话",
-      'if r.Method == "GET" {\n\t\t/* v1.0.7 契约收紧' in GOMAIN
+      'if r.Method == "GET" {\n\t\t/* v' in GOMAIN and "契约收紧" in GOMAIN.split('func (a *App) libraries(')[1][:400]
       and "readAuth(r)" in GOMAIN.split('func (a *App) libraries(')[1][:400])
 check("2b indexStatus 需会话",
-      "func (a *App) indexStatus(w http.ResponseWriter, r *http.Request) {\n\t/* v1.0.7 契约收紧" in GOMAIN)
+      "func (a *App) indexStatus(w http.ResponseWriter, r *http.Request) {\n\t/* v" in GOMAIN
+      and "readAuth(r)" in GOMAIN.split("func (a *App) indexStatus(")[1][:400])
 check("2c probe 需会话",
-      'mux.HandleFunc("/api/media/probe", func(w http.ResponseWriter, r *http.Request) {\n\t\t/* v1.0.7' in GOMAIN)
+      'mux.HandleFunc("/api/media/probe", func(w http.ResponseWriter, r *http.Request) {\n\t\t/* v' in GOMAIN
+      and "readAuth(r)" in GOMAIN.split('mux.HandleFunc("/api/media/probe"')[1][:400])
 check("2d hardware 需会话",
-      'mux.HandleFunc("/api/media/hardware", func(w http.ResponseWriter, r *http.Request) {\n\t\t/* v1.0.7' in GOMAIN)
+      'mux.HandleFunc("/api/media/hardware", func(w http.ResponseWriter, r *http.Request) {\n\t\t/* v' in GOMAIN
+      and "readAuth(r)" in GOMAIN.split('mux.HandleFunc("/api/media/hardware"')[1][:400])
 check("2e scrapers 需会话",
-      'mux.HandleFunc("/api/media/scrapers", func(w http.ResponseWriter, r *http.Request) {\n\t\t/* v1.0.7' in GOMAIN)
+      'mux.HandleFunc("/api/media/scrapers", func(w http.ResponseWriter, r *http.Request) {\n\t\t/* v' in GOMAIN
+      and "readAuth(r)" in GOMAIN.split('mux.HandleFunc("/api/media/scrapers"')[1][:400])
 check("2f 收紧后五个端点均在鉴权后才产出数据",
       all(seg.split("login required")[0].count("readAuth") >= 1
           for seg in [GOMAIN.split('mux.HandleFunc("/api/media/probe"')[1][:300],
@@ -123,12 +128,12 @@ check("6a media-go 回环校验 session/check",
       "/api/session/check" in GOMAIN and "http.StatusOK" in GOMAIN)
 
 # ---------------- 7. 版本纪律 ----------------
-check("7a index.html 资源查询串全部 1.0.7",
-      HTML.count("?v=1.0.7") >= 12 and "?v=1.0.6" not in HTML)
+check("7a index.html 资源查询串全部 1.0.8",
+      HTML.count("?v=1.0.8") >= 12 and "?v=1.0.6" not in HTML)
 check("7b 资源版本常量", f'VAULTHUB_ASSET_VERSION = "{VERSION}"' in HTML or f"VAULTHUB_ASSET_VERSION='{VERSION}'" in HTML
       or f'VAULTHUB_ASSET_VERSION = \'{VERSION}\'' in HTML or f'"{VERSION}"' in HTML.split("VAULTHUB_ASSET_VERSION")[1][:40])
 check("7c 脚本版本常量", f'VAULTHUB_SCRIPT_VERSION = "{VERSION}"' in STATE)
-check("7d 页尾标语含本版关键词", "1.0.7" in HTML and "继续观看" in HTML)
+check("7d 页尾标语含当前版本", "v1.0.8 ·" in HTML and "刮削落盘" in HTML)
 
 # ---------------- 8. 禁用字面量 ----------------
 FORBIDDEN = [r"enged\.top", r"192\.168\.", r"/vol[1-4]"]
@@ -145,5 +150,5 @@ for name, ok, detail in checks:
     print(("PASS: " if ok else "FAIL: ") + name + (f"  [{detail}]" if detail and not ok else ""))
 print(f"\nSUMMARY {len(checks) - len(failed)}/{len(checks)} PASS")
 if failed:
-    raise SystemExit("FAIL: v1.0.7 契约测试未通过")
-print("PASS: v1.0.7 契约（文档入库 / 端点收紧 / 播放进度持久化 / 前端配套）全部满足")
+    raise SystemExit("FAIL: v1.0.8 契约测试未通过")
+print("PASS: v1.0.8 契约（文档入库 / 端点收紧 / 播放进度持久化 / 前端配套）全部满足")

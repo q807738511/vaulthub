@@ -287,10 +287,10 @@ const GO_SCAN = fs.readFileSync(ROOT + "/media-go/scan_walk.go", "utf8");
 
   /* ================= E. 版本与脱敏 ================= */
   {
-    chk("E1 资源版本本版（≥10 处）", (HTML_SRC.match(/\?v=1\.0\.7/g) || []).length >= 10);
+    chk("E1 资源版本本版（≥10 处）", (HTML_SRC.match(/\?v=1\.0\.8/g) || []).length >= 10);
     chk("E2 ASSET_VERSION / SCRIPT_VERSION = 0.9.97",
-        HTML_SRC.includes('window.VAULTHUB_ASSET_VERSION = "1.0.7";')
-        && STATE_SRC.includes('const VAULTHUB_SCRIPT_VERSION = "1.0.7";'));
+        HTML_SRC.includes('window.VAULTHUB_ASSET_VERSION = "1.0.8";')
+        && STATE_SRC.includes('const VAULTHUB_SCRIPT_VERSION = "1.0.8";'));
     const slogans = (HTML_SRC.match(/v\d+\.\d+\.\d+ · [^<"]+/g) || []);
     chk("E3 三处标语整串一致", slogans.length === 3 && new Set(slogans).size === 1, [...new Set(slogans)]);
     const notes = fs.readFileSync(ROOT + "/.github/RELEASE_NOTES_0.9.92.md", "utf8");

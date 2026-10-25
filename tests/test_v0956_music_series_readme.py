@@ -80,7 +80,8 @@ check("T3b 歌手卡片编辑按钮跳转歌曲列表", 'openAudioGroupEdit(' in
       or "openAudioTracks('${esc(lib.id)}','artist'" in JS)
 
 # ============ T3c 喜欢栏目 + 播放器喜欢按钮（v0.9.56） ============
-check("T3c 喜欢页签", '♥ 喜欢' in JS and 'setAudioView(\'favorites\')' in JS)
+# v1.0.8（需求4）：右上角页签整条移除，喜欢改为歌手网格前的入口卡，功能不变。
+check("T3c 喜欢入口", 'audio-entry-card' in JS and "setAudioView('favorites')" in JS)
 check("T3c 喜欢视图渲染", "function renderAudioFavorites(lib)" in JS and "function audioFavoriteRows()" in JS)
 check("T3c 曲目行喜欢按钮", 'title="喜欢"' in JS and "toggleAudioFavorite(" in JS)
 check("T3c 播放器喜欢按钮", 'id="audioFavoriteButton"' in HTML and 'onclick="toggleActiveAudioFavorite()"' in HTML)
@@ -103,10 +104,10 @@ check("T4 缩略图 + 集号角标", "series-episode-thumb" in JS and "series-ep
 check("T4 整卡点击播放", 'onclick="openLocalMedia(\'movie\'' in JS)
 check("T4 集卡片不再含「详情」按钮（v0.9.84 改网格直点播放）", 'onclick="event.stopPropagation();openEpisodeDetails(' not in JS and "openEpisodeDetails(" in JS)
 # v0.9.99：容器类名改为 series-episode-list series-episode-list-rest（首条 + 季度前缀留在外层）。
-# v1.0.7（需求1）：季度版式回归 0.9.89 —— 首条前缀行取消，全部集回到同一个网格容器。
-check("T4 容器 series-episode-list（v1.0.7 起全部分集同网格）",
+# v1.0.8（需求1）：季度版式回归 0.9.89 —— 首条前缀行取消，全部集回到同一个网格容器。
+check("T4 容器 series-episode-list（v1.0.8 起全部分集同网格）",
       'class="series-episode-list"' in JS and "series-episode-list-rest" not in JS)
-# v1.0.7（需求3）：元数据取路改用「真视频的第一集」，避免拿到 poster.jpg。
+# v1.0.8（需求3）：元数据取路改用「真视频的第一集」，避免拿到 poster.jpg。
 check("T4 剧集封面/取路传入",
       "seriesFirstVideoPath(show)" in JS or "const firstPath = show.files?.[0]?.path" in JS
       or "const episodeArt = show.poster || show.fanart || show.backdrop" in JS)
@@ -128,7 +129,7 @@ for fname, txt in [("README.md", README), ("Update Log.md", UPDATELOG)]:
 
 # ============ 版本号 ============
 check("版本 HTML >=2", HTML.count("v0.9.56") >= 2)
-check("版本 script 变量", 'VAULTHUB_SCRIPT_VERSION = "1.0.7"' in STATE)
+check("版本 script 变量", 'VAULTHUB_SCRIPT_VERSION = "1.0.8"' in STATE)
 check("版本 release notes 存在", (ROOT / ".github/RELEASE_NOTES_0.9.56.md").exists())
 
 if fails:

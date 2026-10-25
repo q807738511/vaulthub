@@ -118,7 +118,8 @@ chk("D4 刮削入口仍在系统设置（自动扫描 / 逐项扫描）", mediaC
 const audioHtml = run(media, `(() => { const host = { innerHTML: "", querySelector: () => null, querySelectorAll: () => [] }; renderAudioLibraryContent(host, {id:"a1",name:"音乐"}, [{path:"/M/a.mp3"}], {total:1}); return host.innerHTML; })()`);
 chk("E1 音乐渲染无上一页/下一页", !audioHtml.includes("上一页") && !audioHtml.includes("下一页"), audioHtml.slice(0, 120));
 chk("E2 音乐渲染无每页选择器", !audioHtml.includes("audioPageSize"));
-chk("E3 音乐渲染给出整库展开统计", audioHtml.includes("已展开全部 1 首"), audioHtml.match(/已展开全部[^<]*/));
+/* v1.0.8（需求3）：整库展开统计行移除，音乐库页面不再出现任何计数文案。 */
+chk("E3 音乐渲染不再输出整库展开统计", !/已展开全部/.test(audioHtml), audioHtml.match(/已展开全部[^<]*/));
 
 /* ============ 六、逐项扫描与编辑（静态行为） ============ */
 chk("F1 逐项扫描标题优先人工名称", run(media, `libraryItemScanTitle("/M/a.mkv")`) !== undefined);

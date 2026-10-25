@@ -2722,3 +2722,51 @@ html[data-spec="plex"] .vc-play { border-radius: 50%; background: rgba(229,160,1
 .spec-doc-meta { color: var(--text3); font-size: 12px; margin: 0 0 14px; }
 .spec-doc-meta code { margin-left: 6px; padding: 1px 6px; border-radius: 4px; background: var(--card2); }
 .spec-doc-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ===================== v1.0.8 =====================
+   需求2：内容区自适应居中 + 跨端（网页 / Win・Linux 桌面 / 安卓 WebView）适配。
+   需求6：音乐播放器圆形按钮内外双描边，低对比背景也能看出按钮边界。
+   逻辑全部放在服务端下发的这一份 CSS 里，客户端不分叉 —— 桌面壳与安卓 App
+   用的是同一份样式，只按视口宽度与安全区自适应。 */
+:root { --vh-content-max: clamp(920px, 94vw, 1780px); }
+.main .content { box-sizing: border-box; }
+.main .content > .view { width: 100%; max-width: var(--vh-content-max); margin-inline: auto; }
+@media (max-width: 900px) {
+  .main .content { padding-left: clamp(10px, 3vw, 18px); padding-right: clamp(10px, 3vw, 18px); }
+}
+/* 安卓 / iOS WebView 的刘海与手势区：留出安全边距，内容不被切掉。 */
+@supports (padding: max(0px)) {
+  .main .content {
+    padding-left: max(clamp(10px, 3vw, 18px), env(safe-area-inset-left));
+    padding-right: max(clamp(10px, 3vw, 18px), env(safe-area-inset-right));
+  }
+}
+@media (min-width: 1800px) {
+  .media-poster-grid { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
+  .audio-album-grid { grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); }
+}
+/* 播放器圆形按钮：内侧细亮环 + 外侧暗环，深浅背景下都有边界感。 */
+.audio-player-controls button {
+  border: 1px solid rgba(255, 255, 255, .62);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .62), 0 2px 10px rgba(0, 0, 0, .45);
+}
+.audio-player-controls button:hover { border-color: #fff; }
+.audio-player-controls button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.reader-theme-light .audio-player-controls button {
+  border-color: rgba(0, 0, 0, .55);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .85), 0 2px 10px rgba(0, 0, 0, .22);
+}
+.audio-player-controls button.audio-play-btn {
+  border-color: color-mix(in srgb, var(--accent) 60%, #fff);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, .45), 0 6px 20px var(--accent-glow);
+}
+.audio-player .audio-cover-zoom-btn {
+  border: 1px solid rgba(255, 255, 255, .55);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .5);
+}
+/* 音乐库页首的「喜欢 / 歌单」入口卡（页签移除后的唯一入口）。 */
+.audio-entry-card .audio-entry-cover {
+  display: flex; align-items: center; justify-content: center;
+  font-size: 46px; line-height: 1; color: rgba(255, 255, 255, .94);
+}
+.audio-entry-card { cursor: pointer; }

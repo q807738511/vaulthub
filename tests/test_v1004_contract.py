@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""v1.0.7 契约测试 —— 10 项修正的落点检查。
+"""v1.0.8 契约测试 —— 10 项修正的落点检查。
 
 覆盖：
   1. TV 操作模式：鼠标 / 遥控 / 键盘规则 + 焦点保护 + CSS 定位
@@ -46,7 +46,7 @@ def check(name, cond, detail=""):
 
 
 print("1. TV 操作模式：鼠标 / 遥控 / 键盘规则（需求1）")
-check("1a 焦点层脚本存在且带版本串", (ROOT / "web/js/08-focus.js").exists() and "/web/js/08-focus.js?v=1.0.7" in HTML)
+check("1a 焦点层脚本存在且带版本串", (ROOT / "web/js/08-focus.js").exists() and "/web/js/08-focus.js?v=1.0.8" in HTML)
 check("1b 焦点层排在业务脚本之后、启动脚本之前",
       HTML.index("/web/js/08-focus.js") < HTML.index("/web/js/04-boot.js")
       and HTML.index("/web/js/08-focus.js") > HTML.index("/web/js/02-media.js"))
@@ -199,15 +199,15 @@ check("10b 入口页里的说明段落已删干净", not stale, f"残留 {stale}
 check("10c 强调色副标题不再渲染", 'swatch-label">${esc(t("themeAccentHint"))}' not in THEME)
 
 print("11. 版本纪律")
-check("11a 资源串 ?v=1.0.7 ≥ 12 处", HTML.count("?v=1.0.7") >= 12, HTML.count("?v=1.0.7"))
-check("11b 资源版本 / 脚本版本 = 1.0.7",
-      'window.VAULTHUB_ASSET_VERSION = "1.0.7";' in HTML and 'const VAULTHUB_SCRIPT_VERSION = "1.0.7";' in STATE)
+check("11a 资源串 ?v=1.0.8 ≥ 12 处", HTML.count("?v=1.0.8") >= 12, HTML.count("?v=1.0.8"))
+check("11b 资源版本 / 脚本版本 = 1.0.8",
+      'window.VAULTHUB_ASSET_VERSION = "1.0.8";' in HTML and 'const VAULTHUB_SCRIPT_VERSION = "1.0.8";' in STATE)
 check("11c 三处标语整串一致",
-      HTML.count("v1.0.7 · 契约冻结 · 端点收紧 · 继续观看") == 3)
-check("11d 安装/升级脚本版本", 'VERSION="v1.0.7"' in (ROOT / "scripts/install.sh").read_text(encoding="utf-8")
-      and 'VERSION="v1.0.7"' in (ROOT / "scripts/upgrade.sh").read_text(encoding="utf-8"))
-check("11e 字幕 API UA 升版", "VaultHub-Subtitle/1.0.7" in (ROOT / "subtitle-api/main.go").read_text(encoding="utf-8"))
-check("11f Update Log 首行是本版", LOG.splitlines()[0].strip() == "# VaultHub 蜀鼠之家 v1.0.7", LOG.splitlines()[0])
+      HTML.count("v1.0.8 · 转码可拖动 · 音乐按歌手 · 刮削落盘") == 3)
+check("11d 安装/升级脚本版本", 'VERSION="v1.0.8"' in (ROOT / "scripts/install.sh").read_text(encoding="utf-8")
+      and 'VERSION="v1.0.8"' in (ROOT / "scripts/upgrade.sh").read_text(encoding="utf-8"))
+check("11e 字幕 API UA 升版", "VaultHub-Subtitle/1.0.8" in (ROOT / "subtitle-api/main.go").read_text(encoding="utf-8"))
+check("11f Update Log 首行是本版", LOG.splitlines()[0].strip() == "# VaultHub 蜀鼠之家 v1.0.8", LOG.splitlines()[0])
 check("11g Release Notes 存在", (ROOT / ".github/RELEASE_NOTES_1.0.4.md").exists())
 
 print("12. 禁用字面量")
@@ -221,4 +221,4 @@ if fails:
     for f in fails:
         print("  -", f)
     sys.exit(1)
-print("v1.0.7 契约测试全部通过")
+print("v1.0.8 契约测试全部通过")

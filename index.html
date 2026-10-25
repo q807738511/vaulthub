@@ -2,12 +2,14 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- v1.0.8（需求2）：viewport-fit=cover 让安卓 / iOS WebView 把安全区暴露给 CSS，
+     配合 main.css 里的 env(safe-area-inset-*) 留边，刘海屏内容不被切。 -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>VaultHub 蜀鼠之家</title>
-<link rel="stylesheet" href="/web/css/main.css?v=1.0.7">
+<link rel="stylesheet" href="/web/css/main.css?v=1.0.8">
 <script>
 /* 资源版本号：index.html 用它给所有静态资源打查询串。 */
-window.VAULTHUB_ASSET_VERSION = "1.0.7";
+window.VAULTHUB_ASSET_VERSION = "1.0.8";
 </script>
 <script>
 /* v0.9.73 主题防闪：调色板/明暗/强调色必须在首帧渲染前落到 <html> 上，
@@ -89,7 +91,7 @@ window.VAULTHUB_ASSET_VERSION = "1.0.7";
     <button class="btn btn-primary" style="width:100%;margin-top:12px;" onclick="vaultHubLogin()">🔐 登录</button>
     <div class="auth-error" id="authError"></div>
     <!-- v0.9.93：登录页也显示版本标语（原第三处在侧栏页脚，侧栏已移除）。 -->
-    <div class="login-ver"><span id="loginVerLabel" class="ver">v1.0.7 · 契约冻结 · 端点收紧 · 继续观看</span></div>
+    <div class="login-ver"><span id="loginVerLabel" class="ver">v1.0.8 · 转码可拖动 · 音乐按歌手 · 刮削落盘</span></div>
   </div>
 </div>
 
@@ -799,7 +801,7 @@ window.VAULTHUB_ASSET_VERSION = "1.0.7";
          v1.0.4（需求1）：页尾只保留「当前版本 + 版本功能提示」一行，去掉品牌名与
          「与关于页保持一致」的说明文字，并压缩上下留白降低页尾高度。 -->
     <footer class="app-footer" id="appFooter">
-      <span id="appFooterVer" class="ver">v1.0.7 · 契约冻结 · 端点收紧 · 继续观看</span>
+      <span id="appFooterVer" class="ver">v1.0.8 · 转码可拖动 · 音乐按歌手 · 刮削落盘</span>
     </footer>
 
   </div>
@@ -919,7 +921,7 @@ window.VAULTHUB_ASSET_VERSION = "1.0.7";
   <div class="modal">
     <h3><span data-i18n="aboutTitle">关于</span><button class="close" onclick="closeModal('aboutModal')">✕</button></h3>
     <div class="about-row"><span data-i18n="aboutName">应用名称</span><b>VaultHub 蜀鼠之家</b></div>
-    <div class="about-row" data-about-ver="1"><span data-i18n="aboutVer">版本</span><b>v1.0.7 · 契约冻结 · 端点收紧 · 继续观看</b></div>
+    <div class="about-row" data-about-ver="1"><span data-i18n="aboutVer">版本</span><b>v1.0.8 · 转码可拖动 · 音乐按歌手 · 刮削落盘</b></div>
     <div class="about-row"><span data-i18n="aboutStack">技术栈</span><b>Go (media/manager/subtitle) · Caddy · FFmpeg · SQLite · HTML/CSS/JS</b></div>
     <div class="about-row"><span data-i18n="aboutMon">监控组件</span><b>VaultHub 内置系统监控</b></div>
     <div class="about-row"><span data-i18n="aboutPt">PT 插件</span><b>MoviePilot · Savept 监护室</b></div>
@@ -1135,20 +1137,20 @@ window.VAULTHUB_ASSET_VERSION = "1.0.7";
 
 <div class="toast" id="toast"></div>
 
-<script src="/web/js/01-state.js?v=1.0.7"></script>
-<script src="/web/js/03-quality.js?v=1.0.7"></script>
-<script src="/web/js/02-media.js?v=1.0.7"></script>
+<script src="/web/js/01-state.js?v=1.0.8"></script>
+<script src="/web/js/03-quality.js?v=1.0.8"></script>
+<script src="/web/js/02-media.js?v=1.0.8"></script>
 <!-- v0.9.97：Plex 口径的多季剧集刮削（多季诊断 / 缺失集比对 / 重匹配）。
      依赖 02-media.js 的 parseSeriesEpisode 与剧集数据，必须排在它之后。 -->
-<script src="/web/js/03-series-plex.js?v=1.0.7"></script>
-<script src="/web/js/03-features.js?v=1.0.7"></script>
-<script src="/web/js/05-home.js?v=1.0.7"></script>
-<script src="/web/js/06-theme.js?v=1.0.7"></script>
-<script src="/web/js/07-topnav.js?v=1.0.7"></script>
-<script src="/web/js/03-audio-zoom.js?v=1.0.7"></script>
+<script src="/web/js/03-series-plex.js?v=1.0.8"></script>
+<script src="/web/js/03-features.js?v=1.0.8"></script>
+<script src="/web/js/05-home.js?v=1.0.8"></script>
+<script src="/web/js/06-theme.js?v=1.0.8"></script>
+<script src="/web/js/07-topnav.js?v=1.0.8"></script>
+<script src="/web/js/03-audio-zoom.js?v=1.0.8"></script>
 <!-- v1.0.4（需求1）：TV / 遥控 / 键盘焦点层。必须在业务脚本之后加载：
      它只接管方向键、焦点记忆与焦点保护，不复制任何业务逻辑。 -->
-<script src="/web/js/08-focus.js?v=1.0.7"></script>
-<script src="/web/js/04-boot.js?v=1.0.7"></script>
+<script src="/web/js/08-focus.js?v=1.0.8"></script>
+<script src="/web/js/04-boot.js?v=1.0.8"></script>
 </body>
 </html>

@@ -34,22 +34,22 @@ NOTES = rd(".github/RELEASE_NOTES_1.0.0.md")
 
 print("== 1. 正式版版本口径 ==")
 check("1a index.html 资源版本 ≥11 处且为本版",
-      len(re.findall(r"\?v=1\.0\.7", HTML)) >= 11 and "?v=0.9.99" not in HTML,
-      len(re.findall(r"\?v=1\.0\.7", HTML)))
+      len(re.findall(r"\?v=1\.0\.8", HTML)) >= 11 and "?v=0.9.99" not in HTML,
+      len(re.findall(r"\?v=1\.0\.8", HTML)))
 check("1b 全部静态资源版本串只出现本版",
-      set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"1.0.7"})
+      set(re.findall(r"\?v=([0-9.]+)", HTML)) == {"1.0.8"})
 check("1c ASSET / SCRIPT 版本一致",
-      'window.VAULTHUB_ASSET_VERSION = "1.0.7";' in HTML
-      and 'const VAULTHUB_SCRIPT_VERSION = "1.0.7";' in STATE)
+      'window.VAULTHUB_ASSET_VERSION = "1.0.8";' in HTML
+      and 'const VAULTHUB_SCRIPT_VERSION = "1.0.8";' in STATE)
 check("1d 页面标语 ×3 且整串一致",
-      len(re.findall(r"v1\.0\.7 · [^<\"]+", HTML)) == 3
-      and len(set(re.findall(r"v1\.0\.7 · [^<\"]+", HTML))) == 1,
-      sorted(set(re.findall(r"v1\.0\.7 · [^<\"]+", HTML))))
+      len(re.findall(r"v1\.0\.8 · [^<\"]+", HTML)) == 3
+      and len(set(re.findall(r"v1\.0\.8 · [^<\"]+", HTML))) == 1,
+      sorted(set(re.findall(r"v1\.0\.8 · [^<\"]+", HTML))))
 check("1e 上一版标语已清除", "v0.9.99 · " not in HTML)
 check("1f 安装 / 升级脚本版本同步",
-      'VERSION="v1.0.7"' in rd("scripts/install.sh") and 'VERSION="v1.0.7"' in rd("scripts/upgrade.sh"))
+      'VERSION="v1.0.8"' in rd("scripts/install.sh") and 'VERSION="v1.0.8"' in rd("scripts/upgrade.sh"))
 check("1g Update Log 顶部为本版（仓库格式：# VaultHub 蜀鼠之家 vX 置顶）",
-      LOG.startswith("# VaultHub 蜀鼠之家 v1.0.7"))
+      LOG.startswith("# VaultHub 蜀鼠之家 v1.0.8"))
 check("1h 发布说明按本版命名且够长",
       len(NOTES) >= 2000 and (ROOT / ".github/RELEASE_NOTES_1.0.0.md").exists(), len(NOTES))
 
@@ -58,7 +58,7 @@ check("2a 区块标题加粗样式存在",
       ".movie-detail-scroll .detail-section-h { font-weight:700; }" in CSS)
 check("2b 演职人员 / 视频推荐 标题都带该类（季度标题另带 inline 类，见 2c）",
       MEDIA.count('class="detail-section-h"') >= 2, MEDIA.count('class="detail-section-h"'))
-# v1.0.7（需求1）：「季度」二字改为季名行内的加粗 span，不再是 h3 区块标题。
+# v1.0.8（需求1）：「季度」二字改为季名行内的加粗 span，不再是 h3 区块标题。
 INLINE_HEADING = '<span class="season-inline-title">季度</span>'
 check("2c 季度标题不再是独立成行的区块",
       '<section><h3 class="detail-section-h">季度</h3></section>' not in MEDIA)

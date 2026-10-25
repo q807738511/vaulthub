@@ -117,9 +117,9 @@ assert ".media-reader-overlay.reader-theme-custom .media-reader-body" in CSS, "�
 assert "readerThemeClass()" in JS, "阅读器必须应用主题类"
 
 # ---------------------------------------------------------------- 版本与发布引用
-assert HTML.count("v1.0.7") >= 1, "关于与侧栏版本必须是 v0.9.97"
-assert 'VAULTHUB_ASSET_VERSION = "1.0.7"' in HTML, "资源版本必须是 0.9.91"
-assert 'VAULTHUB_SCRIPT_VERSION = "1.0.7"' in STATE, "脚本版本必须是 0.9.91"
+assert HTML.count("v1.0.8") >= 1, "关于与侧栏版本必须是 v0.9.97"
+assert 'VAULTHUB_ASSET_VERSION = "1.0.8"' in HTML, "资源版本必须是 0.9.91"
+assert 'VAULTHUB_SCRIPT_VERSION = "1.0.8"' in STATE, "脚本版本必须是 0.9.91"
 assert "docker.io/q807738511/vaulthub:latest" in COMPOSE, "v0.9.56 起 Compose 跟随 latest（v0.9.90 起主仓库为 Docker Hub）"
 assert (ROOT / ".github/RELEASE_NOTES_0.9.56.md").exists(), "缺少 v0.9.56 release notes"
 
