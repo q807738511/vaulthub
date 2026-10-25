@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""v1.0.10 主题引擎行为测试（Node VM 真跑 web/js/06-theme.js）。
+"""v1.0.11 主题引擎行为测试（Node VM 真跑 web/js/06-theme.js）。
 
-本文件前身是 v0.9.73 的三层主题测试（调色板 × 明暗 × 强调色）。v1.0.10 按客户口径
+本文件前身是 v0.9.73 的三层主题测试（调色板 × 明暗 × 强调色）。v1.0.11 按客户口径
 把主题收敛成两层 —— **界面规格 × 明暗**，调色板 / 强调色 / 自定义背景三档设置整体移除，
 所以这里的断言也跟着换成「规格是否真的带走整套主题定义」：
 
@@ -252,5 +252,5 @@ if result.stderr.strip():
     sys.stdout.write("STDERR: " + result.stderr.strip()[:2000] + "\n")
 Path(harness_path).unlink(missing_ok=True)
 if result.returncode != 0:
-    raise SystemExit("FAIL: v1.0.10 主题引擎行为测试未通过")
-print("PASS: v1.0.10 主题引擎行为正确（规格=主题轴 / 壁纸随规格 / 播放器皮肤随规格 / 三档设置已移除）")
+    raise SystemExit("FAIL: v1.0.11 主题引擎行为测试未通过")
+print("PASS: v1.0.11 主题引擎行为正确（规格=主题轴 / 壁纸随规格 / 播放器皮肤随规格 / 三档设置已移除）")

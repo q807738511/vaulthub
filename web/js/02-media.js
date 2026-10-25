@@ -8289,6 +8289,21 @@ function renderAudioArtistAlbumsServer(lib, data, artist) {
 }
 
 /* 音乐库主视图：按当前层级向服务端取一页数据并渲染。 */
+/* v1.0.11：媒体库宿主节点会被 renderLocalMedia 重建（v0.9.90 已踩过同样的坑）。
+   异步请求回来时若仍写进「已经被替换掉的旧节点」，页面就永远停在占位文案上
+   （生产实测：切到音乐库显示「正在读取最近入库…」，60 位歌手其实已经取到了）。
+   统一在写入前重新取当前节点。 */
+function audioHostPaint(html) {
+  const h = document.getElementById("local-media-content-audio");
+  if (h) h.innerHTML = html;
+  return !!h;
+}
+function comicHostPaint(html) {
+  const h = document.getElementById("local-media-content-comic");
+  if (h) h.innerHTML = html;
+  return !!h;
+}
+
 async function loadAudioServerView(lib, offset, opts) {
   const o = opts || {};
   const host = document.getElementById("local-media-content-audio");
@@ -8300,13 +8315,13 @@ async function loadAudioServerView(lib, offset, opts) {
     if (view === "favorites") {
       audioFiles = [];
       audioBrowseLast = { level: "favorites", page: 0, total: 0, artist: "", album: "" };
-      host.innerHTML = `<section class="content-collection">${renderAudioFavorites(lib)}</section>`;
+      audioHostPaint(`<section class="content-collection">${renderAudioFavorites(lib)}</section>`);
       return;
     }
     if (view === "playlists") {
       audioFiles = [];
       audioBrowseLast = { level: "playlists", page: 0, total: 0, artist: "", album: "" };
-      host.innerHTML = `<section class="content-collection">${renderAudioPlaylists(lib)}</section>`;
+      audioHostPaint(`<section class="content-collection">${renderAudioPlaylists(lib)}</section>`);
       return;
     }
     if (view === "tracks") {
@@ -8316,7 +8331,7 @@ async function loadAudioServerView(lib, offset, opts) {
         const files = (await fetchFilesByPaths(lib, paths)).sort((a, b) => String(a.path).localeCompare(String(b.path), "zh-CN"));
         audioFiles = files;
         audioCursor = 0;
-        host.innerHTML = `<section class="content-collection">${renderAudioTrackList(lib, files)}</section>`;
+        audioHostPaint(`<section class="content-collection">${renderAudioTrackList(lib, files)}</section>`);
         return;
       }
       const back = audioTracksBack;
@@ -8326,21 +8341,21 @@ async function loadAudioServerView(lib, offset, opts) {
       audioBrowseLast = { level: "tracks", page: Number(data.page) || 0, total: Number(data.total) || 0, artist, album };
       audioFiles = (data.files || []).map(t => ({ path: t.path, size: t.size, mtime: t.mtime }));
       audioCursor = 0;
-      host.innerHTML = `<section class="content-collection">${renderAudioTrackList(lib, audioFiles)}</section>`;
+      audioHostPaint(`<section class="content-collection">${renderAudioTrackList(lib, audioFiles)}</section>`);
       return;
     }
     if (view === "artistAlbums") {
       const data = await audioBrowseFetch(lib, "albums", { artist: audioArtistFilter, page: o.page || 0, size: 200 });
       audioBrowseLast = { level: "albums", page: Number(data.page) || 0, total: Number(data.total) || 0, artist: audioArtistFilter, album: "" };
-      host.innerHTML = `<section class="content-collection">${renderAudioArtistAlbumsServer(lib, data, audioArtistFilter)}</section>`;
+      audioHostPaint(`<section class="content-collection">${renderAudioArtistAlbumsServer(lib, data, audioArtistFilter)}</section>`);
       return;
     }
     // artists（含历史 albums 视图：统一按歌手展示）
     const data = await audioBrowseFetch(lib, "artists", { page: o.page || 0, size: AUDIO_BROWSE_PAGE_SIZE });
     audioBrowseLast = { level: "artists", page: Number(data.page) || 0, total: Number(data.total) || 0, artist: "", album: "" };
-    host.innerHTML = `<section class="content-collection">${renderAudioArtistsServer(lib, data)}</section>`;
+    audioHostPaint(`<section class="content-collection">${renderAudioArtistsServer(lib, data)}</section>`);
   } catch (e) {
-    host.innerHTML = `<div class="media-error">读取音乐库失败：${esc(e.message || e)}</div>`;
+    audioHostPaint(`<div class="media-error">读取音乐库失败：${esc(e.message || e)}</div>`);
   } finally {
     audioBrowseBusy = false;
   }
@@ -8453,7 +8468,7 @@ async function bookShelfRemoteLoad(lib, offset) {
   const body = { id: String(lib.id), group: String(lib.type || "comic"), tab: bookShelfTab, sort: prefs.sort, page, size };
   if (bookShelfTab === "like") body.like = bookFavPaths(lib.id);
   if (bookShelfTab !== "like") body.completed = bookCompletedPaths(lib.id);
-  host.innerHTML = `<div class="media-loading">正在读取书架…</div>`;
+  comicHostPaint(`<div class="media-loading">正在读取书架…</div>`);
   try {
     const res = await fetch("/api/media/shelf", {
       method: "POST",
@@ -8470,12 +8485,12 @@ async function bookShelfRemoteLoad(lib, offset) {
     bookShelfOffset = bookShelfPage * size;
     bookShelfVisibleCache = data.files || [];
     if (data.counts) bookShelfCountsCache[lib.id] = data.counts;
-    host.innerHTML = bookShelfPageHtml(lib, data.files || [], data.counts, data.total);
+    comicHostPaint(bookShelfPageHtml(lib, data.files || [], data.counts, data.total));
     if (typeof scrapeVisibleBookCovers === "function") scrapeVisibleBookCovers(host);
   } catch (e) {
     bookRemoteState.libId = "";
     bookRemoteState.payload = null;
-    host.innerHTML = `<div class="media-error">读取书架失败：${esc(e.message || e)}</div>`;
+    comicHostPaint(`<div class="media-error">读取书架失败：${esc(e.message || e)}</div>`);
   }
 }
 

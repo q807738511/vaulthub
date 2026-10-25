@@ -305,7 +305,7 @@ const html = fs.readFileSync(ROOT + "/index.html", "utf8");
 chk("E1 设置页有匹配阈值输入框（默认 70）", /id="scrapeMinMatch"[^>]*value="70"/.test(html) && html.includes('data-env="SCRAPE_MIN_MATCH"'), (html.match(/<input id="scrapeMinMatch"[^>]*>/) || [])[0]);
 for (const [lang, dict] of Object.entries(I18N_DICTS)) {
   chk(`E2 ${lang} 有 scrapeMinMatchLabel`, !!dict.scrapeMinMatchLabel, dict.scrapeMinMatchLabel);
-  /* v1.0.10（需求10）：阈值说明段落已删除，只保留标签（下拉/输入框仍在）。 */
+  /* v1.0.11（需求10）：阈值说明段落已删除，只保留标签（下拉/输入框仍在）。 */
   chk(`E3 ${lang} 阈值说明已移除`, dict.scrapeMinMatchHint === undefined, dict.scrapeMinMatchHint);
 }
 chk("E4 三语阈值文案互不相同（确实翻译了）", new Set(Object.values(I18N_DICTS).map(d => d.scrapeMinMatchLabel)).size === 3);

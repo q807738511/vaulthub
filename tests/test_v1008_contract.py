@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""v1.0.10 契约测试（L1 静态层）：7 项需求的实现面冻结。
+"""v1.0.11 契约测试（L1 静态层）：7 项需求的实现面冻结。
 
 覆盖七组：
   1. 转码 live 可拖动：compat 支持 ss（输入侧 -ss、响应头 X-VaultHub-Seek-Start、
@@ -25,7 +25,7 @@ GOMAIN = (ROOT / "media-go/main.go").read_text(encoding="utf-8")
 GOSTORE = (ROOT / "media-go/scrape_store.go").read_text(encoding="utf-8")
 GONFO = (ROOT / "media-go/scrape_nfo_persist.go").read_text(encoding="utf-8")
 GONFOWRITE = (ROOT / "media-go/nfo_write.go").read_text(encoding="utf-8")
-VERSION = "1.0.10"
+VERSION = "1.0.11"
 
 checks = []
 
@@ -77,8 +77,8 @@ check("3e 书刊扫描时间不再进页面", 'class="pn-head"' not in MEDIA)
 # ---------------- 4. 音乐库去页签 + 默认歌手 ----------------
 check("4a 默认视图 = 歌手", 'let audioView = "artists";' in MEDIA)
 check("4b 页签整条移除", "audioTabs = \"\";" in MEDIA and 'onclick="setAudioView(\'albums\')">专辑</button>' not in MEDIA)
-# v1.0.10（需求2）：入口卡再次移除 —— 功能改到播放器，这里断言反向保持回归价值。
-check("4c 喜欢 / 歌单入口卡已移除（v1.0.10 移入播放器）", 'audio-entry-card' not in MEDIA)
+# v1.0.11（需求2）：入口卡再次移除 —— 功能改到播放器，这里断言反向保持回归价值。
+check("4c 喜欢 / 歌单入口卡已移除（v1.0.11 移入播放器）", 'audio-entry-card' not in MEDIA)
 check("4d 入口卡 CSS", ".audio-entry-card .audio-entry-cover" in CSS)
 
 # ---------------- 5. 歌手 → 专辑 → 歌曲 ----------------
@@ -108,7 +108,7 @@ check("7h 失败条目不阻断整批", "if err != nil {\n\t\t\tcontinue\n\t\t}"
 check("7i NFO 写入链路本身未变", "func writeNFOFile(" in GONFOWRITE and "func nfoBuildDoc(" in GONFOWRITE)
 
 # ---------------- 8. 版本纪律与禁用字面量 ----------------
-check("8a 资源版本 1.0.10", f"?v={VERSION}" in HTML and HTML.count(f"?v={VERSION}") >= 11)
+check("8a 资源版本 1.0.11", f"?v={VERSION}" in HTML and HTML.count(f"?v={VERSION}") >= 11)
 check("8b 资产常量", f'VAULTHUB_ASSET_VERSION = "{VERSION}"' in HTML)
 check("8c 脚本常量", f'VAULTHUB_SCRIPT_VERSION = "{VERSION}"' in (ROOT / "web/js/01-state.js").read_text(encoding="utf-8"))
 check("8d 标语", f"v{VERSION} ·" in HTML)

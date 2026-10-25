@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""v1.0.10 契约测试：界面规格 = 主题轴 / 三种壁纸 / 播放器皮肤 / 三份详解文档 / ESC 返回。
+"""v1.0.11 契约测试：界面规格 = 主题轴 / 三种壁纸 / 播放器皮肤 / 三份详解文档 / ESC 返回。
 
 覆盖七组：
   1. 移除项：调色板、强调色、自定义背景（代码、DOM、CSS、localStorage 清理）；
@@ -27,7 +27,7 @@ BOOT = (ROOT / "web/js/04-boot.js").read_text(encoding="utf-8")
 DOCKERFILE = (ROOT / "Dockerfile").read_text(encoding="utf-8")
 NOTES = ROOT / ".github/RELEASE_NOTES_1.0.6.md"
 UPDATELOG = (ROOT / "Update Log.md").read_text(encoding="utf-8")
-VERSION = "1.0.10"
+VERSION = "1.0.11"
 
 checks = []
 
@@ -219,5 +219,5 @@ for name, ok, detail in checks:
     print(("PASS: " if ok else "FAIL: ") + name + (f"  [{detail}]" if detail and not ok else ""))
 print(f"\nSUMMARY {len(checks) - len(failed)}/{len(checks)} PASS")
 if failed:
-    raise SystemExit("FAIL: v1.0.10 契约测试未通过")
-print("PASS: v1.0.10 契约（规格主题 / 三种壁纸 / 播放器皮肤 / 三份文档 / ESC 返回）全部满足")
+    raise SystemExit("FAIL: v1.0.11 契约测试未通过")
+print("PASS: v1.0.11 契约（规格主题 / 三种壁纸 / 播放器皮肤 / 三份文档 / ESC 返回）全部满足")
