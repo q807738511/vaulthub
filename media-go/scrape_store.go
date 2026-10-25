@@ -513,9 +513,14 @@ func (a *App) scrapeCachePost(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, 500, "scrape cache unreadable")
 		return
 	}
+	/* v1.0.8（需求7）：刮削结果不只落在服务器数据目录，还要写回媒体同目录 ——
+	   Kodi / Emby / Jellyfin / Plex 都能直接读，换设备或重装也不用再联网刮一遍。
+	   仅影视库；写失败不影响本次保存（只报告计数）。 */
+	nfoWritten, nfoKept := a.persistScrapeNFO(body.ID, body.Items)
 	writeJSON(w, 200, map[string]any{
 		"ok": true, "id": body.ID, "stored": stored, "skipped": skipped,
 		"count": count, "updated": updated,
+		"nfo_written": nfoWritten, "nfo_kept": nfoKept,
 	})
 }
 

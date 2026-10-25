@@ -18,7 +18,7 @@ let vaultHubSessionPingedAt = 0;
    历史故障：v0.8.3→v0.8.5 的前端修改在服务端已生效，但浏览器仍执行缓存里的
    旧 02-media.js，用户看到「没有更新」。现在入口页 no-store、静态资源带 ?v=，
    并在启动时做一次一致性自查，不一致就绕过缓存强制重载一次。 */
-const VAULTHUB_SCRIPT_VERSION = "1.0.3";
+const VAULTHUB_SCRIPT_VERSION = "1.0.8";
 function ensureFreshAssets() {
   /* expected 为空 = 浏览器执行的 index.html 早于 v0.8.6（旧版本入口页没有声明
      版本号），同样属于"页面是旧的"，也需要换 URL 重新取一次。 */
@@ -105,7 +105,7 @@ function mediaKeepAliveStop(source) {
 }
 /* 已登录时给遮罩加上 .hidden（CSS 里 .auth-mask.hidden{display:none}），
    未登录时移除，遮住页面要求登录。 */
-function handleVaultHubAuthResult(logged) { vaultHubAuthenticated=!!logged; document.getElementById('authMask')?.classList.toggle('hidden',!!logged); if(logged) markVaultHubActivity(); else clearTimeout(vaultHubIdleTimer); return !!logged; }
+function handleVaultHubAuthResult(logged) { vaultHubAuthenticated=!!logged; document.getElementById('authMask')?.classList.toggle('hidden',!!logged); if(logged){ markVaultHubActivity(); /* v1.0.7：登录成功后补拉收紧端点的数据（硬件/库列表/首页状态）。 */ if(typeof bootAfterLogin==="function") bootAfterLogin(); } else clearTimeout(vaultHubIdleTimer); return !!logged; }
 
 async function vaultHubLogin() {
   const username=document.getElementById('vaultHubUsername').value.trim();
@@ -350,14 +350,12 @@ const I18N = {
     setLibrary: "媒体库", setLibExisting: "已添加的媒体库",
     /* v0.9.88：标题匹配阈值（最低识别字符占比，默认 70%）。 */
     scrapeMinMatchLabel: "标题匹配阈值（最低识别字符占比）",
-    scrapeMinMatchHint: "默认 70%：标题无需完全一致，70% 字符能对上即算命中；没命中的条目会在通知里给出匹配度，可到「逐项扫描 → ✎ 编辑名称」补名后重刮。",
     /* v0.9.87：刮削地区（中/日/美）—— 决定 TMDB 请求 language。 */
     scrapeRegionLabel: "刮削地区（TMDB 语言）",
     scrapeRegionAuto: "跟随界面语言",
     scrapeRegionCn: "中国（中文简体 · zh-CN）",
     scrapeRegionJp: "日本（日文 · ja-JP）",
     scrapeRegionUs: "美国（英文 · en-US）",
-    scrapeRegionHint: "刮削与详情页的 TMDB 请求按该地区语言查询：选「日本」查日文原名、选「美国」查英文原名，可避免中文界面下查不到日/美作品而回落成资源名（文件名展示）。",
     notifyScrapeQueue: "刮削队列 {ok}/{total}",
     libScanAuto: "自动扫描（整库逐项刮削）",
     libScanItem: "逐项扫描（手动选择条目）",
@@ -369,15 +367,10 @@ const I18N = {
     /* v0.9.94（需求9）：剧集分季刮削的标签写法说明。 */
     editSeasonHint: "剧集分季：标签里写「剧名S01 / 剧名S04」表示这一季按该剧的第 1 / 第 4 季刮削。自动刮削分不清哪一季时，用它手工指定即可（同一部剧的不同季会归到同一张剧集卡，卡内按季分开）。",
     editScrapeHint: "名称与年份会作为刮削搜索词：保存后立即按新名称重刮一次，跨设备一致。",
-    setLibExistingHint: "顶栏只展示这里创建时填写的库名称。每个库都可以单独重新扫描、打开或删除。",
     setLibAdd: "媒体库增加",
-    setLibAddHint: "先选来源：本地媒体库使用容器内已挂载的绝对路径；外连服务接入 Emby / Navidrome / Komga 等现成服务器。",
     setLibCustomModule: "自定义模块",
-    setLibCustomModuleHint: "自定义模块用于添加媒体库：选「通用网页」接入任意 Web 服务；选漫画 / 影视 / 音频则等价于新增一个对应大类的媒体库。",
     setLibCustomModuleOpen: "打开自定义模块",
-    setLibCustomModuleTip: "模块的显示 / 隐藏与删除都在模块设置里管理。",
     libSrcLocal: "本地媒体库", libSrcExternal: "外连服务",
-    libPathHint: "路径必须是容器内已挂载且存在的绝对目录；库名称会直接作为顶栏标签与刮削标识。",
     extLibName: "服务名称", extLibLan: "内网地址", extLibProxy: "反代 / 外网域名（可选）",
     extLibAdd: "添加外连服务", extLibList: "已添加的外连服务",
     extLibHint: "内网访问自动走内网地址，外网访问自动走反代域名；添加后会在顶栏媒体库标签中出现。",
@@ -396,7 +389,7 @@ const I18N = {
     navGroupBook: "电子书刊", navGroupVideo: "影视作品", navGroupAudio: "音视作品",
     navGroupSys: "系统",
     navGroupCustom: "自定义",
-    settings: "系统设置", about: "关于", settingsLead: "系统设置现在是独立配置页（不再是弹窗）：媒体库、外观主题、刮削配置与硬件配置分开；账户与登录页内含登录状态、关于和 Caddy 反向代理入口。",
+    settings: "系统设置", about: "关于",
     navMediaSearch: "媒体搜索", searchTitle: "媒体搜索", searchIdle: "输入关键词搜索媒体库",
     /* v0.9.94（需求2）：搜索已改为顶栏放大镜弹窗，这一页是旧链接的落点页。 */
     searchLead: "媒体搜索已改为顶栏的放大镜按钮：点一下弹出搜索弹窗，不离开当前页面即可搜索整个媒体库。",
@@ -468,9 +461,12 @@ const I18N = {
     castAs: "饰演",
     castTitle: "演职人员",
     opModeLbl: "操作模式",
-    opModeDesc: "Apple / Emby / Plex：分别按对应开源客户端的操作手感还原动效节奏、圆角阴影与图标风格（只影响本机观感，不改功能）。",
     uiSpecLbl: "界面规格",
     opModeSaved: "操作模式已保存",
+    uiSpecSaved: "界面规格已切换",
+    uiSpecNow: "当前界面规格",
+    opModeNow: "当前操作模式",
+    opModeTvRules: "遥控方向键 + 焦点环",
     castVoiceAs: "配音",
     castEmpty: "暂无演职人员信息",
     nowResume: "继续播放",
@@ -501,7 +497,7 @@ const I18N = {
     kindVideoDesc: "子类型：电视剧集 / 电影 · 刮削源 TMDB、豆瓣",
     kindAudioDesc: "子类型：音乐 / 音乐 MV · 刮削源 MusicBrainz、网易云",
     libKind: "媒体大类", libSubType: "子类型", libPath: "媒体路径（容器内绝对路径）", libExtraPath: "附加存储路径（可选，每行一个）", libName: "库名称（手动命名，用于刮削）",
-    libAdd: "添加媒体库", libRefresh: "刷新", libRescanAll: "全部重新扫描",
+    libAdd: "添加媒体库", libRefresh: "刷新", libPathEdit: "编辑媒体路径", libRescanAll: "全部重新扫描",
     colLibName: "库名称", colLibKind: "大类 / 子类型", colLibPath: "媒体路径", colLibItems: "项目", colLibState: "扫描状态", colLibActs: "操作",
     libEmpty: "尚未添加媒体库，填写上方表单即可开始刮削",
 
@@ -544,14 +540,15 @@ const I18N = {
     colName: "名称", colImage: "镜像", colStatus: "状态", colPorts: "端口", colHealth: "健康",
     settingsTitle: "系统设置", langLbl: "界面语言",
     themeLbl: "外观主题", themeDark: "暗色", themeLight: "亮色", themeCustom: "自定义背景（上传图片）",
-    themeModeLbl: "明暗", themePaletteLbl: "调色板", themeAccentLbl: "强调色",
-    accentTheme: "跟随主题", themeAccentHint: "只换主色，不改明暗",
-    themeModeSaved: "显示模式已切换", themePaletteSaved: "调色板已切换", themeAccentSaved: "强调色已切换",
+    themeModeLbl: "明暗",
+    themeModeSaved: "显示模式已切换",
+    themeWallpaperLbl: "规格壁纸", themeWallpaperSub: "随界面规格切换：Aerial 航拍 / 海报拼贴 / UltraBlur 取色",
+    wallpaperOn: "已开启规格壁纸", wallpaperOff: "已关闭规格壁纸",
+    specDocTitle: "界面元素详解", specDocOpen: "查看这套规格的元素清单",
+    specDocLead: "这套界面规格带走的主题定义（配色、壁纸、播放器皮肤、图标包）与对应文档章节：",
+    specDocMeta: "完整文档随镜像发布：", specDocApply: "应用这套规格", specDocClose: "关闭",
     themeReduceMotion: "减弱动效", themeReduceMotionSub: "对动画敏感或老设备：过渡与动画压到 1ms",
-    themeCustomBg: "使用自定义背景图片", themeCustomBgSub: "独立背景层，图片只存在本浏览器",
-    bgEnabled: "已启用自定义背景", bgDisabled: "已关闭自定义背景",
-    themeNote: "主题 = 调色板 × 明暗 × 强调色 三层叠加；每套调色板自带圆角、阴影、标题字族与动效节奏，选择只保存在本浏览器。",
-    bgUpload: "上传背景图片", bgClear: "清除自定义背景", bgHint: "提示：图片仅保存在本浏览器 localStorage，不经过服务器。",
+
     monitoringLbl: "NAS 监控（内置读取）", monitoringHint: "监控参数由 Compose 环境变量和只读挂载配置。",
     nasOnline: "内置监控 · 每 5s 刷新", nasOffline: "内置监控不可用",
     diskSourceReal: "内置监控 · statvfs", diskSourceOffline: "内置监控不可用",
@@ -635,13 +632,11 @@ const I18N = {
     setLibrary: "媒體庫", setLibExisting: "已新增的媒體庫",
     /* v0.9.88 */
     scrapeMinMatchLabel: "標題匹配閾值（最低識別字元佔比）",
-    scrapeMinMatchHint: "預設 70%：標題無需完全一致，70% 字元對得上即算命中；未命中的條目會在通知裡給出匹配度，可到「逐項掃描 → ✎ 編輯名稱」補名後重刮。",
     scrapeRegionLabel: "刮削地區（TMDB 語言）",
     scrapeRegionAuto: "跟隨介面語言",
     scrapeRegionCn: "中國（中文簡體 · zh-CN）",
     scrapeRegionJp: "日本（日文 · ja-JP）",
     scrapeRegionUs: "美國（英文 · en-US）",
-    scrapeRegionHint: "刮削與詳情頁的 TMDB 請求依該地區語言查詢：選「日本」查日文原名、選「美國」查英文原名，可避免中文介面查不到日/美作品而回落成資源名（檔名展示）。",
     notifyScrapeQueue: "刮削隊列 {ok}/{total}",
     libScanAuto: "自動掃描（整庫逐項刮削）",
     libScanItem: "逐項掃描（手動選擇條目）",
@@ -652,15 +647,10 @@ const I18N = {
     editYearLabel: "年份",
     editSeasonHint: "劇集分季：標籤裡寫「劇名S01 / 劇名S04」表示這一季依該劇的第 1 / 第 4 季刮削。自動刮削分不清哪一季時，用它手工指定即可（同一部劇的不同季會歸到同一張劇集卡，卡內依季分開）。",
     editScrapeHint: "名稱與年份會作為刮削搜尋詞：儲存後立即依新名稱重刮一次，跨裝置一致。",
-    setLibExistingHint: "側邊欄只顯示這裡建立時填寫的庫名稱。每個庫都可以單獨重新掃描、開啟或刪除。",
     setLibAdd: "媒體庫新增",
-    setLibAddHint: "先選來源：本地媒體庫使用容器內已掛載的絕對路徑；外連服務接入 Emby / Navidrome / Komga 等現成伺服器。",
     setLibCustomModule: "自訂模組",
-    setLibCustomModuleHint: "自訂模組用於新增媒體庫：選「通用網頁」接入任意 Web 服務；選漫畫 / 影視 / 音訊則等同於新增一個對應大類的媒體庫。",
     setLibCustomModuleOpen: "開啟自訂模組",
-    setLibCustomModuleTip: "模組的顯示 / 隱藏與刪除都在模組設定裡管理。",
     libSrcLocal: "本地媒體庫", libSrcExternal: "外連服務",
-    libPathHint: "路徑必須是容器內已掛載且存在的絕對目錄；庫名稱會直接作為側邊欄與刮削識別。",
     extLibName: "服務名稱", extLibLan: "內網位址", extLibProxy: "反代 / 外網網域（可選）",
     extLibAdd: "新增外連服務", extLibList: "已新增的外連服務",
     extLibHint: "內網存取自動走內網位址，外網存取自動走反代網域；新增後會在側邊欄媒體庫中出現。",
@@ -695,9 +685,12 @@ const I18N = {
     castAs: "飾演",
     castTitle: "演職人員",
     opModeLbl: "操作模式",
-    opModeDesc: "Apple / Emby / Plex：分別按對應開源客戶端的手感還原動效節奏、圓角陰影與圖示風格（只影響本機觀感）。",
     uiSpecLbl: "介面規格",
     opModeSaved: "操作模式已儲存",
+    uiSpecSaved: "介面規格已切換",
+    uiSpecNow: "目前介面規格",
+    opModeNow: "目前操作模式",
+    opModeTvRules: "遙控方向鍵 + 焦點環",
     castVoiceAs: "配音",
     castEmpty: "暫無演職人員資訊",
     nowResume: "繼續播放",
@@ -752,14 +745,15 @@ const I18N = {
     colName: "名稱", colImage: "映像", colStatus: "狀態", colPorts: "連接埠", colHealth: "健康",
     settingsTitle: "系統設定", langLbl: "介面語言",
     themeLbl: "外觀主題", themeDark: "暗色", themeLight: "亮色", themeCustom: "自訂背景（上傳圖片）",
-    themeModeLbl: "明暗", themePaletteLbl: "調色板", themeAccentLbl: "強調色",
-    accentTheme: "跟隨主題", themeAccentHint: "只換主色，不改明暗",
-    themeModeSaved: "顯示模式已切換", themePaletteSaved: "調色板已切換", themeAccentSaved: "強調色已切換",
+    themeModeLbl: "明暗",
+    themeModeSaved: "顯示模式已切換",
+    themeWallpaperLbl: "規格壁紙", themeWallpaperSub: "隨介面規格切換：Aerial 航拍 / 海報拼貼 / UltraBlur 取色",
+    wallpaperOn: "已開啟規格壁紙", wallpaperOff: "已關閉規格壁紙",
+    specDocTitle: "介面元素詳解", specDocOpen: "檢視這套規格的元素清單",
+    specDocLead: "這套介面規格帶走的主題定義（配色、壁紙、播放器面板、圖示包）與對應文件章節：",
+    specDocMeta: "完整文件隨映像檔發布：", specDocApply: "套用這套規格", specDocClose: "關閉",
     themeReduceMotion: "減弱動效", themeReduceMotionSub: "對動畫敏感或舊機器：過渡與動畫壓到 1ms",
-    themeCustomBg: "使用自訂背景圖片", themeCustomBgSub: "獨立背景層，圖片只存在本瀏覽器",
-    bgEnabled: "已啟用自訂背景", bgDisabled: "已關閉自訂背景",
-    themeNote: "主題 = 調色板 × 明暗 × 強調色 三層疊加；每套調色板自帶圓角、陰影、標題字族與動效節奏，選擇只存在本瀏覽器。",
-    bgUpload: "上傳背景圖片", bgClear: "清除自訂背景", bgHint: "提示：圖片僅保存在本瀏覽器 localStorage，不經過伺服器。",
+
     monitoringLbl: "NAS 監控（內建讀取）", monitoringHint: "監控參數由 Compose 環境變數和唯讀掛載設定。",
     nasOnline: "內建監控 · 每 5s 重新整理", nasOffline: "內建監控不可用",
     diskSourceReal: "內建監控 · statvfs", diskSourceOffline: "內建監控不可用",
@@ -785,7 +779,6 @@ const I18N = {
     testConnecting: "⏳ 正在驗證…",
     /* v0.6.30.Branch-update：Plex 風格改版新增的鍵 */ navMore: "更多 ›",
     navGroupBook: "電子書刊", navGroupVideo: "影視作品", navGroupAudio: "音視作品",
-    settingsLead: "系統設定現在是獨立設定頁（不再是彈窗）：媒體庫、外觀主題、刮削設定與硬體設定分開；帳戶與登入頁內含登入狀態、關於與 Caddy 反向代理入口。",
     navMediaSearch: "媒體搜尋", searchTitle: "媒體搜尋", searchIdle: "輸入關鍵字搜尋媒體庫",
     searchLead: "媒體搜尋已改為頂欄的放大鏡按鈕：點一下彈出搜尋彈窗，不必離開當前頁面即可搜尋整個媒體庫。",
     searchPlaceholder: "搜尋媒體庫中的影視、書籍、音樂檔名", searchRun: "搜尋", searchClear: "清空",
@@ -859,7 +852,7 @@ const I18N = {
     kindAudioDesc: "子類型：音樂 / 音樂 MV · 刮削源 MusicBrainz、網易雲",
     libKind: "媒體大類", libSubType: "子類型",
     libPath: "媒體路徑（容器內絕對路徑）", libExtraPath: "附加儲存路徑（選填，每行一個）", libName: "庫名稱（手動命名，用於刮削）",
-    libAdd: "新增媒體庫", libRefresh: "重新整理", libRescanAll: "全部重新掃描",
+    libAdd: "新增媒體庫", libRefresh: "重新整理", libPathEdit: "編輯媒體路徑", libRescanAll: "全部重新掃描",
     colLibName: "庫名稱", colLibKind: "大類 / 子類型", colLibPath: "媒體路徑",
     colLibItems: "項目", colLibState: "掃描狀態", colLibActs: "操作",
     libEmpty: "尚未新增媒體庫，填寫上方表單即可開始刮削",
@@ -921,13 +914,11 @@ const I18N = {
     setLibrary: "Libraries", setLibExisting: "Existing libraries",
     /* v0.9.88 */
     scrapeMinMatchLabel: "Title match threshold (min. recognised characters)",
-    scrapeMinMatchHint: "Default 70%: the title does not need to match exactly — 70% of the characters is enough. Misses report their best score in the notification centre; rename the item under Item scan → ✎ Edit name and re-scrape.",
     scrapeRegionLabel: "Scrape region (TMDB language)",
     scrapeRegionAuto: "Follow interface language",
     scrapeRegionCn: "China (Simplified Chinese · zh-CN)",
     scrapeRegionJp: "Japan (Japanese · ja-JP)",
     scrapeRegionUs: "United States (English · en-US)",
-    scrapeRegionHint: "TMDB requests for scraping and detail pages use this region's language, so Japanese/US titles are found by their original names instead of falling back to the raw file name.",
     notifyScrapeQueue: "Scrape queue {ok}/{total}",
     libScanAuto: "Auto scan (scrape every item)",
     libScanItem: "Item-by-item scan",
@@ -938,15 +929,10 @@ const I18N = {
     editYearLabel: "Year",
     editScrapeHint: "Title and year are used as the scrape query: saving re-scrapes this item by the new title.",
     editSeasonHint: "Seasonal split: a tag like \"ShowS04\" scrapes this season as season 4 of that show. Use it when auto matching cannot tell seasons apart (seasons of one show stay in one card, split by season).",
-    setLibExistingHint: "The top bar shows only the library names you enter here. Each library can be rescanned, opened or removed.",
     setLibAdd: "Add a library",
-    setLibAddHint: "Pick a source: local libraries use absolute paths mounted inside the container; external services connect to Emby / Navidrome / Komga and friends.",
     setLibCustomModule: "Custom modules",
-    setLibCustomModuleHint: "Custom modules add libraries: pick Web page for any site, or comic / movie / audio to add a library in that category.",
     setLibCustomModuleOpen: "Open custom modules",
-    setLibCustomModuleTip: "Show / hide and delete modules in the module settings.",
     libSrcLocal: "Local library", libSrcExternal: "External service",
-    libPathHint: "The path must be an absolute directory mounted inside the container; the library name is used as the top-bar tab label and for scraping.",
     extLibName: "Service name", extLibLan: "LAN address", extLibProxy: "Reverse-proxy / public domain (optional)",
     extLibAdd: "Add external service", extLibList: "Existing external services",
     extLibHint: "LAN visitors use the LAN address, external visitors use the proxy domain. Added services show up as top-bar library tabs.",
@@ -981,9 +967,12 @@ const I18N = {
     castAs: "as",
     castTitle: "Cast",
     opModeLbl: "Operation mode",
-    opModeDesc: "Apple / Emby / Plex: motion pacing, radii, shadows and icon style restored per client (look only).",
     uiSpecLbl: "Layout profile",
     opModeSaved: "Operation mode saved",
+    uiSpecSaved: "Interface style switched",
+    uiSpecNow: "Interface style",
+    opModeNow: "Operation mode",
+    opModeTvRules: "D-pad + focus ring",
     castVoiceAs: "voice",
     castEmpty: "No cast information yet",
     nowResume: "Resume",
@@ -1038,14 +1027,15 @@ const I18N = {
     colName: "Name", colImage: "Image", colStatus: "Status", colPorts: "Ports", colHealth: "Health",
     settingsTitle: "Settings", langLbl: "Language",
     themeLbl: "Appearance", themeDark: "Dark", themeLight: "Light", themeCustom: "Custom background (upload)",
-    themeModeLbl: "Light / dark", themePaletteLbl: "Palette", themeAccentLbl: "Accent",
-    accentTheme: "Follow palette", themeAccentHint: "Recolors the primary only",
-    themeModeSaved: "Display mode", themePaletteSaved: "Palette", themeAccentSaved: "Accent",
+    themeModeLbl: "Light / dark",
+    themeModeSaved: "Display mode",
+    themeWallpaperLbl: "Spec wallpaper", themeWallpaperSub: "Follows the interface spec: Aerial / poster collage / UltraBlur",
+    wallpaperOn: "Spec wallpaper on", wallpaperOff: "Spec wallpaper off",
+    specDocTitle: "interface elements", specDocOpen: "What this spec includes",
+    specDocLead: "Theme definition carried by this spec (colours, wallpaper, player skin, icon pack) and the matching doc section:",
+    specDocMeta: "Full doc ships with the image: ", specDocApply: "Use this spec", specDocClose: "Close",
     themeReduceMotion: "Reduce motion", themeReduceMotionSub: "For motion-sensitive or older devices: 1ms transitions",
-    themeCustomBg: "Custom background image", themeCustomBgSub: "Independent layer, stored in this browser only",
-    bgEnabled: "Custom background on", bgDisabled: "Custom background off",
-    themeNote: "Theme = palette × light/dark × accent. Each palette carries its own radius, shadow, heading font and motion tempo; choices stay in this browser.",
-    bgUpload: "Upload background image", bgClear: "Clear custom background", bgHint: "Tip: image stays in this browser's localStorage, never sent to a server.",
+
     monitoringLbl: "NAS Monitor (built in)", monitoringHint: "Configure monitoring with Compose environment variables and read-only mounts.",
     nasOnline: "Built-in monitor · refresh 5s", nasOffline: "Built-in monitor unavailable",
     diskSourceReal: "Built-in monitor · statvfs", diskSourceOffline: "Built-in monitor unavailable",
@@ -1071,7 +1061,6 @@ const I18N = {
     testConnecting: "⏳ Verifying…",
     /* v0.6.30.Branch-update: keys added by the Plex-style redesign */ navMore: "More ›",
     navGroupBook: "Books & Comics", navGroupVideo: "Movies & TV", navGroupAudio: "Music & MV",
-    settingsLead: "Settings is now a dedicated page (no longer a modal): libraries, appearance and separate scraping/hardware tabs live here; Account & Sign-in holds the session state, About and the Caddy reverse-proxy entry.",
     navMediaSearch: "Media search", searchTitle: "Media search", searchIdle: "Type a keyword to search your libraries",
     searchLead: "Media search now lives in the magnifier button in the top bar: click it to open the search dialog without leaving the page.",
     searchPlaceholder: "Search movie, book and music file names in your libraries", searchRun: "Search", searchClear: "Clear",
@@ -1145,7 +1134,7 @@ const I18N = {
     kindAudioDesc: "Subtypes: music / music video · scrapers MusicBrainz, NetEase",
     libKind: "Category", libSubType: "Subtype",
     libPath: "Media path (absolute path inside the container)", libExtraPath: "Extra storage paths (optional, one per line)", libName: "Library name (manual, used for scraping)",
-    libAdd: "Add library", libRefresh: "Refresh", libRescanAll: "Rescan all",
+    libAdd: "Add library", libRefresh: "Refresh", libPathEdit: "Edit media paths", libRescanAll: "Rescan all",
     colLibName: "Library", colLibKind: "Category / subtype", colLibPath: "Media path",
     colLibItems: "Items", colLibState: "Scan state", colLibActs: "Actions",
     libEmpty: "No library yet. Fill in the form above to start scraping.",
@@ -1219,16 +1208,14 @@ function applyI18n() {
 /* ================= 状态持久化 ================= */
 const LS_SETTINGS = "dwu_settings";
 const LS_BOARDS = "dwu_boards";
-const LS_BG = "dwu_bgimg";
 
 let settings = {
   theme: "dark",          /* 兼容字段：始终同步成 dark|light（阅读器与旧 CSS 仍在读它） */
   mode: "dark",           /* 明暗层：dark | light | auto（auto = 跟随系统） */
-  palette: "emerald",     /* 调色板层：emerald | plum | neon | clay */
-  accent: "theme",        /* 强调色层：theme（跟随调色板）| teal | indigo | rose | amber | violet */
-  customBg: false,        /* 背景图层：是否启用自定义背景图片 */
-  uiMode: "auto",         /* v0.9.76 界面规格：auto(按设备识别) | phone | tv | pc */
-  opMode: "apple",        /* v1.0.2 操作模式：apple | emby | plex（动效 + 圆角阴影 + 图标风格） */       /* v0.9.74 布局层：topnav（媒体库平铺顶栏，默认）| sidebar（v0.9.73 的侧栏） */
+  uiMode: "auto",         /* v0.9.76 操作模式：auto(按设备识别) | phone | tv | pc */
+  opMode: "apple",        /* v1.0.2 界面规格：apple | emby | plex（v1.0.6 起同时是主题轴：
+                             配色 / 壁纸 / 播放器皮肤 / 图标包都跟它走） */
+  wallpaper: true,        /* v1.0.6 规格壁纸开关（Aerial / 海报拼贴 / UltraBlur 取色） */
   reduceMotion: false,    /* 动效：减弱过渡与动画 */
   hardwareAcceleration: "auto",
   /* v0.9.91 解/转码风向标：auto = 服务端按需转/解码；off = 禁用服务端转/解码，
@@ -1269,12 +1256,16 @@ function loadSettings() {
        「custom」= 自定义背景（当年一律按暗色渲染），迁到 明暗层 + 背景层两个字段。 */
     if (["dark", "light", "auto"].includes(s.mode)) settings.mode = s.mode;
     else settings.mode = s.theme === "light" ? "light" : "dark";
-    if (["emerald", "plum", "neon", "clay"].includes(s.palette)) settings.palette = s.palette;
-    if (["theme", "teal", "indigo", "rose", "amber", "violet"].includes(s.accent)) settings.accent = s.accent;
+    /* v1.0.6：调色板 / 强调色 / 自定义背景三档设置已移除（与「界面规格」语义重复）。
+       旧 localStorage 里的 palette / accent / customBg / theme:"custom" 直接忽略，
+       不再迁移成任何状态 —— 迁移只会让「我明明删了它还在」重新出现。 */
+    /* v1.0.4（需求5）：localStorage 里没有（配额满没写进去 / 被清过）时读 cookie 镜像。 */
+    const cookieMode = vhReadCookie("vh_mode"), cookieSpec = vhReadCookie("vh_spec");
     if (UI_MODES.includes(s.uiMode)) settings.uiMode = s.uiMode;
+    else if (UI_MODES.includes(cookieMode)) settings.uiMode = cookieMode;
     if (OP_MODES.includes(s.opMode)) settings.opMode = s.opMode;
-    if (s.theme === "custom") settings.customBg = true;
-    if (typeof s.customBg === "boolean") settings.customBg = s.customBg;
+    else if (OP_MODES.includes(cookieSpec)) settings.opMode = cookieSpec;
+    if (typeof s.wallpaper === "boolean") settings.wallpaper = s.wallpaper;
     settings.reduceMotion = !!s.reduceMotion;
     if (["auto","cpu","vaapi","qsv","cuda"].includes(s.hardwareAcceleration)) settings.hardwareAcceleration = s.hardwareAcceleration;
     if (["auto","off"].includes(s.serverTranscode)) settings.serverTranscode = s.serverTranscode;
@@ -1287,8 +1278,43 @@ function loadSettings() {
     }
   } catch (e) {}
 }
+/* v1.0.4（需求5）：设置写入必须「写不进去也要留住」。
+   症状：手动切了操作模式/界面规格，刷新后回到默认。
+   根因：媒体库很大时 localStorage 已被元数据缓存占满，setItem 抛 QuotaExceededError，
+   旧实现 catch(e){} 直接吞掉 —— 设置看起来保存成功，其实一个字节都没落盘。
+   现在：① 先清可重建缓存再重试；② 无论成败都写一份 cookie 镜像（几十字节，不受配额影响），
+   刷新时由 <head> 首帧脚本和 loadSettings() 读回。 */
+function vhWriteCookie(name, value) {
+  try {
+    const maxAge = 60 * 60 * 24 * 365;
+    document.cookie = name + "=" + encodeURIComponent(String(value)) + "; path=/; max-age=" + maxAge + "; SameSite=Lax";
+  } catch (e) {}
+}
+function vhReadCookie(name) {
+  try {
+    const m = document.cookie.match(new RegExp("(?:^|; )" + name + "=([^;]*)"));
+    return m ? decodeURIComponent(m[1]) : "";
+  } catch (e) { return ""; }
+}
 function saveSettings() {
-  try { localStorage.setItem(LS_SETTINGS, JSON.stringify(settings)); } catch (e) {}
+  const raw = JSON.stringify(settings);
+  /* 选择值先落 cookie —— 即使下面的 localStorage 写失败，刷新也不会丢档位。 */
+  vhWriteCookie("vh_mode", settings.uiMode || "auto");
+  vhWriteCookie("vh_spec", settings.opMode || "apple");
+  try { localStorage.setItem(LS_SETTINGS, raw); return; } catch (e) {
+    /* 配额满：按「可重建缓存」清单腾地方后重试一次（与 vaulthubSetItem 同一策略）。 */
+    try {
+      const evictable = VAULTHUB_EVICTABLE_PATTERNS;
+      const keys = Object.keys(localStorage);
+      for (const key of keys) {
+        if (key === LS_SETTINGS || key === LS_BOARDS) continue;
+        if (evictable.some(rx => rx.test(key))) { try { localStorage.removeItem(key); } catch (e2) {} }
+      }
+      localStorage.setItem(LS_SETTINGS, raw);
+    } catch (e3) {
+      /* 仍然写不进去：设置留在内存 + cookie 里，本次会话与刷新后都还能生效。 */
+    }
+  }
 }
 
 /* ==================== v0.9.82 浏览器本地缓存的安全写入 ====================
@@ -1432,42 +1458,26 @@ function saveHiddenModules() {
 }
 
 /* ================= 主题 =================
-   v0.9.73：主题定义整体搬到 web/js/06-theme.js（调色板 × 明暗 × 强调色 三层叠加，
-   方案见该文件顶部注释）。这里只保留与「背景图层」相关的部分：
-   背景是独立一层，不再伪装成第三种主题（旧版选「自定义背景」会把正文强行按暗色渲染）。 */
-function applyBgImage() {
-  const img = localStorage.getItem(LS_BG);
-  if (img && settings.customBg) document.body.style.setProperty("--bgImg", `url(${img})`);
-  else document.body.style.removeProperty("--bgImg");
-}
-function uploadBg(input) {
-  const f = input.files && input.files[0];
-  if (!f) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    try {
-      localStorage.setItem(LS_BG, e.target.result);
-      /* v0.9.73：上传即视为要启用背景层（旧版必须先选中「自定义」主题才生效）。 */
-      if (!settings.customBg) { settings.customBg = true; saveSettings(); }
-      applyBgImage();
-      document.body.classList.add("custom-bg");
-      if (typeof syncThemeControls === "function") syncThemeControls();
-      toast("✅ " + (curLang === "en" ? "Background saved" : "背景已保存"));
-    } catch (err) {
-      toast("⚠️ " + (curLang === "en" ? "Image too large for localStorage" : "图片过大，无法保存到 localStorage"));
-    }
-  };
-  reader.readAsDataURL(f);
-}
-function clearBg() {
-  localStorage.removeItem(LS_BG);
-  settings.customBg = false;
-  saveSettings();
-  document.body.classList.remove("custom-bg");
-  applyBgImage();
-  if (typeof syncThemeControls === "function") syncThemeControls();
-  toast("🗑 " + (curLang === "en" ? "Background cleared" : "背景已清除"));
-}
+   v0.9.73 的「调色板 × 明暗 × 强调色」三层模型在 v1.0.6 收敛为
+   「界面规格 × 明暗」两层，定义整体在 web/js/06-theme.js。
+   调色板、强调色与自定义背景图片三档设置已移除：
+     · 调色板/强调色与「界面规格」语义重复，同时选会互相打架；
+     · 自定义背景由规格自带的壁纸层取代（Aerial / 海报拼贴 / UltraBlur 取色），
+       壁纸是「算出来的」而不是用户上传的一张图，因此也不占用 localStorage 配额。
+   旧版本写在 localStorage 里的 dwu_bgimg（base64 图片，动辄几 MB）在这里主动清掉，
+   否则它会一直占着配额，把设置本身挤成写不进去。 */
+(function dropLegacyCustomBg() {
+  try {
+    if (localStorage.getItem("dwu_bgimg") !== null) localStorage.removeItem("dwu_bgimg");
+    const raw = localStorage.getItem(LS_SETTINGS);
+    if (!raw) return;
+    const s = JSON.parse(raw);
+    if (!s || typeof s !== "object") return;
+    let dirty = false;
+    ["palette", "accent", "customBg"].forEach(k => { if (k in s) { delete s[k]; dirty = true; } });
+    if (dirty) localStorage.setItem(LS_SETTINGS, JSON.stringify(s));
+  } catch (e) {}
+})();
 
 function saveHardwareAcceleration() {
   const value = document.getElementById("hardwareAcceleration")?.value;
@@ -1583,6 +1593,8 @@ function switchView(v, libId) {
     navKey = v + ":" + localMediaSelection[v];
   }
   window.vaultHubActiveNavKey = navKey;
+  /* v1.0.4（需求7）：记住当前页面（含媒体库 id），刷新后回到这里。 */
+  try { persistVaultHubRoute(v, libId || (typeof localMediaSelection !== "undefined" && localMediaSelection[v]) || ""); } catch (e) {}
   /* v0.9.74：顶栏媒体库标签与一级导航的高亮跟随同一次视图切换
      （同组媒体库靠 navKey 区分，所以必须把 navKey 一起传下去）。 */
   if (typeof syncTopLibTabs === "function") syncTopLibTabs(navKey);
@@ -1701,6 +1713,28 @@ function openAccountSettings() { openSettingsPage("account"); }
 /* v0.9.30：系统设置改为独立配置页 #view-settings。
    settingsReturnView 记住进入设置前所在的视图，关闭时回到那里而不是硬跳首页。 */
 let settingsReturnView = "home";
+/* v1.0.4（需求7）：刷新不再被踢回首页 —— 当前页面写进 localStorage，
+   启动后由 restoreVaultHubRoute() 原样恢复（媒体库还要带上 libId，
+   否则同组的漫画/电子书会落到第一个库）。 */
+const VH_ROUTE_KEY = "vaulthub_route";
+function persistVaultHubRoute(v, libId) {
+  if (!v) return;
+  try {
+    const route = { v: String(v), libId: libId ? String(libId) : "", tab: (typeof currentSetTab !== "undefined" ? currentSetTab : ""), at: Date.now() };
+    localStorage.setItem(VH_ROUTE_KEY, JSON.stringify(route));
+  } catch (e) {
+    /* 配额满时至少把「视图名」写进 cookie，恢复时不至于回首页。 */
+    vhWriteCookie("vh_view", v);
+  }
+}
+function savedVaultHubRoute() {
+  try {
+    const r = JSON.parse(localStorage.getItem(VH_ROUTE_KEY) || "null");
+    if (r && r.v) return r;
+  } catch (e) {}
+  const cookieView = vhReadCookie("vh_view");
+  return cookieView ? { v: cookieView, libId: "", tab: "" } : null;
+}
 function openSettingsPage(tab) {
   const current = document.querySelector(".view.active");
   if (current && current.id !== "view-settings") settingsReturnView = current.id.replace(/^view-/, "");

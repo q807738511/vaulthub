@@ -164,16 +164,18 @@ const chk = (name, cond, extra) => {
 
   await api.loadLocalFiles("comic", lib, 0);
   const html = () => target.innerHTML;
-  chk("页头显示库名", html().includes("<h1>漫画</h1>"));
+  /* v1.0.8（需求3）：书刊页头整块移除 —— 库名与统计属于配置信息。 */
+  chk("页头已移除（不再显示库名）", !html().includes("<h1>漫画</h1>"));
   /* v0.9.86（客户要求）：漫画 / 电子书的副标题不再展示媒体库映射的空间位置，
      页头只保留「本视图 / 全库 / 本页」这些阅读相关信息。 */
-  chk("页头元信息含本视图/全库且不再展示映射路径", html().includes("本视图 <b>25</b> 本") && html().includes("全库 <b>45</b> 本") && !html().includes("<code>/MH</code>"));
-  chk("页头含扫描时间", html().includes("上次扫描"));
+  chk("页头元信息已移除（本视图/全库/路径都不出现）", !html().includes("本视图") && !html().includes("全库") && !html().includes("<code>/MH</code>"));
+  chk("页头扫描时间已移除", !html().includes("上次扫描"));
   chk("三个书架标签齐备（书架/喜欢/历史阅读，无全部）", ["书架", "喜欢", "🕘 历史阅读"].every(x => html().includes(">" + x) || html().includes(x)) && !html().includes(">全部"));
   chk("标签带计数", html().includes("书架 25") && html().includes("喜欢 0") && html().includes("历史阅读 20"));
   chk("默认书架视图（扫描文件统一进书架）", api.getTab() === "shelf");
   chk("默认完整展开（不截断）", countCards() === 25, "实际 " + countCards());
-  chk("默认不显示分页器", !html().includes('aria-current="page"') && html().includes("已展开全部 25 本"));
+  /* v1.0.8（需求3）：「已展开全部 25 本」计数行移除，只剩完整展开本身。 */
+  chk("默认不显示分页器与计数行", !html().includes('aria-current="page"') && !html().includes("已展开全部"));
   chk("书架视图不含已读书", !html().includes("book-01.cbz"));
   chk("封面带喜欢按钮", html().includes('class="book-card-fav '));
   chk("卡片带阅读入口", html().includes("book-card-open"));

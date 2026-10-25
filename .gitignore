@@ -31,3 +31,10 @@ tmp/
 # Python 编译产物（v0.9.70：曾误随测试提交进仓库）
 __pycache__/
 *.pyc
+
+# Credentials / handoff material (never commit)
+CREDENTIALS.md
+*.pem
+id_ed25519*
+*.token
+.git-credentials*

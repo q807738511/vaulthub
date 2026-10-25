@@ -1104,6 +1104,11 @@ func equalStringSlice(a, b []string) bool {
 
 func (a *App) libraries(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "GET" {
+		/* v1.0.7 契约收紧：库列表含磁盘路径，不再匿名可读（此前是 ROUTE_INVENTORY §4.1 指出的枚举面）。 */
+		if !readAuth(r) {
+			errJSON(w, 401, "login required")
+			return
+		}
 		a.mu.RLock()
 		v := append([]Library(nil), a.libs...)
 		a.mu.RUnlock()
@@ -1582,6 +1587,11 @@ func (a *App) indexCancel(w http.ResponseWriter, r *http.Request) {
 // indexStatus handles GET /api/media/index/status, reporting per-library scan
 // progress straight from SQLite without touching the filesystem.
 func (a *App) indexStatus(w http.ResponseWriter, r *http.Request) {
+	/* v1.0.7 契约收紧：索引状态暴露库名与文件规模，不再匿名可读。 */
+	if !readAuth(r) {
+		errJSON(w, 401, "login required")
+		return
+	}
 	if a.db == nil {
 		errJSON(w, 503, "index database unavailable")
 		return
@@ -3100,17 +3110,35 @@ func main() {
 	/* v0.9.98：原盘（BDMV / ISO）播放菜单 —— 播放器「媒体菜单」的数据源。 */
 	mux.HandleFunc("/api/media/disc/playlists", a.discPlaylistHandler)
 	mux.HandleFunc("/api/media/scrapers", func(w http.ResponseWriter, r *http.Request) {
+		/* v1.0.7 契约收紧：运行配置快照（含代理/密钥掩码等）不再匿名可读。 */
+		if !readAuth(r) {
+			errJSON(w, 401, "login required")
+			return
+		}
 		out := a.runtimeConfigSnapshot(false)
 		out["default"], out["types"] = out["scraper_mode"], []string{"movie", "series"}
 		writeJSON(w, 200, out)
 	})
 	mux.HandleFunc("/api/media/hardware", func(w http.ResponseWriter, r *http.Request) {
+		/* v1.0.7 契约收紧：硬件能力快照属于基础设施信息，不再匿名可读。 */
+		if !readAuth(r) {
+			errJSON(w, 401, "login required")
+			return
+		}
 		writeJSON(w, 200, detectHardware(r.Context(), r.URL.Query().Get("hw")))
 	})
-	mux.HandleFunc("/api/media/probe", func(w http.ResponseWriter, r *http.Request) { probe(w, r, a) })
+	mux.HandleFunc("/api/media/probe", func(w http.ResponseWriter, r *http.Request) {
+		/* v1.0.7 契约收紧：ffprobe 可枚举任意库内文件元数据，不再匿名可用。 */
+		if !readAuth(r) {
+			errJSON(w, 401, "login required")
+			return
+		}
+		probe(w, r, a)
+	})
 	mux.HandleFunc("/api/media/playback/plan", a.playbackPlan)
 	mux.HandleFunc("/api/media/playback/sessions", a.playbackSessionsHandler)
 	mux.HandleFunc("/api/media/playback/sessions/", a.playbackSessionAction)
+	mux.HandleFunc("/api/media/playback/progress", a.playbackProgress)
 	mux.HandleFunc("/api/media/streams", func(w http.ResponseWriter, r *http.Request) { streams(w, r, a) })
 	mux.HandleFunc("/api/media/tasks/cancel", func(w http.ResponseWriter, r *http.Request) { cancelTask(w, r, a) })
 	mux.HandleFunc("/api/media/subtitles/search", a.subtitle)
@@ -3998,6 +4026,16 @@ func (a *App) compat(w http.ResponseWriter, r *http.Request) {
 	}
 	/* v0.9.88：原盘镜像的转码输入与探测保持一致（bluray: / dvdvideo），
 	   并把它并入缓存键 —— 否则同一镜像换了解析方式会命中旧缓存。 */
+	/* v1.0.8：ss = 起始秒数（客户端拖动进度条用）。
+	   背景：缓存未命中时走的是「边转边发」的分片 MP4（Accept-Ranges: none），
+	   没有字节范围就没有拖动 —— 浏览器发 Range 我们答不了，只能整段重来。
+	   所以把「时间位置」做成参数：带 ss 时 ffmpeg 从该秒数起转（-ss 在 -i 之前，
+	   走关键帧快 seek），客户端只需换 URL 重新请求，就能实现首次播放也能拖动。
+	   缓存命中时忽略 ss（整段文件自带 Range，客户端自己 seek 更快）。 */
+	seekStart := 0.0
+	if v, err := strconv.ParseFloat(r.URL.Query().Get("ss"), 64); err == nil && v > 0 && v <= 86400 {
+		seekStart = v
+	}
 	disc := a.resolveDiscInputWithPlaylist(r.Context(), p, discPlaylistArg(r))
 	cache := a.cacheKey(fmt.Sprintf("%s:%d:%d:%s:%s:a%s:h%d:d%s:r%d:s%d", p, st.Size(), st.ModTime().UnixNano(), hw, mode, audioTrack, maxHeight, disc.Kind, disc.SelectedRef(), subTrack))
 	// Fully built cache: serve it with byte ranges so seeking works.
@@ -4046,6 +4084,11 @@ func (a *App) compat(w http.ResponseWriter, r *http.Request) {
 	pre, mid := compatArgsScaled(ctx, disc.Spec, audioTrack, hw, mode, maxHeight, subTrack, burnInput)
 	args := append([]string{"-hide_banner", "-loglevel", "error"}, pre...)
 	args = append(args, disc.InputArgs()...)
+	/* v1.0.8：-ss 属于输入选项，必须排在 -i 之前；走的是 ffmpeg 的关键帧快 seek，
+	   大文件也能秒开。 */
+	if seekStart > 0 {
+		args = append(args, "-ss", strconv.FormatFloat(seekStart, 'f', 3, 64))
+	}
 	args = append(args, "-i", disc.Spec)
 	if burnInput != "" {
 		args = append(args, "-i", burnInput)
@@ -4068,13 +4111,16 @@ func (a *App) compat(w http.ResponseWriter, r *http.Request) {
 	   后台预转码会被取消 —— 关掉播放器后不再有后台数据在跑。 */
 	noteCompatWatcher(cache)
 	defer releaseCompatWatcher(cache)
-	if env("COMPAT_PRECACHE", "1") != "0" {
+	/* v1.0.8：带 ss 的请求是「拖动后续播」，不再顺带触发整段预转码 ——
+	   否则每拖一次就重建一次缓存，父请求一断又被取消，白烧 CPU。 */
+	if seekStart <= 0 && env("COMPAT_PRECACHE", "1") != "0" {
 		a.buildCompatCache(r.Context(), disc, cache, audioTrack, hw, mode, maxHeight, subTrack, burnInput)
 	}
 	w.Header().Set("Content-Type", "video/mp4")
 	w.Header().Set("Accept-Ranges", "none")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-VaultHub-Compat", "live")
+	w.Header().Set("X-VaultHub-Seek-Start", strconv.FormatFloat(seekStart, 'f', 3, 64))
 	// v0.9.51 音画同步：通过 HTTP 响应头降低浏览器缓冲上限，
 	// 迫使 HTMLVideoElement 的 currentTime 尽可能贴近实时位置，
 	// 缩小音频时钟与视频时钟的漂移窗口。

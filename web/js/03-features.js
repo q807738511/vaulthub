@@ -67,6 +67,66 @@ async function deleteMediaLibrary(id) {
   } catch (err) { toast("⚠️ 删除失败：" + err.message); }
 }
 
+/* ==================== v1.0.4（需求9）媒体库路径编辑 ====================
+   已建库过去只能删了重建才能加路径。这里在「重新扫描」左侧给一个 ✎ 入口：
+   主路径保持不变（它同时是刮削标识），只维护附加存储路径集合。
+   提交走与创建同一个接口（POST /api/media/libraries，同 id 同 name/type/path
+   但 paths 有变化 → 服务端持久化新配置并重新扫描），不新增后端接口。 */
+let libPathEditingId = "";
+function openLibraryPathEditor(id) {
+  const lib = typeof findMediaLibrary === "function" ? findMediaLibrary(id) : null;
+  if (!lib) return;
+  libPathEditingId = lib.id;
+  const nameEl = document.getElementById("libPathLibName");
+  const mainEl = document.getElementById("libPathMain");
+  const extraEl = document.getElementById("libPathExtra");
+  const msgEl = document.getElementById("libPathMsg");
+  if (nameEl) nameEl.textContent = lib.name + " · " + (typeof mediaTypeName === "function" ? mediaTypeName(lib.type) : lib.type);
+  if (mainEl) mainEl.value = lib.path || "";
+  if (extraEl) extraEl.value = (Array.isArray(lib.paths) ? lib.paths : []).join("\n");
+  if (msgEl) msgEl.textContent = "—";
+  if (typeof openModal === "function") openModal("libPathModal");
+  setTimeout(() => { try { extraEl && extraEl.focus(); } catch (e) {} }, 60);
+}
+function parseLibraryPathLines(raw) {
+  return String(raw || "").split("\n").map(x => x.trim()).filter(Boolean);
+}
+async function saveLibraryPaths() {
+  const lib = typeof findMediaLibrary === "function" ? findMediaLibrary(libPathEditingId) : null;
+  const extraEl = document.getElementById("libPathExtra");
+  const msgEl = document.getElementById("libPathMsg");
+  if (!lib) { if (msgEl) msgEl.textContent = "⚠️ 媒体库已不存在"; return; }
+  const paths = parseLibraryPathLines(extraEl ? extraEl.value : "");
+  const main = String(lib.path || "");
+  if (paths.includes(main)) { if (msgEl) msgEl.textContent = "⚠️ 附加路径不能与主路径重复"; return; }
+  if (typeof ensureSessionForWrite === "function" && !await ensureSessionForWrite("编辑媒体路径")) return;
+  if (msgEl) msgEl.textContent = "保存中…";
+  try {
+    const res = await fetch("/api/media/libraries", {
+      method: "POST",
+      headers: sessionWriteHeaders(),
+      credentials: "same-origin",
+      body: JSON.stringify({ id: lib.id, name: lib.name, type: lib.type, path: lib.path, paths })
+    });
+    if (!res.ok) {
+      let detail = "";
+      try { detail = (await res.json()).error || ""; } catch (e) {}
+      throw new Error(detail || ("HTTP " + res.status));
+    }
+    if (msgEl) msgEl.textContent = "✅ 已保存，正在重新扫描";
+    if (typeof closeModal === "function") closeModal("libPathModal");
+    toast("✅ 媒体路径已更新：" + lib.name);
+    if (typeof refreshMediaLibraries === "function") await refreshMediaLibraries(false);
+    if (typeof loadLocalFiles === "function") {
+      const group = typeof homeGroupOfType === "function" ? homeGroupOfType(lib.type) : "movie";
+      loadLocalFiles(group, lib, 0);
+    }
+  } catch (err) {
+    if (msgEl) msgEl.textContent = "⚠️ 保存失败：" + err.message;
+    toast("⚠️ 媒体路径保存失败：" + err.message);
+  }
+}
+
 /* ================= 内置系统监控 ================= */
 
 async function fetchJson(url, timeout = 4000, headers = {}) {

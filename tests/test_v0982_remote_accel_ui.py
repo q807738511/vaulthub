@@ -31,7 +31,7 @@ def check(name, cond):
 card = MEDIA.split("function movieRecStripHTML")[1].split("function recInfoBase")[0]
 check("1 播放按钮在略缩图容器内", '<div class="movie-rec-poster">${art}${play}</div>' in card)
 check("1 播放按钮不再占标题行", "${play}</div></article>" not in card and "${play}" in card)
-# v1.0.3（需求3）：▶ 按钮走 openLocalMedia 直接播放（旧实现只打开详情页，
+# v1.0.8（需求3）：▶ 按钮走 openLocalMedia 直接播放（旧实现只打开详情页，
 # 且库 id 取自经常为空的全局旁路，用户看到的是「定位及播放异常」）。
 check("1 按钮阻止冒泡直接播放",
       'class="movie-rec-play"' in card and "event.stopPropagation();openLocalMedia('movie'," in card)
@@ -87,10 +87,10 @@ check("5l 封面缓存头仍是公开长缓存", 'Cache-Control", "public, max-a
 check("5m 入口 Caddy 仍启用压缩", "encode zstd gzip" in CADDY)
 
 # ---------- 版本一致性 ----------
-check("V1 HTML 资源版本", 'VAULTHUB_ASSET_VERSION = "1.0.3"' in HTML)
-check("V2 脚本版本", 'VAULTHUB_SCRIPT_VERSION = "1.0.3"' in STATE)
-check("V3 静态缓存串", HTML.count("?v=1.0.3") >= 7)
-check("V4 UI 角标", "v1.0.3" in HTML)
+check("V1 HTML 资源版本", 'VAULTHUB_ASSET_VERSION = "1.0.8"' in HTML)
+check("V2 脚本版本", 'VAULTHUB_SCRIPT_VERSION = "1.0.8"' in STATE)
+check("V3 静态缓存串", HTML.count("?v=1.0.8") >= 7)
+check("V4 UI 角标", "v1.0.8" in HTML)
 
 print(f"v0.9.85 checks: {OK} passed, {FAIL} failed")
 import sys

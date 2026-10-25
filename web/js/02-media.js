@@ -529,8 +529,9 @@ function bookPagerHtml(total, shown, unit) {
   const size = bookPageSizeValue(prefs);
   const count = Number(total) || 0;
   if (!prefs.paged) {
-    /* 未开启分页：完整展开，只给出统计，不给假分页器（v0.9.70 的展开保证）。 */
-    return `<div class="pager"><span class="total">已展开全部 ${count} ${unit} · 需要分页可在「视图设置 → 分页浏览」开启</span></div>`;
+    /* v1.0.8（需求3）：未开启分页时不再显示「已展开全部 N 本」这类数量统计，
+       只保留分页器本身（开启分页时才有）。 */
+    return "";
   }
   const pages = Math.max(1, Math.ceil(count / size));
   const cur = Math.min(pages, Math.max(1, bookShelfPage + 1));
@@ -559,21 +560,10 @@ function bookShelfPageHtml(lib, pageFiles, counts, total) {
   }).join("");
   const sortLabel = (BOOK_SORT_MODES.find(m => m.id === prefs.sort) || BOOK_SORT_MODES[0]).label;
   const density = BOOK_DENSITIES.find(d => d.cols === Number(prefs.cols)) || BOOK_DENSITIES[1];
-  const kind = BOOK_KIND_LABELS[String(lib.type)] || "书刊";
-  const scan = bookScanLabel(lib);
-  const head = `<div class="pn-head">
-    <div>
-      <h1>${esc(lib.name)}</h1>
-      <div class="pn-meta">
-        <span>${esc(kind)} · 本视图 <b>${Number(total) || 0}</b> ${unit}</span>
-        <span>全库 <b>${Number((counts && counts.all) || 0)}</b> ${unit}</span>
-        ${/* v0.9.86：客户要求漫画 / 电子书的副标题不再展示媒体库映射的空间位置
-             （路径属于配置信息，放系统设置里看即可，不该占副标题）。 */ ''}
-        <span>本页 <b>${pageFiles.length}</b> ${unit}</span>
-        ${scan ? `<span>${esc(scan)}</span>` : ""}
-      </div>
-    </div>
-  </div>`;
+  /* v1.0.8（需求3）：书刊页头整块移除 —— 库名、大类、本视图/全库/本页数量、
+     扫描时间都属于配置信息，媒体库页面只留书架本体。 */
+  void unit; void total; void counts;
+  const head = "";
   const toolbar = `<div class="pn-toolbar">
     <div class="seg" role="tablist" aria-label="书架视图">${tabs}</div>
     <div class="pn-tools">
@@ -591,7 +581,8 @@ function bookShelfPageHtml(lib, pageFiles, counts, total) {
 let mediaResourceView = (() => { try { return localStorage.getItem("vaulthub_media_resource_view") === "list" ? "list" : "poster"; } catch(e) { return "poster"; } })();
 let mediaPageSize = 20;
 let audioPageSize = 20;
-let audioView = "albums";
+/* v1.0.8（需求5）：音乐库默认层级改为「歌手 → 该歌手的专辑 → 专辑歌曲」。 */
+let audioView = "artists";
 /* v0.9.82：本文件的本地缓存读写统一走 01-state.js 的 vaultStore* 安全通道
    （生产环境入口页保证 01-state.js 先加载）。行为测试的 Node VM 沙盒通常只加载
    本文件，这里补一份等价兜底实现：补不上会让「测试环境缺依赖」看起来像功能回归。 */
@@ -2280,8 +2271,10 @@ async function scrapeMovieMetadata(host, lib, files) {
 /* v0.9.17：媒体库标题只展示添加媒体库时填写的库名称，
    不再显示「电影 / 电视剧集 / 电子书 / 漫画 / 音乐与 MV」这类预设大类名。 */
 function mediaLibraryHeading(lib, badge, extra = "") {
-  const name = String(lib?.name || "").trim() || t("libNavEmpty");
-  return `<div class="content-section-heading"><div><span class="eyebrow">我的媒体库</span><h3>${esc(name)}</h3></div>${extra}${badge ? `<span class="badge">${esc(badge)}</span>` : ""}</div>`;
+  /* v1.0.8（需求3）：媒体库页面不再展示「我的媒体库 / 库名 / 条目数 / 扫描数量」。
+     内容页只呈现内容本身，库名与统计属于系统设置；函数签名保留，调用点无需改动。 */
+  void lib; void badge; void extra;
+  return "";
 }
 function renderMovieLibraryContent(host, lib, files) {
   if (lib?.type === "series") return renderSeriesLibraryContent(host, lib, files);
@@ -3604,8 +3597,10 @@ function setAudioPageSize(size) {
   if (lib) loadLocalFiles("audio", lib, 0);
 }
 function setAudioView(view) {
-  audioView = ["albums", "artists", "files", "favorites", "playlists", "tracks"].includes(view) ? view : "albums";
-  if (view !== "tracks") { audioTrackTitle = ""; audioArtistFilter = ""; audioPlaylistFilter = ""; audioGroupLock = null; }
+  audioView = ["albums", "artists", "artistAlbums", "files", "favorites", "playlists", "tracks"].includes(view) ? view : "artists";
+  /* v1.0.8：artistAlbums 是「某歌手的专辑」层，必须保留 audioArtistFilter；
+     其余非 tracks 视图清空分组筛选。 */
+  if (view !== "tracks" && view !== "artistAlbums") { audioTrackTitle = ""; audioArtistFilter = ""; audioPlaylistFilter = ""; audioGroupLock = null; }
   const lib = findMediaLibrary(localMediaSelection.audio);
   if (lib) loadLocalFiles("audio", lib, 0);
 }
@@ -3791,7 +3786,12 @@ function renderLocalMedia(group) {
   loadLocalFiles(group, selected);
 }
 function selectLocalLibrary(group, id) {
+  const prev = localMediaSelection[group];
   localMediaSelection[group] = id;
+  const host = document.getElementById("local-media-content-" + group);
+  /* v1.0.4（需求8）：点回同一个库、且内容已经在页面上 → 不重绘。
+     大库重绘等于把整库索引再拉一遍，用户看到的就是「切回来反复刷新」。 */
+  if (prev === id && host && host.childElementCount && !host.querySelector(".empty-tip")) return;
   renderLocalMedia(group);
 }
 
@@ -4257,7 +4257,30 @@ function reducedMotionOn() {
 }
 installMediaScrollPaging();
 
-async function loadLocalFiles(group, lib, offset = 0) {
+/* v1.0.4（需求8）：大库「切回来反复刷新」的两层保护。
+   ① 同一个库 + 同一页正在加载时，直接复用那个 Promise —— 旧实现每次点击都新起
+      一整套分页请求，几十万条的库会同时跑好几条链，界面看起来就是不停刷新；
+   ② 每次加载带一个代次号，只有最后一次的结果允许写进 DOM，早先的过期结果丢弃。 */
+const localFilesInflight = new Map();
+const localFilesToken = { comic: 0, movie: 0, audio: 0 };
+function loadLocalFiles(group, lib, offset = 0) {
+  const key = group + ":" + (lib && lib.id ? lib.id : "") + ":" + offset;
+  /* 去重只在「同一个宿主节点」上生效：renderLocalMedia 会重建
+     #local-media-content-<group>，此时旧请求的目标节点已经脱离文档，
+     复用它等于把结果写进看不见的节点（实测表现：刷新恢复页面后一直停在
+     「正在读取最近入库…」）。宿主变了就开新的一轮，旧结果由代次号丢弃。 */
+  const host = document.getElementById("local-media-content-" + group);
+  const running = localFilesInflight.get(key);
+  if (running && running.host === host) return running.promise;
+  const token = (localFilesToken[group] = (localFilesToken[group] || 0) + 1);
+  const entry = { host };
+  entry.promise = loadLocalFilesInner(group, lib, offset, token).finally(() => {
+    if (localFilesInflight.get(key) === entry) localFilesInflight.delete(key);
+  });
+  localFilesInflight.set(key, entry);
+  return entry.promise;
+}
+async function loadLocalFilesInner(group, lib, offset = 0, token = 0) {
   const target = document.getElementById("local-media-content-" + group);
   if (!target) return;
   /* v0.9.92：切库即释放其它库的重型缓存（整库索引 / 书架列表 / 阅读状态索引）。 */
@@ -4309,6 +4332,8 @@ async function loadLocalFiles(group, lib, offset = 0) {
         data.has_more = false;
       }
     }
+    /* 代次校验：期间用户又切了库/又点了一次，这次的结果已经过期，直接丢弃。 */
+    if (token && token !== localFilesToken[group]) return;
     files = files.sort((a, b) => String(a.path).localeCompare(String(b.path), "zh-CN"));
     files = files.filter(file => supportedLocalMediaFile(group, lib, String(file.path)));
     if (data.status === "indexing") {
@@ -4359,9 +4384,12 @@ async function loadLocalFiles(group, lib, offset = 0) {
     const total = Number(data.total) || files.length;
     const range = files.length ? `${offset + 1}-${offset + files.length}` : "本页无匹配";
     const seriesAllLoaded = group === "movie";
+    /* v1.0.8（需求3）：去掉底部的「已加载全部 N / N 项」与「range / total」计数，
+       只保留必要的上一页 / 下一页导航（影视库整库展示时连导航也不需要）。 */
+    void range; void total; void mediaTruncated;
     const pager = seriesAllLoaded
-      ? `<div class="media-actions"><span class="media-file-meta">已加载全部 ${files.length} / ${total} 项${mediaTruncated ? "（加载未完成）" : ""}</span></div>`
-      : `<div class="media-actions">${prev}<span class="media-file-meta">${range} / ${total}</span>${next}${data.has_more ? `<span class="page-scroll-hint">${esc(t("pagerScrollHint"))}</span>` : ""}</div>`;
+      ? ""
+      : `<div class="media-actions">${prev}${next}${data.has_more ? `<span class="page-scroll-hint">${esc(t("pagerScrollHint"))}</span>` : ""}</div>`;
     if (group === "comic") {
       /* v0.9.74：书刊展示页 = 页头（库名 / 条目 / 路径 / 扫描时间）
          + 工具栏（书架视图分段标签 + 排序 + 网格密度 + 视图设置）+ 封面网格 + 分页。 */
@@ -4843,9 +4871,64 @@ function renderAudioArtists(lib, files) {
      未刮削/失败时回落渐变首字。
      v0.9.57：新增「▶ 播放」—— 直接播放该歌手全部歌曲（队列即歌手）。
      v0.9.66：同专辑卡片，移除重复的 ✎ 编辑按钮。 */
-  return `<div class="audio-album-grid audio-artist-grid">${[...groups.entries()].map(([artist, songs]) => { const artistMeta = audioArtistInfoFor(artist); const cover = artistMeta && artistMeta.cover ? `<img class="audio-artist-avatar" src="${esc(coverThumbUrl(artistMeta.cover, 320))}" alt="${esc(artist)}" loading="lazy" onerror="this.parentElement.classList.add('audio-artist-avatar-fallback');this.remove()">` : ""; return `<article class="audio-album-card audio-artist-card" onclick="openAudioTracks('${esc(lib.id)}','artist',${esc(JSON.stringify(artist))})"><div class="audio-album-cover audio-artist-cover" style="${cover ? "" : `background:${coverGradient(artist)}`}">${cover || esc(artist)}</div><div class="audio-album-info"><strong>${esc(artist)}</strong><small>${songs.length} 首歌曲${artistMeta && artistMeta.collaborators && artistMeta.collaborators.length > 1 ? " · 合作演唱" : ""}</small><div class="media-actions"><button class="btn" title="直接播放该歌手全部歌曲" onclick="event.stopPropagation();playAudioGroup('${esc(lib.id)}','artist',${esc(JSON.stringify(artist))})">▶ 播放</button><button class="btn" title="喜欢歌手" onclick="event.stopPropagation();toggleAudioFavorite(${jsAttrArg(lib.id)},${jsAttrArg(songs[0].path)})">${isAudioFavorite(lib.id, songs[0].path) ? "♥" : "♡"}</button></div></article>`; }).join("")}</div>`;
+  /* v1.0.8（需求4）：页签移除后，喜欢与歌单以入口卡的形式留在歌手网格最前面，
+     不占页头、也不影响「默认就是歌手列表」这一层级。 */
+  const favCount = audioFavoriteRows().length;
+  const playlistCount = readAudioPlaylists().length;
+  const entries = `<article class="audio-album-card audio-entry-card" onclick="setAudioView('favorites')"><div class="audio-album-cover audio-entry-cover" style="background:${coverGradient("喜欢")}">♥</div><div class="audio-album-info"><strong>喜欢</strong><small>${favCount} 首</small></div></article>`
+    + `<article class="audio-album-card audio-entry-card" onclick="setAudioView('playlists')"><div class="audio-album-cover audio-entry-cover" style="background:${coverGradient("歌单")}">♫</div><div class="audio-album-info"><strong>歌单</strong><small>${playlistCount} 个</small></div></article>`;
+  return `<div class="audio-album-grid audio-artist-grid">${entries}${[...groups.entries()].map(([artist, songs]) => { const artistMeta = audioArtistInfoFor(artist); const cover = artistMeta && artistMeta.cover ? `<img class="audio-artist-avatar" src="${esc(coverThumbUrl(artistMeta.cover, 320))}" alt="${esc(artist)}" loading="lazy" onerror="this.parentElement.classList.add('audio-artist-avatar-fallback');this.remove()">` : ""; return `<article class="audio-album-card audio-artist-card" onclick="openAudioArtist('${esc(lib.id)}',${jsAttrArg(artist)})"><div class="audio-album-cover audio-artist-cover" style="${cover ? "" : `background:${coverGradient(artist)}`}">${cover || esc(artist)}</div><div class="audio-album-info"><strong>${esc(artist)}</strong><small>${songs.length} 首歌曲${artistMeta && artistMeta.collaborators && artistMeta.collaborators.length > 1 ? " · 合作演唱" : ""}</small><div class="media-actions"><button class="btn" title="直接播放该歌手全部歌曲" onclick="event.stopPropagation();playAudioGroup('${esc(lib.id)}','artist',${esc(JSON.stringify(artist))})">▶ 播放</button><button class="btn" title="喜欢歌手" onclick="event.stopPropagation();toggleAudioFavorite(${jsAttrArg(lib.id)},${jsAttrArg(songs[0].path)})">${isAudioFavorite(lib.id, songs[0].path) ? "♥" : "♡"}</button></div></article>`; }).join("")}</div>`;
 }
 let audioArtistFilter = "";
+
+/* v1.0.8（需求5）：歌手 → 专辑。
+ * 旧版点歌手直接摊成一个长曲目列表（该歌手全部歌混在一起），专辑边界丢失。
+ * 现在分两层：点歌手 → 只列这个歌手的专辑卡片（可播放歌手全部 / 编辑歌手）；
+ * 点专辑 → 才是专辑曲目列表（可播放专辑全部 / 编辑专辑 / 逐首编辑与播放）。 */
+async function openAudioArtist(libId, artist) {
+  const lib = findMediaLibrary(String(libId));
+  const host = document.getElementById("local-media-content-audio");
+  if (!lib || !host) return;
+  const name = String(artist || "");
+  audioArtistFilter = name;
+  audioPlaylistFilter = "";
+  audioTrackTitle = name;
+  audioTracksBack = "artists";
+  audioView = "artistAlbums";
+  audioGroupLock = { kind: "artist", key: name };
+  try {
+    const files = await audioGroupFiles(lib.id, "artist", name);
+    audioFiles = files;
+    audioCursor = 0;
+    renderAudioLibraryContent(host, lib, files);
+  } catch (e) {
+    toast("⚠️ 拉取该歌手的专辑失败");
+  }
+}
+function renderAudioArtistAlbums(lib, files, artist) {
+  const groups = new Map();
+  files.forEach(file => {
+    const meta = audioMetadataFor(String(file.path));
+    const key = meta.album || "未知专辑";
+    if (!groups.has(key)) groups.set(key, { meta, files: [] });
+    groups.get(key).files.push(file);
+  });
+  const name = String(artist || "");
+  const head = `<div class="audio-track-head">`
+    + `<button class="btn audio-play-all" title="播放该歌手全部歌曲" onclick="playAudioGroup('${esc(lib.id)}','artist',${jsAttrArg(name)})">▶ 播放歌手全部</button>`
+    + `<button class="btn" title="编辑歌手名称与头像" onclick="openAudioGroupEdit('artist',${jsAttrArg(name)})">✎ 编辑歌手</button>`
+    + `<button class="btn" onclick="audioTrackTitle='';audioArtistFilter='';audioGroupLock=null;setAudioView('artists')">← 返回</button>`
+    + `<strong>${esc(name)}</strong><span class="media-file-meta">${groups.size} 张专辑 · ${files.length} 首</span></div>`;
+  const cards = [...groups.entries()].map(([album, group]) => {
+    const cover = audioCoverData(group.meta, album);
+    return `<article class="audio-album-card" onclick="openAudioTracks('${esc(lib.id)}','album',${esc(JSON.stringify(album))})">`
+      + `<div class="audio-album-cover" style="background:${coverGradient(album)}">${cover}</div>`
+      + `<div class="audio-album-info"><strong>${esc(album)}</strong><small>${esc(group.meta.artist || name)} · ${group.files.length} 首</small>`
+      + `<div class="media-actions"><button class="btn" title="直接播放该专辑全部歌曲" onclick="event.stopPropagation();playAudioGroup('${esc(lib.id)}','album',${esc(JSON.stringify(album))})">▶ 播放</button>`
+      + `<button class="btn" title="编辑专辑" onclick="event.stopPropagation();openAudioGroupEdit('album',${jsAttrArg(album)})">✎</button></div></div></article>`;
+  }).join("");
+  return head + (cards ? `<div class="audio-album-grid">${cards}</div>` : '<div class="empty-tip">该歌手暂无专辑信息</div>');
+}
 /* v0.9.56：点击专辑/歌手卡片 → 展示该专辑/歌手全部曲目。
    之前沿用 loadLocalFiles 分页只取第一页、tracks 视图又隐藏翻页器，
    曲目较多的专辑/歌手只能看到前 N 首；现改为整单拉取（与歌单 loadPlaylistTracks
@@ -4876,11 +4959,15 @@ function playAudioGroup(libId, kind, key) {
   }).catch(() => toast("⚠️ 拉取分组歌曲失败"));
 }
 async function openAudioTracks(libId, kind, key) {
-  audioArtistFilter = String(key);
+  /* v1.0.8（需求5）：专辑层可能来自「歌手 → 专辑」这条路径，返回要回到该歌手的专辑页，
+     而不是整库专辑页。audioArtistFilter 只在歌手维度赋值，专辑维度不再覆盖它（否则
+     返回后筛选条件被换成专辑名，页面直接空掉）。 */
+  const fromArtist = audioView === "artistAlbums";
+  if (kind === "artist") audioArtistFilter = String(key);
   audioPlaylistFilter = "";
   audioTrackTitle = String(key);
   audioView = "tracks";
-  audioTracksBack = kind === "artist" ? "artists" : "albums";
+  audioTracksBack = kind === "artist" ? "artists" : (fromArtist ? "artistAlbums" : "albums");
   const lib = findMediaLibrary(libId);
   const host = document.getElementById("local-media-content-audio");
   if (!lib || !host) return;
@@ -4901,27 +4988,38 @@ function renderAudioTrackList(lib, files) {
      循环模式只在播放器底部按钮中体现（cycleAudioLoop）。
      v0.9.57：专辑/歌手分组曲目列表头部增加「▶ 播放全部」——
      点击直接播放当前分组全部歌曲（队列即该专辑/歌手）。 */
-  const back = audioTracksBack === "artists" ? "artists" : audioTracksBack === "playlists" ? "playlists" : "albums";
-  const groupPlay = (back === "artists" || back === "albums")
+  const back = audioTracksBack === "artists" ? "artists" : audioTracksBack === "playlists" ? "playlists" : audioTracksBack === "artistAlbums" ? "artistAlbums" : "albums";
+  const groupPlay = (back === "artists" || back === "albums" || back === "artistAlbums")
     ? `<button class="btn audio-play-all" title="直接播放当前${back === "artists" ? "歌手" : "专辑"}全部歌曲" onclick="playAudioGroup('${esc(lib.id)}','${back === "artists" ? "artist" : "album"}',${esc(JSON.stringify(audioTrackTitle))})">▶ 播放全部</button>`
     : "";
   /* v0.9.66：编辑入口从海报卡片移到曲目列表头部 —— 海报卡片本身点击即可进入本列表，
      编辑按钮放这里既保留 v0.9.56「可编辑专辑/歌手」能力，又消除功能重复。 */
-  const groupEdit = (back === "artists" || back === "albums")
+  const groupEdit = (back === "artists" || back === "albums" || back === "artistAlbums")
     ? `<button class="btn" title="编辑当前${back === "artists" ? "歌手" : "专辑"}名称与封面" onclick="openAudioGroupEdit('${back === "artists" ? "artist" : "album"}',${jsAttrArg(audioTrackTitle)})">✎ 编辑</button>`
     : "";
-  return `<div class="audio-track-head">${groupPlay}${groupEdit}<button class="btn" onclick="audioTrackTitle='';audioArtistFilter='';audioPlaylistFilter='';setAudioView('${back}')">← 返回</button><strong>${esc(audioTrackTitle)}</strong><span class="media-file-meta">${files.length} 首</span></div>${files.length ? `<div class="media-file-list">${files.map(file => renderAudioRow(lib, file)).join("")}</div>` : '<div class="empty-tip">该列表下暂无歌曲</div>'}`;
+  const backAction = back === "artistAlbums" && audioArtistFilter
+    ? `audioPlaylistFilter='';openAudioArtist('${esc(lib.id)}',${jsAttrArg(audioArtistFilter)})`
+    : `audioTrackTitle='';audioArtistFilter='';audioPlaylistFilter='';setAudioView('${back}')`;
+  return `<div class="audio-track-head">${groupPlay}${groupEdit}<button class="btn" onclick="${backAction}">← 返回</button><strong>${esc(audioTrackTitle)}</strong><span class="media-file-meta">${files.length} 首</span></div>${files.length ? `<div class="media-file-list">${files.map(file => renderAudioRow(lib, file)).join("")}</div>` : '<div class="empty-tip">该列表下暂无歌曲</div>'}`;
 }
 function renderAudioLibraryContent(host, lib, files, data) {
   const latest = [...files].sort((a, b) => Number(b.mtime || 0) - Number(a.mtime || 0)).slice(0, 8);
   /* v0.9.86：音乐库取消「上一页 / 下一页 / 每页 N」——
      整库一次展示，这里只留一行「已展开全部 N 首」的统计。 */
+  /* v1.0.8（需求3/4）：音乐库同样不再显示任何「已展开全部 N 首」计数。 */
   const total = Number((data && data.total) || files.length) || files.length;
-  const pager = `<div class="media-actions"><span class="media-file-meta">已展开全部 ${files.length} 首${total > files.length ? ` / ${total}` : ""} · 音乐库不再分页</span></div>`;
+  const pager = "";
   const visibleFiles = audioPlaylistFilter ? files : audioArtistFilter ? files.filter(file => { const meta = audioMetadataFor(String(file.path)); return meta.artist === audioArtistFilter || meta.album === audioArtistFilter; }) : files;
-  let body = audioView === "tracks" ? renderAudioTrackList(lib, visibleFiles) : audioView === "artists" ? renderAudioArtists(lib, files) : audioView === "playlists" ? renderAudioPlaylists(lib) : audioView === "favorites" ? renderAudioFavorites(lib) : renderAudioAlbums(lib, files);
+  let body = audioView === "tracks" ? renderAudioTrackList(lib, visibleFiles)
+    : audioView === "artistAlbums" ? renderAudioArtistAlbums(lib, files, audioArtistFilter)
+    : audioView === "artists" ? renderAudioArtists(lib, files)
+    : audioView === "playlists" ? renderAudioPlaylists(lib)
+    : audioView === "favorites" ? renderAudioFavorites(lib)
+    : renderAudioAlbums(lib, files);
   const latestGrid = audioView === "albums" && latest.length ? `<section class="content-collection latest-music"><div class="content-section-heading"><div><span class="eyebrow">最新音乐</span><h3>最近识别与入库</h3></div></div><div class="audio-latest-grid">${latest.map(file => renderAudioLatestCard(lib, file)).join("")}</div></section>` : "";
-  const audioTabs = `<div class="audio-view-tabs"><button class="${audioView === "albums" ? "active" : ""}" onclick="setAudioView('albums')">专辑</button><button class="${audioView === "artists" ? "active" : ""}" onclick="setAudioView('artists')">歌手</button><button class="${audioView === "playlists" || (audioView === "tracks" && audioPlaylistFilter) ? "active" : ""}" onclick="setAudioView('playlists')">♫ 歌单</button><button class="${audioView === "favorites" ? "active" : ""}" onclick="setAudioView('favorites')">♥ 喜欢</button></div>`;
+  /* v1.0.8（需求4）：右上角的「专辑 / 歌手 / 歌单 / 喜欢」页签整条移除。
+     喜欢与歌单改为页首两张入口卡（见 renderAudioArtists），不再占页头。 */
+  const audioTabs = "";
   host.innerHTML = `<section class="content-collection">${mediaLibraryHeading(lib, "", audioTabs)}${body}${audioView === "favorites" || audioView === "tracks" || audioView === "playlists" ? "" : pager}</section>${latestGrid}`;
   /* v0.9.56：歌手视图渲染后异步刮削歌手头像（成功后自动重渲染刷新封面）。
    刮削失败（两源都没命中）时把 provider 留空写进缓存，卡片走「文件名/歌手名文字占位」，
@@ -6784,8 +6882,9 @@ function videoTogglePlay(el) {
 function videoSkip(el, seconds) {
   const video = videoElementOf(el);
   if (!video || !Number.isFinite(video.currentTime)) return;
-  const limit = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : Infinity;
-  video.currentTime = Math.max(0, Math.min(limit, video.currentTime + Number(seconds || 0)));
+  const total = videoTimelineDuration(video);
+  const limit = total > 0 ? total : Infinity;
+  seekVideoTo(video, Math.max(0, Math.min(limit, videoAbsoluteTime(video) + Number(seconds || 0))));
   saveVideoPlaybackState(video);
   updateVideoTimeline(video);
   scheduleVideoChromeHide(videoRootOf(el));
@@ -6947,6 +7046,13 @@ function syncVideoChromeState(root, video) {
   if (!root || !video) return;
   const button = root.querySelector("[data-video-play]");
   if (button) { button.innerHTML = videoPlayPauseIcon(video.paused); button.title = video.paused ? t("vpPlay") : t("vpPause"); }
+  /* v1.0.6：中央大播放键与底栏播放键同源同步 —— 两处显示相反图标就是 bug。 */
+  const center = root.querySelector("[data-video-center-play]");
+  if (center) {
+    center.innerHTML = videoPlayPauseIcon(video.paused);
+    center.title = video.paused ? t("vpPlay") : t("vpPause");
+    center.classList.toggle("is-playing", !video.paused);
+  }
   syncVideoVolumeUI(root, video);
 }
 function openVideoDetailsFromPlayer(el) {
@@ -6981,15 +7087,16 @@ async function createVideoPlaybackSession(root, lib, path, mode) {
 }
 function reportVideoPlaybackSession(root, video, state) {
   const id=root?.dataset.playbackSession; if(!id)return;
-  fetch(`/api/media/playback/sessions/${encodeURIComponent(id)}/progress`,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({position_ms:Math.round((video.currentTime||0)*1000),duration_ms:Math.round((video.duration||0)*1000),state:state||(!video.paused?'playing':'paused')}),keepalive:true}).catch(()=>{});
+  fetch(`/api/media/playback/sessions/${encodeURIComponent(id)}/progress`,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({position_ms:Math.round(videoAbsoluteTime(video)*1000),duration_ms:Math.round(videoTimelineDuration(video)*1000),state:state||(!video.paused?'playing':'paused')}),keepalive:true}).catch(()=>{});
 }
 function stopVideoPlaybackSession(root) {
   mediaKeepAliveStop("video");
   const id=root?.dataset.playbackSession; if(!id)return;
+  const vp=root?.querySelector('video'); if(vp) saveVideoPlaybackState(vp, true);
   fetch(`/api/media/playback/sessions/${encodeURIComponent(id)}/stop`,{method:'POST',credentials:'same-origin',keepalive:true}).catch(()=>{}); root.dataset.playbackSession='';
 }
 function bindVideoStatus(root, video) {
-  [["loadstart","正在连接"],["waiting","正在缓冲"],["playing","正在播放"],["pause","已暂停"],["ended","播放完成"],["stalled","网络等待"],["error","播放错误"]].forEach(([ev,label])=>video.addEventListener(ev,()=>{updateVideoStatus(root,video,label);if(['pause','ended'].includes(ev))reportVideoPlaybackSession(root,video,ev);}));
+  [["loadstart","正在连接"],["waiting","正在缓冲"],["playing","正在播放"],["pause","已暂停"],["ended","播放完成"],["stalled","网络等待"],["error","播放错误"]].forEach(([ev,label])=>video.addEventListener(ev,()=>{updateVideoStatus(root,video,label);if(['pause','ended'].includes(ev)){reportVideoPlaybackSession(root,video,ev);saveVideoPlaybackState(video,true);}}));
   /* v0.9.61：视频实际开始播放时启用会话保活；暂停仍保留播放上下文，只有结束、
      报错或关闭播放器才停止。具名 source 让切流时重复 play 保持幂等。 */
   video.addEventListener("playing", () => mediaKeepAliveStart("video"));
@@ -7058,20 +7165,111 @@ function bindDockedRestoreHover(root, video) {
 }
 function formatVideoTime(value) { return formatMediaTime(value); }
 function videoPlaybackKey(lib, path) { return `vaulthub_video_${lib.id}_${path}`; }
-function saveVideoPlaybackState(video) {
+function saveVideoPlaybackState(video, force) {
   const root=video?.closest('.media-video-body'); const libId=root?.dataset.library, mediaPath=root?.dataset.path;
   if (!root || !libId || !mediaPath || !Number.isFinite(video.currentTime)) return;
-  try { localStorage.setItem(`vaulthub_video_${libId}_${mediaPath}`, JSON.stringify({time:video.currentTime, updatedAt:Date.now()})); } catch(e) {}
+  try { localStorage.setItem(`vaulthub_video_${libId}_${mediaPath}`, JSON.stringify({time:videoAbsoluteTime(video), updatedAt:Date.now()})); } catch(e) {}
+  /* v1.0.7：进度同时落服务端（/api/media/playback/progress），跨设备「继续观看」才有数据源。
+     timeupdate 每 250ms 触发一次，节流 15s；暂停/结束/关闭播放器走 force。 */
+  if (!force && Date.now() - (root.__progressPutAt || 0) < 15000) return;
+  root.__progressPutAt = Date.now();
+  const pos = Math.round(videoAbsoluteTime(video) * 1000);
+  if (!(pos > 0)) return;
+  const body = { position_ms: pos };
+  const durMs = Math.round((video.duration || 0) * 1000);
+  if (durMs > 0) body.duration_ms = durMs;
+  fetch(`/api/media/playback/progress?id=${encodeURIComponent(libId)}&path=${encodeURIComponent(mediaPath)}`, {
+    method: "PUT", credentials: "same-origin", keepalive: true,
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
+  }).catch(() => {});
 }
 function restoreVideoPlaybackState(video) {
   const root=video?.closest('.media-video-body'); if(!root) return;
-  try { const saved=JSON.parse(localStorage.getItem(`vaulthub_video_${root.dataset.library}_${root.dataset.path}`)||'null'); if(saved && Number.isFinite(saved.time) && saved.time>2 && saved.time<video.duration-2) video.currentTime=saved.time; } catch(e) {}
+  let resumed=false;
+  /* v1.0.8（需求1）：live 流的 duration 只是分片时长（几秒），不能当上限；
+     有断点时用 ss 重开流，并且只重开一次（liveRestored 防 loadedmetadata 回环）。 */
+  const liveNow = videoIsLiveStream(video);
+  const totalDur = videoTimelineDuration(video);
+  try { const saved=JSON.parse(localStorage.getItem(`vaulthub_video_${root.dataset.library}_${root.dataset.path}`)||'null'); if(saved && Number.isFinite(saved.time) && saved.time>2 && (totalDur ? saved.time < totalDur-2 : saved.time<video.duration-2)){ if(liveNow){ if(!video.dataset.liveRestored){ video.dataset.liveRestored="1"; restartLiveStream(video, saved.time); } } else video.currentTime=saved.time; resumed=true; } } catch(e) {}
+  /* v1.0.7：本机没有记录（换设备/清缓存）时向服务端要一次，取「继续观看」断点。
+     完成态（completed）不再续播；断点太靠尾（<15s 余量）也不续。 */
+  if (resumed) return;
+  const libId=root.dataset.library, mediaPath=root.dataset.path;
+  if (!libId || !mediaPath) return;
+  fetch(`/api/media/playback/progress?id=${encodeURIComponent(libId)}`, { cache: "no-store", credentials: "same-origin" })
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+      const entry = data?.items?.[mediaPath];
+      if (!entry || entry.completed) return;
+      const pos = (entry.position_ms || 0) / 1000;
+      const dur = videoTimelineDuration(video) || (entry.duration_ms || 0) / 1000;
+      if (pos > 5 && (!dur || pos < dur - 15)) {
+        if (videoIsLiveStream(video)) { if (!video.dataset.liveRestored) { video.dataset.liveRestored = "1"; restartLiveStream(video, pos); } }
+        else video.currentTime = pos;
+      }
+    })
+    .catch(() => {});
+}
+/* ================= v1.0.8（需求1）：live 转码流的可拖动实现 =================
+   问题：兼容流是「边转边发」的分片 MP4（Accept-Ranges: none），没有字节范围，
+   浏览器发不了 Range 请求 —— 首次播放（缓存还没转完）整条进度条拖不动。
+   服务端 v1.0.8 给 /api/media/compat 加了 ss=<秒>：从该秒数重新起转码。
+   播放器因此把「时间」当坐标：
+     · liveOffset   当前这条流对应的起始秒数（0 表示从头开始）；
+     · liveDuration 整片时长（来自播放计划里的 ffprobe 结果）。
+   缓存命中后（服务端回完整文件、浏览器能看到可 seek 区间）自动切回原生拖动。 */
+function videoIsLiveStream(video) {
+  if (!video || video.dataset.liveStream !== "1") return false;
+  const seekable = video.seekable;
+  const dur = Number(video.duration);
+  if (seekable && seekable.length && Number.isFinite(dur) && dur > 0
+      && seekable.end(seekable.length - 1) >= dur - 2) {
+    video.dataset.liveStream = "";
+    video.dataset.liveOffset = "0";
+    return false;
+  }
+  return true;
+}
+function videoLiveOffset(video) { return videoIsLiveStream(video) ? Number(video.dataset.liveOffset || 0) || 0 : 0; }
+function videoAbsoluteTime(video) { return videoLiveOffset(video) + (Number.isFinite(video.currentTime) ? video.currentTime : 0); }
+function videoTimelineDuration(video) {
+  if (videoIsLiveStream(video)) { const d = Number(video.dataset.liveDuration || 0); if (d > 0) return d; }
+  return Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
+}
+/* 从指定秒数重新拉一条 live 流（服务端按 ss 重起转码）。 */
+function restartLiveStream(video, seconds) {
+  const src = String(video.dataset.currentSrc || video.src || "");
+  if (!src) return;
+  const target = Math.max(0, Math.round(Number(seconds) || 0));
+  const base = src.replace(/([?&])ss=[^&]*/g, "$1").replace(/[?&]$/, "");
+  const url = base + (base.includes("?") ? "&" : "?") + "ss=" + target;
+  const wasPlaying = !video.paused;
+  video.dataset.liveStream = "1";
+  video.dataset.liveOffset = String(target);
+  video.dataset.liveRestored = "1";
+  video.dataset.currentSrc = url;
+  video.src = url;
+  video.load();
+  video.addEventListener("loadedmetadata", () => {
+    video.dataset.liveOffset = String(target);
+    if (wasPlaying) video.play().catch(() => {});
+    updateVideoTimeline(video);
+  }, { once: true });
+  updateVideoTimeline(video);
+}
+/* 统一的「跳到第 N 秒」：live 流重开流，普通流直接改 currentTime。 */
+function seekVideoTo(video, seconds) {
+  if (!video) return;
+  const target = Math.max(0, Number(seconds) || 0);
+  if (!videoIsLiveStream(video)) { try { video.currentTime = target; } catch (e) { /* 不可 seek 的流 */ } return; }
+  restartLiveStream(video, target);
 }
 function updateVideoTimeline(video) {
   const root=video?.closest('.media-video-body'); if(!root) return;
-  const duration=Number.isFinite(video.duration)&&video.duration>0?video.duration:0;
-  const played=duration?video.currentTime/duration*100:0;
-  const buffered=duration&&video.buffered?.length?video.buffered.end(video.buffered.length-1)/duration*100:0;
+  const duration=videoTimelineDuration(video);
+  const now=videoAbsoluteTime(video);
+  const played=duration?now/duration*100:0;
+  const buffered=duration&&video.buffered?.length?(videoLiveOffset(video)+video.buffered.end(video.buffered.length-1))/duration*100:0;
   const p=root.querySelector('.video-played-range'), b=root.querySelector('.video-buffered-range'), label=root.querySelector('.video-time-label');
   if(p)p.style.width=`${Math.min(100,played)}%`; if(b)b.style.width=`${Math.min(100,buffered)}%`;
   /* v0.9.51：进度点跟着已播比例走，让用户看得出可以拖动。 */
@@ -7080,15 +7278,16 @@ function updateVideoTimeline(video) {
   const shell=root.querySelector('.video-progress-shell');
   if(shell)shell.setAttribute('aria-valuenow',String(Math.round(Math.min(100,Math.max(0,played)))));
   /* v0.9.51：左下角只显示「当前时间 / 视频时长」，缓冲量移到「获取信息」面板。 */
-  if(label)label.textContent=`${formatVideoTime(video.currentTime)} / ${formatVideoTime(video.duration)}`;
+  if(label)label.textContent=`${formatVideoTime(now)} / ${formatVideoTime(duration)}`;
 }
 /* v0.9.51：进度条支持点击定位与按住拖动；键盘左右键也能移动，便于无鼠标操作。 */
 function videoSeekRatio(event, shell) { const r=shell.getBoundingClientRect(); if(!(r.width>0))return 0; return Math.max(0,Math.min(1,(event.clientX-r.left)/r.width)); }
 function seekVideoTimeline(event, shell) {
   const root=shell.closest('.media-video-body');
   const video=root?.querySelector('video');
-  if(!video||!Number.isFinite(video.duration)||video.duration<=0)return;
-  video.currentTime=videoSeekRatio(event,shell)*video.duration;
+  const total=videoTimelineDuration(video);
+  if(!video||!total)return;
+  seekVideoTo(video, videoSeekRatio(event,shell)*total);
   saveVideoPlaybackState(video);
   updateVideoTimeline(video);
   scheduleVideoChromeHide(root);
@@ -7098,20 +7297,24 @@ function bindVideoTimelineDrag(root) {
   const video=root?.querySelector('video');
   if(!shell||!video)return;
   let dragging=false;
-  const apply=event=>{ if(!Number.isFinite(video.duration)||video.duration<=0)return; video.currentTime=videoSeekRatio(event,shell)*video.duration; updateVideoTimeline(video); };
+  /* v1.0.8（需求1）：live 流拖动时只更新进度预览，松手才带 ss 重新拉流 ——
+     否则每移动一个像素就重起一次 ffmpeg。 */
+  let pending=0;
+  const apply=event=>{ const total=videoTimelineDuration(video); if(!total)return; pending=videoSeekRatio(event,shell)*total; if(!videoIsLiveStream(video)){ video.currentTime=pending; } updateVideoTimeline(video); };
   shell.addEventListener('pointerdown',event=>{ dragging=true; shell.setPointerCapture?.(event.pointerId); apply(event); });
   shell.addEventListener('pointermove',event=>{ if(dragging)apply(event); });
-  const finish=()=>{ if(!dragging)return; dragging=false; saveVideoPlaybackState(video); scheduleVideoChromeHide(root); };
+  const finish=()=>{ if(!dragging)return; dragging=false; if(videoIsLiveStream(video)) seekVideoTo(video, pending); else if(Number.isFinite(pending)) video.currentTime=pending; saveVideoPlaybackState(video); scheduleVideoChromeHide(root); };
   shell.addEventListener('pointerup',finish);
   shell.addEventListener('pointercancel',finish);
   shell.addEventListener('keydown',event=>{
     if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
     event.preventDefault();
-    const limit=Number.isFinite(video.duration)&&video.duration>0?video.duration:0;
+    const limit=videoTimelineDuration(video);
     if(!limit)return;
-    if(event.key==='Home')video.currentTime=0;
-    else if(event.key==='End')video.currentTime=Math.max(0,limit-1);
-    else video.currentTime=Math.max(0,Math.min(limit,video.currentTime+(event.key==='ArrowRight'?5:-5)));
+    const cur=videoAbsoluteTime(video);
+    if(event.key==='Home')seekVideoTo(video,0);
+    else if(event.key==='End')seekVideoTo(video,Math.max(0,limit-1));
+    else seekVideoTo(video,Math.max(0,Math.min(limit,cur+(event.key==='ArrowRight'?5:-5))));
     saveVideoPlaybackState(video);
     updateVideoTimeline(video);
   });
@@ -7119,7 +7322,7 @@ function bindVideoTimelineDrag(root) {
 function handleVideoKeyboard(event, video) {
   if(!video || event.target.matches('input,textarea,select,button')) return;
   if(event.repeat) return;
-  if(['ArrowLeft','ArrowRight',' ','k','K'].includes(event.key)) { event.preventDefault(); if(event.key==='ArrowLeft')video.currentTime=Math.max(0,video.currentTime-10); else if(event.key==='ArrowRight')video.currentTime=Math.min(video.duration||Infinity,video.currentTime+10); else video.paused?video.play().catch(()=>{}):video.pause(); saveVideoPlaybackState(video); }
+  if(['ArrowLeft','ArrowRight',' ','k','K'].includes(event.key)) { event.preventDefault(); const _total=videoTimelineDuration(video); if(event.key==='ArrowLeft')seekVideoTo(video,Math.max(0,videoAbsoluteTime(video)-10)); else if(event.key==='ArrowRight')seekVideoTo(video,Math.min(_total||Infinity,videoAbsoluteTime(video)+10)); else video.paused?video.play().catch(()=>{}):video.pause(); saveVideoPlaybackState(video); }
 }
 function selectVideoAudioTrack(video, index) {
   const root = video.closest('.media-video-body');
@@ -7438,6 +7641,11 @@ if(meta){const _merged=movieMetadataFor(path);const _hero=movieHeroArt(_merged);
       toast("⚠️ " + t("stOff") + "：" + why);
       return;
     }
+    /* v1.0.8（需求1）：先按「live」假设标记；缓存命中时浏览器能看到完整可 seek 区间，
+       videoIsLiveStream() 第一次读到时自动摘掉标记，退回原生拖动。 */
+    video.dataset.liveStream = "1";
+    video.dataset.liveOffset = "0";
+    delete video.dataset.liveRestored;
     terminateWasmVideo(videoRoot); setVideoEngine(videoRoot, VIDEO_ENGINE_COMPAT, reason || `Smart Stream · ${settings.hardwareAcceleration}`); switchMovieSource(video, url);
   };
   /* v0.9.51：设置浮层不再暴露「三层播放」手动引擎选择 —— 引擎自动判定与自动降级保留。 */
@@ -7467,6 +7675,9 @@ if(meta){const _merged=movieMetadataFor(path);const _hero=movieHeroArt(_merged);
     /* v0.9.51：画质选择（设置 → 转码质量）决定播放计划，默认仍是 auto。 */
     const plan = await requestPlaybackPlan(lib, path, videoRoot.dataset.videoQuality || "auto");
     videoRoot.dataset.videoMetadata = formatVideoMetadata(plan.media);
+    /* v1.0.8（需求1）：live 转码流本身没有正确时长（分片 MP4 的 mvhd 是空的），
+       进度条要按整片时长画，所以把 ffprobe 的时长记在 video 上。 */
+    { const _d = Number(plan.media && plan.media.duration); if (Number.isFinite(_d) && _d > 0) video.dataset.liveDuration = String(_d); }
     videoRoot.dataset.playbackMode = plan.mode || "auto";
     setMovieCompatStatus(videoRoot, `${playbackModeLabel(plan)} · ${plan.reason || "智能选择"}`);
     /* v0.9.92：在「获取信息」面板里标注当前解码路径（服务端转码 / 本机设备解码）。 */
@@ -7814,6 +8025,9 @@ async function openLocalMedia(group, libId, path) {
   if (["mp3","flac","m4a","ogg","wav"].includes(ext)) body = `<div class="media-viewer-body"><audio controls autoplay preload="metadata" src="${esc(url)}"></audio></div>`;
   else if (MEDIA_FORMATS.movie.includes(ext)) body = `<div class="media-viewer-body media-video-body" data-video-controls-visible="true" data-video-engine="native" data-video-chrome-collapsed="false" data-video-quality="${typeof qualityVideoPreset === "function" ? qualityVideoPreset() : "auto"}">
 <video data-movie-player playsinline preload="metadata" onloadedmetadata="this.muted=false;this.volume=1" onvolumechange="this.dataset.volume=String(this.volume)"></video>
+<!-- v1.0.6（需求3/6）：Emby 规格的 OSD 中央大播放键（只在 data-spec=emby 时显示，
+     其余规格 CSS 里 display:none）。播放中淡出，暂停时浮现，点画面任意处同样可切换。 -->
+<button class="vc-center-play is-playing" type="button" data-video-center-play title="${esc(t("vpPlayPause"))}" aria-label="${esc(t("vpPlayPause"))}" onclick="videoTogglePlay(this)">${videoIcon("play")}</button>
 <div class="video-chrome" data-video-chrome>
 <div class="vc-top">
 <button class="vc-icon vc-collapse" type="button" title="${esc(t("vpMinimize"))}" aria-label="${esc(t("vpMinimize"))}" onclick="minimizeVideoPlayer(this)">${videoIcon("collapse")}</button>

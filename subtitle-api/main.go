@@ -239,9 +239,43 @@ func (p webProvider) Search(video, id string) ([]Subtitle, error) {
 	return out, nil
 }
 
+/* v1.0.6（安全）：字幕服务是独立进程，Caddy 把 /api/media/subtitles/search 与
+   /download 直接转到它（9120），绕过了媒体 API（9100）的 readAuth —— 实测未登录
+   也能搜索（可枚举同目录字幕文件名）并用 /download 代理任意 https 内容。
+   这里用同一会话向媒体 API 做一次探针：只有 401 才算「未登录」，其余状态
+   （含 400 invalid id / 404）说明会话有效。网络失败按放行处理 —— 媒体 API 挂掉时
+   不该把字幕服务一起拖死（旧行为也是放行）。 */
+func sessionOK(r *http.Request) bool {
+	base := strings.TrimRight(os.Getenv("MEDIA_API"), "/")
+	if base == "" {
+		base = "http://127.0.0.1:9100"
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+	defer cancel()
+	req, e := http.NewRequestWithContext(ctx, "GET", base+"/api/media/files?id=__vh_auth_probe__", nil)
+	if e != nil {
+		return true
+	}
+	if ck := r.Header.Get("Cookie"); ck != "" {
+		req.Header.Set("Cookie", ck)
+	}
+	req.Header.Set("User-Agent", "VaultHub-Subtitle/1.0.8")
+	res, e := client.Do(req)
+	if e != nil {
+		log.Printf("subtitle: auth probe unavailable (%v) — allowing request", e)
+		return true
+	}
+	res.Body.Close()
+	return res.StatusCode != http.StatusUnauthorized
+}
+
 func search(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
 		http.Error(w, "method not allowed", 405)
+		return
+	}
+	if !sessionOK(r) {
+		http.Error(w, "login required", 401)
 		return
 	}
 	id := r.URL.Query().Get("id")
@@ -306,7 +340,7 @@ func embeddedFromMediaAPI(r *http.Request, id, rawPath string) []Subtitle {
 	if ck := r.Header.Get("Cookie"); ck != "" {
 		req.Header.Set("Cookie", ck)
 	}
-	req.Header.Set("User-Agent", "VaultHub-Subtitle/1.0.3")
+	req.Header.Set("User-Agent", "VaultHub-Subtitle/1.0.8")
 	res, e := client.Do(req)
 	if e != nil {
 		log.Printf("subtitle: media api unavailable (%v)", e)
@@ -347,6 +381,10 @@ type localProvider struct{ id string }
 func (p localProvider) Name() string                            { return "local" }
 func (p localProvider) Search(v, id string) ([]Subtitle, error) { return localSearch(v, id) }
 func download(w http.ResponseWriter, r *http.Request) {
+	if !sessionOK(r) {
+		http.Error(w, "login required", 401)
+		return
+	}
 	u := r.URL.Query().Get("url")
 	if u == "" {
 		http.Error(w, "missing url", 400)

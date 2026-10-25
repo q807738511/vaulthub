@@ -25,15 +25,14 @@ loadHiddenModules();
 /* v0.9.56：先探测鉴权模式 —— 开放模式自动登录（无登录遮罩），密码模式沿用登录探测。 */
 initVaultHubAuth();
 
-/* v0.9.73：主题初始化收敛到 06-theme.js 的 initTheme() —— 它负责把
-   调色板/明暗/强调色落到 <html>、渲染外观面板里的真预览卡片、同步阅读器主题类。
+/* v0.9.73：主题初始化收敛到 06-theme.js 的 initTheme() —— v1.0.6 起它负责把
+   界面规格/明暗落到 <html>、铺规格壁纸、渲染外观面板、同步阅读器主题类。
    必须用 typeof 守卫：升级瞬间可能命中「新 04-boot.js + 旧 06-theme.js（缓存里还没有）」，
    裸调用会 ReferenceError 让整个前端白屏。 */
 if (typeof initTheme === "function") initTheme();
 else {
   document.body.dataset.theme = settings.theme === "light" ? "light" : "dark";
-  document.body.classList.toggle("custom-bg", settings.theme === "custom");
-  applyBgImage();
+  document.body.classList.remove("custom-bg");
 }
 
 /* v0.9.74：顶栏导航（媒体库标签 / 全局搜索 / 头像菜单）初始化；v0.9.93 起为唯一布局。
@@ -46,7 +45,9 @@ document.getElementById("mpUrl").value = settings.mp.mpUrl || "";
 document.getElementById("mpUser").value = settings.mp.username || "";
 document.getElementById("mpPass").value = settings.mp.password || "";
 
-refreshHardwareStatus();
+/* v1.0.7：硬件/库列表等接口已收紧为需会话，未登录时跳过启动拉取，
+   登录成功后由 handleVaultHubAuthResult 触发补拉（见 01-state.js）。 */
+if (typeof vaultHubAuthenticated === "function" && vaultHubAuthenticated()) refreshHardwareStatus();
 refreshSessionStatus(false);
 /* 登录状态监测：每分钟核对一次服务端会话，写操作前还会再确认一次 */
 setInterval(() => refreshSessionStatus(false), 60000);
@@ -74,7 +75,15 @@ if (typeof runDailySpeedTest === "function") {
   });
 } else if (typeof ensureWeakNetworkProbe === "function") ensureWeakNetworkProbe();
 /* 首页四栏（服务器监控 / 正在进行 / 最近入库）在媒体库拉取完成后渲染 */
-refreshMediaLibraries(false).then(initHome);
+refreshMediaLibraries(false).catch(() => {}).then(() => {
+  /* v1.0.7：未登录时 refreshMediaLibraries 会 401，首页先以空库渲染；
+     登录成功后 bootAfterLogin() 会重新拉取并刷新首页四栏。 */
+  initHome();
+  /* v1.0.4（需求7）：媒体库列表就绪后再恢复上次的页面，刷新不会被踢回首页。 */
+  if (typeof restoreVaultHubRoute === "function") {
+    try { restoreVaultHubRoute(); } catch (e) { console.warn("恢复上次页面失败", e); }
+  }
+});
 
 /* v1.0.2（需求8）：整页覆盖层（影视详情 / 阅读器 / 播放器 / 设置）打开时锁住背景页滚动
    —— 旧实现下浏览器会同时出现「页面竖滚动条 + 覆盖层内竖滚动条」的多重滚动条。
@@ -92,4 +101,18 @@ refreshMediaLibraries(false).then(initHome);
     obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style"] });
   } catch (e) { /* 老浏览器没有 MutationObserver：退化为只在启动时算一次 */ }
 })();
+}
+
+
+/* v1.0.7：登录成功后的补拉链路（硬件徽章 + 媒体库 + 首页状态轮询）。
+   由 01-state.js 的 handleVaultHubAuthResult(logged=true) 调用；
+   幂等：重复调用只是多一次拉取，不会叠加轮询定时器（initHome 的轮询有签名去重）。 */
+async function bootAfterLogin() {
+  try {
+    if (typeof refreshHardwareStatus === "function") refreshHardwareStatus();
+    await refreshMediaLibraries(false);
+    if (typeof loadHomeIndexStatus === "function") await loadHomeIndexStatus();
+    if (typeof loadHomeScrapeStatus === "function") await loadHomeScrapeStatus();
+    if (typeof renderHomeLibTable === "function") renderHomeLibTable();
+  } catch (e) { /* 静默：登录后的补拉失败不阻塞界面 */ }
 }

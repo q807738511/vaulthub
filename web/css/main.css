@@ -1,33 +1,28 @@
-  /* ==================== v0.9.73 主题令牌：调色板 × 明暗 × 强调色 ====================
-     来自会话 mtkzexy5e4e2te 的主题升级方案：主题从「一层颜色」变成三层叠加，
-     每层只覆盖一组变量，组件代码一行不动 ——
-         主题 = 调色板(palette) × 明暗(mode) × 强调色(accent)
-     颜色之外，圆角/阴影/标题字族/动效速度也进令牌，所以每套调色板有自己的性格
-     （霓虹锐角快动作、暖陶大圆角纸感衬线、紫曜圆润带辉光）。
-     明暗不再和调色板绑定：4 调色板 × 亮/暗 × 6 强调色（含「跟随主题」）= 48 组合。
-     规则顺序有讲究：调色板块在前、强调色块在后（同特异性时后者生效），
-     且强调色选择器必须带 [data-mode] 才能盖住调色板块。 */
+  /* ==================== v1.0.6 规格主题令牌：界面规格 × 明暗 ====================
+     v0.9.73 的三层模型（调色板 × 明暗 × 强调色）收敛为两层：
+
+         主题 = 界面规格(apple|emby|plex) × 明暗(dark|light|auto)
+
+     调色板、强调色与自定义背景图片三档设置已移除 —— 每套规格自带完整主题定义
+     （配色 / 圆角 / 阴影 / 标题字族 / 动效节奏 / 壁纸 / 播放器皮肤 / 图标包），
+     所以切换规格是「换整套主题」，不会出现「规格是 Plex 但配色是青瓷」的拼接。
+     令牌与 web/js/06-theme.js 的 SPEC_THEMES 一一对应，改色只改那一处。
+     三套规格的取色依据（见 docs/specs/*.md）：
+       Apple —— 系统蓝 #0A84FF / #007AFF，同心大圆角 16/10/22，240ms 弹性曲线；
+       Emby  —— 品牌绿 #52B54B（商标色，不随主题变），Material 圆角 8/4/12，150ms；
+       Plex  —— 琥珀金 #E5A00D，扁平 6/3/10，140ms 快切。
+     顺序有讲究：:root 先给 Apple 暗色兜底，之后各规格块覆盖；
+     语义色（--green/--yellow/…）只随明暗走，不随规格走，否则状态色会失义。 */
   :root,
-  html[data-palette="emerald"][data-mode="dark"] {
-    /* 青瓷 · 暗（默认）：利落克制 */
-    --bg: #0B1413;
-    --bg2: #1E2D2B;
-    --card: #101A19;
-    --card2: #162321;
-    --border: rgba(255,255,255,.08);
-    --border2: rgba(255,255,255,.16);
-    --track: rgba(255,255,255,.10);
-    --text: #E8F2F1;
-    --text2: #B7C9C7;
-    --text3: #8CA3A0;
-    --accent: #2BC4B4;
-    --accent-ink: #06231F;
-    --accent-dim: rgba(43,196,180,.16);
-    --accent-ring: rgba(43,196,180,.34);
-    --accent-glow: rgba(43,196,180,.40);
-    --radius: 10px; --radius-sm: 6px; --radius-lg: 14px;
-    --shadow: 0 1px 2px rgba(0,0,0,.45);
-    --shadow-lg: 0 1px 2px rgba(0,0,0,.45), 0 10px 28px rgba(0,0,0,.50);
+  html[data-spec="apple"][data-mode="dark"] {
+    --bg: #0A0A0C; --bg2: rgba(28,28,30,.72); --card: #141416; --card2: #1C1C1F;
+    --border: rgba(255,255,255,.10); --border2: rgba(255,255,255,.20); --track: rgba(255,255,255,.12);
+    --text: #F5F5F7; --text2: #B9B9C0; --text3: #86868B;
+    --accent: #0A84FF; --accent-ink: #FFFFFF;
+    --accent-dim: rgba(10,132,255,.16); --accent-ring: rgba(10,132,255,.38); --accent-glow: rgba(10,132,255,.45);
+    --radius: 16px; --radius-sm: 10px; --radius-lg: 22px;
+    --shadow: 0 1px 2px rgba(0,0,0,.55);
+    --shadow-lg: 0 2px 6px rgba(0,0,0,.45), 0 24px 60px rgba(0,0,0,.60);
     --font-head: inherit;
     /* 布局尺寸与阅读器基础字号：v0.9.73 重写令牌块时漏掉过这三个，
        顶栏高度与侧栏宽度立刻退化成 auto（顶栏只剩 32px、侧栏按静态位置浮在正文上），
@@ -36,126 +31,91 @@
     --topbar-h: 52px;
     --sidebar-w: 0px;   /* v0.9.93：侧栏已移除，侧栏占位恒为 0 */
     --ebook-font-size: 17px;
-    --dur: 160ms; --ease: cubic-bezier(.2,.8,.2,1);
+    --dur: 240ms; --ease: cubic-bezier(.32,.72,0,1);
+    /* 规格材质参数：Apple 用液态玻璃（模糊 + 半透明），其余两档为 0 表示不启用。 */
+    --glass-blur: 26px; --glass-alpha: .62;
     color-scheme: dark;
   }
-  /* 青瓷 · 亮 */
-  html[data-palette="emerald"][data-mode="light"] {
-    --bg: #F7F8FA; --bg2: #E9ECEF; --card: #FFFFFF; --card2: #F1F3F5;
-    --border: rgba(16,22,30,.10); --border2: rgba(16,22,30,.20); --track: rgba(16,22,30,.10);
-    --text: #12171D; --text2: #4A5257; --text3: #667076;
-    --accent: #0B7C73; --accent-ink: #FFFFFF;
-    --accent-dim: rgba(15,158,146,.12); --accent-ring: rgba(15,158,146,.30); --accent-glow: rgba(15,158,146,.32);
-    --radius: 10px; --radius-sm: 6px; --radius-lg: 14px;
+  html[data-spec="apple"][data-mode="light"] {
+    --bg: #F2F2F7; --bg2: rgba(255,255,255,.76); --card: #FFFFFF; --card2: #F2F2F7;
+    --border: rgba(0,0,0,.10); --border2: rgba(0,0,0,.18); --track: rgba(0,0,0,.10);
+    --text: #1D1D1F; --text2: #4A4A4F; --text3: #6E6E73;
+    --accent: #007AFF; --accent-ink: #FFFFFF;
+    --accent-dim: rgba(0,122,255,.12); --accent-ring: rgba(0,122,255,.30); --accent-glow: rgba(0,122,255,.32);
+    --radius: 16px; --radius-sm: 10px; --radius-lg: 22px;
     --shadow: 0 1px 2px rgba(16,24,40,.06);
-    --shadow-lg: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.07);
+    --shadow-lg: 0 2px 6px rgba(16,24,40,.07), 0 18px 44px rgba(16,24,40,.10);
     --font-head: inherit;
-    --dur: 160ms; --ease: cubic-bezier(.2,.8,.2,1);
+    --topbar-h: 52px; --sidebar-w: 0px; --ebook-font-size: 17px;
+    --dur: 240ms; --ease: cubic-bezier(.32,.72,0,1);
+    --glass-blur: 26px; --glass-alpha: .70;
     color-scheme: light;
   }
-  /* 午夜紫曜 · 暗：圆润、紫辉光 */
-  html[data-palette="plum"][data-mode="dark"] {
-    --bg: #0F0D16; --bg2: #2A2440; --card: #171426; --card2: #1F1B31;
+  /* Emby：Material 结构 + 品牌绿。绿色是商标色，主题再换它也不动。 */
+  html[data-spec="emby"][data-mode="dark"] {
+    --bg: #0F1418; --bg2: #161C21; --card: #171E24; --card2: #1E262D;
     --border: rgba(255,255,255,.08); --border2: rgba(255,255,255,.16); --track: rgba(255,255,255,.10);
-    --text: #EDE9FE; --text2: #C4BCDD; --text3: #9C93B8;
-    --accent: #8B5CF6; --accent-ink: #150F26;
-    --accent-dim: rgba(139,92,246,.16); --accent-ring: rgba(139,92,246,.35); --accent-glow: rgba(139,92,246,.45);
-    --radius: 12px; --radius-sm: 8px; --radius-lg: 16px;
+    --text: #E6EDF3; --text2: #A9B6C0; --text3: #7C8B96;
+    --accent: #52B54B; --accent-ink: #04140A;
+    --accent-dim: rgba(82,181,75,.16); --accent-ring: rgba(82,181,75,.34); --accent-glow: rgba(82,181,75,.40);
+    --radius: 8px; --radius-sm: 4px; --radius-lg: 12px;
     --shadow: 0 1px 2px rgba(0,0,0,.45);
-    --shadow-lg: 0 0 0 1px rgba(139,92,246,.22), 0 22px 48px rgba(0,0,0,.60);
+    --shadow-lg: 0 1px 2px rgba(0,0,0,.45), 0 14px 36px rgba(0,0,0,.50);
     --font-head: inherit;
-    --dur: 180ms; --ease: cubic-bezier(.2,.8,.2,1);
+    --topbar-h: 52px; --sidebar-w: 0px; --ebook-font-size: 17px;
+    --dur: 150ms; --ease: cubic-bezier(.4,0,.2,1);
+    --glass-blur: 0px; --glass-alpha: 1;
     color-scheme: dark;
   }
-  /* 午夜紫曜 · 亮 */
-  html[data-palette="plum"][data-mode="light"] {
-    --bg: #F7F5FF; --bg2: #E8E3F6; --card: #FFFFFF; --card2: #F1EEFA;
-    --border: rgba(30,24,48,.10); --border2: rgba(30,24,48,.20); --track: rgba(30,24,48,.10);
-    --text: #1E1830; --text2: #4A4266; --text3: #665D80;
-    --accent: #5B2FCB; --accent-ink: #FFFFFF;
-    --accent-dim: rgba(109,61,224,.12); --accent-ring: rgba(109,61,224,.28); --accent-glow: rgba(109,61,224,.30);
-    --radius: 12px; --radius-sm: 8px; --radius-lg: 16px;
-    --shadow: 0 1px 2px rgba(30,24,48,.06);
-    --shadow-lg: 0 1px 2px rgba(30,24,48,.06), 0 10px 26px rgba(30,24,48,.09);
+  html[data-spec="emby"][data-mode="light"] {
+    --bg: #F3F5F7; --bg2: #FFFFFF; --card: #FFFFFF; --card2: #EDF1F4;
+    --border: rgba(16,24,32,.10); --border2: rgba(16,24,32,.20); --track: rgba(16,24,32,.10);
+    --text: #1B242B; --text2: #46525B; --text3: #6B7883;
+    --accent: #3E9E3A; --accent-ink: #FFFFFF;
+    --accent-dim: rgba(62,158,58,.12); --accent-ring: rgba(62,158,58,.30); --accent-glow: rgba(62,158,58,.32);
+    --radius: 8px; --radius-sm: 4px; --radius-lg: 12px;
+    --shadow: 0 1px 2px rgba(16,24,32,.06);
+    --shadow-lg: 0 1px 2px rgba(16,24,32,.06), 0 10px 26px rgba(16,24,32,.09);
     --font-head: inherit;
-    --dur: 180ms; --ease: cubic-bezier(.2,.8,.2,1);
+    --topbar-h: 52px; --sidebar-w: 0px; --ebook-font-size: 17px;
+    --dur: 150ms; --ease: cubic-bezier(.4,0,.2,1);
+    --glass-blur: 0px; --glass-alpha: 1;
     color-scheme: light;
   }
-  /* 霓虹胶片 · 暗：锐角、动作最快、影院味 */
-  html[data-palette="neon"][data-mode="dark"] {
-    --bg: #0B0B0F; --bg2: #26262F; --card: #141419; --card2: #1C1C24;
-    --border: rgba(255,255,255,.08); --border2: rgba(255,255,255,.16); --track: rgba(255,255,255,.10);
-    --text: #F5F5F7; --text2: #C7C7D1; --text3: #8A8A99;
-    --accent: #FF4D6D; --accent-ink: #2A0410;
-    --accent-dim: rgba(255,77,109,.15); --accent-ring: rgba(255,77,109,.35); --accent-glow: rgba(255,77,109,.45);
-    --radius: 5px; --radius-sm: 3px; --radius-lg: 8px;
+  /* Plex：暗色骨架 + 琥珀金。扁平、快切、方头图标。 */
+  html[data-spec="plex"][data-mode="dark"] {
+    --bg: #0B0B0C; --bg2: #171719; --card: #1A1A1C; --card2: #232326;
+    --border: rgba(255,255,255,.09); --border2: rgba(255,255,255,.18); --track: rgba(255,255,255,.12);
+    --text: #F2F2F2; --text2: #B9B9BD; --text3: #8A8A90;
+    --accent: #E5A00D; --accent-ink: #1A1200;
+    --accent-dim: rgba(229,160,13,.16); --accent-ring: rgba(229,160,13,.34); --accent-glow: rgba(229,160,13,.42);
+    --radius: 6px; --radius-sm: 3px; --radius-lg: 10px;
     --shadow: 0 1px 2px rgba(0,0,0,.50);
-    --shadow-lg: 0 2px 6px rgba(0,0,0,.60), 0 22px 48px rgba(0,0,0,.65);
+    --shadow-lg: 0 2px 6px rgba(0,0,0,.55), 0 22px 48px rgba(0,0,0,.65);
     --font-head: inherit;
-    --dur: 130ms; --ease: cubic-bezier(.2,.8,.2,1);
+    --topbar-h: 52px; --sidebar-w: 0px; --ebook-font-size: 17px;
+    --dur: 140ms; --ease: cubic-bezier(.2,0,0,1);
+    --glass-blur: 0px; --glass-alpha: 1;
     color-scheme: dark;
   }
-  /* 霓虹胶片 · 亮 */
-  html[data-palette="neon"][data-mode="light"] {
-    --bg: #F5F5F8; --bg2: #E5E5EC; --card: #FFFFFF; --card2: #EEEEF3;
-    --border: rgba(22,22,28,.10); --border2: rgba(22,22,28,.20); --track: rgba(22,22,28,.10);
-    --text: #16161C; --text2: #42424E; --text3: #5E5E6B;
-    --accent: #BE123C; --accent-ink: #FFFFFF;
-    --accent-dim: rgba(225,29,72,.10); --accent-ring: rgba(225,29,72,.26); --accent-glow: rgba(225,29,72,.30);
-    --radius: 5px; --radius-sm: 3px; --radius-lg: 8px;
-    --shadow: 0 1px 2px rgba(22,22,28,.07);
-    --shadow-lg: 0 2px 6px rgba(22,22,28,.10), 0 16px 34px rgba(22,22,28,.14);
+  html[data-spec="plex"][data-mode="light"] {
+    --bg: #F5F5F6; --bg2: #FFFFFF; --card: #FFFFFF; --card2: #EFEFF1;
+    --border: rgba(20,20,22,.10); --border2: rgba(20,20,22,.20); --track: rgba(20,20,22,.10);
+    --text: #141416; --text2: #45454A; --text3: #6C6C72;
+    --accent: #B87A00; --accent-ink: #FFFFFF;
+    --accent-dim: rgba(184,122,0,.12); --accent-ring: rgba(184,122,0,.28); --accent-glow: rgba(184,122,0,.30);
+    --radius: 6px; --radius-sm: 3px; --radius-lg: 10px;
+    --shadow: 0 1px 2px rgba(20,20,22,.07);
+    --shadow-lg: 0 2px 6px rgba(20,20,22,.10), 0 16px 34px rgba(20,20,22,.14);
     --font-head: inherit;
-    --dur: 130ms; --ease: cubic-bezier(.2,.8,.2,1);
+    --topbar-h: 52px; --sidebar-w: 0px; --ebook-font-size: 17px;
+    --dur: 140ms; --ease: cubic-bezier(.2,0,0,1);
+    --glass-blur: 0px; --glass-alpha: 1;
     color-scheme: light;
   }
-  /* 暖陶 · 暗：纸感软阴影、标题衬线、动效最缓 */
-  html[data-palette="clay"][data-mode="dark"] {
-    --bg: #17130F; --bg2: #332A21; --card: #1F1A15; --card2: #271F18;
-    --border: rgba(255,255,255,.09); --border2: rgba(255,255,255,.18); --track: rgba(255,255,255,.10);
-    --text: #F3E9DC; --text2: #CFC0AC; --text3: #A89880;
-    --accent: #E08A4E; --accent-ink: #2A1408;
-    --accent-dim: rgba(224,138,78,.16); --accent-ring: rgba(224,138,78,.32); --accent-glow: rgba(224,138,78,.40);
-    --radius: 14px; --radius-sm: 10px; --radius-lg: 18px;
-    --shadow: 0 1px 2px rgba(0,0,0,.40);
-    --shadow-lg: 0 1px 2px rgba(0,0,0,.40), 0 10px 28px rgba(0,0,0,.45);
-    --font-head: "Songti SC","STSong","Source Han Serif SC","Noto Serif SC","SimSun",Georgia,"Times New Roman",serif;
-    --dur: 220ms; --ease: cubic-bezier(.2,.8,.2,1);
-    color-scheme: dark;
-  }
-  /* 暖陶 · 亮 */
-  html[data-palette="clay"][data-mode="light"] {
-    --bg: #FAF6F1; --bg2: #EBE2D6; --card: #FFFDFB; --card2: #F3EDE5;
-    --border: rgba(44,38,32,.12); --border2: rgba(44,38,32,.22); --track: rgba(44,38,32,.12);
-    --text: #2C2620; --text2: #544A40; --text3: #7A6E62;
-    --accent: #8F3F14; --accent-ink: #FFFFFF;
-    --accent-dim: rgba(180,83,31,.12); --accent-ring: rgba(180,83,31,.28); --accent-glow: rgba(180,83,31,.30);
-    --radius: 14px; --radius-sm: 10px; --radius-lg: 18px;
-    --shadow: 0 1px 2px rgba(74,53,32,.07);
-    --shadow-lg: 0 1px 2px rgba(74,53,32,.07), 0 8px 24px rgba(74,53,32,.08);
-    --font-head: "Songti SC","STSong","Source Han Serif SC","Noto Serif SC","SimSun",Georgia,"Times New Roman",serif;
-    --dur: 220ms; --ease: cubic-bezier(.2,.8,.2,1);
-    color-scheme: light;
-  }
-  /* 语义色与轨道：只随明暗走，不随调色板走（否则状态色会失义）。 */
+  /* 语义色与轨道：只随明暗走，不随规格走（否则状态色会失义）。 */
   html[data-mode="dark"] { --green:#4fbf6a; --yellow:#e49c0c; --red:#e5615b; --purple:#a97bff; --cyan:#609cd8; }
   html[data-mode="light"] { --green:#2f9e4a; --yellow:#b57708; --red:#c73f39; --purple:#7C3AED; --cyan:#2d6da8; }
-  /* ---------- 强调色：在任意调色板/明暗之上再叠一层主色 ----------
-     亮色档用「能压白字」的深值（--accent-ink 为白），暗色档用亮值配深墨。
-     两态都过对比度：亮档白字 ≥5.0:1，暗档深墨 ≥7:1（实测见发布说明）。 */
-  html[data-mode="light"][data-accent="teal"], html[data-mode="dark"][data-accent="teal"]   { --accent:#0F9E92; --accent-dim:rgba(15,158,146,.12); --accent-ring:rgba(15,158,146,.30); --accent-glow:rgba(15,158,146,.32); }
-  html[data-mode="light"][data-accent="indigo"] { --accent:#4338CA; --accent-dim:rgba(79,70,229,.12); --accent-ring:rgba(79,70,229,.28); --accent-glow:rgba(79,70,229,.30); }
-  html[data-mode="light"][data-accent="rose"]   { --accent:#BE123C; --accent-dim:rgba(225,29,72,.10); --accent-ring:rgba(225,29,72,.26); --accent-glow:rgba(225,29,72,.30); }
-  html[data-mode="light"][data-accent="amber"]  { --accent:#92400E; --accent-dim:rgba(180,83,9,.12); --accent-ring:rgba(180,83,9,.26); --accent-glow:rgba(180,83,9,.28); }
-  html[data-mode="light"][data-accent="violet"] { --accent:#6D28D9; --accent-dim:rgba(124,58,237,.12); --accent-ring:rgba(124,58,237,.28); --accent-glow:rgba(124,58,237,.30); }
-  html[data-mode="light"][data-accent="teal"], html[data-mode="light"][data-accent="indigo"],
-  html[data-mode="light"][data-accent="rose"], html[data-mode="light"][data-accent="amber"],
-  html[data-mode="light"][data-accent="violet"] { --accent-ink:#FFFFFF; }
-  html[data-mode="dark"][data-accent="teal"]   { --accent:#2BC4B4; --accent-ink:#06231F; }
-  html[data-mode="dark"][data-accent="indigo"] { --accent:#818CF8; --accent-ink:#0F1030; }
-  html[data-mode="dark"][data-accent="rose"]   { --accent:#FB7185; --accent-ink:#3B0713; }
-  html[data-mode="dark"][data-accent="amber"]  { --accent:#FBBF24; --accent-ink:#2A1A02; }
-  html[data-mode="dark"][data-accent="violet"] { --accent:#A78BFA; --accent-ink:#1C1040; }
   /* ---------- 动效：可减弱；切换主题时统一过渡（260ms 后摘掉，不常驻） ---------- */
   html[data-motion="reduce"], html[data-motion="reduce"] * { transition-duration: 1ms !important; animation-duration: 1ms !important; }
   html.theming, html.theming *, html.theming *::before, html.theming *::after {
@@ -166,20 +126,11 @@
   h1, h2, h3, h4, h5, .wordmark, .book-card-title, .audio-player-title { font-family: var(--font-head); }
   ::selection { background: var(--accent-dim); color: var(--text); }
   *:focus-visible { outline: 2px solid var(--accent-ring); outline-offset: 2px; }
-  html { scrollbar-color: var(--border2) transparent; scrollbar-width: thin; }
+  html { scrollbar-color: var(--border2) transparent; scrollbar-width: thin; background: var(--bg); }
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 999px; border: 3px solid transparent; background-clip: content-box; }
   ::-webkit-scrollbar-thumb:hover { background: var(--text3); background-clip: content-box; }
-  body.custom-bg::before {
-    content: ""; position: fixed; inset: 0; z-index: -2;
-    background: var(--bgImg, none) center/cover no-repeat fixed;
-  }
-  body.custom-bg::after {
-    content: ""; position: fixed; inset: 0; z-index: -1;
-    background: linear-gradient(180deg, rgba(16,18,21,.72), rgba(16,18,21,.86));
-  }
-  body.custom-bg[data-theme="light"]::after { background: linear-gradient(180deg, rgba(244,245,247,.78), rgba(244,245,247,.90)); }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
     font-family: "PingFang SC","Microsoft YaHei","Noto Sans SC",system-ui,-apple-system,sans-serif;
@@ -216,8 +167,6 @@
     display: flex; align-items: center; gap: 8px; padding: 0 16px;
     background: var(--bg2); border-bottom: 1px solid var(--border);
   }
-  body.custom-bg .topbar { background: rgba(20,22,26,.90); backdrop-filter: blur(14px); }
-  body.custom-bg[data-theme="light"] .topbar { background: rgba(255,255,255,.88); }
   .logo { display: flex; align-items: center; gap: 9px; padding-right: 14px; flex-shrink: 0; }
   .logo-icon {
     width: 28px; height: 28px; border-radius: var(--radius-sm);
@@ -2296,3 +2245,528 @@ html[data-opmode="plex"] .vc-btn .vc-svg { width: 19px; height: 19px; }
 html.vh-overlay-open, html.vh-overlay-open body { overflow: hidden !important; }
 html.vh-overlay-open { overscroll-behavior: none; }
 .movie-detail-scroll, .media-reader-body, .epub-viewer, .comic-viewer, .media-viewer { overscroll-behavior: contain; }
+
+/* ============================================================================
+   v1.0.4（需求1/3/4/6）—— 监控栅格自适应 · 界面规格换肤 · 操作模式卡片 · TV 焦点
+   ============================================================================ */
+
+/* ---- 需求6：服务器监控三张卡自适应成 N 列，不再留第四格空白 ----
+   旧写法 .g-4 固定四列，只有三张卡 → 每行两格 + 一格空。auto-fit 会把空轨道
+   折叠掉，宽屏三张一排、窄屏两列、手机一列，任何宽度都不留空洞。 */
+.grid.monitor-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr)); align-items: stretch; }
+@media (min-width: 1500px) { .grid.monitor-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 330px), 1fr)); } }
+.grid.monitor-grid > .card { min-width: 0; }
+
+/* ---- 需求3/4：界面规格与操作模式的选择卡片 ----
+   两档都是「图标 + 名称 + 一句效果」，选中态有勾选点；遥控/键盘都能 Tab 到。
+   这里不写说明段落（客户要求去掉提示文案），副标题只说这一档换什么。 */
+.spec-seg, .mode-seg { display:grid; gap:8px; grid-template-columns:repeat(auto-fit, minmax(min(100%, 148px), 1fr)); }
+.spec-card, .mode-card {
+  position:relative; display:flex; align-items:center; gap:9px; text-align:left;
+  padding:10px 12px; border:1px solid var(--border); border-radius:var(--op-radius-sm, 10px);
+  background:var(--card); color:var(--text); cursor:pointer; font:inherit;
+  transition:border-color var(--op-dur,160ms) var(--op-ease,ease), background var(--op-dur,160ms) var(--op-ease,ease), transform var(--op-dur-fast,120ms) var(--op-ease,ease), box-shadow var(--op-dur,160ms) var(--op-ease,ease);
+}
+.spec-card:hover, .mode-card:hover { border-color:var(--accent); transform:translateY(-1px); }
+.spec-card:active, .mode-card:active { transform:scale(var(--op-press, .97)); }
+.spec-card.on, .mode-card.on {
+  border-color:var(--accent);
+  background:color-mix(in srgb, var(--accent) 10%, var(--card));
+  box-shadow:0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.spec-card .sc-mark, .mode-card .sc-ic { flex:0 0 auto; width:26px; height:26px; display:grid; place-items:center; color:var(--accent); font-size:17px; line-height:1; }
+.spec-card .sc-mark svg { width:24px; height:24px; display:block; }
+.spec-card .sc-tx, .mode-card .sc-tx { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.spec-card .sc-tx b, .mode-card .sc-tx b { font-size:12.5px; font-weight:650; }
+.spec-card .sc-tx small, .mode-card .sc-tx small { font-size:10.5px; color:var(--text3); line-height:1.35; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.spec-card .sc-dot, .mode-card .sc-dot {
+  position:absolute; top:8px; right:8px; width:8px; height:8px; border-radius:50%;
+  border:1px solid var(--border2); background:transparent; transition:background var(--op-dur-fast,120ms) var(--op-ease,ease), border-color var(--op-dur-fast,120ms) var(--op-ease,ease);
+}
+.spec-card.on .sc-dot, .mode-card.on .sc-dot { background:var(--accent); border-color:var(--accent); }
+.seg-current { margin-top:7px; font-size:11px; color:var(--text3); line-height:1.6; }
+.seg-current:empty { display:none; }
+
+/* ---- 需求3：界面规格换的是整套观感（顶栏形态 / 圆角 / 字重 / 高亮方式） ---- */
+/* 顶栏与媒体库标签里的 SVG 图标（规格图标包）统一尺寸。 */
+.tn-item .ic svg, .libtab .ic svg, .tn-popitem .ic svg, .tn-bell-ic svg { width:16px; height:16px; display:block; }
+.tn-bell-ic svg { width:17px; height:17px; }
+.tn-popitem .ic svg { width:15px; height:15px; }
+
+/* Apple：胶囊导航 + 毛玻璃 + 轻描边，选中是「填色胶囊」。 */
+html[data-opmode="apple"] .tn-item, html[data-opmode="apple"] .libtab { border-radius:999px; }
+html[data-opmode="apple"] .tn-item.active, html[data-opmode="apple"] .libtab[aria-current="true"] {
+  background:color-mix(in srgb, var(--accent) 16%, transparent);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 34%, transparent);
+}
+html[data-opmode="apple"] .card, html[data-opmode="apple"] .setblock { border-radius:var(--op-radius, 14px); }
+
+/* Emby：方角标签 + 底部指示条 + 实心选中（Material）。 */
+html[data-opmode="emby"] .tn-item, html[data-opmode="emby"] .libtab { border-radius:4px; position:relative; }
+html[data-opmode="emby"] .tn-item.active, html[data-opmode="emby"] .libtab[aria-current="true"] {
+  background:color-mix(in srgb, var(--accent) 14%, transparent);
+  color:var(--accent); font-weight:650;
+}
+html[data-opmode="emby"] .tn-item.active::after, html[data-opmode="emby"] .libtab[aria-current="true"]::after {
+  content:""; position:absolute; left:9px; right:9px; bottom:3px; height:2px; border-radius:2px; background:var(--accent);
+}
+html[data-opmode="emby"] .card, html[data-opmode="emby"] .setblock { border-radius:4px; }
+
+/* Plex：扁平硬朗 + 大写字距标签 + 琥珀高亮。 */
+html[data-opmode="plex"] .tn-item, html[data-opmode="plex"] .libtab { border-radius:2px; }
+html[data-opmode="plex"] .tn-item .nl, html[data-opmode="plex"] .libtab { text-transform:uppercase; letter-spacing:.07em; font-size:11.5px; font-weight:600; }
+html[data-opmode="plex"] .tn-item.active, html[data-opmode="plex"] .libtab[aria-current="true"] {
+  background:transparent; color:var(--op-accent-hard, #e5a00d); box-shadow:inset 0 -2px 0 0 var(--op-accent-hard, #e5a00d);
+}
+html[data-opmode="plex"] .card, html[data-opmode="plex"] .setblock { border-radius:3px; }
+html[data-opmode="plex"] .section-title .idx { border-radius:2px; }
+
+/* ---- 需求1：TV 操作模式下的鼠标 / 遥控 / 键盘规则 ----
+   ① 焦点环常显（遥控没有 hover，只有 focus；:focus 而不是 :focus-visible）；
+   ② 聚焦元素有 scroll-margin，滚进视口时不会被顶栏压住；
+   ③ hover 与 focus 用同一套视觉 —— 鼠标指着谁，遥控就从谁开始；
+   ④ 触屏/遥控设备上不保留 hover 抬升残留。 */
+html[data-uimode="tv"] { scroll-padding-block: 96px 48px; }
+html[data-uimode="tv"] :focus,
+html[data-uimode="tv"] :focus-visible {
+  outline:3px solid var(--accent);
+  outline-offset:3px;
+  border-radius:var(--op-radius-sm, 8px);
+}
+html[data-uimode="tv"] .btn:focus, html[data-uimode="tv"] .seg-btn:focus,
+html[data-uimode="tv"] .spec-card:focus, html[data-uimode="tv"] .mode-card:focus,
+html[data-uimode="tv"] .tn-item:focus, html[data-uimode="tv"] .libtab:focus {
+  outline:3px solid var(--accent);
+  outline-offset:2px;
+  box-shadow:0 0 0 4px color-mix(in srgb, var(--accent) 26%, transparent), 0 10px 26px rgba(0,0,0,.38);
+  transform:translateY(-2px) scale(1.03);
+  z-index:2;
+}
+html[data-uimode="tv"] .media-poster-card:focus, html[data-uimode="tv"] .book-card:focus,
+html[data-uimode="tv"] .movie-rec-card:focus, html[data-uimode="tv"] .audio-album-card:focus,
+html[data-uimode="tv"] .series-episode-card:focus, html[data-uimode="tv"] .ep-grid-card:focus {
+  outline:3px solid var(--accent);
+  outline-offset:3px;
+  transform:translateY(-4px) scale(1.045);
+  box-shadow:0 16px 34px rgba(0,0,0,.45);
+  z-index:2;
+}
+html[data-uimode="tv"] .tn-item:focus, html[data-uimode="tv"] .libtab:focus { transform:none; }
+html[data-uimode="tv"] * { scroll-margin-block:110px 60px; }
+/* 遥控器没有指针：hover 视觉只在真有指针时保留。 */
+@media (hover: none) {
+  html[data-uimode="tv"] .media-poster-card:hover, html[data-uimode="tv"] .book-card:hover,
+  html[data-uimode="tv"] .movie-rec-card:hover { transform:none; box-shadow:none; }
+}
+/* 键盘用户（非 TV 档）也保留一个清晰的焦点环，避免只有鼠标可用。 */
+html:not([data-uimode="tv"]) .spec-card:focus-visible, html:not([data-uimode="tv"]) .mode-card:focus-visible {
+  outline:2px solid var(--accent); outline-offset:2px;
+}
+
+/* ==================================================================================
+   v1.0.5 —— 操作模式三档「手感层」
+   ----------------------------------------------------------------------------------
+   v1.0.4 的 TV 档只改了字号和焦点环，页面密度仍是 PC 的：1920 宽的电视上
+   .media-poster-grid 会排到 10 列、每张卡 155px，遥控器要按十几次才能横穿一屏。
+   这一层把「模式」变成真实的布局差异：
+     · TV    ：列数少、卡片大、行高宽、顶栏高、焦点抬升、横向标签吸附、动效收敛；
+     · Phone ：单列/双列、48px 触达、底部安全区、去掉 hover 残留；
+     · PC    ：高密度、14px 间距、保留 hover 抬升。
+   规则都挂在 html[data-uimode=...] 上，切档即时生效，不需要刷新。
+   ================================================================================== */
+
+/* ---------- TV：远距离观看 + 遥控操作 ---------- */
+/* 规格令牌块（html[data-spec=...][data-mode=...]）把整套令牌又声明了一遍，
+   特异性 (0,2,1) 高于 (0,1,1) —— 顶栏高度必须用 :root 抬到同一级，否则 52px 一直赢。
+   v1.0.6 起令牌块按 data-spec 声明，这条规则不变。 */
+html[data-uimode="tv"]:root {
+  --topbar-h: 64px;
+}
+html[data-uimode="tv"] {
+  font-size: 18px;
+  --tv-gap: 26px;
+  --tv-radius: 16px;
+  scroll-padding-block: 104px 56px;
+}
+html[data-uimode="tv"] body,
+html[data-uimode="tv"] .main { font-size: 1.05em; line-height: 1.7; }
+html[data-uimode="tv"] .content { padding: 18px 34px 120px; }
+
+/* 顶栏：更高的可点击条，标签之间留出手指/遥控的间隔 */
+html[data-uimode="tv"] .topbar { height: var(--topbar-h); }
+html[data-uimode="tv"] .tn-item,
+html[data-uimode="tv"] .libtab {
+  height: 44px; padding: 0 16px; font-size: 15.5px; gap: 8px;
+}
+html[data-uimode="tv"] .libtab { scroll-snap-align: start; }
+html[data-uimode="tv"] .tn-icon-btn { width: 44px; height: 44px; }
+html[data-uimode="tv"] .tn-libs { scroll-snap-type: x proximity; }
+
+/* 栅格：同样 1920 宽，从 ~10 列降到 5-6 列，卡片本身变大 */
+html[data-uimode="tv"] .media-poster-grid { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--tv-gap); }
+html[data-uimode="tv"] .home-poster-grid { grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: var(--tv-gap) 22px; }
+html[data-uimode="tv"] .home-poster-grid.sq { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+html[data-uimode="tv"] .book-grid { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--tv-gap); }
+html[data-uimode="tv"] .audio-album-grid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 24px; }
+html[data-uimode="tv"] .audio-latest-grid { grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
+html[data-uimode="tv"] .series-show-grid { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: var(--tv-gap); }
+html[data-uimode="tv"] .series-episode-list { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 16px; }
+html[data-uimode="tv"] .movie-detail-strip { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+html[data-uimode="tv"] .movie-cast-strip { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 22px 18px; }
+
+/* 行式列表：行高 68px，右侧操作按钮 44px —— 遥控不用瞄准 */
+html[data-uimode="tv"] .media-file-row { min-height: 68px; padding: 12px 16px; font-size: 1.02em; gap: 14px; }
+html[data-uimode="tv"] .media-file-row .btn,
+html[data-uimode="tv"] .row-acts .btn { min-height: 44px; min-width: 44px; }
+html[data-uimode="tv"] .media-file-meta { font-size: 13px; }
+
+/* 卡片圆角与留白跟着放大，远看轮廓更清楚 */
+html[data-uimode="tv"] .media-poster-card,
+html[data-uimode="tv"] .book-card,
+html[data-uimode="tv"] .audio-album-card { border-radius: var(--tv-radius); }
+
+/* 焦点：4px 环 + 抬升。抬升用 transform，不触发布局重排。 */
+html[data-uimode="tv"] :focus { outline: none; }
+html[data-uimode="tv"] :focus-visible { outline: 4px solid var(--accent); outline-offset: 3px; }
+html[data-uimode="tv"] .media-poster-card,
+html[data-uimode="tv"] .book-card,
+html[data-uimode="tv"] .hp,
+html[data-uimode="tv"] .audio-album-card,
+html[data-uimode="tv"] .movie-rec-card { transition: transform .14s ease, box-shadow .14s ease, border-color .14s ease; }
+html[data-uimode="tv"] .media-poster-card:focus,
+html[data-uimode="tv"] .book-card:focus,
+html[data-uimode="tv"] .hp:focus,
+html[data-uimode="tv"] .audio-album-card:focus,
+html[data-uimode="tv"] .movie-rec-card:focus {
+  /* 入场动画（opAppleIn 等）带 fill:both，动画结束后仍会压住 transform ——
+     v1.0.4 的焦点抬升在 Apple 规格下其实是死的。聚焦时先摘掉动画再抬升。 */
+  animation: none;
+  transform: scale(1.045);
+  outline: 4px solid var(--accent);
+  outline-offset: 3px;
+  z-index: 6;
+  position: relative;
+  border-color: var(--accent);
+  box-shadow: 0 20px 46px color-mix(in srgb, var(--text) 26%, transparent),
+              0 0 0 4px var(--accent);
+}
+/* TV 档的 hover 不再抬升：遥控器不产生 hover，鼠标用户有焦点环就够了 */
+html[data-uimode="tv"] .media-poster-card:hover,
+html[data-uimode="tv"] .book-card:hover,
+html[data-uimode="tv"] .hp:hover .img { transform: none; box-shadow: none; }
+
+/* 只在 hover 时出现的角标（收藏心 / 缩放按钮）在 TV 档跟随焦点显示 */
+html[data-uimode="tv"] .book-card:focus .book-card-fav,
+html[data-uimode="tv"] .book-card:focus-within .book-card-fav,
+html[data-uimode="tv"] .media-poster-card:focus .movie-poster-settings { opacity: 1; transform: none; pointer-events: auto; }
+
+/* 动效收敛：TV 上 250ms 的入场动画会让「按一下等半天」 */
+html[data-uimode="tv"] .view { animation-duration: .16s; }
+html[data-uimode="tv"] .modal-mask { transition-duration: .14s; }
+
+/* ---------- Phone：拇指可达 + 触控目标 ---------- */
+html[data-uimode="phone"]:root { --topbar-h: 56px; }
+html[data-uimode="phone"] { font-size: 16px; }
+html[data-uimode="phone"] .content { padding: 10px 14px calc(96px + env(safe-area-inset-bottom, 0px)); }
+html[data-uimode="phone"] .tn-item,
+html[data-uimode="phone"] .libtab { height: 42px; padding: 0 13px; font-size: 14px; }
+html[data-uimode="phone"] .btn,
+html[data-uimode="phone"] .seg-btn,
+html[data-uimode="phone"] .tn-icon-btn { min-height: 48px; }
+html[data-uimode="phone"] .tn-icon-btn { width: 48px; height: 48px; }
+html[data-uimode="phone"] .media-poster-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (min-width: 620px) { html[data-uimode="phone"] .media-poster-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+html[data-uimode="phone"] .home-poster-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px 10px; }
+html[data-uimode="phone"] .book-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+html[data-uimode="phone"] .audio-album-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+html[data-uimode="phone"] .audio-latest-grid { grid-template-columns: 1fr; }
+html[data-uimode="phone"] .media-file-row { min-height: 56px; padding: 10px 12px; }
+html[data-uimode="phone"] .media-file-row .btn { min-height: 44px; }
+/* 触屏没有 hover：卡片按下时给即时反馈，避免「点了没反应」 */
+html[data-uimode="phone"] .media-poster-card:hover,
+html[data-uimode="phone"] .book-card:hover,
+html[data-uimode="phone"] .hp:hover .img { transform: none; box-shadow: none; }
+html[data-uimode="phone"] .media-poster-card:active,
+html[data-uimode="phone"] .book-card:active { transform: scale(.985); }
+html[data-uimode="phone"] .modal-mask .modal { border-radius: 16px 16px 0 0; }
+
+/* ---------- PC：鼠标优先，密度优先 ---------- */
+html[data-uimode="pc"] .media-poster-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
+html[data-uimode="pc"] .home-poster-grid { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 14px 12px; }
+html[data-uimode="pc"] .media-file-row { min-height: 44px; }
+html[data-uimode="pc"] .btn,
+html[data-uimode="pc"] .libtab,
+html[data-uimode="pc"] .tn-item { min-height: 34px; }
+
+/* ==================================================================================
+   v1.0.6 规格主题层：壁纸 / 材质 / 播放器皮肤
+   ----------------------------------------------------------------------------------
+   三份《界面规格之 … 影音播放器界面元素详解》里的「美化元素」在这里落地。
+   每套规格走同一批挂点，但呈现完全不同：
+
+     Apple · Liquid Glass  —— 顶栏/面板/播放器半透明 + 背景模糊，同心大圆角，
+                              Aerial 航拍壁纸（多层渐变 48s 缓慢漂移），图标细描边；
+     Emby  · Material      —— 实色表面、水波式按压、海报拼贴背景（启用背景图才出现）、
+                              OSD 中央大播放键、海报角标；
+     Plex  · UltraBlur     —— 从海报四角取色算出一整张氛围底图、琥珀金进度条、
+                              方头 chevron 图标、暗色骨架。
+
+   壁纸不是一张可替换的图，而是三种「算出来的」背景，所以关掉壁纸时只留 --bg 底色，
+   一切仍然可读（不依赖任何外链图片，离线/内网部署也不会空一块）。
+   ================================================================================== */
+
+/* ---------- 壁纸层 ---------- */
+.vh-wall { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
+html[data-wallpaper="off"] .vh-wall { display: none; }
+/* 壁纸层存在时 body 让出底色（底色由 <html> 提供），否则会盖住 -1 层。 */
+html:not([data-wallpaper="off"]) body { background: transparent; }
+.vh-wall > * { position: absolute; inset: 0; }
+.vh-wall-grain {
+  /* 统一压暗/提亮 + 极轻的噪点：保证任何壁纸下正文对比度都够。 */
+  background:
+    radial-gradient(120% 80% at 50% 0%, rgba(0,0,0,0) 40%, rgba(0,0,0,.28) 100%),
+    repeating-linear-gradient(0deg, rgba(255,255,255,.014) 0 1px, transparent 1px 3px);
+  opacity: .9;
+}
+html[data-mode="light"] .vh-wall-grain {
+  background:
+    radial-gradient(120% 80% at 50% 0%, rgba(255,255,255,.35) 0%, rgba(255,255,255,.72) 100%),
+    repeating-linear-gradient(0deg, rgba(0,0,0,.010) 0 1px, transparent 1px 3px);
+}
+/* 只显示当前规格对应的那一层 */
+html[data-wallpaper="aerial"] .vh-wall-collage,
+html[data-wallpaper="aerial"] .vh-wall-ub,
+html[data-wallpaper="collage"] .vh-wall-ub,
+html[data-wallpaper="ultrablur"] .vh-wall-collage { display: none; }
+
+/* Apple · Aerial：城市/地球/风景/水下四类航拍的色彩印象，慢速漂移 + 轻微缩放。
+   48s 一个来回，肉眼几乎察觉不到在动，但静置时不会像静态图那样「死」。 */
+html[data-wallpaper="aerial"] .vh-wall::before {
+  content: ""; position: absolute; inset: -14%;
+  background:
+    radial-gradient(58% 42% at 20% 16%, rgba(64,116,170,.85) 0%, rgba(64,116,170,0) 62%),
+    radial-gradient(48% 38% at 80% 24%, rgba(58,138,150,.70) 0%, rgba(58,138,150,0) 64%),
+    radial-gradient(72% 58% at 52% 98%, rgba(14,32,48,.92) 0%, rgba(14,32,48,0) 72%),
+    linear-gradient(158deg, #0A1220 0%, #101B28 46%, #080D14 100%);
+  animation: vhAerial 48s ease-in-out infinite alternate;
+}
+html[data-wallpaper="aerial"] .vh-wall::after {
+  content: ""; position: absolute; inset: -10%;
+  background:
+    radial-gradient(40% 26% at 68% 62%, rgba(255,214,170,.16) 0%, rgba(255,214,170,0) 70%),
+    radial-gradient(30% 20% at 30% 74%, rgba(120,200,255,.14) 0%, rgba(120,200,255,0) 72%);
+  filter: blur(6px);
+  animation: vhAerialGlow 32s ease-in-out infinite alternate;
+}
+html[data-mode="light"][data-wallpaper="aerial"] .vh-wall::before {
+  background:
+    radial-gradient(58% 42% at 20% 16%, rgba(150,196,240,.90) 0%, rgba(150,196,240,0) 62%),
+    radial-gradient(48% 38% at 80% 24%, rgba(176,226,224,.85) 0%, rgba(176,226,224,0) 64%),
+    radial-gradient(72% 58% at 52% 98%, rgba(226,238,248,.95) 0%, rgba(226,238,248,0) 72%),
+    linear-gradient(158deg, #EAF2FB 0%, #F3F7FC 46%, #E6EEF7 100%);
+}
+@keyframes vhAerial {
+  0%   { transform: scale(1.02) translate3d(0,0,0); }
+  50%  { transform: scale(1.08) translate3d(-1.6%,-1.1%,0); }
+  100% { transform: scale(1.04) translate3d(1.2%,.8%,0); }
+}
+@keyframes vhAerialGlow {
+  0%   { opacity: .55; transform: translate3d(0,0,0); }
+  100% { opacity: .95; transform: translate3d(1.4%,-1.6%,0); }
+}
+
+/* Emby · 海报拼贴：对应文档里「启用背景图后媒体库背景随机取影片海报」。
+   取当前列表的 12 张海报铺成 6×2，重度模糊 + 压暗，只留色块氛围。 */
+.vh-wall-collage {
+  display: grid; grid-template-columns: repeat(6, 1fr); grid-auto-rows: 50%;
+  gap: 2px; filter: blur(30px) saturate(.85) brightness(.72);
+  transform: scale(1.18); opacity: .40;
+}
+html[data-mode="light"] .vh-wall-collage { filter: blur(34px) saturate(.7) brightness(1.06); opacity: .34; }
+.vh-wall-collage img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.vh-wall-collage:empty { display: none; }
+html[data-wallpaper="collage"] .vh-wall::before {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(180deg, rgba(10,14,18,.55) 0%, rgba(10,14,18,.86) 100%);
+}
+html[data-mode="light"][data-wallpaper="collage"] .vh-wall::before {
+  background: linear-gradient(180deg, rgba(243,245,247,.72) 0%, rgba(243,245,247,.92) 100%);
+}
+
+/* Plex · UltraBlur：四角色由 JS 从海报里取（--ub-tl/tr/br/bl），这里只负责把它糊成底图。
+   取不到色时回落到琥珀色的暗底，不会出现空白。 */
+.vh-wall-ub {
+  background:
+    radial-gradient(70% 70% at 0% 0%, var(--ub-tl, #2A1F08) 0%, transparent 62%),
+    radial-gradient(70% 70% at 100% 0%, var(--ub-tr, #241A06) 0%, transparent 62%),
+    radial-gradient(70% 70% at 100% 100%, var(--ub-br, #1A1408) 0%, transparent 64%),
+    radial-gradient(70% 70% at 0% 100%, var(--ub-bl, #201808) 0%, transparent 64%),
+    linear-gradient(160deg, #0B0B0C, #101012 60%, #0A0A0B);
+  filter: blur(46px) saturate(1.15) brightness(.78);
+  transform: scale(1.12);
+  transition: background 900ms var(--ease);
+}
+html[data-mode="light"] .vh-wall-ub { filter: blur(48px) saturate(.95) brightness(1.18); opacity: .72; }
+html[data-wallpaper="ultrablur"] .vh-wall::before {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(180deg, rgba(8,8,9,.45) 0%, rgba(8,8,9,.80) 100%);
+}
+html[data-mode="light"][data-wallpaper="ultrablur"] .vh-wall::before {
+  background: linear-gradient(180deg, rgba(245,245,246,.66) 0%, rgba(245,245,246,.90) 100%);
+}
+
+/* ---------- 材质：只有 Apple 走液态玻璃 ----------
+   文档里液态玻璃只出现在「压在内容之上」的图层：顶栏、菜单、弹窗、播放器。
+   正文卡片保持不透明 —— 全屏磨砂会把文字对比度拖垮，那是照抄形状而不是照抄原则。 */
+html[data-spec="apple"] .topbar,
+html[data-spec="apple"] .tn-pop,
+html[data-spec="apple"] .account-menu,
+html[data-spec="apple"] .modal,
+html[data-spec="apple"] .audio-player {
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.7);
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.7);
+}
+html[data-spec="apple"] .topbar { background: var(--bg2); border-bottom-color: var(--border); }
+html[data-spec="apple"] .modal { background: color-mix(in srgb, var(--card) 82%, transparent); }
+html[data-spec="apple"] .modal-mask { background: rgba(0,0,0,.42); }
+html[data-spec="apple"] .btn,
+html[data-spec="apple"] .ibtn,
+html[data-spec="apple"] .libtab { border-radius: 999px; }
+html[data-spec="apple"] .media-poster-card,
+html[data-spec="apple"] .book-card,
+html[data-spec="apple"] .audio-album-card { border-radius: var(--radius-lg); }
+/* 同心圆角：海报内层比外框小一档，视觉上像从卡片里长出来。 */
+html[data-spec="apple"] .media-poster-art,
+html[data-spec="apple"] .book-card-cover,
+html[data-spec="apple"] .audio-album-cover { border-radius: calc(var(--radius-lg) - 6px); }
+
+/* Emby：Material —— 实色表面 + 按压水波（active 时扩散一圈）。 */
+html[data-spec="emby"] .btn,
+html[data-spec="emby"] .ibtn,
+html[data-spec="emby"] .libtab,
+html[data-spec="emby"] .mode-card,
+html[data-spec="emby"] .spec-card { position: relative; overflow: hidden; }
+html[data-spec="emby"] .btn:active::after,
+html[data-spec="emby"] .ibtn:active::after,
+html[data-spec="emby"] .libtab:active::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit;
+  background: radial-gradient(circle at center, var(--accent-dim) 0%, transparent 70%);
+  animation: vhRipple .45s ease-out;
+}
+@keyframes vhRipple { from { transform: scale(.2); opacity: 1; } to { transform: scale(1.6); opacity: 0; } }
+/* 海报角标：Emby 的「扫一眼封面就知道画质」—— 角标贴在海报左上，圆角小方块。 */
+html[data-spec="emby"] .media-poster-art::after {
+  content: ""; position: absolute; inset: auto auto 8px 8px; width: 22px; height: 3px;
+  border-radius: 2px; background: var(--accent); opacity: .75;
+}
+
+/* Plex：扁平 + 琥珀。海报 1:1.5、去阴影、悬停只提亮边框。 */
+html[data-spec="plex"] .media-poster-art,
+html[data-spec="plex"] .book-card-cover,
+html[data-spec="plex"] .audio-album-cover { border-radius: var(--radius-sm); }
+html[data-spec="plex"] .media-poster-card:hover,
+html[data-spec="plex"] .book-card:hover { border-color: var(--accent); box-shadow: none; }
+html[data-spec="plex"] .video-played-range { background: linear-gradient(90deg, #C98A0B, #E5A00D 60%, #F6C453); }
+html[data-spec="plex"] .video-progress-knob { background: #F6C453; }
+
+/* ---------- 播放器皮肤 ---------- */
+/* Apple · 层叠式迷你播放器：浮在页面上的玻璃条，展开时是同一块面往上长，
+   不是覆盖整页 —— 对应文档里「点开时以层叠方式展开」。 */
+html[data-spec="apple"] .audio-player {
+  background: color-mix(in srgb, var(--card) 74%, transparent);
+  border-radius: 26px; bottom: 22px;
+  box-shadow: 0 24px 60px rgba(0,0,0,.45), 0 0 0 1px var(--border) inset;
+  padding: 16px 20px;
+}
+html[data-spec="apple"] .audio-player.show { animation: vhGlassIn 260ms var(--ease); }
+@keyframes vhGlassIn { from { transform: translateX(-50%) translateY(14px) scale(.985); opacity: .4; } to { transform: translateX(-50%) translateY(0) scale(1); opacity: 1; } }
+html[data-spec="apple"] .audio-play-btn { border-radius: 50%; width: 44px; height: 44px; }
+html[data-spec="apple"] .audio-player-controls button { border-radius: 999px; }
+
+/* Emby · OSD：中央大播放键（文档里「最常被模仿的一处」）。
+   只在 Emby 规格出现；播放中淡出，暂停/刚打开时浮现，点画面任意处也能切。 */
+.vc-center-play {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%) scale(1);
+  width: 92px; height: 92px; border-radius: 50%; border: 0; padding: 0;
+  display: none; place-items: center; cursor: pointer; z-index: 3;
+  background: rgba(0,0,0,.42); color: #fff; border: 1px solid rgba(255,255,255,.22);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  transition: opacity .18s ease, transform .18s ease;
+}
+html[data-spec="emby"] .vc-center-play { display: grid; }
+.vc-center-play svg { width: 38px; height: 38px; }
+.vc-center-play.is-playing { opacity: 0; transform: translate(-50%,-50%) scale(.86); pointer-events: none; }
+.media-video-body:hover .vc-center-play.is-playing { opacity: .0; }
+/* Emby 的 OSD 底栏更厚一档，图标按钮 44px（TV 遥控目标）。 */
+html[data-spec="emby"] .vc-bar { padding: 10px 14px; }
+html[data-spec="emby"] .vc-icon { min-width: 40px; min-height: 40px; border-radius: 50%; }
+
+/* Plex · 琥珀进度 + 方头按钮；控制条更薄，让画面占满。 */
+html[data-spec="plex"] .vc-bar { background: linear-gradient(180deg, transparent, rgba(0,0,0,.86)); }
+html[data-spec="plex"] .vc-icon { border-radius: var(--radius-sm); }
+html[data-spec="plex"] .vc-play { border-radius: 50%; background: rgba(229,160,13,.16); }
+
+/* ---------- 规格清单（外观面板） ---------- */
+.spec-highlights ul { list-style: none; display: grid; gap: 6px; margin: 0 0 10px; padding: 0; }
+.spec-highlights li {
+  position: relative; padding-left: 18px; font-size: 12.5px; line-height: 1.55; color: var(--text2);
+}
+.spec-highlights li::before {
+  content: ""; position: absolute; left: 4px; top: 7px; width: 6px; height: 6px;
+  border-radius: 2px; background: var(--accent); opacity: .85;
+}
+.spec-doc-modal { width: min(620px, calc(100vw - 32px)); }
+.spec-doc-lead { color: var(--text2); font-size: 13px; line-height: 1.7; margin: 0 0 10px; }
+.spec-doc-list { margin: 0 0 12px; padding-left: 18px; display: grid; gap: 7px; }
+.spec-doc-list li { font-size: 13px; line-height: 1.6; color: var(--text); }
+.spec-doc-meta { color: var(--text3); font-size: 12px; margin: 0 0 14px; }
+.spec-doc-meta code { margin-left: 6px; padding: 1px 6px; border-radius: 4px; background: var(--card2); }
+.spec-doc-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ===================== v1.0.8 =====================
+   需求2：内容区自适应居中 + 跨端（网页 / Win・Linux 桌面 / 安卓 WebView）适配。
+   需求6：音乐播放器圆形按钮内外双描边，低对比背景也能看出按钮边界。
+   逻辑全部放在服务端下发的这一份 CSS 里，客户端不分叉 —— 桌面壳与安卓 App
+   用的是同一份样式，只按视口宽度与安全区自适应。 */
+:root { --vh-content-max: clamp(920px, 94vw, 1780px); }
+.main .content { box-sizing: border-box; }
+.main .content > .view { width: 100%; max-width: var(--vh-content-max); margin-inline: auto; }
+@media (max-width: 900px) {
+  .main .content { padding-left: clamp(10px, 3vw, 18px); padding-right: clamp(10px, 3vw, 18px); }
+}
+/* 安卓 / iOS WebView 的刘海与手势区：留出安全边距，内容不被切掉。 */
+@supports (padding: max(0px)) {
+  .main .content {
+    padding-left: max(clamp(10px, 3vw, 18px), env(safe-area-inset-left));
+    padding-right: max(clamp(10px, 3vw, 18px), env(safe-area-inset-right));
+  }
+}
+@media (min-width: 1800px) {
+  .media-poster-grid { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
+  .audio-album-grid { grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); }
+}
+/* 播放器圆形按钮：内侧细亮环 + 外侧暗环，深浅背景下都有边界感。 */
+.audio-player-controls button {
+  border: 1px solid rgba(255, 255, 255, .62);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .62), 0 2px 10px rgba(0, 0, 0, .45);
+}
+.audio-player-controls button:hover { border-color: #fff; }
+.audio-player-controls button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.reader-theme-light .audio-player-controls button {
+  border-color: rgba(0, 0, 0, .55);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .85), 0 2px 10px rgba(0, 0, 0, .22);
+}
+.audio-player-controls button.audio-play-btn {
+  border-color: color-mix(in srgb, var(--accent) 60%, #fff);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, .45), 0 6px 20px var(--accent-glow);
+}
+.audio-player .audio-cover-zoom-btn {
+  border: 1px solid rgba(255, 255, 255, .55);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .5);
+}
+/* 音乐库页首的「喜欢 / 歌单」入口卡（页签移除后的唯一入口）。 */
+.audio-entry-card .audio-entry-cover {
+  display: flex; align-items: center; justify-content: center;
+  font-size: 46px; line-height: 1; color: rgba(255, 255, 255, .94);
+}
+.audio-entry-card { cursor: pointer; }

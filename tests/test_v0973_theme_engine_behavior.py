@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""v0.9.73 主题引擎行为测试（Node VM 真跑 web/js/06-theme.js）。
+"""v1.0.8 主题引擎行为测试（Node VM 真跑 web/js/06-theme.js）。
 
-静态契约只能证明「写了哪些字段」，证明不了「选了之后真的生效」。这里把真实的
-06-theme.js 装进 Node VM，桩掉 document/localStorage/matchMedia，然后真实调用
-setThemeMode / setThemePalette / setThemeAccent / setCustomBg / initTheme，断言：
-  1. 三层选择真的落到 <html data-palette|data-mode|data-accent>；
-  2. 「跟随系统」读 matchMedia 并监听 change（系统切亮/暗时实时跟随，无需重载）；
-  3. 旧入口 setTheme('light'|'dark'|'custom') 仍然可用（旧版本 localStorage/旧书签）；
-  4. 主题卡片是「用该主题自己的令牌渲染的缩略界面」（--t-* 来自该调色板）；
-  5. 面板同步：只有当前调色板/强调色/明暗处于选中态；
-  6. 自定义背景是独立背景层（不影响明暗与调色板）。
+本文件前身是 v0.9.73 的三层主题测试（调色板 × 明暗 × 强调色）。v1.0.8 按客户口径
+把主题收敛成两层 —— **界面规格 × 明暗**，调色板 / 强调色 / 自定义背景三档设置整体移除，
+所以这里的断言也跟着换成「规格是否真的带走整套主题定义」：
+
+  1. initTheme 把 data-spec / data-mode / data-wallpaper / data-spec-player 落到 <html>；
+  2. 切规格 = 换整套主题：SPEC_THEMES 里每套规格的配色/圆角/动效令牌各不相同；
+  3. 壁纸跟着规格走：Apple=aerial / Emby=collage / Plex=ultrablur，关掉后落 off；
+  4. 播放器皮肤跟着规格走：glass / osd / plex；
+  5. 移除的三档设置真的不存在（函数未定义、面板不渲染、<html> 上不留 data-palette/accent）；
+  6. 「跟随系统」读 matchMedia 并监听 change（系统切亮/暗时实时跟随，无需重载）；
+  7. 旧入口 setTheme('dark'|'light'|'custom') 不再炸（custom 按暗色处理）。
 
 无 node 时 SKIP。
 """
@@ -36,12 +38,11 @@ const fs = require("fs"), vm = require("vm");
 const src = fs.readFileSync(process.argv[2], "utf8");
 const noop = () => {};
 
-/* ---- 最小 DOM 桩：能记住 class / dataset / innerHTML，并把 innerHTML 里的
-       data-* 解析成子元素（面板渲染后要能查询选中态）。 ---- */
 function mkEl(id) {
   const el = {
     id: id || "", innerHTML: "", textContent: "", value: "", hidden: false, checked: false,
-    dataset: {}, style: { props: {}, setProperty(k, v) { this.props[k] = v; }, removeProperty(k) { delete this.props[k]; } },
+    dataset: {},
+    style: { props: {}, setProperty(k, v) { this.props[k] = v; }, removeProperty(k) { delete this.props[k]; } },
     attrs: {}, children: [],
     classList: {
       _s: new Set(),
@@ -51,8 +52,25 @@ function mkEl(id) {
       contains(c) { return this._s.has(c); }
     },
     querySelector: () => null, querySelectorAll: () => [], appendChild: noop, removeChild: noop,
-    addEventListener: noop, removeEventListener: noop, setAttribute(k, v) { this.attrs[k] = v; },
-    getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; }, removeAttribute(k) { delete this.attrs[k]; },
+    addEventListener: noop, removeEventListener: noop,
+    /* 真浏览器里 setAttribute("data-x-y") 会同步 dataset.xY —— 桩必须照做，
+       否则「代码用 setAttribute 落属性、测试读 dataset」这一对永远对不上。 */
+    setAttribute(k, v) {
+      this.attrs[k] = v;
+      if (String(k).indexOf("data-") === 0) {
+        const camel = String(k).slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+        this.dataset[camel] = String(v);
+      }
+    },
+    getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; },
+    removeAttribute(k) {
+      delete this.attrs[k];
+      if (String(k).indexOf("data-") === 0) {
+        const camel = String(k).slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+        delete this.dataset[camel];
+      }
+    },
+    hasAttribute(k) { return k in this.attrs; },
     focus: noop, blur: noop, closest: () => null, scrollIntoView: noop, remove: noop,
     getBoundingClientRect: () => ({ top: 0, left: 0, width: 100, height: 100 })
   };
@@ -62,11 +80,10 @@ function mkEl(id) {
   });
   return el;
 }
-/* 从 innerHTML 串里抽出 [data-xxx="v"] + style 里的 --t-* 令牌，生成子元素桩。
-   注意标签不一定是 <div>（预览块是 <span>、色块是 <button>），必须按标签名逐个扫。 */
+/* 从 innerHTML 串里抽出 data-op-opt / data-ui-opt / data-mode-opt，生成子元素桩。 */
 function parseChildren(html) {
   const out = [];
-  const keys = { "theme-card": "themeCard", "theme-accent": "themeAccent", "mode-opt": "modeOpt", "theme-preview": "themePreview" };
+  const keys = { "op-opt": "opOpt", "ui-opt": "uiOpt", "mode-opt": "modeOpt" };
   const tagRe = /<(div|span|button)\b[^>]*>/g;
   let m;
   while ((m = tagRe.exec(html))) {
@@ -79,8 +96,6 @@ function parseChildren(html) {
     if (!hit) continue;
     const el = mkEl();
     el.dataset[hit] = value;
-    const styleMatch = tag.match(/style="([^"]*)"/);
-    if (styleMatch) el.attrs.style = styleMatch[1];
     if (/class="[^"]*\bon\b/.test(tag)) el.classList.add("on");
     out.push(el);
   }
@@ -93,33 +108,33 @@ const document = {
   querySelector: () => null,
   querySelectorAll: () => [],
   createElement: () => mkEl(), addEventListener: noop, removeEventListener: noop,
-  documentElement: mkEl("html"), body: mkEl("body"), activeElement: null, cookie: ""
+  documentElement: mkEl("html"), body: mkEl("body"), activeElement: null, cookie: "",
+  visibilityState: "visible"
 };
-/* document.querySelectorAll 要能按选择器返回真实子元素（含 innerHTML 生成的）。 */
 const CHILD_SELECTORS = {
-  "[data-theme-card]": () => (els.themePaletteGrid ? els.themePaletteGrid.children.filter(c => "themeCard" in c.dataset) : []),
-  "[data-theme-preview]": () => (els.themePaletteGrid ? els.themePaletteGrid.children.filter(c => "themePreview" in c.dataset) : []),
-  "[data-theme-accent]": () => (els.themeAccentSwatches ? els.themeAccentSwatches.children.filter(c => "themeAccent" in c.dataset) : []),
-  "#themeModeSeg [data-mode-opt]": () => (els.themeModeSeg ? els.themeModeSeg.children.filter(c => "modeOpt" in c.dataset) : [])
+  "#themeModeSeg [data-mode-opt]": () => (els.themeModeSeg ? els.themeModeSeg.children.filter(c => "modeOpt" in c.dataset) : []),
+  "#uiModeSeg [data-ui-opt]": () => (els.uiModeSeg ? els.uiModeSeg.children.filter(c => "uiOpt" in c.dataset) : []),
+  "#opModeSeg [data-op-opt]": () => (els.opModeSeg ? els.opModeSeg.children.filter(c => "opOpt" in c.dataset) : [])
 };
 document.querySelectorAll = sel => (CHILD_SELECTORS[sel] ? CHILD_SELECTORS[sel]() : []);
 
-/* ---- matchMedia 桩：可手动触发 change（模拟系统切换亮/暗） ---- */
 const mq = { matches: true, _l: [], addEventListener(t, fn) { this._l.push(fn); }, addListener(fn) { this._l.push(fn); } };
 const store = {};
-const settings = { theme: "dark", mode: "dark", palette: "emerald", accent: "theme", customBg: false, reduceMotion: false };
+const settings = { theme: "dark", mode: "dark", uiMode: "auto", opMode: "apple", wallpaper: true, reduceMotion: false };
 const toasts = [];
 const sb = {
   document, settings, toast: m => toasts.push(String(m)),
-  saveSettings: noop, t: k => k, esc: v => String(v == null ? "" : v).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])),
-  readerThemeClass: () => "reader-theme-dark", applyBgImage: noop, curLang: "zh-CN",
+  saveSettings: noop, t: k => k,
+  esc: v => String(v == null ? "" : v).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])),
+  readerThemeClass: () => "reader-theme-dark", curLang: "zh-CN",
   localStorage: { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: k => { delete store[k]; } },
   matchMedia: () => mq, setTimeout, clearTimeout, setInterval: () => 0, console, navigator: {},
-  location: { href: "http://x/", origin: "http://x" }
+  location: { href: "http://x/", origin: "http://x" },
+  innerWidth: 1280, openModal: noop, closeModal: noop
 };
 sb.window = sb; sb.globalThis = sb;
 const ctx = vm.createContext(sb);
-vm.runInContext(src + "\n;this.__api = { initTheme, applyTheme, setThemeMode, setThemePalette, setThemeAccent, setTheme, setCustomBg, setThemeReduceMotion, resolvedThemeMode, themePreviewStyle, THEME_PALETTES, THEME_ACCENTS, renderThemePanel, settings };", ctx);
+vm.runInContext(src + "\n;this.__api = { initTheme, applyTheme, applyOpMode, setOpMode, setThemeMode, setTheme, setSpecWallpaper, setThemeReduceMotion, resolvedThemeMode, renderThemePanel, syncThemeControls, SPEC_THEMES, SPEC_HIGHLIGHTS, OP_MODES, OP_ICON_PACK, currentOpMode, specThemeDef, wallpaperOn, settings };", ctx);
 const api = sb.__api;
 
 let pass = 0, fail = 0;
@@ -127,65 +142,101 @@ const chk = (name, cond, extra) => { if (cond) { pass++; console.log("PASS: " + 
 const root = document.documentElement;
 
 api.initTheme();
-chk("默认三层：调色板 emerald / 明暗 dark / 强调色 theme",
-    root.dataset.palette === "emerald" && root.dataset.mode === "dark" && root.dataset.accent === "theme",
-    JSON.stringify(root.dataset));
+chk("initTheme：data-spec=apple", root.dataset.spec === "apple", JSON.stringify(root.dataset));
+chk("initTheme：data-mode=dark", root.dataset.mode === "dark");
+chk("initTheme：data-wallpaper=aerial（Apple 航拍）", root.dataset.wallpaper === "aerial", root.dataset.wallpaper);
+chk("initTheme：data-spec-player=glass", root.dataset.specPlayer === "glass", root.dataset.specPlayer);
 chk("body[data-theme] 与明暗层一致（旧 CSS 仍按它取色）", document.body.dataset.theme === "dark");
+chk("移除的旧属性不在 <html> 上", !root.hasAttribute("data-palette") && !root.hasAttribute("data-accent"));
 
+/* 切规格 = 换整套主题 */
+api.setOpMode("emby");
+chk("切 Emby：data-spec=emby", root.dataset.spec === "emby");
+chk("切 Emby：壁纸换成海报拼贴", root.dataset.wallpaper === "collage", root.dataset.wallpaper);
+chk("切 Emby：播放器皮肤 osd（中央大播放键）", root.dataset.specPlayer === "osd", root.dataset.specPlayer);
+chk("切 Emby：品牌绿锁定 #52B54B", api.SPEC_THEMES.emby.tokens.dark.accent === "#52B54B");
+chk("切 Emby：Material 圆角 8px / 150ms", api.SPEC_THEMES.emby.tokens.dark.radius === "8px" && api.SPEC_THEMES.emby.tokens.dark.dur === "150ms");
+chk("切规格弹提示（含「主题/壁纸/播放器已同步」）", toasts.some(m => m.indexOf("uiSpecSaved") >= 0));
+
+api.setOpMode("plex");
+chk("切 Plex：data-spec=plex", root.dataset.spec === "plex");
+chk("切 Plex：壁纸换成 UltraBlur 取色", root.dataset.wallpaper === "ultrablur", root.dataset.wallpaper);
+chk("切 Plex：播放器皮肤 plex", root.dataset.specPlayer === "plex", root.dataset.specPlayer);
+chk("切 Plex：琥珀金 #E5A00D", api.SPEC_THEMES.plex.tokens.dark.accent === "#E5A00D");
+chk("切 Plex：扁平圆角 6px / 140ms", api.SPEC_THEMES.plex.tokens.dark.radius === "6px" && api.SPEC_THEMES.plex.tokens.dark.dur === "140ms");
+
+/* 三套规格的主题定义完整性：亮暗各一套，令牌齐全，文档路径与壁纸/播放器都给了 */
+const REQUIRED = ["bg","bg2","card","card2","border","border2","track","text","text2","text3","accent","accentInk","accentDim","accentRing","accentGlow","radius","radiusSm","radiusLg","shadow","shadowLg","fontHead","dur","ease"];
+const missing = [];
+Object.keys(api.SPEC_THEMES).forEach(id => {
+  const t = api.SPEC_THEMES[id];
+  ["dark","light"].forEach(mode => {
+    const tok = t.tokens[mode] || {};
+    REQUIRED.forEach(k => { if (!tok[k]) missing.push(id + "." + mode + "." + k); });
+  });
+  if (!t.doc || t.doc.indexOf("/docs/specs/") !== 0) missing.push(id + ".doc");
+  if (["aerial","collage","ultrablur"].indexOf(t.wallpaper) < 0) missing.push(id + ".wallpaper");
+  if (["glass","osd","plex"].indexOf(t.player) < 0) missing.push(id + ".player");
+});
+chk("三套规格 × 亮暗 令牌齐全（23 个令牌 × 6 套）", missing.length === 0, missing.slice(0, 6).join(","));
+chk("三套规格各自有壁纸种类（互不相同）",
+    new Set(api.OP_MODES.map(id => api.SPEC_THEMES[id].wallpaper)).size === 3);
+chk("三套规格各自有播放器皮肤（互不相同）",
+    new Set(api.OP_MODES.map(id => api.SPEC_THEMES[id].player)).size === 3);
+chk("三套规格各带 4 条元素清单（对应三份详解文档）",
+    api.OP_MODES.every(id => (api.SPEC_HIGHLIGHTS[id] || []).length === 4));
+
+/* 播放器图标：三套包都要覆盖播放器实际用到的图标名，否则切规格播放器还是默认图标 */
+const PLAYER_ICONS = ["play","pause","prev","next","back10","fwd10","playlist","subtitles","close","fullscreen","collapse","restore","disc","info","details","copy"];
+const iconGap = [];
+api.OP_MODES.forEach(id => PLAYER_ICONS.forEach(n => { if (!api.OP_ICON_PACK[id][n]) iconGap.push(id + "." + n); }));
+chk("三套图标包覆盖播放器全部图标（16 个 × 3 套）", iconGap.length === 0, iconGap.slice(0, 6).join(","));
+
+/* 壁纸开关 */
+api.setSpecWallpaper(false);
+chk("关壁纸：data-wallpaper=off", root.dataset.wallpaper === "off", root.dataset.wallpaper);
+chk("关壁纸：settings.wallpaper=false", api.settings.wallpaper === false);
+api.setSpecWallpaper(true);
+chk("开壁纸：回到当前规格的壁纸种类", root.dataset.wallpaper === "ultrablur", root.dataset.wallpaper);
+
+/* 明暗 + 跟随系统 */
 api.setThemeMode("light");
-chk("切到亮色：html data-mode=light", root.dataset.mode === "light");
-chk("切到亮色：body data-theme=light", document.body.dataset.theme === "light");
-chk("切到亮色：settings 落盘字段同步", api.settings.mode === "light" && api.settings.theme === "light");
+chk("切亮色：data-mode=light", root.dataset.mode === "light");
+chk("切亮色：body data-theme=light", document.body.dataset.theme === "light");
+chk("切亮色：settings 落盘字段同步", api.settings.mode === "light" && api.settings.theme === "light");
 chk("切主题有一次性过渡类（不常驻）", root.classList.contains("theming"));
-chk("切主题弹提示", toasts.some(m => m.indexOf("themeModeSaved") >= 0));
-
-api.setThemePalette("clay");
-chk("切调色板：html data-palette=clay", root.dataset.palette === "clay");
-chk("切调色板不改明暗", root.dataset.mode === "light");
-chk("切调色板提示带调色板名", toasts.some(m => m.indexOf("暖陶") >= 0));
-const clayStyle = api.themePreviewStyle(api.THEME_PALETTES.find(p => p.id === "clay"), "light");
-chk("暖陶预览令牌来自该调色板自己（底色/圆角/主色）",
-    clayStyle.indexOf("--t-bg:#FAF6F1") >= 0 && clayStyle.indexOf("--t-r:14px") >= 0 && clayStyle.indexOf("--t-accent:#8F3F14") >= 0,
-    clayStyle);
-
-api.setThemeAccent("violet");
-chk("切强调色：html data-accent=violet", root.dataset.accent === "violet");
-api.setThemeAccent("theme");
-chk("强调色可回到「跟随主题」", root.dataset.accent === "theme");
-
-/* 跟随系统：auto 档下由 matchMedia 决定，且 change 事件要实时跟随 */
 api.setThemeMode("auto");
 chk("auto 档：系统暗色 → mode=dark", api.resolvedThemeMode() === "dark" && root.dataset.mode === "dark");
 mq.matches = false;
 mq._l.forEach(fn => fn({ matches: false }));
-chk("系统切亮色：实时跟随（无需重载）", root.dataset.mode === "light" && api.resolvedThemeMode() === "light",
-    "mode=" + root.dataset.mode);
+chk("系统切亮色：实时跟随（无需重载）", root.dataset.mode === "light" && api.resolvedThemeMode() === "light", "mode=" + root.dataset.mode);
 
-/* 旧入口兼容 */
+/* 旧入口兼容 + 移除项 */
 api.setTheme("dark");
 chk("旧入口 setTheme('dark') 仍可用", api.settings.mode === "dark" && root.dataset.mode === "dark");
 api.setTheme("custom");
-chk("旧入口 setTheme('custom') → 打开背景层（不再伪装成第三种主题）",
-    api.settings.customBg === true && document.body.classList.contains("custom-bg"));
-api.setCustomBg(false);
-chk("关闭背景层不影响明暗/调色板", !api.settings.customBg && root.dataset.palette === "clay" && root.dataset.mode === "dark");
+chk("旧入口 setTheme('custom') 不再炸（按暗色处理，无背景层）",
+    api.settings.mode === "dark" && typeof api.settings.customBg === "undefined");
+chk("调色板/强调色/自定义背景三档函数已移除",
+    typeof api.setThemePalette === "undefined" && typeof api.setThemeAccent === "undefined" && typeof api.setCustomBg === "undefined");
+api.applyTheme();
+chk("applyTheme 后 <html> 仍不留 data-palette/data-accent",
+    !root.hasAttribute("data-palette") && !root.hasAttribute("data-accent"));
 
 api.setThemeReduceMotion(true);
 chk("减弱动效开关落到 html", root.dataset.motion === "reduce");
 api.setThemeReduceMotion(false);
 chk("减弱动效可关闭", !("motion" in root.dataset));
 
-/* 面板：真预览卡片 + 选中态唯一 */
+/* 面板：规格卡 3 张、操作模式 4 张、明暗 3 档；调色板网格与强调色块不再渲染 */
 api.renderThemePanel();
-const cards = els.themePaletteGrid.children.filter(c => "themeCard" in c.dataset);
-chk("面板渲染 4 张调色板卡片", cards.length === 4, "实际 " + cards.length);
-const previews = els.themePaletteGrid.children.filter(c => "themePreview" in c.dataset);
-chk("每张卡片带自己的预览令牌", previews.length === 4 && previews.every(p => String(p.attrs.style || "").indexOf("--t-accent:") >= 0));
-const swatches = els.themeAccentSwatches.children.filter(c => "themeAccent" in c.dataset);
-chk("面板渲染 6 档强调色", swatches.length === 6, "实际 " + swatches.length);
-chk("强调色色块带各自的颜色值",
-    swatches.filter(s => /--sw:#/.test(String(s.attrs.style || ""))).length === 5);
+chk("面板渲染 3 张界面规格卡", els.opModeSeg.children.filter(c => "opOpt" in c.dataset).length === 3,
+    "实际 " + els.opModeSeg.children.filter(c => "opOpt" in c.dataset).length);
+chk("面板渲染 4 张操作模式卡", els.uiModeSeg.children.filter(c => "uiOpt" in c.dataset).length === 4,
+    "实际 " + els.uiModeSeg.children.filter(c => "uiOpt" in c.dataset).length);
 chk("明暗段控件 3 档（暗/亮/跟随系统）", els.themeModeSeg.children.filter(c => "modeOpt" in c.dataset).length === 3);
+chk("调色板网格不再渲染", !els.themePaletteGrid || els.themePaletteGrid.innerHTML === "");
+chk("强调色色块不再渲染", !els.themeAccentSwatches || els.themeAccentSwatches.innerHTML === "");
 
 console.log("\nTOTAL=" + (pass + fail) + " PASSED=" + pass + " FAILED=" + fail);
 process.exit(fail ? 1 : 0);
@@ -201,5 +252,5 @@ if result.stderr.strip():
     sys.stdout.write("STDERR: " + result.stderr.strip()[:2000] + "\n")
 Path(harness_path).unlink(missing_ok=True)
 if result.returncode != 0:
-    raise SystemExit("FAIL: v0.9.73 主题引擎行为测试未通过")
-print("PASS: v0.9.73 主题引擎行为正确（三层叠加 / 跟随系统 / 旧入口兼容 / 真预览卡片）")
+    raise SystemExit("FAIL: v1.0.8 主题引擎行为测试未通过")
+print("PASS: v1.0.8 主题引擎行为正确（规格=主题轴 / 壁纸随规格 / 播放器皮肤随规格 / 三档设置已移除）")

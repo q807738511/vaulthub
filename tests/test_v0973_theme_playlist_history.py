@@ -28,7 +28,7 @@ GO_READING = (ROOT / "media-go/reading_progress.go").read_text(encoding="utf-8")
 UPDATELOG = (ROOT / "Update Log.md").read_text(encoding="utf-8")
 NOTES = (ROOT / ".github/RELEASE_NOTES_0.9.90.md")
 
-VERSION = "1.0.3"
+VERSION = "1.0.8"
 checks = []
 
 
@@ -112,83 +112,100 @@ check("T3 服务端释放幂等（removed=false）",
       '"removed": false' in GO_READING and '"removed": true' in GO_READING)
 
 
-# ---------------- 需求 4：三层主题系统 ----------------
-check("T4 主题引擎独立成文件", THEME.count("const THEME_PALETTES = [") == 1 and "web/js/06-theme.js" in HTML)
-check("T4 四套调色板", all(f'id: "{pid}"' in THEME for pid in ["emerald", "plum", "neon", "clay"]))
-check("T4 六档强调色（含跟随主题）",
-      all(f'id: "{aid}"' in THEME for aid in ["theme", "teal", "indigo", "rose", "amber", "violet"]))
+# ---------------- 需求 4：主题系统（v1.0.8 起 = 界面规格 × 明暗） ----------------
+# v0.9.73 的三层模型（调色板 × 明暗 × 强调色）在 v1.0.8 收敛成两层：调色板、强调色、
+# 自定义背景三档设置按客户口径整体移除，每套界面规格自带完整主题定义。
+check("T4 主题引擎独立成文件", "const SPEC_THEMES = {" in THEME and "web/js/06-theme.js" in HTML)
+check("T4 三套规格各有主题定义",
+      all(f'  {sid}: {{' in THEME for sid in ["apple", "emby", "plex"])
+      and THEME.count("tokens: {") == 3)
+check("T4 每套规格亮暗两套令牌", THEME.count("dark: {") >= 3 and THEME.count("light: {") >= 3)
+check("T4 规格带壁纸与播放器皮肤字段",
+      all(f'wallpaper: "{w}"' in THEME for w in ["aerial", "collage", "ultrablur"])
+      and all(f'player: "{pl}"' in THEME for pl in ["glass", "osd", "plex"]))
+check("T4 三份规格文档路径都指向 docs/specs",
+      all(f'doc: "/docs/specs/{sid}.md"' in THEME for sid in ["apple", "emby", "plex"]))
 check("T4 明暗三档含跟随系统", 'const THEME_MODES = ["dark", "light", "auto"]' in THEME
       and "systemPrefersDark" in THEME and "addEventListener(\"change\", onChange)" in THEME)
-check("T4 三层落到 html data-*",
-      'root.dataset.palette = palette;' in THEME and 'root.dataset.mode = mode;' in THEME
-      and 'root.dataset.accent = accent;' in THEME)
+check("T4 规格与明暗落到 html data-*",
+      'root.setAttribute("data-spec", mode);' in THEME and 'root.dataset.mode = mode;' in THEME
+      and 'root.setAttribute("data-wallpaper"' in THEME and 'root.setAttribute("data-spec-player"' in THEME)
 check("T4 保留旧世界观 body[data-theme]/兼容 setTheme",
       'document.body.dataset.theme = mode;' in THEME and "function setTheme(th)" in THEME)
 check("T4 01-state.js 不再重复定义 setTheme", "function setTheme(" not in STATE)
 check("T4 阅读器主题跟随明暗层", "resolvedThemeMode()" in MEDIA and "readerThemeClass" in MEDIA)
-check("T4 主题卡片是真预览（该主题自己的令牌）",
-      "function themePreviewStyle(" in THEME and "--t-accent:" in THEME
-      and "data-theme-preview" in THEME and ".themecard .tp-thumb" in CSS)
 check("T4 切换有过渡但不常驻", "function themeTransitionPulse()" in THEME and 'classList.add("theming")' in THEME
       and "html.theming" in CSS)
 check("T4 减弱动效开关", "reduceMotion" in THEME and 'html[data-motion="reduce"]' in CSS)
-check("T4 自定义背景成为独立背景层",
-      "function setCustomBg(on)" in THEME and "customBg" in THEME
-      and 'document.body.classList.toggle("custom-bg", !!settings.customBg);' in THEME)
+
+# 移除项：调色板 / 强调色 / 自定义背景
+check("T4 调色板与强调色定义已移除",
+      "THEME_PALETTES" not in THEME and "THEME_ACCENTS" not in THEME
+      and "setThemePalette" not in THEME and "setThemeAccent" not in THEME)
+check("T4 自定义背景已移除（无 setCustomBg / 无 --bgImg 渲染）",
+      "setCustomBg" not in THEME and "function uploadBg(" not in STATE
+      and "--bgImg" not in STATE and "--bgImg" not in CSS
+      and 'removeItem("dwu_bgimg")' in STATE)
+check("T4 CSS 不再有 data-palette / data-accent 令牌块",
+      "data-palette" not in CSS and "data-accent" not in CSS)
+check("T4 外观面板不再渲染调色板/强调色容器",
+      'id="themePaletteGrid"' not in HTML and 'id="themeAccentSwatches"' not in HTML
+      and 'id="themeCustomBgToggle"' not in HTML and 'id="bgFile"' not in HTML)
 check("T4 首帧防闪内联脚本在 head 内",
-      'localStorage.getItem("dwu_settings")' in HTML and "root.dataset.palette" in HTML
-      and HTML.index("root.dataset.palette") < HTML.index("<body"))
-# 首帧脚本必须对 localStorage 里的值做白名单，否则旧版本/手工改过的 palette
-# 会让首帧套上一个 CSS 里不存在的 data-palette，亮色用户先闪一帧暗色。
-check("T4 首帧脚本对 palette/accent 做白名单",
-      'var PALETTES = ["emerald", "plum", "neon", "clay"];' in HTML
-      and 'var ACCENTS = ["theme", "teal", "indigo", "rose", "amber", "violet"];' in HTML
-      and 'PALETTES.indexOf(s.palette) >= 0 ? s.palette : "emerald"' in HTML
-      and 'ACCENTS.indexOf(s.accent) >= 0 ? s.accent : "theme"' in HTML)
-check("T4 面板容器在设置页", 'id="themePaletteGrid"' in HTML and 'id="themeAccentSwatches"' in HTML
-      and 'id="themeModeSeg"' in HTML)
+      'localStorage.getItem("dwu_settings")' in HTML and "root.dataset.spec = spec" in HTML
+      and HTML.index("root.dataset.spec = spec") < HTML.index("<body"))
+check("T4 首帧脚本对规格做白名单",
+      'var SPECS = ["apple", "emby", "plex"];' in HTML
+      and 'SPECS.indexOf(s.opMode) >= 0 ? s.opMode' in HTML
+      and 'var WALLPAPER = { apple: "aerial", emby: "collage", plex: "ultrablur" };' in HTML)
+check("T4 面板容器在设置页", 'id="opModeSeg"' in HTML and 'id="themeModeSeg"' in HTML
+      and 'id="themeWallpaperToggle"' in HTML and 'id="opModeHighlights"' in HTML)
 check("T4 boot 走 initTheme 且有守卫",
       "if (typeof initTheme === \"function\") initTheme();" in BOOT and "theme-opt" not in BOOT)
 check("T4 语言切换重渲染面板", "renderThemePanel();" in FEATURES)
 
-# CSS：8 个 调色板 × 明暗 组合 + 强调色分亮暗 + 实心填充色独立
-combos = [f'html[data-palette="{p}"][data-mode="{m}"]' for p in ["emerald", "plum", "neon", "clay"] for m in ["light", "dark"]]
+# CSS：3 规格 × 2 明暗 组合 + 实心填充色 + 语义色只随明暗
+combos = [f'html[data-spec="{sp}"][data-mode="{m}"]' for sp in ["apple", "emby", "plex"] for m in ["light", "dark"]]
 missing = [c for c in combos if c not in CSS]
-check("T4 CSS 覆盖 4×2 全部组合", not missing, "缺：" + ", ".join(missing))
-check("T4 CSS 强调色带 data-mode（才能盖过调色板）",
-      all(f'html[data-mode="{m}"][data-accent="{a}"]' in CSS for m in ["light", "dark"] for a in ["teal", "indigo", "rose", "amber", "violet"]))
+check("T4 CSS 覆盖 3×2 全部组合", not missing, "缺：" + ", ".join(missing))
 check("T4 实心填充色与描边色分离（--accent-ink 管白字）",
       "--accent-ink" in CSS and CSS.count("var(--accent-ink)") >= 8)
 check("T4 语义色只随明暗", 'html[data-mode="dark"] { --green:' in CSS and 'html[data-mode="light"] { --green:' in CSS)
-# 动效节奏也必须是「每套调色板自己的一份」：首版实现漏了 --dur/--ease，
-# 组件只能吃到 var(--dur, .16s) 的兜底值，等于「动效速度进令牌」没落地。
-palette_durations = {}
-for pid in ["emerald", "plum", "neon", "clay"]:
+# 动效节奏也必须是「每套规格自己的一份」：否则切规格连手感都不变，等于只换了颜色。
+spec_durations = {}
+for sid in ["apple", "emby", "plex"]:
     for mode in ["light", "dark"]:
-        seg = CSS.split(f'html[data-palette="{pid}"][data-mode="{mode}"] {{', 1)
+        seg = CSS.split(f'html[data-spec="{sid}"][data-mode="{mode}"] {{', 1)
         if len(seg) == 1:
-            palette_durations[pid] = None
+            spec_durations[f"{sid}/{mode}"] = None
             continue
         body = seg[1].split("color-scheme:", 1)[0]
         hit = re.search(r"--dur:\s*(\d+ms)", body)
-        palette_durations[pid] = hit.group(1) if hit else None
-check("T4 每套调色板都带自己的动效节奏",
-      all(palette_durations.values()) and len(set(palette_durations.values())) == 4,
-      str(palette_durations))
+        spec_durations[f"{sid}/{mode}"] = hit.group(1) if hit else None
+check("T4 每套规格都带自己的动效节奏",
+      all(spec_durations.values()) and len(set(spec_durations.values())) == 3,
+      str(spec_durations))
 check("T4 动效缓动曲线也是令牌", "--ease: cubic-bezier(" in CSS)
 
-# 本版顺手清掉的遗留：蓝色硬编码与未定义令牌
-check("T4 遗留蓝色辉光已跟随主题",
-      "rgba(88,166,255" not in CSS and "#58a6ff" not in CSS and "#0a84ff" not in CSS
-      and "10,132,255" not in CSS)
-check("T4 未定义令牌 --line/--panel 已修正",
-      "var(--line)" not in CSS and "var(--panel" not in CSS
-      and "border:1px solid var(--border);border-radius:var(--radius-lg,12px);background:color-mix(in srgb,var(--card2) 88%,transparent)}" in CSS)
+# 壁纸层与播放器皮肤：三份详解文档里的美化元素真的落到了 CSS
+check("T4 壁纸层容器存在", 'class="vh-wall"' in HTML and ".vh-wall { position: fixed" in CSS)
+check("T4 三种壁纸各有实现",
+      'html[data-wallpaper="aerial"] .vh-wall::before' in CSS
+      and ".vh-wall-collage {" in CSS and ".vh-wall-ub {" in CSS)
+check("T4 UltraBlur 四角色由 JS 写入 CSS 变量",
+      "--ub-tl" in CSS and 'setProperty("--ub-tl"' in THEME and "vhUltraBlurFromImg" in THEME)
+check("T4 海报拼贴由 JS 从当前列表取样", "function vhRenderCollage()" in THEME and "vhCollageSources" in THEME)
+check("T4 Emby 中央大播放键（OSD）",
+      'class="vc-center-play' in MEDIA and "html[data-spec=\"emby\"] .vc-center-play" in CSS
+      and "data-video-center-play" in MEDIA)
+check("T4 Apple 液态玻璃材质挂到顶栏/弹窗/播放器",
+      'html[data-spec="apple"] .topbar' in CSS and "backdrop-filter: blur(var(--glass-blur))" in CSS)
+check("T4 Plex 琥珀进度条", 'html[data-spec="plex"] .video-played-range' in CSS)
 
-# i18n：三语言齐备
-for key in ["themeModeLbl", "themePaletteLbl", "themeAccentLbl", "accentTheme", "themeAccentHint",
-            "themeModeSaved", "themePaletteSaved", "themeAccentSaved", "themeReduceMotion",
-            "themeCustomBg", "bgEnabled", "bgDisabled", "themeNote"]:
+# i18n：三语言齐备（v1.0.8 新增规格壁纸与规格详解文案）
+for key in ["themeModeLbl", "themeModeSaved", "themeReduceMotion",
+            "themeWallpaperLbl", "themeWallpaperSub", "wallpaperOn", "wallpaperOff",
+            "specDocTitle", "specDocOpen", "specDocLead", "specDocApply"]:
     hits = len(re.findall(rf"\b{key}:", STATE))
     check(f"T4 i18n 三语言齐备：{key}", hits == 3, f"命中 {hits} 处")
 
@@ -196,7 +213,7 @@ for key in ["themeModeLbl", "themePaletteLbl", "themeAccentLbl", "accentTheme", 
 # ---------------- 版本与发布资料 ----------------
 check("V 入口页资源版本 0.9.90", f'window.VAULTHUB_ASSET_VERSION = "{VERSION}";' in HTML)
 check("V 脚本自校验版本 0.9.90", f'const VAULTHUB_SCRIPT_VERSION = "{VERSION}";' in STATE)
-check("V 所有静态资源带 ?v=1.0.3", HTML.count(f"?v={VERSION}") >= 8, f"命中 {HTML.count(f'?v={VERSION}')}")
+check("V 所有静态资源带 ?v=1.0.8", HTML.count(f"?v={VERSION}") >= 8, f"命中 {HTML.count(f'?v={VERSION}')}")
 check("V 主题脚本被入口页引用", f'/web/js/06-theme.js?v={VERSION}' in HTML)
 # 同一版本内角标文案随本版主功能追加而调整（v0.9.83 收尾加入顶栏导航与书刊页）。
 check("V 侧栏与关于弹窗角标已升版", HTML.count(f"v{VERSION}") >= 1)
