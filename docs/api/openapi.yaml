@@ -511,8 +511,10 @@ paths:
       tags: [playback]
       summary: 服务端转码兼容流（plan 返回 mode≠direct 时使用）
       description: >-
-        响应头 X-VaultHub-Compat 区分两种形态：live=实时 fragmented MP4（不支持 Range/拖动）；
-        cache=完整转码产物落盘（支持 Range/206 与拖动）。sub_track 设置后强制 full_transcode（图形字幕烧录）。
+        响应头 X-VaultHub-Compat 区分两种形态：live=实时 fragmented MP4（只有 200/chunked，
+        没有字节 Range）；cache=完整转码产物落盘（支持 Range/206 与拖动）。
+        live 形态的拖动靠 `ss=<秒>`：服务端按该时间点重新起转码（v1.0.8），
+        并在响应头 X-VaultHub-Seek-Start 回显实际起点。sub_track 设置后强制 full_transcode（图形字幕烧录）。
       parameters:
         - $ref: '#/components/parameters/LibraryId'
         - $ref: '#/components/parameters/MediaPath'
@@ -529,6 +531,13 @@ paths:
           in: query
           required: false
           schema: { type: integer, minimum: 144, maximum: 4320 }
+        - name: ss
+          in: query
+          required: false
+          schema: { type: number, minimum: 0, maximum: 86400 }
+          description: >-
+            起始秒数（v1.0.8）。live 形态下从该时间点重新起转码，用于客户端拖动进度条；
+            cache 形态忽略此参数（完整文件由 Range 自行 seek）。带 ss 的请求不会触发整段预转码。
         - name: audio_track
           in: query
           required: false

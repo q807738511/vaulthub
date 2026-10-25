@@ -98,7 +98,7 @@ Accept-Ranges: bytes
 
 ```
 X-VaultHub-Compat: cache    → 可拖动（Accept-Ranges: bytes，内容为缓存 mp4）
-X-VaultHub-Compat: live     → 不可拖动（Accept-Ranges: none，分片 fMP4 流）
+X-VaultHub-Compat: live     → 原生 Range 不可用；拖动要带 ss=<秒> 重新请求（v1.0.8）
 ```
 
 **cache 与 live 是服务端自动判定的**（同一个 `(库,路径,模式,高,音轨,字幕,硬件)` 组合）：
@@ -106,21 +106,30 @@ X-VaultHub-Compat: live     → 不可拖动（Accept-Ranges: none，分片 fMP4
 | 情况 | 响应 | 能否拖动 |
 |---|---|---|
 | 该组合的可 seek 副本**已完整落盘** | `X-VaultHub-Compat: cache` + `Accept-Ranges: bytes` | 能 |
-| 尚未落盘（首次播 / 换画质 / 换音轨 / 开烧录） | `X-VaultHub-Compat: live` + `Accept-Ranges: none`，分块 fMP4 | 不能 |
+| 尚未落盘（首次播 / 换画质 / 换音轨 / 开烧录） | `X-VaultHub-Compat: live` + `Accept-Ranges: none`，分块 fMP4 | 只能靠 `ss=`（v1.0.8） |
 
 `live` 播放时服务端会**同时后台转出一份可 seek 的副本**，但这份预转码绑定「有人正在看」：
 最后一个观看者断开就会被取消（实测：curl 拉完即断，缓存不会落盘，下次仍是 live）。
 因此客户端要拿到 cache 形态，前提是**播放期间保持播放会话与连接**。
 
-推荐策略：
+推荐策略（v1.0.8 起 live 也能拖，别再提示「稍后可拖动」）：
 
-1. 起播按 plan 给的 URL 请求，读 `X-VaultHub-Compat` 决定 UI 是否允许拖动；
-2. `live` 时先正常播；用户拖进度条 → 提示「转码中，稍后可拖动」，并每隔几秒 `HEAD` 同一 URL
-   探测是否已变 `cache`；
-3. 同一部片子第二次打开通常直接 `cache`（前提是上次有完整观看会话，预转码跑完了）；
-4. 切画质 / 换音轨 / 开字幕烧录都会改变缓存键 → 重新进入 `live`，这是预期行为，不要当 bug；
-5. 服务端可用 `COMPAT_PRECACHE=0` 关掉预转码（部署方决定），此时永远拿不到 cache —— UI 里
-   应当把「不可拖动」作为常态而非错误。
+1. 起播按 plan 给的 URL 请求，读 `X-VaultHub-Compat` 决定走哪条 seek 路径；
+2. **live 的拖动 = 带 `ss=<秒>` 重新请求**：`GET <url>&ss=173`，服务端从第 173 秒重新起转码
+   （关键帧快 seek），响应头 `X-VaultHub-Seek-Start: 173.000` 回显起点；
+   - 输出时间戳从 0 开始，客户端要自己记 `offset = ss`，把 `offset + currentTime` 当显示时间；
+   - 时长用 plan 里的 `media.duration`（整片秒数）—— live 流的 `video.duration` 只是已到达的
+     分片长度（实测 30 秒片子拿到 10.4），拿它当进度条上限会得出错误的可拖范围；
+   - 拖动过程中只更新 UI，**松手时**才发一次 `ss` 请求，避免每个像素重起一次 ffmpeg；
+3. `cache` 形态（完整文件）用原生 `currentTime`/Range 拖动即可，`ss` 会被忽略；
+4. 同一部片子第二次打开通常直接 `cache`（前提是上次有完整观看会话，预转码跑完了）；
+5. 切画质 / 换音轨 / 开字幕烧录都会改变缓存键 → 重新进入 `live`，这是预期行为，不要当 bug；
+6. 服务端可用 `COMPAT_PRECACHE=0` 关掉预转码（部署方决定），此时永远拿不到 cache ——
+   靠 `ss` 拖动依然可用，只是每次 seek 都会重新起一次转码。
+
+参考实现（网页播放器，`web/js/02-media.js`）：`videoIsLiveStream()` 判断形态、
+`videoTimelineDuration()` / `videoAbsoluteTime()` 做时间坐标、`restartLiveStream(video, t)` 带 `ss`
+重开流、`seekVideoTo()` 给点击/拖动/±10 秒/键盘统一入口。
 
 ## 3. 播放会话（重要，别跳过）
 

@@ -100,5 +100,5 @@ BASE=http://<vault-hub-host>:8088 VH_USER=admin VH_PASS='***' \
 | 连续失败后返回 429 | 同 IP 5 次失败锁 5 分钟 | 等 5 分钟；测试时别用错误密码循环重试 |
 | 所有 `/api/media/*` 返回 401 | `libraries/index/status/hardware/scrapers` 自 v1.0.7 起需会话 | 先登录拿 Cookie，再带上 |
 | 浏览器 `fetch` 报 CORS 且无响应头 | 服务端不提供 CORS | HTTP 放原生层（Tauri/Electron 主进程） |
-| 直连播放器 seek 卡住 | 用了 `/compat` 的 live 流（`Accept-Ranges: none`） | 见 04 篇的 seek 策略 |
+| 直连播放器 seek 卡住 | 用了 `/compat` 的 live 流（`Accept-Ranges: none`） | 带 `ss=<秒>` 重发请求，见 04 篇 |
 | 封面 404 | `path` 必须是相对库根的路径，且 `/` 分隔 | 用 `/api/media/files` 返回的 `path` 原样回传 |
